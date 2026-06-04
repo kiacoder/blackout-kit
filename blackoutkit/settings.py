@@ -58,7 +58,7 @@ DEFAULTS = {
     # UI
     "show_banner":          True,
     "show_disclaimer":      True,        # Show the legal disclaimer under the banner
-    "show_first_run":       True,        # Show the "First Run" welcome panel on fresh install
+    "show_first_run":       False,       # Show the "First Run" welcome panel (auto-shown on true first launch)
     "color_theme":          "red",       # red / blue / green / purple
 
     # Security modes
