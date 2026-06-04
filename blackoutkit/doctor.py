@@ -340,12 +340,21 @@ def check_binary_runnable() -> list[CheckResult]:
                 fixable=False,
             ))
         except OSError as exc:
-            results.append(CheckResult(
-                f"runnable: {binary}",
-                False,
-                f"OS error: {exc}",
-                fixable=False,
-            ))
+            # WinError 740 = ERROR_ELEVATION_REQUIRED — binary works fine,
+            # it just needs Administrator to load its kernel driver.
+            if getattr(exc, "winerror", None) == 740:
+                results.append(CheckResult(
+                    f"runnable: {binary}",
+                    True,
+                    "Needs Administrator (kernel driver) — OK",
+                ))
+            else:
+                results.append(CheckResult(
+                    f"runnable: {binary}",
+                    False,
+                    f"OS error: {exc}",
+                    fixable=False,
+                ))
     return results
 
 
