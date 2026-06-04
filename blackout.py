@@ -85,7 +85,7 @@ def _first_run_hint():
             "  [cyan]python blackout.py bins download[/cyan]      — auto-download all engine binaries\n"
             "  [cyan]python blackout.py doctor[/cyan]             — verify everything is ready\n"
             "  [cyan]python blackout.py connect[/cyan]            — start bypassing\n\n"
-            "[dim]Tip: run 'blackout help quick_start' for the full setup guide.[/dim]",
+            "[dim]Tip: run 'python blackout.py help quick_start' for the full setup guide.[/dim]",
             title="[bold green]First Run[/bold green]",
             border_style="green",
             padding=(0, 2),

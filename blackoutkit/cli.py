@@ -83,7 +83,7 @@ def _start_engine_stack(name: str) -> list:
         if eng.start():
             running.append(eng)
         else:
-            console.print(f"  [warning]⚠ {eng.name} binary not found in bins/[/warning]")
+            console.print(f"  [warning]⚠ {eng.name} failed to start (check logs for details)[/warning]")
     return running
 
 
