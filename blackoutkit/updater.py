@@ -1,0 +1,347 @@
+"""
+Blackout Kit - Auto-updater and preflight readiness checker.
+
+Auto-updater:
+  Checks GitHub releases API for new Python source files.
+  Downloads and replaces the blackoutkit/ package on update.
+  Does NOT update binaries in bins/ — user manages those manually.
+
+Preflight (offline-first readiness):
+  Verifies the tool is ready for use during a complete internet blackout.
+  Checks: binaries present, configs saved, scan cache fresh, configs decryptable.
+"""
+import hashlib
+import json
+import shutil
+import sys
+import tempfile
+import time
+import urllib.request
+import zipfile
+from pathlib import Path
+
+from rich.progress import (
+    BarColumn,
+    DownloadColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeRemainingColumn,
+    TransferSpeedColumn,
+)
+
+from . import __version__
+
+PROJECT_ROOT  = Path(__file__).parent.parent
+APP_DATA_DIR  = Path.home() / ".blackout-kit"
+GITHUB_REPO   = "kiacoder/blackout-kit"
+RELEASES_API  = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+UPDATE_TIMEOUT = 10  # seconds
+
+
+# ─────────────────────────── Version helpers ────────────────────
+
+def _parse_version(v: str) -> tuple[int, ...]:
+    """Convert "1.2.3" → (1, 2, 3) for comparison."""
+    v = v.lstrip("v")
+    try:
+        return tuple(int(x) for x in v.split("."))
+    except Exception:
+        return (0, 0, 0)
+
+
+def check_for_update() -> dict | None:
+    """
+    Check GitHub releases API for a newer version.
+    Returns release info dict on update available, None if up-to-date or no internet.
+    """
+    try:
+        req = urllib.request.Request(
+            RELEASES_API,
+            headers={"User-Agent": f"blackout-kit/{__version__}"},
+        )
+        with urllib.request.urlopen(req, timeout=UPDATE_TIMEOUT) as resp:
+            data = json.loads(resp.read())
+    except Exception:
+        return None  # No internet or API down — that's fine
+
+    latest_tag = data.get("tag_name", "")
+    latest_ver = _parse_version(latest_tag)
+    current    = _parse_version(__version__)
+
+    if latest_ver <= current:
+        return None  # Already up-to-date
+
+    # Find the source zip asset
+    zipball = data.get("zipball_url", "")
+
+    return {
+        "version":     latest_tag,
+        "body":        data.get("body", "No release notes."),
+        "zipball_url": zipball,
+        "html_url":    data.get("html_url", ""),
+    }
+
+
+def download_and_apply(release: dict) -> bool:
+    """
+    Stream-download the release zip (with Rich progress bar + SHA256 display),
+    verify archive integrity, then replace the blackoutkit/ source files.
+    Returns True on success.
+    """
+    from .theme import console
+
+    url = release.get("zipball_url", "")
+    if not url:
+        return False
+
+    tmp_path: Path | None = None
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+
+        req = urllib.request.Request(
+            url, headers={"User-Agent": f"blackout-kit/{__version__}"}
+        )
+
+        hasher = hashlib.sha256()
+
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            content_length = int(resp.headers.get("Content-Length", 0) or 0)
+
+            with Progress(
+                SpinnerColumn(style="bold cyan"),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(bar_width=38, style="cyan", complete_style="green"),
+                DownloadColumn(),
+                TransferSpeedColumn(),
+                TimeRemainingColumn(),
+                console=console,
+                transient=True,
+            ) as progress:
+                task = progress.add_task(
+                    "Downloading update...",
+                    total=content_length if content_length > 0 else None,
+                )
+                chunks: list[bytes] = []
+                while True:
+                    chunk = resp.read(8192)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    hasher.update(chunk)
+                    progress.advance(task, len(chunk))
+
+        data       = b"".join(chunks)
+        sha256_hex = hasher.hexdigest()
+        tmp_path.write_bytes(data)
+
+        console.print(f"  [dim]SHA256:  {sha256_hex}[/dim]")
+        console.print("  [dim]Verifying archive integrity...[/dim]")
+
+        # Verify the zip is not corrupted
+        try:
+            with zipfile.ZipFile(tmp_path) as zf:
+                bad_file = zf.testzip()
+                if bad_file:
+                    console.print(f"  [error]Corrupt archive entry: {bad_file}[/error]")
+                    return False
+        except zipfile.BadZipFile:
+            console.print("  [error]Downloaded file is not a valid ZIP archive.[/error]")
+            return False
+
+        console.print("  [dim]Archive OK — applying update...[/dim]")
+
+        # Extract and find the blackoutkit/ subfolder inside the zip
+        with zipfile.ZipFile(tmp_path) as zf:
+            names  = zf.namelist()
+            # GitHub zips have a top-level folder like "kiacoder-blackout-kit-abc123/"
+            prefix = names[0].split("/")[0] + "/"
+
+            # Back up current source
+            backup_dir = APP_DATA_DIR / "backup_src"
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir)
+            shutil.copytree(PROJECT_ROOT / "blackoutkit", backup_dir)
+
+            # Extract new blackoutkit/ files
+            for member in names:
+                if not member.startswith(prefix + "blackoutkit/"):
+                    continue
+                relative = member[len(prefix):]      # e.g. "blackoutkit/cli.py"
+                dest     = PROJECT_ROOT / relative
+                if member.endswith("/"):
+                    dest.mkdir(parents=True, exist_ok=True)
+                else:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(zf.read(member))
+
+        tmp_path.unlink(missing_ok=True)
+        return True
+
+    except Exception:
+        # Restore backup on failure
+        backup = APP_DATA_DIR / "backup_src"
+        if backup.exists():
+            try:
+                shutil.rmtree(PROJECT_ROOT / "blackoutkit")
+                shutil.copytree(backup, PROJECT_ROOT / "blackoutkit")
+            except Exception:
+                pass
+        if tmp_path:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        return False
+
+
+# ─────────────────────────── Preflight check ────────────────────
+
+REQUIRED_BINS = [
+    "sni-spoofing.exe",
+    "xray.exe",
+]
+
+RECOMMENDED_BINS = [
+    "goodbyedpi.exe",
+    "psiphon-tunnel-core-x86_64.exe",
+    "warp-plus.exe",
+    "sing-box.exe",
+]
+
+
+class PreflightResult:
+    def __init__(self, name: str, ok: bool, critical: bool, message: str):
+        self.name     = name
+        self.ok       = ok
+        self.critical = critical  # Critical failures = tool will NOT work offline
+        self.message  = message
+
+
+def run_preflight() -> list[PreflightResult]:
+    """
+    Check if Blackout Kit is ready for use during a complete internet blackout.
+    Returns list of PreflightResult items.
+    """
+    results: list[PreflightResult] = []
+    bins_dir = PROJECT_ROOT / "bins"
+
+    # ── Required binaries ────────────────────────────────────────
+    for name in REQUIRED_BINS:
+        path = bins_dir / name
+        if path.exists():
+            size_kb = path.stat().st_size // 1024
+            results.append(PreflightResult(
+                f"Required: {name}", True, True,
+                f"Present ({size_kb} KB)",
+            ))
+        else:
+            results.append(PreflightResult(
+                f"Required: {name}", False, True,
+                "MISSING — SNI engine will not work!",
+            ))
+
+    # ── Recommended binaries ─────────────────────────────────────
+    for name in RECOMMENDED_BINS:
+        path = bins_dir / name
+        if path.exists():
+            size_kb = path.stat().st_size // 1024
+            results.append(PreflightResult(
+                f"Optional: {name}", True, False,
+                f"Present ({size_kb} KB)",
+            ))
+        else:
+            results.append(PreflightResult(
+                f"Optional: {name}", False, False,
+                "Not installed (reduces fallback options)",
+            ))
+
+    # ── Config file ──────────────────────────────────────────────
+    from .config.manager import load_configs
+    from . import security as sec
+
+    if sec.configs_are_obfuscated():
+        ok = sec.deobfuscate_configs()
+        if ok:
+            configs = load_configs()
+            sec.obfuscate_configs()  # Re-encrypt
+            results.append(PreflightResult(
+                "V2Ray configs (encrypted)", True, True,
+                f"{len(configs)} config(s) saved and decryptable",
+            ))
+        else:
+            results.append(PreflightResult(
+                "V2Ray configs (encrypted)", False, True,
+                "Encrypted but cannot decrypt — may be corrupted",
+            ))
+    else:
+        configs = load_configs()
+        if configs:
+            sni_ok = sum(1 for c in configs if c.is_sni_compatible())
+            results.append(PreflightResult(
+                "V2Ray configs", True, True,
+                f"{len(configs)} config(s) saved, {sni_ok} SNI-compatible",
+            ))
+        else:
+            results.append(PreflightResult(
+                "V2Ray configs", False, True,
+                "No configs saved — use 'blackout config add' or 'blackout config import'",
+            ))
+
+    # ── IP scan cache ────────────────────────────────────────────
+    from .scanner.ip_scanner import load_cache, cache_age_str, _CACHE_FILE
+
+    cached = load_cache()
+    age    = cache_age_str()
+    if cached:
+        results.append(PreflightResult(
+            "IP scan cache", True, False,
+            f"{len(cached)} IPs cached  (age: {age})",
+        ))
+    elif _CACHE_FILE.exists():
+        results.append(PreflightResult(
+            "IP scan cache", False, False,
+            f"Cache expired ({age}) — run 'blackout scan' to refresh",
+        ))
+    else:
+        results.append(PreflightResult(
+            "IP scan cache", False, False,
+            "No cache — run 'blackout scan' now while you have internet!",
+        ))
+
+    # ── Settings file ────────────────────────────────────────────
+    from . import settings as cfg
+    s = cfg.load()
+    if s.get("sni_connect_ip"):
+        results.append(PreflightResult(
+            "Saved Cloudflare IP", True, False,
+            f"{s['sni_connect_ip']} (fallback if scan fails)",
+        ))
+    else:
+        results.append(PreflightResult(
+            "Saved Cloudflare IP", False, False,
+            "Not set — run 'blackout scan' and apply the best IP",
+        ))
+
+    # ── App data directory ───────────────────────────────────────
+    if APP_DATA_DIR.exists():
+        results.append(PreflightResult("App data dir (~/.blackout-kit)", True, False, "OK"))
+    else:
+        results.append(PreflightResult(
+            "App data dir (~/.blackout-kit)", False, False,
+            "Missing — will be created on first run",
+        ))
+
+    return results
+
+
+def preflight_summary(results: list[PreflightResult]) -> tuple[bool, int, int]:
+    """
+    Returns (ready_for_blackout, critical_fails, total_fails).
+    """
+    critical = sum(1 for r in results if not r.ok and r.critical)
+    total    = sum(1 for r in results if not r.ok)
+    ready    = critical == 0
+    return ready, critical, total

@@ -1,0 +1,52 @@
+# Binaries — download separately (see bins/.gitkeep for instructions)
+bins/*.exe
+bins/*.dll
+bins/*.sys
+bins/*.so
+bins/*.dylib
+!bins/.gitkeep
+
+# Generated XRay/Psiphon configs (contain sensitive data)
+bins/active_xray_config.json
+bins/psiphon_config.json
+bins/sni_config.json
+
+# Personal user configs (contain server credentials)
+data/configs.txt
+data/configs.enc
+
+# Runtime logs
+bins/openvpn.log
+*.log
+
+# Release zips (built locally, uploaded to GitHub Releases)
+blackout-kit-*.zip
+
+# User settings and daemon state
+~/.blackout-kit/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

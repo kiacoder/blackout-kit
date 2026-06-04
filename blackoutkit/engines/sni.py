@@ -1,0 +1,95 @@
+"""
+Blackout Kit - SNI Spoofing engine.
+Wraps patterniha's SNI-Spoofing binary.
+Injects a fake TLS ClientHello to fool DPI,
+while relaying the real connection to a Cloudflare IP.
+
+Rare upgrades:
+  - Logs config params (connect_ip, fake_sni, listen_port) on start
+  - wait_for_port() confirms the listener is accepting connections before returning True
+  - Crash-check if the port never opens (process may have exited with an error)
+"""
+import json
+import subprocess
+from pathlib import Path
+from .base import Engine, BINS_DIR
+from .. import settings as cfg
+
+SNI_BIN_NAMES = [
+    "sni-spoofing.exe",
+    "SNI-Spoofing_by_patterniha_v1.exe",
+    "sni-spoof.exe",
+    "sni.exe",
+]
+
+_STARTUP_TIMEOUT = 10.0   # seconds to wait for port to open
+
+
+class SNIEngine(Engine):
+    name = "sni"
+    description = "SNI packet injection (patterniha method) — most effective against DPI"
+
+    def __init__(self,
+                 connect_ip: str | None = None,
+                 fake_sni: str | None = None,
+                 listen_port: int | None = None):
+        super().__init__()
+        s = cfg.load()
+        self.connect_ip  = connect_ip  or s["sni_connect_ip"]
+        self.fake_sni    = fake_sni    or s["sni_fake_sni"]
+        self.listen_port = listen_port or s["sni_listen_port"]
+
+    def _write_config(self, binary_dir: Path) -> Path:
+        config = {
+            "LISTEN_HOST":  "0.0.0.0",
+            "LISTEN_PORT":  self.listen_port,
+            "CONNECT_IP":   self.connect_ip,
+            "CONNECT_PORT": 443,
+            "FAKE_SNI":     self.fake_sni,
+        }
+        path = binary_dir / "config.json"
+        path.write_text(json.dumps(config, indent=2))
+        return path
+
+    def start(self) -> bool:
+        binary = self.find_binary(SNI_BIN_NAMES)
+        if not binary:
+            return False
+
+        self._log.info(
+            "Starting SNI spoofer  connect_ip=%s  fake_sni=%s  listen_port=%d",
+            self.connect_ip, self.fake_sni, self.listen_port,
+        )
+
+        config_path = self._write_config(binary.parent)
+        self._log.debug("Config written to %s", config_path)
+
+        try:
+            self._process = subprocess.Popen(
+                [str(binary)],
+                cwd=str(binary.parent),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+            )
+        except Exception as exc:
+            self._log.error("Failed to launch SNI spoofer: %s", exc)
+            return False
+
+        # Wait until the listener port is accepting connections
+        if not self.wait_for_port(self.listen_port, timeout=_STARTUP_TIMEOUT):
+            if not self.check_process_alive():
+                self._log.error(
+                    "SNI spoofer exited before port %d opened (rc=%s).",
+                    self.listen_port, self._process.returncode,
+                )
+            else:
+                self._log.error(
+                    "SNI spoofer started but port %d never opened within %.0fs.",
+                    self.listen_port, _STARTUP_TIMEOUT,
+                )
+            self.stop()
+            return False
+
+        self._log.info("SNI spoofer ready on port %d (pid=%s).", self.listen_port, self._process.pid)
+        return True

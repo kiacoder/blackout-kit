@@ -1,0 +1,17 @@
+# Place your binary files here:
+#
+#   sni-spoofing.exe          - patterniha's SNI spoofer
+#                               Download: github.com/patterniha/SNI-Spoofing/releases
+#
+#   xray.exe                  - XRay proxy core
+#                               Download: github.com/XTLS/Xray-core/releases
+#
+#   goodbyedpi.exe            - GoodbyeDPI (also needs WinDivert.dll + WinDivert64.sys)
+#   WinDivert.dll             - Required by GoodbyeDPI
+#   WinDivert64.sys           - Required by GoodbyeDPI
+#                               Download: github.com/ValdikSS/GoodbyeDPI/releases
+#
+#   psiphon-tunnel-core-x86_64.exe  - Psiphon CLI tunnel core (fallback engine)
+#                               Download: github.com/Psiphon-Labs/psiphon-tunnel-core
+#
+# This folder is listed in .gitignore — binaries are NOT committed to git.
