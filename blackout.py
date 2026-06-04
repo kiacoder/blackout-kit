@@ -75,8 +75,13 @@ def _first_run_hint():
     print a short getting-started nudge.
     """
     from pathlib import Path
+    from blackoutkit import settings as _cfg
     settings_file = Path.home() / ".blackout-kit" / "settings.json"
     if not settings_file.exists():
+        show = True  # genuine first run
+    else:
+        show = _cfg.load().get("show_first_run", False)  # hidden after setup unless user re-enables
+    if show:
         from rich.console import Console
         from rich.panel import Panel
         Console().print(Panel(

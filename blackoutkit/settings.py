@@ -57,6 +57,8 @@ DEFAULTS = {
 
     # UI
     "show_banner":          True,
+    "show_disclaimer":      True,        # Show the legal disclaimer under the banner
+    "show_first_run":       True,        # Show the "First Run" welcome panel on fresh install
     "color_theme":          "red",       # red / blue / green / purple
 
     # Security modes
@@ -265,6 +267,8 @@ def describe(key: str) -> str:
         "max_retries":        "Retries per engine before switching to next",
         "daemon_log_lines":   "Max log lines kept in the daemon log file",
         "show_banner":        "Show ASCII art banner on startup",
+        "show_disclaimer":    "Show the legal disclaimer panel under the banner",
+        "show_first_run":     "Show the First Run welcome panel on a fresh install",
         "color_theme":        "Terminal color theme: red/blue/green/purple",
         "security_mode":      "Active security mode: speed / private / legend",
         "kill_switch":        "Block all internet if proxy drops (Windows Firewall)",

@@ -63,19 +63,22 @@ BANNER = f"""[bold red]
 # ──────────────────────────────── Public helpers ──────────────────────────────
 
 def print_banner():
+    from . import settings as _cfg
+    s = _cfg.load()
     console.print(Panel(
         BANNER,
         border_style="red",
         padding=(0, 2),
     ))
-    console.print(Panel(
-        "[dim]⚖️  This tool is for [bold white]legitimate personal use only[/bold white] — "
-        "to access freely available information and protect your privacy.\n"
-        "   Do not use it for illegal activities. "
-        "The authors bear no responsibility for any misuse.[/dim]",
-        border_style="dim",
-        padding=(0, 1),
-    ))
+    if s.get("show_disclaimer", True):
+        console.print(Panel(
+            "[dim]⚖️  This tool is for [bold white]legitimate personal use only[/bold white] — "
+            "to access freely available information and protect your privacy.\n"
+            "   Do not use it for illegal activities. "
+            "The authors bear no responsibility for any misuse.[/dim]",
+            border_style="dim",
+            padding=(0, 1),
+        ))
 
 
 def status_panel(title: str, rows: list[tuple[str, str]], border_color: str = "cyan") -> Panel:

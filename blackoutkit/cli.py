@@ -1732,20 +1732,24 @@ def _interactive_menu():
         "0": _EXIT,
     }
 
-    try:
-        choice = console.input("\n[bold cyan]Enter choice [0-8]:[/bold cyan] ").strip()
-    except (KeyboardInterrupt, EOFError):
-        console.print("\n[muted]Bye![/muted]")
-        return
+    while True:
+        try:
+            choice = console.input("\n[bold cyan]Enter choice [0-8]:[/bold cyan] ").strip()
+        except (KeyboardInterrupt, EOFError):
+            console.print("\n[muted]Bye![/muted]")
+            return
 
-    handler = _dispatch.get(choice)
-    if handler is _EXIT:
-        console.print("[muted]Bye![/muted]")
-    elif handler is None:
-        console.print("[warning]Invalid choice.[/warning]")
-    else:
-        console.print()
-        handler()
+        handler = _dispatch.get(choice)
+        if handler is _EXIT:
+            console.print("[muted]Bye![/muted]")
+            return
+        elif handler is None:
+            console.print("[warning]Invalid choice.[/warning]")
+        else:
+            console.print()
+            handler()
+            console.print()
+            console.print(Panel(t, title="[bold]What do you want to do?[/bold]", border_style="cyan"))
 
 
 def cmd_daemon_run(args):
