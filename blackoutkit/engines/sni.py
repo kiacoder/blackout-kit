@@ -52,66 +52,30 @@ class SNIEngine(Engine):
         return path
 
     def start(self) -> bool:
-        binary = self.find_binary(SNI_BIN_NAMES)
-        if not binary:
-            return False
-
         self._log.info(
             "Starting SNI spoofer  connect_ip=%s  fake_sni=%s  listen_port=%d",
             self.connect_ip, self.fake_sni, self.listen_port,
         )
 
-        config_path = self._write_config(binary.parent)
+        config_path = self._write_config(BINS_DIR)
         self._log.debug("Config written to %s", config_path)
 
         from ..core import get_core_dll
         dll = get_core_dll()
-        if dll:
-            self._log.info("Launching SNI spoofer via native DLL")
-            c_path = str(config_path).encode("utf-8")
-            if dll.StartSNIC(c_path) == 0:
-                self._dll_stop_func = dll.StopSNIC
-                if not self.wait_for_port(self.listen_port, timeout=_STARTUP_TIMEOUT):
-                    self._log.error("SNI spoofer started via DLL but port %d never opened.", self.listen_port)
-                    self.stop()
-                    return False
-                self._log.info("SNI spoofer ready natively on port %d.", self.listen_port)
-                return True
-            else:
-                self._log.warning("Native DLL StartSNIC failed, falling back to executable")
+        if not dll:
+            self._log.error("Core DLL missing! Ensure blackout_core.dll is built.")
+            return False
 
-        engine_bin = BINS_DIR / "blackout-engine.exe"
-        if engine_bin.exists():
-            cmd = [str(engine_bin), "sni", "--config", str(config_path)]
+        self._log.info("Launching SNI spoofer via native DLL")
+        c_path = str(config_path).encode("utf-8")
+        if dll.StartSNIC(c_path) == 0:
+            self._dll_stop_func = dll.StopSNIC
+            if not self.wait_for_port(self.listen_port, timeout=_STARTUP_TIMEOUT):
+                self._log.error("SNI spoofer started via DLL but port %d never opened.", self.listen_port)
+                self.stop()
+                return False
+            self._log.info("SNI spoofer ready natively on port %d.", self.listen_port)
+            return True
         else:
-            cmd = [str(binary)]
-
-        try:
-            self._process = subprocess.Popen(
-                cmd,
-                cwd=str(binary.parent),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-            )
-        except Exception as exc:
-            self._log.error("Failed to launch SNI spoofer: %s", exc)
+            self._log.error("Native DLL StartSNIC failed")
             return False
-
-        # Wait until the listener port is accepting connections
-        if not self.wait_for_port(self.listen_port, timeout=_STARTUP_TIMEOUT):
-            if not self.check_process_alive():
-                self._log.error(
-                    "SNI spoofer exited before port %d opened (rc=%s).",
-                    self.listen_port, self._process.returncode,
-                )
-            else:
-                self._log.error(
-                    "SNI spoofer started but port %d never opened within %.0fs.",
-                    self.listen_port, _STARTUP_TIMEOUT,
-                )
-            self.stop()
-            return False
-
-        self._log.info("SNI spoofer ready on port %d (pid=%s).", self.listen_port, self._process.pid)
-        return True

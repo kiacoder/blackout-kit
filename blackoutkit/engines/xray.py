@@ -183,9 +183,6 @@ class XRayEngine(Engine):
         }
 
     def start(self) -> bool:
-        binary = self.find_binary(XRAY_BIN_NAMES)
-        if not binary:
-            return False
 
         # Fail fast if either port is already occupied — avoids silent false-success
         if not self.check_port_free(self.socks_port) or not self.check_port_free(self.http_port):
@@ -234,71 +231,30 @@ class XRayEngine(Engine):
         config_path.write_text(json.dumps(config, indent=2))
 
         from ..core import get_core_dll
-        import ctypes
         dll = get_core_dll()
-        if dll:
-            self._log.info("Launching XRay via native DLL")
-            c_path = str(config_path).encode("utf-8")
-            if dll.StartXrayC(c_path) == 0:
-                self._dll_stop_func = dll.StopXrayC
-                
-                if not self.wait_for_port(self.http_port, timeout=10.0):
-                    self._log.error("XRay started natively via DLL but HTTP port %d never opened within 10s.", self.http_port)
-                    self.stop()
-                    return False
+        if not dll:
+            self._log.error("Core DLL missing! Ensure blackout_core.dll is built.")
+            return False
 
-                self._start_cert_monitor(mode)
-                self._log.info(
-                    "XRay ready natively socks=%d  http=%d.",
-                    self.socks_port, self.http_port,
-                )
-                return True
-            else:
-                self._log.warning("Native DLL StartXrayC failed, falling back to executable")
+        self._log.info("Launching XRay via native DLL")
+        c_path = str(config_path).encode("utf-8")
+        if dll.StartXrayC(c_path) == 0:
+            self._dll_stop_func = dll.StopXrayC
+            
+            if not self.wait_for_port(self.http_port, timeout=10.0):
+                self._log.error("XRay started natively via DLL but HTTP port %d never opened within 10s.", self.http_port)
+                self.stop()
+                return False
 
-        engine_bin = BINS_DIR / "blackout-engine.exe"
-        if engine_bin.exists():
-            cmd = [str(engine_bin), "xray", "--config", str(config_path)]
-        else:
-            cmd = [str(binary), "run", "-c", str(config_path)]
-
-        try:
-            self._process = subprocess.Popen(
-                cmd,
-                cwd=str(BINS_DIR),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+            self._start_cert_monitor(mode)
+            self._log.info(
+                "XRay ready natively socks=%d  http=%d.",
+                self.socks_port, self.http_port,
             )
-        except Exception as exc:
-            self._log.error("Failed to launch xray: %s", exc)
+            return True
+        else:
+            self._log.error("Native DLL StartXrayC failed")
             return False
-
-        # Verify XRay actually opened its HTTP listener — without this check
-        # start() would return True even if xray silently exited on bad config.
-        if not self.wait_for_port(self.http_port, timeout=10.0):
-            if not self.check_process_alive():
-                self._log.error(
-                    "XRay exited before HTTP port %d opened (rc=%s).",
-                    self.http_port,
-                    self._process.returncode if self._process else "?",
-                )
-            else:
-                self._log.error(
-                    "XRay started but HTTP port %d never opened within 10s. "
-                    "Check xray_config.json or run 'blackout doctor'.",
-                    self.http_port,
-                )
-            self.stop()
-            return False
-
-        # ── Background stderr cert monitor ────────────────────────
-        self._start_cert_monitor(mode)
-        self._log.info(
-            "XRay ready  socks=%d  http=%d  (pid=%s).",
-            self.socks_port, self.http_port, self._process.pid,
-        )
-        return True
 
     def _start_cert_monitor(self, mode: str) -> None:
         """

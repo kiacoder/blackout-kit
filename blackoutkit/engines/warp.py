@@ -45,40 +45,6 @@ class WARPEngine(Engine):
         path.write_text(json.dumps(config, indent=2))
         return path
 
-    def _spawn(self, binary: Path, args: list[str]) -> bool:
-        """Launch warp-plus with the given args and wait for its SOCKS port to open."""
-        try:
-            self._process = subprocess.Popen(
-                [str(binary)] + args,
-                cwd=str(binary.parent),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-            )
-        except Exception as exc:
-            self._log.error("Failed to launch WARP (%s): %s", " ".join(args[:2]), exc)
-            return False
-
-        if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
-            if not self.check_process_alive():
-                self._log.error(
-                    "WARP exited before SOCKS port %d opened (rc=%s).",
-                    self.socks_port, self._process.returncode,
-                )
-            else:
-                self._log.error(
-                    "WARP started but SOCKS5 port %d never opened within %.0fs.",
-                    self.socks_port, _STARTUP_TIMEOUT,
-                )
-            self.stop()
-            return False
-
-        self._log.info(
-            "WARP connected  socks5=127.0.0.1:%d  country=%s  (pid=%s).",
-            self.socks_port, self.country, self._process.pid,
-        )
-        return True
-
     def start(self) -> bool:
         self._log.info(
             "Starting WARP  socks_port=%d  country=%s",
@@ -87,34 +53,21 @@ class WARPEngine(Engine):
 
         from ..core import get_warp_dll
         dll = get_warp_dll()
-        if dll:
-            self._log.info("Launching WARP via native DLL")
-            c_country = (self.country or "none").encode("utf-8")
-            if dll.StartWarpC(self.socks_port, c_country) == 0:
-                self._dll_stop_func = dll.StopWarpC
-                if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
-                    self._log.error("WARP natively via DLL timed out. Falling back to executable.")
-                    self.stop()
-                    self._dll_stop_func = None
-                else:
-                    self._log.info("WARP ready natively  socks5=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
-                    return True
-            else:
-                self._log.warning("Native DLL StartWarpC failed, falling back to executable")
-
-        binary = self.find_binary(WARP_BIN_NAMES)
-        if not binary:
+        if not dll:
+            self._log.error("WARP DLL missing! Ensure blackout_warp.dll is built.")
             return False
 
-        # Primary: JSON config file
-        config_path = self._write_config()
-        self._log.debug("WARP config written to %s  (trying JSON launch)", config_path)
-        if self._spawn(binary, ["--config", str(config_path)]):
-            return True
-
-        # Fallback: command-line flags only
-        self._log.debug("JSON config launch failed — retrying with CLI flags.")
-        return self._spawn(binary, [
-            "--socks5-bind", f"127.0.0.1:{self.socks_port}",
-            "--country", self.country,
-        ])
+        self._log.info("Launching WARP via native DLL")
+        c_country = (self.country or "none").encode("utf-8")
+        if dll.StartWarpC(self.socks_port, c_country) == 0:
+            self._dll_stop_func = dll.StopWarpC
+            if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
+                self._log.error("WARP natively via DLL timed out.")
+                self.stop()
+                return False
+            else:
+                self._log.info("WARP ready natively  socks5=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
+                return True
+        else:
+            self._log.error("Native DLL StartWarpC failed")
+            return False

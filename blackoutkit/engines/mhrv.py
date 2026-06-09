@@ -39,106 +39,34 @@ class MhrvEngine(Engine):
         self.socks_port = socks_port
 
     def start(self) -> bool:
-        binary = self.find_binary(MHRV_BIN_NAMES)
-        if not binary:
-            return False
 
         self._log.info(
             "Starting mhrv  http_port=%d  socks_port=%d",
             self.http_port, self.socks_port,
         )
 
-        engine_bin = BINS_DIR / "blackout-engine.exe"
-        use_custom = engine_bin.exists()
-
         from ..core import get_core_dll
         dll = get_core_dll()
-        if dll:
-            self._log.info("Launching mhrv via native DLL")
-            try:
-                from .appsscript import _load_gas_ids
-                ids = _load_gas_ids()
-                ids_str = ",".join(ids)
-            except Exception:
-                ids_str = ""
-            c_ids = ids_str.encode("utf-8")
-            if dll.StartMHRVC(self.http_port, c_ids) == 0:
-                self._dll_stop_func = dll.StopMHRVC
-                if not self.wait_for_port(self.http_port, timeout=_STARTUP_TIMEOUT):
-                    self._log.error("mhrv started natively via DLL but HTTP port %d never opened.", self.http_port)
-                    self.stop()
-                    return False
-                self._log.info("mhrv ready natively  http=127.0.0.1:%d.", self.http_port)
-                return True
-            else:
-                self._log.warning("Native DLL StartMHRVC failed, falling back to executable")
+        if not dll:
+            self._log.error("Core DLL missing! Ensure blackout_core.dll is built.")
+            return False
 
-        if use_custom:
-            try:
-                from .appsscript import _load_gas_ids
-                ids = _load_gas_ids()
-                ids_str = ",".join(ids)
-            except Exception:
-                ids_str = ""
-            cmd = [str(engine_bin), "mhrv", "--port", str(self.http_port), "--ids", ids_str]
-        else:
-            # Install CA cert — required for MITM interception to work in original mhrv-rs.
-            # This must run before the proxy starts so the cert is trusted.
-            self._log.debug("Installing mhrv CA certificate…")
-            try:
-                cert_result = subprocess.run(
-                    [str(binary), "--install-cert"],
-                    cwd=str(binary.parent),
-                    capture_output=True,
-                    timeout=15,
-                )
-                if cert_result.returncode == 0:
-                    self._log.debug("CA certificate installed successfully.")
-                else:
-                    # Non-fatal: cert may already be installed from a previous run
-                    stderr = cert_result.stderr.decode(errors="replace").strip()
-                    self._log.warning(
-                        "CA cert install returned rc=%d. "
-                        "It may already be installed (continuing). stderr: %s",
-                        cert_result.returncode, stderr or "(none)",
-                    )
-            except Exception as exc:
-                self._log.warning("CA cert install failed (non-fatal): %s", exc)
-
-            # Short pause to let the certificate store update propagate
-            time.sleep(0.5)
-            cmd = [str(binary)]
-
+        self._log.info("Launching mhrv via native DLL")
         try:
-            self._process = subprocess.Popen(
-                cmd,
-                cwd=str(binary.parent) if not use_custom else str(BINS_DIR),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-            )
-        except Exception as exc:
-            self._log.error("Failed to launch mhrv: %s", exc)
+            from .appsscript import _load_gas_ids
+            ids = _load_gas_ids()
+            ids_str = ",".join(ids)
+        except Exception:
+            ids_str = ""
+        c_ids = ids_str.encode("utf-8")
+        if dll.StartMHRVC(self.http_port, c_ids) == 0:
+            self._dll_stop_func = dll.StopMHRVC
+            if not self.wait_for_port(self.http_port, timeout=_STARTUP_TIMEOUT):
+                self._log.error("mhrv started natively via DLL but HTTP port %d never opened.", self.http_port)
+                self.stop()
+                return False
+            self._log.info("mhrv ready natively  http=127.0.0.1:%d.", self.http_port)
+            return True
+        else:
+            self._log.error("Native DLL StartMHRVC failed")
             return False
-
-        # Wait for the HTTP proxy port to accept connections
-        if not self.wait_for_port(self.http_port, timeout=_STARTUP_TIMEOUT):
-            if not self.check_process_alive():
-                self._log.error(
-                    "mhrv exited before HTTP port %d opened (rc=%s). "
-                    "Missing Rust runtime or CA cert issue?",
-                    self.http_port, self._process.returncode,
-                )
-            else:
-                self._log.error(
-                    "mhrv started but HTTP port %d never opened within %.0fs.",
-                    self.http_port, _STARTUP_TIMEOUT,
-                )
-            self.stop()
-            return False
-
-        self._log.info(
-            "mhrv ready  http=127.0.0.1:%d  socks=127.0.0.1:%d  (pid=%s).",
-            self.http_port, self.socks_port, self._process.pid,
-        )
-        return True

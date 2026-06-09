@@ -155,6 +155,21 @@ def check_bins_present() -> list[CheckResult]:
     results = []
     from .downloader import BIN_REGISTRY, BINS_DIR as _BINS_DIR
 
+    # Check for native DLLs
+    core_dll = _BINS_DIR / "blackout_core.dll"
+    if core_dll.exists():
+        size_kb = core_dll.stat().st_size // 1024
+        results.append(CheckResult("bins: blackout_core.dll", True, f"Found ({size_kb} KB)"))
+    else:
+        results.append(CheckResult("bins: blackout_core.dll", False, "Missing — please compile the engine", fixable=False))
+
+    warp_dll = _BINS_DIR / "blackout_warp.dll"
+    if warp_dll.exists():
+        size_kb = warp_dll.stat().st_size // 1024
+        results.append(CheckResult("bins: blackout_warp.dll", True, f"Found ({size_kb} KB)"))
+    else:
+        results.append(CheckResult("bins: blackout_warp.dll", False, "Missing — please compile the engine", fixable=False))
+
     for key, info in BIN_REGISTRY.items():
         all_present = all((_BINS_DIR / b).exists() for b in info.output_bins)
         if all_present:
@@ -321,10 +336,7 @@ def check_binary_runnable() -> list[CheckResult]:
 
     # Map binary → flag that triggers a quick exit without doing real work
     candidates = {
-        "xray.exe":       ["version"],
         "goodbyedpi.exe": ["--help"],
-        "sing-box.exe":   ["version"],
-        "warp-plus.exe":  ["--help"],
     }
     for binary, args in candidates.items():
         if engine_bin.exists() and binary in ("xray.exe", "sing-box.exe"):

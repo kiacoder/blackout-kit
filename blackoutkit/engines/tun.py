@@ -134,9 +134,6 @@ class TUNEngine(Engine):
         return path
 
     def start(self) -> bool:
-        binary = self.find_binary(TUN_BIN_NAMES)
-        if not binary:
-            return False
 
         self._log.info(
             "Starting TUN mode  upstream=socks5://%s:%d  bypass_ips=%d  bypass_domains=%d",
@@ -149,57 +146,17 @@ class TUNEngine(Engine):
 
         from ..core import get_core_dll
         dll = get_core_dll()
-        if dll:
-            self._log.info("Launching sing-box (TUN) via native DLL")
-            c_path = str(config_path).encode("utf-8")
-            if dll.StartSingBoxC(c_path) == 0:
-                self._dll_stop_func = dll.StopSingBoxC
-                time.sleep(0.5)
-                self._log.info("TUN mode active natively — all traffic routed via socks5://%s:%d.", self.socks_upstream, self.socks_port)
-                return True
-            else:
-                self._log.warning("Native DLL StartSingBoxC failed, falling back to executable")
+        if not dll:
+            self._log.error("Core DLL missing! Ensure blackout_core.dll is built.")
+            return False
 
-        engine_bin = BINS_DIR / "blackout-engine.exe"
-        if engine_bin.exists():
-            cmd = [str(engine_bin), "sing-box", "--config", str(config_path)]
+        self._log.info("Launching sing-box (TUN) via native DLL")
+        c_path = str(config_path).encode("utf-8")
+        if dll.StartSingBoxC(c_path) == 0:
+            self._dll_stop_func = dll.StopSingBoxC
+            time.sleep(0.5)
+            self._log.info("TUN mode active natively — all traffic routed via socks5://%s:%d.", self.socks_upstream, self.socks_port)
+            return True
         else:
-            cmd = [str(binary), "run", "-c", str(config_path)]
-
-        try:
-            self._process = subprocess.Popen(
-                cmd,
-                cwd=str(binary.parent),
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
-            )
-        except Exception as exc:
-            self._log.error("Failed to launch sing-box: %s", exc)
+            self._log.error("Native DLL StartSingBoxC failed")
             return False
-
-        # TUN mode has no TCP proxy port to wait on — it operates at the
-        # network-driver level. Instead, give it 0.5 s and check it's alive.
-        # sing-box exits almost immediately if WinTUN is missing or admin is absent.
-        time.sleep(0.5)
-        if not self.check_process_alive():
-            try:
-                stderr_out = self._process.stderr.read(512).decode(errors="replace").strip()
-            except Exception:
-                stderr_out = ""
-            if stderr_out:
-                self._log.error("sing-box (TUN) crashed. stderr: %s", stderr_out)
-            else:
-                self._log.error(
-                    "sing-box (TUN) exited immediately (rc=%s). "
-                    "Common causes: WinTUN driver not installed "
-                    "(https://www.wintun.net/) or not running as Administrator.",
-                    self._process.returncode,
-                )
-            return False
-
-        self._log.info(
-            "TUN mode active — all traffic routed via socks5://%s:%d  (pid=%s).",
-            self.socks_upstream, self.socks_port, self._process.pid,
-        )
-        return True

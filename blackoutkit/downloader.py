@@ -57,20 +57,6 @@ class BinInfo:
 
 BIN_REGISTRY: dict[str, BinInfo] = {
 
-    "xray": BinInfo(
-        key           = "xray",
-        display_name  = "Xray-core",
-        description   = "V2Ray core — required for SNI and most configs",
-        github_repo   = "XTLS/Xray-core",
-        asset_pattern = "Xray-windows-64.zip",
-        asset_exclude = None,
-        extract_map   = {"xray.exe": "xray.exe"},
-        output_bins   = ["xray.exe"],
-        required      = True,
-        manual_url    = "https://github.com/XTLS/Xray-core/releases",
-        manual_note   = "",
-    ),
-
     "goodbyedpi": BinInfo(
         key           = "goodbyedpi",
         display_name  = "GoodbyeDPI + WinDivert",
@@ -86,76 +72,6 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         output_bins   = ["goodbyedpi.exe", "WinDivert.dll", "WinDivert64.sys"],
         required      = False,
         manual_url    = "https://github.com/ValdikSS/GoodbyeDPI/releases",
-        manual_note   = "",
-    ),
-
-    "sing-box": BinInfo(
-        key           = "sing-box",
-        display_name  = "sing-box",
-        description   = "TUN mode — system-wide transparent proxy (no proxy port needed)",
-        github_repo   = "SagerNet/sing-box",
-        asset_pattern = "sing-box-*-windows-amd64.zip",
-        asset_exclude = "legacy",   # skip sing-box-*-legacy-windows-7.zip
-        extract_map   = {"*/sing-box.exe": "sing-box.exe"},
-        output_bins   = ["sing-box.exe"],
-        required      = False,
-        manual_url    = "https://github.com/SagerNet/sing-box/releases",
-        manual_note   = "",
-    ),
-
-    "warp-plus": BinInfo(
-        key           = "warp-plus",
-        display_name  = "WARP+",
-        description   = "Cloudflare WARP — clean IPs, fewer captchas, partial blackouts",
-        github_repo   = "bepass-org/warp-plus",
-        asset_pattern = "warp-plus_windows-amd64.zip",
-        asset_exclude = None,
-        extract_map   = {"warp-plus.exe": "warp-plus.exe"},
-        output_bins   = ["warp-plus.exe"],
-        required      = False,
-        manual_url    = "https://github.com/bepass-org/warp-plus/releases",
-        manual_note   = "",
-    ),
-
-    "sni-spoofing": BinInfo(
-        key           = "sni-spoofing",
-        display_name  = "SNI Spoofing",
-        description   = "SNI packet injector — required for the sni engine",
-        github_repo   = None,   # Only .rar format — Python cannot extract without external tool
-        asset_pattern = None,
-        asset_exclude = None,
-        extract_map   = {},
-        output_bins   = ["SNI-Spoofing_by_patterniha_v1.exe"],
-        required      = True,
-        manual_url    = "https://github.com/patterniha/SNI-Spoofing/releases",
-        manual_note   = "Release is .rar format — extract manually with WinRAR or 7-Zip",
-    ),
-
-    "psiphon": BinInfo(
-        key           = "psiphon",
-        display_name  = "Psiphon Tunnel Core",
-        description   = "Psiphon VPN — last resort for heavy blackouts",
-        github_repo   = None,   # Official releases only have Android/iOS libraries
-        asset_pattern = None,
-        asset_exclude = None,
-        extract_map   = {},
-        output_bins   = ["psiphon-tunnel-core-x86_64.exe"],
-        required      = False,
-        manual_url    = "https://github.com/Psiphon-Labs/psiphon-tunnel-core",
-        manual_note   = "No pre-built Windows binary in releases — build from source (Go)",
-    ),
-
-    "mhrv": BinInfo(
-        key           = "mhrv",
-        display_name  = "mhrv-rs",
-        description   = "Master HTTP Relay VPN (Rust) — MITM relay via Google Apps Script",
-        github_repo   = "therealaleph/MasterHttpRelayVPN-RUST",
-        asset_pattern = "mhrv-rs-windows-amd64.zip",
-        asset_exclude = None,
-        extract_map   = {"mhrv-rs.exe": "mhrv-rs.exe"},
-        output_bins   = ["mhrv-rs.exe"],
-        required      = False,
-        manual_url    = "https://github.com/therealaleph/MasterHttpRelayVPN-RUST/releases",
         manual_note   = "",
     ),
 
