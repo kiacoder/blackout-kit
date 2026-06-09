@@ -89,9 +89,14 @@ func StartPsiphonC(socksPort C.int, httpPort C.int, cCountry *C.char) C.int {
 		return 1
 	}
 
+	endpoint, err := warp.RandomWarpEndpoint(true, true)
+	if err != nil {
+		return 1
+	}
+
 	opts := app.WarpOptions{
 		Bind:     bindAddrPort,
-		Endpoint: "engage.cloudflareclient.com:2408", // Dummy, since it uses Psiphon
+		Endpoint: endpoint.String(),
 		DnsAddr:  dnsAddr,
 		CacheDir: "psiphon_cache",
 	}
