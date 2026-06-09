@@ -99,6 +99,9 @@ DEFAULTS = {
 
     # Iran 2026 Evasion
     "xray_fragment":        "10-50,10-50",  # TLS record fragment mode (range,range)
+
+    # Bypass strategy selection
+    "selected_engine":      "auto",      # auto / sni / gdpi / psiphon / warp / legend / etc.
 }
 
 
@@ -108,6 +111,7 @@ DEFAULTS = {
 
 _PORT_RANGE   = (lambda v: 1 <= v <= 65535, "must be 1–65535")
 _POSITIVE     = (lambda v: v > 0,           "must be > 0")
+_ENGINE_CHOICES = ["auto", "sni", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "legend"]
 
 _VALIDATORS: dict[str, tuple] = {
     "sni_listen_port":    (int,   *_PORT_RANGE),
@@ -137,6 +141,7 @@ _VALIDATORS: dict[str, tuple] = {
                            "must be: IKEv2 / L2tp / Sstp / Pptp"),
     "color_theme":        (str,   lambda v: v in ("red","blue","green","purple"),
                            "must be: red / blue / green / purple"),
+    "selected_engine":    (str,   lambda v: v in _ENGINE_CHOICES, "must be: auto or one of " + ", ".join(_ENGINE_CHOICES)),
 }
 
 # ──────────────────────────── Env overrides ───────────────────────
@@ -306,6 +311,7 @@ def describe(key: str) -> str:
         "gas_proxy_port":     "Local port for Google Apps Script HTTP relay proxy",
         "country":            "Country profile code (IR/US/GB/CN/IQ). Empty = auto-detect from ISP.",
         "xray_fragment":      "XRay TLS record fragment: range,range (TIC 2026 evasion)",
+        "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
     }
     return descriptions.get(key, "No description available.")
 

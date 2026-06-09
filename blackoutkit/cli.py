@@ -1598,11 +1598,20 @@ def cmd_easteregg(args):
 
 def cmd_connect(args):
     """Smart connect — auto-preps and starts the best available engine."""
-    engine_name = getattr(args, "engine", None) or "sni"
+    s = cfg.load()
+    pref = s.get("selected_engine", "auto")
+    if pref != "auto":
+        resolved_default = pref
+    else:
+        connect_profile = _get_active_profile()
+        if connect_profile and connect_profile.engine_order:
+            resolved_default = connect_profile.engine_order[0]
+        else:
+            resolved_default = "sni"
+
+    engine_name = getattr(args, "engine", None) or resolved_default
     background  = getattr(args, "background", False)
     iran_mode   = getattr(args, "iran", False)
-
-    s = cfg.load()
 
     # Apply Iran bypass profile if requested
     if iran_mode:
@@ -1731,18 +1740,78 @@ def _make_fake_args(**kwargs):
     return obj
 
 
+def cmd_menu_select_engine():
+    s = cfg.load()
+    current = s.get("selected_engine", "auto")
+
+    t = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan")
+    t.add_column("#", style="dim", width=4)
+    t.add_column("Key", style="bold white", width=14)
+    t.add_column("Description", style="dim")
+
+    options = [
+        ("auto",       "Smart Auto-Select (recommended, uses country profile)"),
+        ("sni",        "SNI Packet Injection + XRay (best for Iran)"),
+        ("gdpi",       "GoodbyeDPI (Windows-only passive DPI bypass)"),
+        ("psiphon",    "Psiphon VPN (multi-protocol VPN fallback)"),
+        ("warp",       "Cloudflare WARP (clean residential IP)"),
+        ("legend",     "Legend Mode (Tor + SNI + XRay chained)"),
+        ("appsscript", "Google Apps Script HTTP Relay (ultimate fallback)"),
+        ("mhrv",       "mhrv-rs transparent MITM proxy"),
+        ("tor",        "Tor Proxy Only"),
+        ("wireguard",  "WireGuard VPN"),
+        ("openvpn",    "OpenVPN"),
+        ("softether",  "SoftEther SSL-VPN"),
+    ]
+
+    for i, (key, desc) in enumerate(options, 1):
+        active_marker = "[success]● active[/success]" if key == current else ""
+        t.add_row(f"{i}", f"{key}", f"{desc} {active_marker}")
+
+    console.print(Panel(
+        t,
+        title="[bold]Select Bypass Strategy (Manual Engine Selection)[/bold]",
+        border_style="cyan",
+    ))
+    console.print("  [0] Cancel")
+
+    try:
+        choice = console.input("\n[bold cyan]Choose option [0-12]:[/bold cyan] ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+
+    if choice == "0" or not choice:
+        return
+
+    try:
+        idx = int(choice) - 1
+        if 0 <= idx < len(options):
+            selected_key = options[idx][0]
+            cfg.set_value("selected_engine", selected_key)
+            console.print(f"\n[success]✓ Preferred engine set to [bold]{selected_key}[/bold]![/success]")
+
+            # Immediately offer to connect
+            console.print("[info]Starting connection with new strategy...[/info]\n")
+            cmd_connect(_make_fake_args(engine=None, background=False, iran=False))
+        else:
+            console.print("[error]Invalid option.[/error]")
+    except ValueError:
+        console.print("[error]Please enter a number.[/error]")
+
+
 def _interactive_menu():
     """Display an interactive numbered menu when blackout is run with no arguments."""
     menu_items = [
-        ("1", "🚀 Connect",   "Start bypass — smart auto-select"),
+        ("1", "🚀 Connect",   "Start bypass — smart/preferred engine"),
         ("2", "⚡ Emergency",  "Try all engines until one works"),
-        ("3", "🌍 Country",    "Show or set country profile (IR/CN/…)"),
-        ("4", "📊 Status",    "Check daemon + connection health"),
-        ("5", "🔍 Scan",      "Scan Cloudflare IPs + SNI domains"),
-        ("6", "🏥 Doctor",    "Self-diagnose and auto-repair"),
-        ("7", "🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP"),
-        ("8", "🌐 Tools",     "Network toolkit (ping, speedtest…)"),
-        ("9", "⚙  Settings",  "View and change settings"),
+        ("3", "🔌 Engine",     "Select manual bypass engine (sni/psiphon/warp...)"),
+        ("4", "🌍 Country",    "Show or set country profile (IR/CN/…)"),
+        ("5", "📊 Status",    "Check daemon + connection health"),
+        ("6", "🔍 Scan",      "Scan Cloudflare IPs + SNI domains"),
+        ("7", "🏥 Doctor",    "Self-diagnose and auto-repair"),
+        ("8", "🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP"),
+        ("9", "🌐 Tools",     "Network toolkit (ping, speedtest…)"),
+        ("S", "⚙  Settings",  "View and change settings"),
         ("0", "❌ Exit",      ""),
     ]
 
@@ -1759,19 +1828,31 @@ def _interactive_menu():
     _dispatch = {
         "1": lambda: cmd_connect(_make_fake_args(engine=None, background=False, iran=False)),
         "2": lambda: cmd_emergency(_make_fake_args(background=False)),
-        "3": lambda: cmd_country(_make_fake_args(country_command=None)),
-        "4": lambda: cmd_status(_make_fake_args()),
-        "5": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
-        "6": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
-        "7": lambda: cmd_fix(_make_fake_args()),
-        "8": lambda: cmd_tools(_make_fake_args(tools_command=None)),
-        "9": lambda: cmd_settings(_make_fake_args(settings_command=None)),
+        "3": cmd_menu_select_engine,
+        "4": lambda: cmd_country(_make_fake_args(country_command=None)),
+        "5": lambda: cmd_status(_make_fake_args()),
+        "6": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
+        "7": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
+        "8": lambda: cmd_fix(_make_fake_args()),
+        "9": lambda: cmd_tools(_make_fake_args(tools_command=None)),
+        "S": lambda: cmd_settings(_make_fake_args(settings_command=None)),
+        "s": lambda: cmd_settings(_make_fake_args(settings_command=None)),
         "0": _EXIT,
     }
 
+    auto_connect_triggered = False
+
     while True:
+        if not auto_connect_triggered:
+            auto_connect_triggered = True
+            console.print("[info]Auto-connecting on startup...[/info]\n")
+            cmd_connect(_make_fake_args(engine=None, background=False, iran=False))
+            console.print()
+            console.print(Panel(t, title="[bold]What do you want to do?[/bold]", border_style="cyan"))
+            continue
+
         try:
-            choice = console.input("\n[bold cyan]Enter choice [0-9]:[/bold cyan] ").strip()
+            choice = console.input("\n[bold cyan]Enter choice [0-9, S]:[/bold cyan] ").strip()
         except (KeyboardInterrupt, EOFError):
             console.print("\n[muted]Bye![/muted]")
             return
