@@ -17,7 +17,9 @@ type SNIConfig struct {
 	FakeSNI     string `json:"FAKE_SNI"`
 }
 
-func RunSNI(configPath string) error {
+var sniListener net.Listener
+
+func startSNIInternal(configPath string) error {
 	configFile, err := os.Open(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to open SNI config: %w", err)
@@ -34,24 +36,45 @@ func RunSNI(configPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to start SNI listener: %w", err)
 	}
-	defer listener.Close()
+	sniListener = listener
 
 	fmt.Printf("SNI Spoofer running at %s (forwarding to %s:%d, fake SNI: %s)\n",
 		addr, config.ConnectIP, config.ConnectPort, config.FakeSNI)
 
-	for {
-		clientConn, err := listener.Accept()
-		if err != nil {
-			fmt.Printf("Accept connection failed: %v\n", err)
-			if ne, ok := err.(net.Error); ok && ne.Temporary() {
-				time.Sleep(100 * time.Millisecond)
-				continue
+	go func() {
+		for {
+			clientConn, err := sniListener.Accept()
+			if err != nil {
+				// if listener was closed, break
+				if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
+					break
+				}
+				fmt.Printf("Accept connection failed: %v\n", err)
+				if ne, ok := err.(net.Error); ok && ne.Temporary() {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				break
 			}
-			return fmt.Errorf("listener accept error: %w", err)
+			go handleClient(clientConn, config.ConnectIP, config.ConnectPort)
 		}
+	}()
+	return nil
+}
 
-		go handleClient(clientConn, config.ConnectIP, config.ConnectPort)
+func stopSNIInternal() {
+	if sniListener != nil {
+		sniListener.Close()
+		sniListener = nil
+		fmt.Println("SNI spoofer stopped")
 	}
+}
+
+func RunSNI(configPath string) error {
+	if err := startSNIInternal(configPath); err != nil {
+		return err
+	}
+	return nil
 }
 
 func handleClient(client net.Conn, targetIP string, targetPort int) {
@@ -102,21 +125,27 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 					hasWritten = true
 					if n > 5 && data[0] == 0x16 && data[1] == 0x03 {
 					
-					// Fragment the ClientHello at the TLS record layer to bypass DPI.
-					// We write the first 5 bytes (TLS record header), sleep to force a packet push,
-					// then write the rest.
-					_, err1 := server.Write(data[:5])
-					if err1 != nil {
-						return
-					}
-					
-					// Sleep for 15ms to ensure the TCP packet is pushed out separately.
-					// This overwhelms typical DPI reassembly buffers that inspect packet boundaries.
-					time.Sleep(15 * time.Millisecond)
-					
-					_, err2 := server.Write(data[5:])
-					if err2 != nil {
-						return
+						// Fragment the ClientHello at the TLS record layer to bypass DPI.
+						// We write the first 5 bytes (TLS record header), sleep to force a packet push,
+						// then write the rest.
+						_, err1 := server.Write(data[:5])
+						if err1 != nil {
+							return
+						}
+						
+						// Sleep for 15ms to ensure the TCP packet is pushed out separately.
+						// This overwhelms typical DPI reassembly buffers that inspect packet boundaries.
+						time.Sleep(15 * time.Millisecond)
+						
+						_, err2 := server.Write(data[5:])
+						if err2 != nil {
+							return
+						}
+					} else {
+						_, errW := server.Write(data)
+						if errW != nil {
+							return
+						}
 					}
 				} else {
 					_, errW := server.Write(data)

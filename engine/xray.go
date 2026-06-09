@@ -10,8 +10,9 @@ import (
 	_ "github.com/xtls/xray-core/main/distro/all"
 )
 
-// RunXray starts xray-core using the config file at path and blocks
-func RunXray(configPath string) error {
+var xrayServer *core.Instance
+
+func startXrayInternal(configPath string) error {
 	configFile, err := os.Open(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to open config file: %w", err)
@@ -32,13 +33,30 @@ func RunXray(configPath string) error {
 		return fmt.Errorf("failed to start xray server: %w", err)
 	}
 
-	fmt.Println("Xray-core library started successfully inside process.")
+	xrayServer = server
+	fmt.Println("Xray-core library started successfully.")
+	return nil
+}
+
+func stopXrayInternal() {
+	if xrayServer != nil {
+		xrayServer.Close()
+		xrayServer = nil
+		fmt.Println("Xray-core stopped")
+	}
+}
+
+// RunXray starts xray-core using the config file at path and blocks
+func RunXray(configPath string) error {
+	if err := startXrayInternal(configPath); err != nil {
+		return err
+	}
 	
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
 	<-sigChan
 	fmt.Println("Received shutdown signal")
-	server.Close()
+	stopXrayInternal()
 	return nil
 }

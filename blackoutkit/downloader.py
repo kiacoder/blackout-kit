@@ -274,7 +274,8 @@ def _extract_from_zip(zip_path: Path, extract_map: dict[str, str]) -> tuple[bool
 def check_installed() -> dict[str, bool]:
     """Return {key: True/False} — True when all expected output_bins files exist in bins/."""
     engine_bin = BINS_DIR / "blackout-engine.exe"
-    has_engine = engine_bin.exists()
+    engine_dll = BINS_DIR / "blackout_core.dll"
+    has_engine = engine_bin.exists() or engine_dll.exists()
     status = {}
     for key, info in BIN_REGISTRY.items():
         if has_engine and key in ("xray", "sing-box", "mhrv", "sni-spoofing"):

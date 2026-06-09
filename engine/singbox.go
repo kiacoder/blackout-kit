@@ -11,8 +11,10 @@ import (
 	"github.com/sagernet/sing-box/option"
 )
 
-// RunSingBox starts sing-box using the config file at path and blocks
-func RunSingBox(configPath string) error {
+var singboxInstance *box.Box
+var singboxCancel context.CancelFunc
+
+func startSingBoxInternal(configPath string) error {
 	configJSON, err := os.ReadFile(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to read config file: %w", err)
@@ -24,7 +26,7 @@ func RunSingBox(configPath string) error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	singboxCancel = cancel
 
 	instance, err := box.New(box.Options{
 		Context: ctx,
@@ -38,18 +40,34 @@ func RunSingBox(configPath string) error {
 		return fmt.Errorf("failed to start sing-box instance: %w", err)
 	}
 
-	fmt.Println("Sing-box library started successfully inside process.")
+	singboxInstance = instance
+	fmt.Println("Sing-box library started successfully.")
+	return nil
+}
+
+func stopSingBoxInternal() {
+	if singboxCancel != nil {
+		singboxCancel()
+		singboxCancel = nil
+	}
+	if singboxInstance != nil {
+		singboxInstance.Close()
+		singboxInstance = nil
+		fmt.Println("Sing-box stopped")
+	}
+}
+
+// RunSingBox starts sing-box using the config file at path and blocks
+func RunSingBox(configPath string) error {
+	if err := startSingBoxInternal(configPath); err != nil {
+		return err
+	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	select {
-	case <-sigChan:
-		fmt.Println("Received shutdown signal")
-	case <-ctx.Done():
-		fmt.Println("Context cancelled")
-	}
-
-	instance.Close()
+	<-sigChan
+	fmt.Println("Received shutdown signal")
+	stopSingBoxInternal()
 	return nil
 }

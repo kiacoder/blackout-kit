@@ -22,6 +22,7 @@ class Engine(ABC):
 
     def __init__(self):
         self._process: subprocess.Popen | None = None
+        self._dll_stop_func = None
         self._log = logger.getChild(self.name or self.__class__.__name__)
 
     @abstractmethod
@@ -34,6 +35,14 @@ class Engine(ABC):
         Terminate the engine and all child processes.
         Gives the process 3 seconds to exit gracefully, then force-kills.
         """
+        if self._dll_stop_func:
+            try:
+                self._dll_stop_func()
+            except Exception as e:
+                self._log.error("Error stopping via DLL: %s", e)
+            self._dll_stop_func = None
+            return
+
         if self._process is None:
             return
         try:
@@ -79,6 +88,8 @@ class Engine(ABC):
 
     def is_running(self) -> bool:
         """Return True if the engine subprocess is alive."""
+        if self._dll_stop_func is not None:
+            return True
         if self._process is None:
             return False
         return self._process.poll() is None
@@ -149,9 +160,11 @@ class Engine(ABC):
 
     def check_process_alive(self) -> bool:
         """
-        Return True if self._process is alive.
+        Return True if self._process is alive or if running natively via DLL.
         Logs a warning if the process has died unexpectedly.
         """
+        if self._dll_stop_func is not None:
+            return True
         if self._process is None:
             return False
         if self._process.poll() is not None:

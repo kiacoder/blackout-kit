@@ -233,6 +233,29 @@ class XRayEngine(Engine):
         config_path = BINS_DIR / "active_xray_config.json"
         config_path.write_text(json.dumps(config, indent=2))
 
+        from ..core import get_core_dll
+        import ctypes
+        dll = get_core_dll()
+        if dll:
+            self._log.info("Launching XRay via native DLL")
+            c_path = str(config_path).encode("utf-8")
+            if dll.StartXrayC(c_path) == 0:
+                self._dll_stop_func = dll.StopXrayC
+                
+                if not self.wait_for_port(self.http_port, timeout=10.0):
+                    self._log.error("XRay started natively via DLL but HTTP port %d never opened within 10s.", self.http_port)
+                    self.stop()
+                    return False
+
+                self._start_cert_monitor(mode)
+                self._log.info(
+                    "XRay ready natively socks=%d  http=%d.",
+                    self.socks_port, self.http_port,
+                )
+                return True
+            else:
+                self._log.warning("Native DLL StartXrayC failed, falling back to executable")
+
         engine_bin = BINS_DIR / "blackout-engine.exe"
         if engine_bin.exists():
             cmd = [str(engine_bin), "xray", "--config", str(config_path)]

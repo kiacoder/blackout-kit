@@ -51,6 +51,28 @@ class MhrvEngine(Engine):
         engine_bin = BINS_DIR / "blackout-engine.exe"
         use_custom = engine_bin.exists()
 
+        from ..core import get_core_dll
+        dll = get_core_dll()
+        if dll:
+            self._log.info("Launching mhrv via native DLL")
+            try:
+                from .appsscript import _load_gas_ids
+                ids = _load_gas_ids()
+                ids_str = ",".join(ids)
+            except Exception:
+                ids_str = ""
+            c_ids = ids_str.encode("utf-8")
+            if dll.StartMHRVC(self.http_port, c_ids) == 0:
+                self._dll_stop_func = dll.StopMHRVC
+                if not self.wait_for_port(self.http_port, timeout=_STARTUP_TIMEOUT):
+                    self._log.error("mhrv started natively via DLL but HTTP port %d never opened.", self.http_port)
+                    self.stop()
+                    return False
+                self._log.info("mhrv ready natively  http=127.0.0.1:%d.", self.http_port)
+                return True
+            else:
+                self._log.warning("Native DLL StartMHRVC failed, falling back to executable")
+
         if use_custom:
             try:
                 from .appsscript import _load_gas_ids

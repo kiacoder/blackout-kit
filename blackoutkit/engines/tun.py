@@ -147,6 +147,19 @@ class TUNEngine(Engine):
         config_path = self._write_config()
         self._log.debug("sing-box TUN config written to %s", config_path)
 
+        from ..core import get_core_dll
+        dll = get_core_dll()
+        if dll:
+            self._log.info("Launching sing-box (TUN) via native DLL")
+            c_path = str(config_path).encode("utf-8")
+            if dll.StartSingBoxC(c_path) == 0:
+                self._dll_stop_func = dll.StopSingBoxC
+                time.sleep(0.5)
+                self._log.info("TUN mode active natively — all traffic routed via socks5://%s:%d.", self.socks_upstream, self.socks_port)
+                return True
+            else:
+                self._log.warning("Native DLL StartSingBoxC failed, falling back to executable")
+
         engine_bin = BINS_DIR / "blackout-engine.exe"
         if engine_bin.exists():
             cmd = [str(engine_bin), "sing-box", "--config", str(config_path)]

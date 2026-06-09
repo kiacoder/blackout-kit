@@ -64,6 +64,22 @@ class SNIEngine(Engine):
         config_path = self._write_config(binary.parent)
         self._log.debug("Config written to %s", config_path)
 
+        from ..core import get_core_dll
+        dll = get_core_dll()
+        if dll:
+            self._log.info("Launching SNI spoofer via native DLL")
+            c_path = str(config_path).encode("utf-8")
+            if dll.StartSNIC(c_path) == 0:
+                self._dll_stop_func = dll.StopSNIC
+                if not self.wait_for_port(self.listen_port, timeout=_STARTUP_TIMEOUT):
+                    self._log.error("SNI spoofer started via DLL but port %d never opened.", self.listen_port)
+                    self.stop()
+                    return False
+                self._log.info("SNI spoofer ready natively on port %d.", self.listen_port)
+                return True
+            else:
+                self._log.warning("Native DLL StartSNIC failed, falling back to executable")
+
         engine_bin = BINS_DIR / "blackout-engine.exe"
         if engine_bin.exists():
             cmd = [str(engine_bin), "sni", "--config", str(config_path)]

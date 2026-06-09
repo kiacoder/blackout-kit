@@ -11,6 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 type GASRequest struct {
@@ -200,7 +203,9 @@ func (p *GASProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(bodyBytes)
 }
 
-func RunMHRV(port int, idsComma string) error {
+var mhrvServer *http.Server
+
+func startMHRVInternal(port int, idsComma string) error {
 	ids := strings.Split(idsComma, ",")
 	if len(ids) == 0 || (len(ids) == 1 && ids[0] == "") {
 		return fmt.Errorf("no GAS IDs provided")
@@ -211,11 +216,38 @@ func RunMHRV(port int, idsComma string) error {
 	rand.Shuffle(len(ids), func(i, j int) { ids[i], ids[j] = ids[j], ids[i] })
 
 	proxy := NewGASProxy(ids)
-	server := &http.Server{
+	mhrvServer = &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
 		Handler: proxy,
 	}
 
 	fmt.Printf("MHRV (Google Apps Script HTTP Relay) running at 127.0.0.1:%d\n", port)
-	return server.ListenAndServe()
+	
+	go func() {
+		if err := mhrvServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			fmt.Printf("MHRV Server error: %v\n", err)
+		}
+	}()
+	return nil
+}
+
+func stopMHRVInternal() {
+	if mhrvServer != nil {
+		mhrvServer.Close()
+		mhrvServer = nil
+		fmt.Println("MHRV stopped")
+	}
+}
+
+func RunMHRV(port int, idsComma string) error {
+	if err := startMHRVInternal(port, idsComma); err != nil {
+		return err
+	}
+	
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	<-sigChan
+	fmt.Println("Received shutdown signal")
+	stopMHRVInternal()
+	return nil
 }
