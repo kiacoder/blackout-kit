@@ -93,11 +93,12 @@ class WARPEngine(Engine):
             if dll.StartWarpC(self.socks_port, c_country) == 0:
                 self._dll_stop_func = dll.StopWarpC
                 if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
-                    self._log.error("WARP started natively via DLL but SOCKS port %d never opened.", self.socks_port)
+                    self._log.error("WARP natively via DLL timed out. Falling back to executable.")
                     self.stop()
-                    return False
-                self._log.info("WARP ready natively  socks5=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
-                return True
+                    self._dll_stop_func = None
+                else:
+                    self._log.info("WARP ready natively  socks5=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
+                    return True
             else:
                 self._log.warning("Native DLL StartWarpC failed, falling back to executable")
 
