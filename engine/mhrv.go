@@ -118,7 +118,7 @@ func (p *GASProxy) relayRequest(gasID string, req *http.Request) (*GASResponse, 
 
 	var gasResp GASResponse
 	if err := json.Unmarshal(respBytes, &gasResp); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid json response (err: %v): %s", err, string(respBytes))
 	}
 
 	return &gasResp, nil

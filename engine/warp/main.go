@@ -84,9 +84,15 @@ func StartPsiphonC(socksPort C.int, httpPort C.int, cCountry *C.char) C.int {
 		return 1
 	}
 
+	dnsAddr, err := netip.ParseAddr("1.1.1.1")
+	if err != nil {
+		return 1
+	}
+
 	opts := app.WarpOptions{
 		Bind:     bindAddrPort,
 		Endpoint: "engage.cloudflareclient.com:2408", // Dummy, since it uses Psiphon
+		DnsAddr:  dnsAddr,
 		CacheDir: "psiphon_cache",
 	}
 
