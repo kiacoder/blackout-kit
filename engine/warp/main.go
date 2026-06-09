@@ -10,7 +10,6 @@ import (
 	"os"
 
 	"github.com/bepass-org/warp-plus/app"
-	"github.com/bepass-org/warp-plus/psiphon"
 	"github.com/bepass-org/warp-plus/warp"
 )
 
