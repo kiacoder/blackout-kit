@@ -71,7 +71,7 @@ def get_warp_dll():
         _warp_dll.StartWarpC.restype = ctypes.c_int
         _warp_dll.StopWarpC.argtypes = []
         
-        _warp_dll.StartPsiphonC.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        _warp_dll.StartPsiphonC.argtypes = [ctypes.c_char_p]
         _warp_dll.StartPsiphonC.restype = ctypes.c_int
         _warp_dll.StopPsiphonC.argtypes = []
         

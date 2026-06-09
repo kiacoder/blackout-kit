@@ -58,15 +58,17 @@ class PsiphonEngine(Engine):
             self.country, self.http_port, self.socks_port,
         )
 
+        config_path = self._write_config()
+
         from ..core import get_warp_dll
         dll = get_warp_dll()
         if not dll:
             self._log.error("WARP DLL missing! Ensure blackout_warp.dll is built.")
             return False
 
-        self._log.info("Launching Psiphon via native DLL (Warp+ backend)")
-        c_country = (self.country or "DE").encode("utf-8")
-        if dll.StartPsiphonC(self.socks_port, self.http_port, c_country) == 0:
+        self._log.info("Launching pure Psiphon natively")
+        c_config_path = str(config_path.absolute()).encode("utf-8")
+        if dll.StartPsiphonC(c_config_path) == 0:
             self._dll_stop_func = dll.StopPsiphonC
             if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
                 self._log.error("Psiphon natively via DLL timed out.")
