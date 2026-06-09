@@ -270,6 +270,7 @@ def run_daemon_loop(engine_name: str):
                 return []
         return started
 
+    active_engine_name = engine_name
     if engine_name == "emergency":
         order = s.get("engine_order", ["sni", "gdpi", "psiphon"])
         active: list = []
@@ -277,6 +278,7 @@ def run_daemon_loop(engine_name: str):
             active = try_start_engines(ename)
             if active:
                 log.info(f"Using engine: {ename}")
+                active_engine_name = ename
                 break
         if not active:
             log.error("All engines failed. Exiting daemon.")
@@ -287,21 +289,23 @@ def run_daemon_loop(engine_name: str):
             log.error(f"Engine '{engine_name}' failed. Exiting.")
             return
 
-    # Set system proxy (point at XRay HTTP port)
+    # Set system proxy (point at active engine proxy/port)
     if s.get("auto_set_proxy", True):
-        if set_system_proxy(s["proxy_host"], s["proxy_port"]):
-            log.info(f"System proxy set to {s['proxy_host']}:{s['proxy_port']}")
+        proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
+        if proxy_info:
+            p_host, p_port = proxy_info
+            if set_system_proxy(p_host, p_port):
+                log.info(f"System proxy set to {p_host}:{p_port}")
+            else:
+                log.warning("Could not set system proxy (run as admin?)")
         else:
-            log.warning("Could not set system proxy (run as admin?)")
+            log.info("Network-level engine active — no system proxy needed.")
 
     log.info("Daemon running. Monitoring engines...")
     retry_interval   = s.get("retry_interval", 30)
     max_restarts     = s.get("max_retries", 3)
     restart_count    = 0
-    # Track which engine stack is active (for stability logging and restarts)
-    active_engine_name = engine_name if engine_name != "emergency" else (
-        active[0].name if active else "unknown"
-    )
+
 
     my_pid = os.getpid()
     try:

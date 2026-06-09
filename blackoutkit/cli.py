@@ -86,7 +86,15 @@ def _start_engine_stack(name: str) -> list:
             running.append(eng)
         else:
             console.print(f"  [warning]⚠ {eng.name} failed to start (check logs for details)[/warning]")
+            # Rollback: stop all already started engines in this stack
+            for r in running:
+                try:
+                    r.stop()
+                except Exception:
+                    pass
+            return []
     return running
+
 
 
 # ──────────────────────────── Country profile helper ─────────────
@@ -332,8 +340,13 @@ def cmd_start(args):
         console.print(f"  [success]✓ {eng.name}[/success] running (PID {eng.pid})")
 
     if s.get("auto_set_proxy"):
-        if set_system_proxy(s["proxy_host"], s["proxy_port"]):
-            console.print(f"  [success]✓ System proxy set[/success] → {s['proxy_host']}:{s['proxy_port']}")
+        proxy_info = cfg.get_engine_proxy_details(engine_name, s)
+        if proxy_info:
+            p_host, p_port = proxy_info
+            if set_system_proxy(p_host, p_port):
+                console.print(f"  [success]✓ System proxy set[/success] → {p_host}:{p_port}")
+        else:
+            console.print("  [info]Network-level engine — no system proxy needed[/info]")
 
     console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
 
@@ -415,8 +428,13 @@ def cmd_emergency(args):
         return
 
     if s.get("auto_set_proxy"):
-        if set_system_proxy(s["proxy_host"], s["proxy_port"]):
-            console.print(f"[success]✓ System proxy set[/success] → {s['proxy_host']}:{s['proxy_port']}")
+        proxy_info = cfg.get_engine_proxy_details(ename, s)
+        if proxy_info:
+            p_host, p_port = proxy_info
+            if set_system_proxy(p_host, p_port):
+                console.print(f"[success]✓ System proxy set[/success] → {p_host}:{p_port}")
+        else:
+            console.print("  [info]Network-level engine — no system proxy needed[/info]")
 
     console.print("\n[muted]Press Ctrl+C to stop.[/muted]")
     try:

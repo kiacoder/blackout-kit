@@ -308,3 +308,26 @@ def describe(key: str) -> str:
         "xray_fragment":      "XRay TLS record fragment: range,range (TIC 2026 evasion)",
     }
     return descriptions.get(key, "No description available.")
+
+
+def get_engine_proxy_details(engine_name: str, settings: dict = None) -> tuple[str, int] | None:
+    """
+    Return (host, port) for the proxy required by the engine, or None if network-level.
+    This prevents setting dead system proxies for network-level VPNs or using wrong ports.
+    """
+    s = settings or load()
+    host = s.get("proxy_host", "127.0.0.1")
+    if engine_name in ("sni", "xray", "legend"):
+        return host, s.get("xray_http_port", 10809)
+    elif engine_name == "psiphon":
+        return host, s.get("psiphon_http_port", 8081)
+    elif engine_name == "appsscript":
+        return host, s.get("gas_proxy_port", 8087)
+    elif engine_name == "mhrv":
+        return host, 8085
+    elif engine_name == "tor":
+        return "socks=127.0.0.1", 9050
+    elif engine_name == "warp":
+        return "socks=127.0.0.1", 1080
+    return None
+
