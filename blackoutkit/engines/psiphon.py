@@ -70,8 +70,8 @@ class PsiphonEngine(Engine):
             self._process = subprocess.Popen(
                 [str(binary), "-config", str(config_path)],
                 cwd=str(binary.parent),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
             )
         except Exception as exc:

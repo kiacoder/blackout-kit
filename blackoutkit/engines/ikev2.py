@@ -232,7 +232,7 @@ class IKEv2Engine(Engine):
              f'  if ($s -ne "Connected") {{ exit 1 }};'
              f'  Start-Sleep 5'
              f'}}'],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
         return True

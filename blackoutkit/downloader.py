@@ -419,6 +419,7 @@ def download_binary(
                 download_url = asset["browser_download_url"]
                 dest_path = BINS_DIR / out_name
                 temp_dest = dest_path.with_suffix(".tmp")
+                expected_size = asset.get("size", 0)
                 try:
                     req = urllib.request.Request(
                         download_url,
@@ -434,6 +435,10 @@ def download_binary(
                                 downloaded_so_far += len(chunk)
                                 if progress_callback:
                                     progress_callback(downloaded_so_far, total_size)
+                    
+                    if expected_size > 0 and temp_dest.stat().st_size != expected_size:
+                        raise Exception("Downloaded file size mismatch (truncated or corrupted)")
+
                     if dest_path.exists():
                         dest_path.unlink()
                     temp_dest.rename(dest_path)

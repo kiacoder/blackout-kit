@@ -137,13 +137,18 @@ _CACHE_MAX_AGE_HOURS = 12
 
 
 def save_cache(results: list[tuple[str, float]]):
-    """Save scan results to disk cache."""
-    _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "timestamp": _dt.now(_tz.utc).isoformat(),
-        "results": [[ip, ms] for ip, ms in results],
-    }
-    _CACHE_FILE.write_text(_json.dumps(data, indent=2))
+    """Save scan results to disk cache safely."""
+    try:
+        _CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "timestamp": _dt.now(_tz.utc).isoformat(),
+            "results": [[ip, ms] for ip, ms in results],
+        }
+        tmp_file = _CACHE_FILE.with_suffix(".tmp")
+        tmp_file.write_text(_json.dumps(data, indent=2))
+        tmp_file.replace(_CACHE_FILE)
+    except Exception:
+        pass
 
 
 def load_cache(max_age_hours: float = _CACHE_MAX_AGE_HOURS) -> list[tuple[str, float]] | None:

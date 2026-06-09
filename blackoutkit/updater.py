@@ -171,6 +171,11 @@ def download_and_apply(release: dict) -> bool:
                     continue
                 relative = member[len(prefix):]      # e.g. "blackoutkit/cli.py"
                 dest     = PROJECT_ROOT / relative
+                
+                resolved_dest = dest.resolve()
+                if not resolved_dest.is_relative_to((PROJECT_ROOT / "blackoutkit").resolve()):
+                    raise Exception("Path traversal attempt detected!")
+
                 if member.endswith("/"):
                     dest.mkdir(parents=True, exist_ok=True)
                 else:
@@ -185,8 +190,8 @@ def download_and_apply(release: dict) -> bool:
         backup = APP_DATA_DIR / "backup_src"
         if backup.exists():
             try:
-                shutil.rmtree(PROJECT_ROOT / "blackoutkit")
-                shutil.copytree(backup, PROJECT_ROOT / "blackoutkit")
+                shutil.rmtree(PROJECT_ROOT / "blackoutkit", ignore_errors=True)
+                shutil.copytree(backup, PROJECT_ROOT / "blackoutkit", dirs_exist_ok=True)
             except Exception:
                 pass
         if tmp_path:

@@ -243,7 +243,7 @@ class XRayEngine(Engine):
             self._process = subprocess.Popen(
                 cmd,
                 cwd=str(BINS_DIR),
-                stdout=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
             )

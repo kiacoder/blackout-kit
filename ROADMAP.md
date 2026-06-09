@@ -4,6 +4,20 @@ Items marked ✅ are implemented. Ranks: Common → Uncommon → Rare → Epic �
 
 ---
 
+## 🛡️ AUDIT & HARDENING (v1.0.1)
+
+| Feature | Status | Rank | Notes |
+|---------|--------|------|-------|
+| 10-Agent Autonomous Audit | ✅ Done | Epic | Full codebase review |
+| Fix Zip Slip Path Traversal | ✅ Done | Critical | `updater.py` |
+| Fix Subprocess Deadlocks | ✅ Done | High | `DEVNULL` instead of `PIPE` |
+| Localization-Independent Parsing | ✅ Done | High | `psutil` & `PowerShell` in `tools.py` |
+| Graceful Go Engine Shutdowns | ✅ Done | High | Prevents routing/DNS corruption |
+| Concurrent Cache Safety | ✅ Done | Med | Atomic `replace()` |
+| Windows UAC Awareness | ✅ Done | Med | Admin checks in network tools |
+
+---
+
 ## 🛡️ BYPASS ENGINES
 
 | Feature | Status | Rank | Notes |

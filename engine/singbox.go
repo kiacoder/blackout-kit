@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/option"
@@ -38,6 +40,16 @@ func RunSingBox(configPath string) error {
 
 	fmt.Println("Sing-box library started successfully inside process.")
 
-	// Block forever (or until signal)
-	select {}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case <-sigChan:
+		fmt.Println("Received shutdown signal")
+	case <-ctx.Done():
+		fmt.Println("Context cancelled")
+	}
+
+	instance.Close()
+	return nil
 }

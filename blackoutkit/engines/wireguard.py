@@ -175,7 +175,7 @@ class WireGuardEngine(Engine):
 
     def is_running(self) -> bool:
         """
-        Checks the real WireGuard service status — not a fake sentinel.
-        Returns False the moment the tunnel service stops.
+        Return True if the tunnel service is currently active.
+        Monitored by the background thread.
         """
-        return self._tunnel_active and self._is_tunnel_running()
+        return self._tunnel_active

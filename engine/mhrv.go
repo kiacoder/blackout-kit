@@ -72,7 +72,7 @@ func (p *GASProxy) relayRequest(gasID string, req *http.Request) (*GASResponse, 
 			continue
 		}
 		if len(vv) > 0 {
-			headers[k] = vv[0]
+			headers[k] = strings.Join(vv, ", ")
 		}
 	}
 
@@ -136,14 +136,29 @@ func (p *GASProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		maxTries = len(p.gasIDs)
 	}
 
+	// Read request body once
+	var reqBody []byte
+	if r.Body != nil {
+		reqBody, _ = io.ReadAll(r.Body)
+		r.Body.Close()
+	}
+
 	for i := 0; i < maxTries; i++ {
 		id := p.nextID()
+		// Re-assign body reader for retries
+		if len(reqBody) > 0 {
+			r.Body = io.NopCloser(bytes.NewReader(reqBody))
+		}
 		gasResp, err = p.relayRequest(id, r)
 		if err == nil {
 			break
 		}
 		// Print a warning to stdout/stderr so the user/logs show which ID failed
-		fmt.Printf("Warning: Google Apps Script relay failed for ID %s...: %v\n", id[:15], err)
+		safeID := id
+		if len(safeID) > 15 {
+			safeID = safeID[:15] + "..."
+		}
+		fmt.Printf("Warning: Google Apps Script relay failed for ID %s: %v\n", safeID, err)
 	}
 
 	if gasResp == nil {

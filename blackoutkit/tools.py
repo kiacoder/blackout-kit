@@ -20,6 +20,15 @@ from rich import box
 
 from .theme import console, make_table, latency_color
 
+def _is_admin() -> bool:
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
 # ─────────────────────────── DNS tools ───────────────────────────
 
 POPULAR_DNS = {
@@ -281,19 +290,19 @@ def set_mtu(mtu: int, adapter: str | None = None) -> bool:
     """
     if sys.platform != "win32":
         return False
+    if not _is_admin():
+        _log.warning("Administrator privileges required to change MTU.")
+        return False
     try:
         if not adapter:
-            # Try to find a connected adapter automatically
+            # Try to find a connected adapter automatically using PowerShell (localization independent)
             result = subprocess.run(
-                ["netsh", "interface", "show", "interface"],
-                capture_output=True, text=True, encoding="utf-8", errors="ignore",
+                ["powershell", "-NoProfile", "-Command", "(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' }).Name"],
+                capture_output=True, text=True, errors="ignore", timeout=10
             )
-            for line in result.stdout.splitlines():
-                if "Connected" in line:
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        adapter = " ".join(parts[3:])
-                        break
+            out = result.stdout.strip()
+            if out:
+                adapter = out.splitlines()[0].strip()
         
         if not adapter:
             return False
@@ -302,7 +311,7 @@ def set_mtu(mtu: int, adapter: str | None = None) -> bool:
         cmd = ["netsh", "interface", "ipv4", "set", "subinterface",
                adapter, f"mtu={mtu}", "store=persistent"]
 
-        subprocess.run(cmd, capture_output=True, check=True)
+        subprocess.run(cmd, capture_output=True, check=True, timeout=10)
         return True
     except Exception:
         return False
@@ -316,41 +325,23 @@ def list_adapters() -> list[dict]:
     if sys.platform != "win32":
         return adapters
     try:
-        # Step 1: Get connection status from netsh
-        status_map: dict[str, str] = {}
-        status_result = subprocess.run(
-            ["netsh", "interface", "show", "interface"],
-            capture_output=True, text=True, encoding="utf-8", errors="ignore",
-        )
-        for line in status_result.stdout.splitlines():
-            parts = line.split()
-            # Format: Admin-State  State  Type  Interface-Name
-            if len(parts) >= 4 and parts[0] in ("Enabled", "Disabled"):
-                iface_name = " ".join(parts[3:])
-                status_map[iface_name] = parts[1]   # "Connected" / "Disconnected"
-
-        # Step 2: Get IP info from ipconfig
-        result = subprocess.run(
-            ["ipconfig"], capture_output=True, text=True, encoding="utf-8", errors="ignore"
-        )
-        current: dict | None = None
-        for line in result.stdout.splitlines():
-            stripped = line.strip()
-            if "adapter" in stripped.lower() and ":" in stripped:
-                if current:
-                    adapters.append(current)
-                name    = stripped.split("adapter")[-1].strip(" :")
-                current = {
-                    "name":   name,
-                    "ipv4":   "",
-                    "ipv6":   "",
-                    "status": status_map.get(name, "Unknown"),
-                }
-            elif current and "IPv4 Address" in stripped:
-                current["ipv4"] = stripped.split(":")[-1].strip().rstrip("(Preferred)").strip()
-            elif current and "IPv6 Address" in stripped:
-                current["ipv6"] = stripped.split(":")[-1].strip()
-        if current:
+        import psutil
+        stats = psutil.net_if_stats()
+        addrs = psutil.net_if_addrs()
+        
+        for name, stat in stats.items():
+            current = {
+                "name": name,
+                "ipv4": "",
+                "ipv6": "",
+                "status": "Connected" if stat.isup else "Disconnected"
+            }
+            if name in addrs:
+                for addr in addrs[name]:
+                    if addr.family == socket.AF_INET:
+                        current["ipv4"] = addr.address
+                    elif addr.family == socket.AF_INET6:
+                        current["ipv6"] = addr.address
             adapters.append(current)
     except Exception:
         pass
@@ -427,25 +418,23 @@ def set_dns(dns_ip: str, adapter: str | None = None) -> bool:
     """
     if sys.platform != "win32":
         return False
+    if not _is_admin():
+        _log.warning("Administrator privileges required to change DNS.")
+        return False
     try:
         if adapter:
             adapters_to_set = [adapter]
         else:
             # Get all active adapters
             result = subprocess.run(
-                ["netsh", "interface", "show", "interface"],
-                capture_output=True, text=True, encoding="utf-8", errors="ignore",
+                ["powershell", "-NoProfile", "-Command", "(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' }).Name"],
+                capture_output=True, text=True, errors="ignore", timeout=10
             )
-            adapters_to_set = []
-            for line in result.stdout.splitlines():
-                if "Connected" in line:
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        adapters_to_set.append(" ".join(parts[3:]))
+            adapters_to_set = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
         for adp in adapters_to_set:
             subprocess.run(
                 ["netsh", "interface", "ip", "set", "dns", adp, "static", dns_ip],
-                capture_output=True, check=False,
+                capture_output=True, check=False, timeout=10
             )
         return True
     except Exception:
@@ -529,6 +518,10 @@ def autofix_windows() -> list[str]:
     Requires administrator privileges for full effect.
     """
     steps = []
+    if not _is_admin():
+        steps.append("[warning]⚠ Requires administrator privileges to apply fixes.[/warning]")
+        return steps
+
     commands = [
         (["ipconfig", "/flushdns"],                              "Flush DNS cache"),
         (["netsh", "winsock", "reset"],                          "Reset Winsock"),

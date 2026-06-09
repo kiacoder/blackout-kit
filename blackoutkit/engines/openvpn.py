@@ -156,8 +156,8 @@ class OpenVPNEngine(Engine):
                     "--verb",   "3",
                 ],
                 cwd=str(binary.parent),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
             self._log.debug(
@@ -182,7 +182,7 @@ class OpenVPNEngine(Engine):
         # OpenVPN logs lines like: "Attempting to establish TCP connection with [AF_INET]1.2.3.4:443"
         # or "TCP connection established with [AF_INET]1.2.3.4:443"
         import re
-        from . import cert_bypass as cb
+        from .. import cert_bypass as cb
         match = re.search(r"connection established with \[AF_INET\]([\d\.]+):(\d+)", log_content)
         if match:
             host, port = match.group(1), int(match.group(2))

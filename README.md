@@ -20,7 +20,8 @@
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078d4?style=flat-square&logo=windows)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.0.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.0.1-orange?style=flat-square)
+![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
 *A unified command-line toolkit that orchestrates 13+ bypass engines, auto-switches on failure, sets your system proxy automatically, and includes a full network diagnostic suite — all in one place.*
@@ -116,7 +117,7 @@ Download the `blackout-kit-full-vX.X.X.zip` from the [Releases page](https://git
 This zip includes **all binaries pre-bundled**. No internet required after download.
 
 ```
-blackout-kit-full-v1.0.0.zip
+blackout-kit-full-v1.0.1.zip
 ├── blackout.py
 ├── requirements.txt
 ├── blackoutkit/

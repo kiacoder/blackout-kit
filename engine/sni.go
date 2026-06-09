@@ -43,7 +43,11 @@ func RunSNI(configPath string) error {
 		clientConn, err := listener.Accept()
 		if err != nil {
 			fmt.Printf("Accept connection failed: %v\n", err)
-			continue
+			if ne, ok := err.(net.Error); ok && ne.Temporary() {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+			return fmt.Errorf("listener accept error: %w", err)
 		}
 
 		go handleClient(clientConn, config.ConnectIP, config.ConnectPort)
@@ -94,8 +98,9 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 				data := buf[:n]
 				// Check if this is a TLS ClientHello
 				// 0x16 = Handshake, 0x03 = TLS version (usually 0x03 0x01, 0x03 0x02, 0x03 0x03)
-				if !hasWritten && n > 5 && data[0] == 0x16 && data[1] == 0x03 {
+				if !hasWritten {
 					hasWritten = true
+					if n > 5 && data[0] == 0x16 && data[1] == 0x03 {
 					
 					// Fragment the ClientHello at the TLS record layer to bypass DPI.
 					// We write the first 5 bytes (TLS record header), sleep to force a packet push,

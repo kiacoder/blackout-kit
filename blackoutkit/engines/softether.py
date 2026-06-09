@@ -93,15 +93,15 @@ class SoftEtherEngine(Engine):
         """Strip CR/LF to prevent injecting extra commands into vpncmd stdin."""
         return val.replace("\r", "").replace("\n", "")
 
-    def _is_account_connected(self) -> bool:
+    def _is_account_connected(self, check_cert: bool = False) -> bool:
         """
         Ask vpncmd for the real account connection status.
         AccountStatusGet returns "Session Status: Connected" when live.
-        Also performs a proactive TLS certificate check to update the cert store.
+        Optionally performs a proactive TLS certificate check to update the cert store.
         """
         # Proactive cert check for the cert store (Task #12 integration)
-        from .. import cert_bypass as cb
-        if self.host:
+        if check_cert and self.host:
+            from .. import cert_bypass as cb
             # Run in background to avoid blocking the vpncmd call
             threading.Thread(
                 target=cb.check_host_cert,
@@ -179,7 +179,7 @@ class SoftEtherEngine(Engine):
 
             # Wait up to 15s for the connection to establish
             for _ in range(15):
-                if self._is_account_connected():
+                if self._is_account_connected(check_cert=True):
                     break
                 time.sleep(1)
             else:

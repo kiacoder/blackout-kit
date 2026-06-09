@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/xtls/xray-core/core"
 	_ "github.com/xtls/xray-core/main/distro/all"
@@ -32,6 +34,11 @@ func RunXray(configPath string) error {
 
 	fmt.Println("Xray-core library started successfully inside process.")
 	
-	// Block forever (or until signal)
-	select {}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	<-sigChan
+	fmt.Println("Received shutdown signal")
+	server.Close()
+	return nil
 }
