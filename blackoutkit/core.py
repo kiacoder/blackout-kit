@@ -47,3 +47,36 @@ def get_core_dll():
     except Exception as e:
         _log.error("Failed to load core engine DLL: %s", e)
         return None
+
+_warp_dll = None
+
+def get_warp_dll():
+    global _warp_dll
+    if _warp_dll is not None:
+        return _warp_dll
+
+    if sys.platform != "win32":
+        return None
+
+    dll_path = BINS_DIR / "blackout_warp.dll"
+    if not dll_path.exists():
+        return None
+
+    try:
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(str(BINS_DIR))
+        _warp_dll = ctypes.CDLL(str(dll_path))
+        
+        _warp_dll.StartWarpC.argtypes = [ctypes.c_int, ctypes.c_char_p]
+        _warp_dll.StartWarpC.restype = ctypes.c_int
+        _warp_dll.StopWarpC.argtypes = []
+        
+        _warp_dll.StartPsiphonC.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_char_p]
+        _warp_dll.StartPsiphonC.restype = ctypes.c_int
+        _warp_dll.StopPsiphonC.argtypes = []
+        
+        return _warp_dll
+    except Exception as e:
+        _log.error("Failed to load warp engine DLL: %s", e)
+        return None
+

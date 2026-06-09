@@ -53,14 +53,30 @@ class PsiphonEngine(Engine):
         return path
 
     def start(self) -> bool:
-        binary = self.find_binary(PSIPHON_BIN_NAMES)
-        if not binary:
-            return False
-
         self._log.info(
             "Starting Psiphon  country=%s  http_port=%d  socks_port=%d",
             self.country, self.http_port, self.socks_port,
         )
+
+        from ..core import get_warp_dll
+        dll = get_warp_dll()
+        if dll:
+            self._log.info("Launching Psiphon via native DLL (Warp+ backend)")
+            c_country = (self.country or "DE").encode("utf-8")
+            if dll.StartPsiphonC(self.socks_port, self.http_port, c_country) == 0:
+                self._dll_stop_func = dll.StopPsiphonC
+                if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
+                    self._log.error("Psiphon started natively via DLL but SOCKS port %d never opened.", self.socks_port)
+                    self.stop()
+                    return False
+                self._log.info("Psiphon ready natively  socks=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
+                return True
+            else:
+                self._log.warning("Native DLL StartPsiphonC failed, falling back to executable")
+
+        binary = self.find_binary(PSIPHON_BIN_NAMES)
+        if not binary:
+            return False
 
         config_path = self._write_config()
         self._log.debug("Psiphon config written to %s", config_path)

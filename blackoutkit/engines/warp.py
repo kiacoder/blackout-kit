@@ -80,14 +80,30 @@ class WARPEngine(Engine):
         return True
 
     def start(self) -> bool:
-        binary = self.find_binary(WARP_BIN_NAMES)
-        if not binary:
-            return False
-
         self._log.info(
             "Starting WARP  socks_port=%d  country=%s",
             self.socks_port, self.country,
         )
+
+        from ..core import get_warp_dll
+        dll = get_warp_dll()
+        if dll:
+            self._log.info("Launching WARP via native DLL")
+            c_country = (self.country or "none").encode("utf-8")
+            if dll.StartWarpC(self.socks_port, c_country) == 0:
+                self._dll_stop_func = dll.StopWarpC
+                if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
+                    self._log.error("WARP started natively via DLL but SOCKS port %d never opened.", self.socks_port)
+                    self.stop()
+                    return False
+                self._log.info("WARP ready natively  socks5=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
+                return True
+            else:
+                self._log.warning("Native DLL StartWarpC failed, falling back to executable")
+
+        binary = self.find_binary(WARP_BIN_NAMES)
+        if not binary:
+            return False
 
         # Primary: JSON config file
         config_path = self._write_config()

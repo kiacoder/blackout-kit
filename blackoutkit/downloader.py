@@ -275,10 +275,15 @@ def check_installed() -> dict[str, bool]:
     """Return {key: True/False} — True when all expected output_bins files exist in bins/."""
     engine_bin = BINS_DIR / "blackout-engine.exe"
     engine_dll = BINS_DIR / "blackout_core.dll"
+    warp_dll = BINS_DIR / "blackout_warp.dll"
     has_engine = engine_bin.exists() or engine_dll.exists()
+    has_warp = warp_dll.exists()
+    
     status = {}
     for key, info in BIN_REGISTRY.items():
         if has_engine and key in ("xray", "sing-box", "mhrv", "sni-spoofing"):
+            status[key] = True
+        elif has_warp and key in ("warp-plus", "psiphon"):
             status[key] = True
         else:
             status[key] = all((BINS_DIR / b).exists() for b in info.output_bins)
