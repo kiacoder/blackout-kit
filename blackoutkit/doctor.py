@@ -297,6 +297,28 @@ def check_binary_runnable() -> list[CheckResult]:
     access denied, etc.) is flagged as FAIL so the user knows to re-download it.
     """
     results = []
+    engine_bin = BINS_DIR / "blackout-engine.exe"
+    if engine_bin.exists():
+        try:
+            result = subprocess.run(
+                [str(engine_bin)],
+                capture_output=True,
+                timeout=5,
+            )
+            # blackout-engine exits with 1 on no args, which is OK (it executes)
+            results.append(CheckResult(
+                "runnable: blackout-engine.exe",
+                True,
+                f"Executes OK (rc={result.returncode})",
+            ))
+        except Exception as exc:
+            results.append(CheckResult(
+                "runnable: blackout-engine.exe",
+                False,
+                f"OS error: {exc}",
+                fixable=False,
+            ))
+
     # Map binary → flag that triggers a quick exit without doing real work
     candidates = {
         "xray.exe":       ["version"],
@@ -305,6 +327,8 @@ def check_binary_runnable() -> list[CheckResult]:
         "warp-plus.exe":  ["--help"],
     }
     for binary, args in candidates.items():
+        if engine_bin.exists() and binary in ("xray.exe", "sing-box.exe"):
+            continue
         path = BINS_DIR / binary
         if not path.exists():
             # Already reported missing by check_bins_present() — skip

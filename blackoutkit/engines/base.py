@@ -106,6 +106,22 @@ class Engine(ABC):
         )
         return None
 
+    def check_port_free(self, port: int, host: str = "127.0.0.1") -> bool:
+        """
+        Return True if the port is free (nothing is listening on it yet).
+        Call this in start() before launching a process to catch port conflicts early.
+        If already occupied, logs an actionable error and returns False.
+        """
+        try:
+            with socket.create_connection((host, port), timeout=0.3):
+                self._log.error(
+                    "Port %d is already in use — another process may be running. "
+                    "Stop it first or change the port in settings.", port
+                )
+                return False
+        except OSError:
+            return True  # Connection refused = nothing listening = port is free
+
     def wait_for_port(
         self,
         port: int,

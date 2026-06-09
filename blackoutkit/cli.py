@@ -69,6 +69,8 @@ ENGINES = {
     "softether":    (SoftEtherEngine,),
     # Domain fronting — no binary needed, pure Python
     "appsscript":   (AppsScriptEngine,),
+    # Multi-hop stacks
+    "legend":       (TorEngine, SNIEngine, XRayEngine),
 }
 
 ALL_ENGINE_CHOICES = list(ENGINES.keys()) + ["auto"]
@@ -170,7 +172,7 @@ def cmd_scan(args):
         _scan_fake_snis()
 
     if do_ips:
-        count = getattr(args, "count", s["scan_ip_count"])
+        count = getattr(args, "count", None) or s["scan_ip_count"]
         _scan_cloudflare_ips(count, s["scan_concurrency"], s["scan_timeout"])
 
 
@@ -192,13 +194,17 @@ def _scan_fake_snis():
     )
 
     import socket as _sock
-    for domain in domains:
-        try:
-            _sock.setdefaulttimeout(3)
-            _sock.getaddrinfo(domain, 443)
-            table.add_row(domain, "[success]✓ Yes[/success]", "Safe to use")
-        except Exception:
-            table.add_row(domain, "[error]✗ No[/error]", "DNS blocked")
+    _old_timeout = _sock.getdefaulttimeout()
+    _sock.setdefaulttimeout(3)
+    try:
+        for domain in domains:
+            try:
+                _sock.getaddrinfo(domain, 443)
+                table.add_row(domain, "[success]✓ Yes[/success]", "Safe to use")
+            except Exception:
+                table.add_row(domain, "[error]✗ No[/error]", "DNS blocked")
+    finally:
+        _sock.setdefaulttimeout(_old_timeout)
 
     console.print(table)
     console.print()
@@ -235,12 +241,23 @@ def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
 
     table = make_table(
         f"Reachable Cloudflare IPs  ({len(results)} / {len(ips)} responded)",
-        [("IP Address", "cyan"), ("Latency", ""), ("Quality", "")],
+        [("IP Address", "cyan"), ("Latency", ""), ("Tier", "")],
         [],
     )
     for ip, ms in results[:20]:
-        quality = "⚡ Excellent" if ms < 50 else ("✓ Good" if ms < 150 else "~ Slow")
-        table.add_row(ip, latency_color(ms), quality)
+        if ms < 40:
+            tier = "[bold magenta]Celestial[/bold magenta]"
+        elif ms < 70:
+            tier = "[bold red]Legendary[/bold red]"
+        elif ms < 100:
+            tier = "[bold orange3]Epic[/bold orange3]"
+        elif ms < 150:
+            tier = "[bold blue]Rare[/bold blue]"
+        elif ms < 250:
+            tier = "[bold green]Uncommon[/bold green]"
+        else:
+            tier = "[dim]Common[/dim]"
+        table.add_row(ip, latency_color(ms), tier)
 
     console.print(table)
 
@@ -457,7 +474,7 @@ def cmd_status(args):
         return "[success]✓ Yes[/success]" if ok else "[error]✗ No[/error]"
 
     def lat(ms):
-        return latency_color(ms) if ms else "[error]✗ unreachable[/error]"
+        return latency_color(ms) if ms is not None else "[error]✗ unreachable[/error]"
 
     table.add_row("Direct internet",       ck(report["direct"]))
     table.add_row("HTTP proxy port",        ck(report["http_proxy_port_open"]))
@@ -676,7 +693,7 @@ def cmd_tools(args):
         if results:
             best = results[0]
             console.print(f"\n[success]Best DNS:[/success] {best[0]} — {best[1]}  ({best[2]:.0f}ms)")
-            console.print(f"Set it: [bold]blackout settings set sni_fake_sni {best[1]}[/bold]")
+            console.print(f"Set it: [bold]blackout tools dns-set {best[1]}[/bold]")
 
     elif args.tools_command == "dns-flush":
         console.print("[info]Flushing DNS cache...[/info]")
@@ -692,10 +709,10 @@ def cmd_tools(args):
         lat         = result["latency_ms"]
         mbps        = result["download_mbps"]
         upload_mbps = result.get("upload_mbps")
-        up_str = f"[bold]{'%.2f' % upload_mbps} Mbps[/bold]" if upload_mbps else "[dim]—[/dim]"
+        up_str = f"[bold]{'%.2f' % upload_mbps} Mbps[/bold]" if upload_mbps is not None else "[dim]—[/dim]"
         console.print(Panel(
-            f"  [muted]Latency:[/muted]   {latency_color(lat) if lat else '[error]timeout[/error]'}\n"
-            f"  [muted]Download:[/muted]  [bold]{'%.2f' % mbps if mbps else '?'} Mbps[/bold]\n"
+            f"  [muted]Latency:[/muted]   {latency_color(lat) if lat is not None else '[error]timeout[/error]'}\n"
+            f"  [muted]Download:[/muted]  [bold]{'%.2f' % mbps if mbps is not None else '?'} Mbps[/bold]\n"
             f"  [muted]Upload:[/muted]    {up_str}\n"
             f"  [muted]Test:[/muted]      {result.get('test_size', '-')}",
             title="[bold]Speed Test — Cloudflare[/bold]",
@@ -1701,12 +1718,13 @@ def _interactive_menu():
     menu_items = [
         ("1", "🚀 Connect",   "Start bypass — smart auto-select"),
         ("2", "⚡ Emergency",  "Try all engines until one works"),
-        ("3", "📊 Status",    "Check daemon + connection health"),
-        ("4", "🔍 Scan",      "Scan Cloudflare IPs + SNI domains"),
-        ("5", "🏥 Doctor",    "Self-diagnose and auto-repair"),
-        ("6", "🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP"),
-        ("7", "🌐 Tools",     "Network toolkit (ping, speedtest…)"),
-        ("8", "⚙  Settings",  "View and change settings"),
+        ("3", "🌍 Country",    "Show or set country profile (IR/CN/…)"),
+        ("4", "📊 Status",    "Check daemon + connection health"),
+        ("5", "🔍 Scan",      "Scan Cloudflare IPs + SNI domains"),
+        ("6", "🏥 Doctor",    "Self-diagnose and auto-repair"),
+        ("7", "🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP"),
+        ("8", "🌐 Tools",     "Network toolkit (ping, speedtest…)"),
+        ("9", "⚙  Settings",  "View and change settings"),
         ("0", "❌ Exit",      ""),
     ]
 
@@ -1723,18 +1741,19 @@ def _interactive_menu():
     _dispatch = {
         "1": lambda: cmd_connect(_make_fake_args(engine=None, background=False, iran=False)),
         "2": lambda: cmd_emergency(_make_fake_args(background=False)),
-        "3": lambda: cmd_status(_make_fake_args()),
-        "4": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
-        "5": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
-        "6": lambda: cmd_fix(_make_fake_args()),
-        "7": lambda: cmd_tools(_make_fake_args(tools_command=None)),
-        "8": lambda: cmd_settings(_make_fake_args(settings_command=None)),
+        "3": lambda: cmd_country(_make_fake_args(country_command=None)),
+        "4": lambda: cmd_status(_make_fake_args()),
+        "5": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
+        "6": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
+        "7": lambda: cmd_fix(_make_fake_args()),
+        "8": lambda: cmd_tools(_make_fake_args(tools_command=None)),
+        "9": lambda: cmd_settings(_make_fake_args(settings_command=None)),
         "0": _EXIT,
     }
 
     while True:
         try:
-            choice = console.input("\n[bold cyan]Enter choice [0-8]:[/bold cyan] ").strip()
+            choice = console.input("\n[bold cyan]Enter choice [0-9]:[/bold cyan] ").strip()
         except (KeyboardInterrupt, EOFError):
             console.print("\n[muted]Bye![/muted]")
             return
@@ -1802,7 +1821,7 @@ def main():
                          metavar="ENGINE",
                          help=(
                              "sni | gdpi | psiphon | warp | tun | tor | mhrv | "
-                             "ikev2 | wireguard | openvpn | softether | appsscript | auto"
+                             "ikev2 | wireguard | openvpn | softether | appsscript | legend | auto"
                          ))
     start_p.add_argument("-d", "--background", action="store_true",
                          help="Run as background daemon (survives terminal close)")

@@ -233,12 +233,15 @@ def detect_mtu(host: str = "8.8.8.8") -> int | None:
     while low <= high:
         mid = (low + high) // 2
         try:
+            # -l specifies the data payload size. 
+            # Actual packet size = payload + 28 bytes (20 byte IP header + 8 byte ICMP header).
+            # We want to find the largest packet size that passes.
             r = subprocess.run(
                 ["ping", "-n", "1", "-f", "-l", str(mid), host],
                 capture_output=True, timeout=5,
             )
             if r.returncode == 0 and b"100%" not in r.stdout:
-                result = mid
+                result = mid + 28  # Store the actual MTU
                 low = mid + 1
             else:
                 high = mid - 1
@@ -247,21 +250,58 @@ def detect_mtu(host: str = "8.8.8.8") -> int | None:
     return result
 
 
+def _get_adapter_by_mtu(mtu: int) -> str | None:
+    """Find a connected adapter that has a non-standard MTU."""
+    try:
+        result = subprocess.run(
+            ["netsh", "interface", "ipv4", "show", "subinterfaces"],
+            capture_output=True, text=True, encoding="utf-8", errors="ignore"
+        )
+        # Output format:   MTU  MediaSenseState   Bytes In  Bytes Out  Interface
+        #                ------  ---------------  ---------  ---------  -------------
+        for line in result.stdout.splitlines():
+            parts = line.split()
+            if len(parts) >= 5:
+                try:
+                    if int(parts[0]) == mtu:
+                        # Return the interface name (can contain spaces)
+                        return " ".join(parts[4:])
+                except ValueError:
+                    continue
+    except Exception:
+        pass
+    return None
+
+
 def set_mtu(mtu: int, adapter: str | None = None) -> bool:
     """
     Set MTU for a Windows network adapter.
-    If adapter is None, sets for all IPv4 interfaces.
+    If adapter is None, tries to find the current active adapter.
     Requires administrator privileges.
     """
     if sys.platform != "win32":
         return False
     try:
-        if adapter:
-            cmd = ["netsh", "interface", "ipv4", "set", "subinterface",
-                   adapter, f"mtu={mtu}", "store=persistent"]
-        else:
-            cmd = ["netsh", "interface", "ipv4", "set", "global",
-                   f"defaultcurhoplimit={mtu}"]
+        if not adapter:
+            # Try to find a connected adapter automatically
+            result = subprocess.run(
+                ["netsh", "interface", "show", "interface"],
+                capture_output=True, text=True, encoding="utf-8", errors="ignore",
+            )
+            for line in result.stdout.splitlines():
+                if "Connected" in line:
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        adapter = " ".join(parts[3:])
+                        break
+        
+        if not adapter:
+            return False
+
+        # The correct command for per-interface MTU
+        cmd = ["netsh", "interface", "ipv4", "set", "subinterface",
+               adapter, f"mtu={mtu}", "store=persistent"]
+
         subprocess.run(cmd, capture_output=True, check=True)
         return True
     except Exception:

@@ -48,36 +48,49 @@ class MhrvEngine(Engine):
             self.http_port, self.socks_port,
         )
 
-        # Install CA cert — required for MITM interception to work.
-        # This must run before the proxy starts so the cert is trusted.
-        self._log.debug("Installing mhrv CA certificate…")
-        try:
-            cert_result = subprocess.run(
-                [str(binary), "--install-cert"],
-                cwd=str(binary.parent),
-                capture_output=True,
-                timeout=15,
-            )
-            if cert_result.returncode == 0:
-                self._log.debug("CA certificate installed successfully.")
-            else:
-                # Non-fatal: cert may already be installed from a previous run
-                stderr = cert_result.stderr.decode(errors="replace").strip()
-                self._log.warning(
-                    "CA cert install returned rc=%d. "
-                    "It may already be installed (continuing). stderr: %s",
-                    cert_result.returncode, stderr or "(none)",
-                )
-        except Exception as exc:
-            self._log.warning("CA cert install failed (non-fatal): %s", exc)
+        engine_bin = BINS_DIR / "blackout-engine.exe"
+        use_custom = engine_bin.exists()
 
-        # Short pause to let the certificate store update propagate
-        time.sleep(0.5)
+        if use_custom:
+            try:
+                from .appsscript import _load_gas_ids
+                ids = _load_gas_ids()
+                ids_str = ",".join(ids)
+            except Exception:
+                ids_str = ""
+            cmd = [str(engine_bin), "mhrv", "--port", str(self.http_port), "--ids", ids_str]
+        else:
+            # Install CA cert — required for MITM interception to work in original mhrv-rs.
+            # This must run before the proxy starts so the cert is trusted.
+            self._log.debug("Installing mhrv CA certificate…")
+            try:
+                cert_result = subprocess.run(
+                    [str(binary), "--install-cert"],
+                    cwd=str(binary.parent),
+                    capture_output=True,
+                    timeout=15,
+                )
+                if cert_result.returncode == 0:
+                    self._log.debug("CA certificate installed successfully.")
+                else:
+                    # Non-fatal: cert may already be installed from a previous run
+                    stderr = cert_result.stderr.decode(errors="replace").strip()
+                    self._log.warning(
+                        "CA cert install returned rc=%d. "
+                        "It may already be installed (continuing). stderr: %s",
+                        cert_result.returncode, stderr or "(none)",
+                    )
+            except Exception as exc:
+                self._log.warning("CA cert install failed (non-fatal): %s", exc)
+
+            # Short pause to let the certificate store update propagate
+            time.sleep(0.5)
+            cmd = [str(binary)]
 
         try:
             self._process = subprocess.Popen(
-                [str(binary)],
-                cwd=str(binary.parent),
+                cmd,
+                cwd=str(binary.parent) if not use_custom else str(BINS_DIR),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,

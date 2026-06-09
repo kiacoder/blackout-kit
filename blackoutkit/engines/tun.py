@@ -147,9 +147,15 @@ class TUNEngine(Engine):
         config_path = self._write_config()
         self._log.debug("sing-box TUN config written to %s", config_path)
 
+        engine_bin = BINS_DIR / "blackout-engine.exe"
+        if engine_bin.exists():
+            cmd = [str(engine_bin), "sing-box", "--config", str(config_path)]
+        else:
+            cmd = [str(binary), "run", "-c", str(config_path)]
+
         try:
             self._process = subprocess.Popen(
-                [str(binary), "run", "-c", str(config_path)],
+                cmd,
                 cwd=str(binary.parent),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

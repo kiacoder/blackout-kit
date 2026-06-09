@@ -228,35 +228,45 @@ def run_preflight() -> list[PreflightResult]:
     results: list[PreflightResult] = []
     bins_dir = PROJECT_ROOT / "bins"
 
-    # ── Required binaries ────────────────────────────────────────
-    for name in REQUIRED_BINS:
-        path = bins_dir / name
-        if path.exists():
-            size_kb = path.stat().st_size // 1024
-            results.append(PreflightResult(
-                f"Required: {name}", True, True,
-                f"Present ({size_kb} KB)",
-            ))
-        else:
-            results.append(PreflightResult(
-                f"Required: {name}", False, True,
-                "MISSING — SNI engine will not work!",
-            ))
+    from .downloader import BIN_REGISTRY, check_installed
+    installed = check_installed()
+    engine_bin = bins_dir / "blackout-engine.exe"
+    has_engine = engine_bin.exists()
 
-    # ── Recommended binaries ─────────────────────────────────────
-    for name in RECOMMENDED_BINS:
-        path = bins_dir / name
-        if path.exists():
-            size_kb = path.stat().st_size // 1024
-            results.append(PreflightResult(
-                f"Optional: {name}", True, False,
-                f"Present ({size_kb} KB)",
-            ))
+    # ── Binary Registry checks ───────────────────────────────────
+    for key, info in BIN_REGISTRY.items():
+        if info.required:
+            name_prefix = "Required"
+            is_critical = True
         else:
-            results.append(PreflightResult(
-                f"Optional: {name}", False, False,
-                "Not installed (reduces fallback options)",
-            ))
+            name_prefix = "Optional"
+            is_critical = False
+
+        if installed.get(key):
+            if has_engine and key in ("xray", "sing-box", "mhrv", "sni-spoofing"):
+                size_kb = engine_bin.stat().st_size // 1024
+                results.append(PreflightResult(
+                    f"{name_prefix}: {info.display_name}", True, is_critical,
+                    f"Present (via blackout-engine.exe: {size_kb} KB)",
+                ))
+            else:
+                first = bins_dir / info.output_bins[0]
+                size_kb = first.stat().st_size // 1024
+                results.append(PreflightResult(
+                    f"{name_prefix}: {info.display_name}", True, is_critical,
+                    f"Present ({size_kb} KB)",
+                ))
+        else:
+            if is_critical:
+                results.append(PreflightResult(
+                    f"{name_prefix}: {info.display_name}", False, is_critical,
+                    f"MISSING — {info.display_name} is required for core bypass stack!",
+                ))
+            else:
+                results.append(PreflightResult(
+                    f"{name_prefix}: {info.display_name}", False, is_critical,
+                    "Not installed (reduces fallback options)",
+                ))
 
     # ── Config file ──────────────────────────────────────────────
     from .config.manager import load_configs

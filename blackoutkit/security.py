@@ -23,6 +23,7 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from . import settings as cfg
@@ -121,6 +122,14 @@ _KS_RULES = [
     "BlackoutKit-KillSwitch-Block-DoT",   # UDP port 853 (DNS-over-TLS leaks)
 ]
 
+# Minimum rules that MUST exist for the kill switch to be considered active.
+# The allow-rules are optional (missing them = more restrictive, not less safe).
+_KS_REQUIRED_RULES = [
+    "BlackoutKit-KillSwitch-Block",
+    "BlackoutKit-KillSwitch-Block-DoH",
+    "BlackoutKit-KillSwitch-Block-DoT",
+]
+
 
 def enable_kill_switch() -> bool:
     """
@@ -148,7 +157,10 @@ Write-Output "OK"
         ["powershell", "-NoProfile", "-Command", ps],
         capture_output=True, text=True, timeout=20,
     )
-    return "OK" in result.stdout
+    if "OK" not in result.stdout:
+        return False
+    # Authoritative post-install check — verify rules actually exist in firewall
+    return kill_switch_is_active()
 
 
 def disable_kill_switch() -> bool:
@@ -165,24 +177,25 @@ def disable_kill_switch() -> bool:
 
 def kill_switch_is_active() -> bool:
     """
-    Query Windows Firewall to check whether the kill-switch block rule
-    actually exists — not just whether the settings flag is True.
-    Returns True only if the firewall rule is confirmed present.
+    Query Windows Firewall to verify ALL required kill-switch rules exist.
+    Returns True only if Block + DoH-Block + DoT-Block rules are all confirmed present.
+    Checking only the main Block rule misses the case where DoH/DoT leak rules
+    were manually deleted — giving a false sense of protection.
     """
     if sys.platform != "win32":
         return False
-    try:
-        result = subprocess.run(
-            [
-                "netsh", "advfirewall", "firewall", "show", "rule",
-                "name=BlackoutKit-KillSwitch-Block",
-            ],
-            capture_output=True, text=True, timeout=10,
-        )
-        # netsh outputs "No rules match" when the rule is missing
-        return "No rules match" not in result.stdout and result.returncode == 0
-    except Exception:
-        return False
+    for rule in _KS_REQUIRED_RULES:
+        try:
+            result = subprocess.run(
+                ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule}"],
+                capture_output=True, text=True, timeout=10,
+            )
+            # netsh outputs "No rules match" when the rule is missing
+            if "No rules match" in result.stdout or result.returncode != 0:
+                return False
+        except Exception:
+            return False
+    return True
 
 
 # ─────────────────────────── Config encryption (AES-256-GCM) ─────
@@ -232,6 +245,21 @@ def _get_machine_key() -> bytes:
     return hashlib.sha256(_get_machine_id()).digest()
 
 
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Write bytes atomically: temp file → os.replace(). Prevents corrupt files on crash."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp_")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def obfuscate_configs():
     """
     Encrypt configs.txt with AES-256-GCM, save to configs.enc.
@@ -248,13 +276,14 @@ def obfuscate_configs():
         key    = _derive_aes_key(_get_machine_id())
         aesgcm = AESGCM(key)
         nonce  = os.urandom(12)                         # 96-bit random nonce
-        ct     = aesgcm.encrypt(nonce, raw, None)       # includes 16-byte GCM tag
-        ENC_CONFIGS.write_bytes(_AES_HEADER + base64.b64encode(nonce + ct))
+        ct      = aesgcm.encrypt(nonce, raw, None)       # includes 16-byte GCM tag
+        payload = _AES_HEADER + base64.b64encode(nonce + ct)
+        _atomic_write_bytes(ENC_CONFIGS, payload)
     except ImportError:
         # cryptography not installed — fall back to XOR
         key   = _get_machine_key()
         xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-        ENC_CONFIGS.write_bytes(base64.b64encode(xored))
+        _atomic_write_bytes(ENC_CONFIGS, base64.b64encode(xored))
 
     # Securely wipe plaintext before deleting
     CONFIGS_FILE.write_bytes(b"\x00" * len(raw))

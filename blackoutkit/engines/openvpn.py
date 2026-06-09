@@ -81,6 +81,8 @@ class OpenVPNEngine(Engine):
                 try:
                     content = LOG_PATH.read_text(encoding="utf-8", errors="replace")
                     if CONNECTED_MARKER in content:
+                        # Extract remote host for cert store (Task #12 integration)
+                        self._update_cert_store(content)
                         return True, ""
                     for marker in FAILED_MARKERS:
                         if marker in content:
@@ -174,3 +176,19 @@ class OpenVPNEngine(Engine):
 
         self._log.info("OpenVPN tunnel UP (pid=%s).", self._process.pid)
         return True
+
+    def _update_cert_store(self, log_content: str):
+        """Parse the remote host from the OpenVPN log and run a cert probe."""
+        # OpenVPN logs lines like: "Attempting to establish TCP connection with [AF_INET]1.2.3.4:443"
+        # or "TCP connection established with [AF_INET]1.2.3.4:443"
+        import re
+        from . import cert_bypass as cb
+        match = re.search(r"connection established with \[AF_INET\]([\d\.]+):(\d+)", log_content)
+        if match:
+            host, port = match.group(1), int(match.group(2))
+            threading.Thread(
+                target=cb.check_host_cert,
+                args=(host, port),
+                kwargs={"timeout": 5.0},
+                daemon=True,
+            ).start()

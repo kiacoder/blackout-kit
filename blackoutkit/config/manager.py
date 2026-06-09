@@ -139,7 +139,7 @@ def load_configs(path: Path | None = None) -> list[ProxyConfig]:
     if not p.exists():
         return []
     configs = []
-    for line in p.read_text(encoding="utf-8").splitlines():
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
             c = parse_v2ray_uri(line)

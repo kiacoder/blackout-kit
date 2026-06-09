@@ -83,35 +83,56 @@ class SoftEtherEngine(Engine):
             return subprocess.run(
                 [str(cmd_bin), "localhost", "/CLIENT", "/CMD"],
                 input=script,
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, encoding="utf-8", timeout=30,
             )
         except Exception:
             return None
+
+    @staticmethod
+    def _sanitize(val: str) -> str:
+        """Strip CR/LF to prevent injecting extra commands into vpncmd stdin."""
+        return val.replace("\r", "").replace("\n", "")
 
     def _is_account_connected(self) -> bool:
         """
         Ask vpncmd for the real account connection status.
         AccountStatusGet returns "Session Status: Connected" when live.
+        Also performs a proactive TLS certificate check to update the cert store.
         """
+        # Proactive cert check for the cert store (Task #12 integration)
+        from .. import cert_bypass as cb
+        if self.host:
+            # Run in background to avoid blocking the vpncmd call
+            threading.Thread(
+                target=cb.check_host_cert,
+                args=(self.host, self.port),
+                kwargs={"timeout": 5.0},
+                daemon=True,
+            ).start()
+
         result = self._vpncmd(f"AccountStatusGet {SE_ACCOUNT_NAME}")
         if result is None:
             return False
         output = result.stdout + result.stderr
-        return (
-            "Connected" in output
-            or "Session Status" in output
-            and "Disconnected" not in output
-        )
+        # Use exact phrase — "Connected" is a substring of "Disconnected",
+        # so checking only "Connected" in output always returns True.
+        return "Session Status: Connected" in output
 
     def _monitor_loop(self):
         """
         Background thread that polls account status every 5s.
-        Sets _connected=False the moment the VPN disconnects.
+        Sets _connected=False only after 3 consecutive failures — tolerates
+        transient vpncmd errors without falsely reporting a disconnect.
         """
+        consecutive_failures = 0
         while self._connected:
             if not self._is_account_connected():
-                self._connected = False
-                break
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    self._connected = False
+                    break
+            else:
+                consecutive_failures = 0
             time.sleep(5)
 
     # ── Engine interface ─────────────────────────────────────────
@@ -135,15 +156,21 @@ class SoftEtherEngine(Engine):
             )
             time.sleep(2)  # Let service initialize
 
+            # Sanitize values — newlines in any field would inject extra vpncmd commands
+            host     = self._sanitize(self.host)
+            hub      = self._sanitize(self.hub)
+            username = self._sanitize(self.username)
+            password = self._sanitize(self.password)
+
             # Create + connect the account
             r = self._vpncmd(
                 f"AccountCreate {SE_ACCOUNT_NAME}"
-                f" /SERVER:{self.host}:{self.port}"
-                f" /HUB:{self.hub}"
-                f" /USERNAME:{self.username}"
+                f" /SERVER:{host}:{self.port}"
+                f" /HUB:{hub}"
+                f" /USERNAME:{username}"
                 f" /NICNAME:VPN",
                 f"AccountPasswordSet {SE_ACCOUNT_NAME}"
-                f" /PASSWORD:{self.password} /TYPE:standard",
+                f" /PASSWORD:{password} /TYPE:standard",
                 f"AccountConnect {SE_ACCOUNT_NAME}",
             )
 

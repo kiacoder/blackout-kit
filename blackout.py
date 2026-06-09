@@ -8,10 +8,18 @@ Rare upgrades:
   - _first_run_hint(): shows quick-start tip on first launch
   - Crash report includes Python version + OS + traceback summary
 """
+from __future__ import annotations
 import sys
 import os
 import platform
 import traceback
+
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -130,16 +138,18 @@ if __name__ == "__main__":
         py_ver  = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         os_info = f"{platform.system()} {platform.release()} ({platform.machine()})"
         tb_last = traceback.format_exc().strip().splitlines()
-        # Show last 5 lines of traceback — enough context without flooding the screen
-        tb_snippet = "\n".join(tb_last[-5:]) if len(tb_last) > 5 else "\n".join(tb_last)
+        # Show last 10 lines of traceback — enough context without flooding the screen
+        tb_snippet = "\n".join(tb_last[-10:]) if len(tb_last) > 10 else "\n".join(tb_last)
 
+        # Epic upgrade: suggest auto-fix
         con.print(Panel(
             f"[bold red]{type(exc).__name__}:[/bold red] {exc}\n\n"
             f"[dim]Python {py_ver}  |  {os_info}[/dim]\n\n"
             f"[dim]{tb_snippet}[/dim]\n\n"
-            "[dim]Please report this bug at:\n"
-            "  github.com/kiacoder/blackout-kit/issues\n"
-            "  (paste the error above)[/dim]",
+            "[bold yellow]Something went wrong.[/bold yellow] Try running the auto-repair tool:\n"
+            "  [bold]blackout doctor --fix[/bold]\n\n"
+            "[dim]Or report this bug at:\n"
+            "  github.com/kiacoder/blackout-kit/issues[/dim]",
             title="[bold red]Blackout Kit — Crashed[/bold red]",
             border_style="red",
             padding=(0, 2),

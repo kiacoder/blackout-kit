@@ -8,6 +8,7 @@ Features:
 """
 import json
 import os
+import tempfile
 from pathlib import Path
 
 APP_DATA_DIR  = Path.home() / ".blackout-kit"
@@ -95,6 +96,9 @@ DEFAULTS = {
 
     # Country profile
     "country":              "",  # ISO code (IR/US/GB/CN/IQ). Empty = auto-detect from ISP.
+
+    # Iran 2026 Evasion
+    "xray_fragment":        "10-50,10-50",  # TLS record fragment mode (range,range)
 }
 
 
@@ -116,6 +120,7 @@ _VALIDATORS: dict[str, tuple] = {
     "softether_port":     (int,   *_PORT_RANGE),
     "neighbor_proxy_port":(int,   *_PORT_RANGE),
     "gas_proxy_port":     (int,   *_PORT_RANGE),
+    "xray_fragment":      (str,   lambda v: v.count(",") == 1, "must be 'range,range' (e.g. 10-50,10-50)"),
     "scan_concurrency":   (int,   lambda v: 1 <= v <= 500,   "must be 1–500"),
     "scan_timeout":       (float, lambda v: 0.1 <= v <= 30,  "must be 0.1–30.0"),
     "scan_ip_count":      (int,   lambda v: 1 <= v <= 5000,  "must be 1–5000"),
@@ -180,9 +185,20 @@ def load() -> dict:
 
 
 def save(settings: dict):
-    """Persist settings to disk."""
+    """Persist settings to disk using an atomic write (temp → rename)."""
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    SETTINGS_FILE.write_text(json.dumps(settings, indent=2))
+    data = json.dumps(settings, indent=2).encode()
+    fd, tmp = tempfile.mkstemp(dir=APP_DATA_DIR, prefix=".tmp_settings_")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        os.replace(tmp, SETTINGS_FILE)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def get(key: str):
@@ -289,5 +305,6 @@ def describe(key: str) -> str:
         "neighbor_bind_lan":  "Bind proxy to 0.0.0.0 so LAN devices can reach it",
         "gas_proxy_port":     "Local port for Google Apps Script HTTP relay proxy",
         "country":            "Country profile code (IR/US/GB/CN/IQ). Empty = auto-detect from ISP.",
+        "xray_fragment":      "XRay TLS record fragment: range,range (TIC 2026 evasion)",
     }
     return descriptions.get(key, "No description available.")

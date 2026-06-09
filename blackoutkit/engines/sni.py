@@ -64,9 +64,15 @@ class SNIEngine(Engine):
         config_path = self._write_config(binary.parent)
         self._log.debug("Config written to %s", config_path)
 
+        engine_bin = BINS_DIR / "blackout-engine.exe"
+        if engine_bin.exists():
+            cmd = [str(engine_bin), "sni", "--config", str(config_path)]
+        else:
+            cmd = [str(binary)]
+
         try:
             self._process = subprocess.Popen(
-                [str(binary)],
+                cmd,
                 cwd=str(binary.parent),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

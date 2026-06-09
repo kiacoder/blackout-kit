@@ -31,14 +31,17 @@ _no_color: bool = (
 
 # ─────────────────────────────────── Theme ────────────────────────────────────
 BLACKOUT_THEME = Theme({
-    "info":     "bold cyan",
-    "success":  "bold green",
-    "warning":  "bold yellow",
-    "error":    "bold red",
-    "engine":   "bold magenta",
-    "muted":    "dim white",
-    "accent":   "bold red",
-    "heading":  "bold white",
+    "info":         "bold cyan",
+    "success":      "bold green",
+    "warning":      "bold yellow",
+    "error":        "bold red",
+    "engine":       "bold magenta",
+    "muted":        "dim white",
+    "accent":       "bold red",
+    "heading":      "bold white",
+    "panel.title":  "bold white",
+    "panel.border": "cyan",
+    "table.header": "bold cyan",
 })
 
 console = Console(theme=BLACKOUT_THEME, no_color=_no_color)
@@ -81,13 +84,13 @@ def print_banner():
         ))
 
 
-def status_panel(title: str, rows: list[tuple[str, str]], border_color: str = "cyan") -> Panel:
+def status_panel(title: str, rows: list[tuple[str, str]], border_color: str = "panel.border") -> Panel:
     """Build a status info panel."""
     content = "\n".join(
         f"  [muted]{label:<18}[/muted] {value}"
         for label, value in rows
     )
-    return Panel(content, title=f"[bold]{title}[/bold]", border_style=border_color, padding=(0, 1))
+    return Panel(content, title=f"[panel.title]{title}[/panel.title]", border_style=border_color, padding=(0, 1))
 
 
 def engine_badge(name: str, running: bool) -> str:
@@ -107,10 +110,10 @@ def latency_color(ms: float) -> str:
 def make_table(title: str, columns: list[tuple[str, str]], rows: list[list[str]]) -> Table:
     """Create a styled table."""
     table = Table(
-        title=f"[bold]{title}[/bold]",
+        title=f"[heading]{title}[/heading]",
         box=box.ROUNDED,
-        border_style="dim",
-        header_style="bold cyan",
+        border_style="muted",
+        header_style="table.header",
         show_lines=False,
     )
     for col_name, col_style in columns:

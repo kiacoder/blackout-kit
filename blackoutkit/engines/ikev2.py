@@ -78,6 +78,15 @@ class IKEv2Engine(Engine):
             "BK_VPN_PASSWORD": self.password,
             "BK_VPN_PSK":      self.psk,
         }
+        # Validate tunnel_type at runtime — settings JSON could be manually edited
+        _ALLOWED_TYPES = {"IKEv2", "L2tp", "Sstp", "Pptp"}
+        if self.tunnel_type not in _ALLOWED_TYPES:
+            self._log.error(
+                "Invalid tunnel_type '%s'. Must be one of: %s",
+                self.tunnel_type, ", ".join(sorted(_ALLOWED_TYPES)),
+            )
+            return
+
         if self.tunnel_type.lower() == "l2tp":
             ps = (
                 '$cred = New-Object System.Management.Automation.PSCredential'
@@ -92,6 +101,7 @@ class IKEv2Engine(Engine):
                 ' -Force -PassThru | Out-Null'
             )
         else:
+            # tunnel_type is validated against allowlist above — safe to interpolate
             ps = (
                 f'Add-VpnConnection -Name "{VPN_PROFILE_NAME}"'
                 ' -ServerAddress $env:BK_VPN_SERVER'
@@ -104,13 +114,24 @@ class IKEv2Engine(Engine):
         self._ps(ps, env=env)
 
     def _connect(self) -> tuple[bool, str]:
-        """Dial the VPN using rasdial. Returns (success, error_message)."""
-        result = subprocess.run(
-            ["rasdial", VPN_PROFILE_NAME, self.username, self.password],
-            capture_output=True, text=True, timeout=30,
+        """
+        Dial the VPN via Connect-VpnConnection with credentials in env vars.
+        Avoids passing the password as a rasdial CLI argument (visible in process listing).
+        """
+        env = {**os.environ, "BK_VPN_USER": self.username, "BK_VPN_PASS": self.password}
+        ps = (
+            "try {"
+            "  $pass = $env:BK_VPN_PASS | ConvertTo-SecureString -AsPlainText -Force;"
+            f" Connect-VpnConnection -Name '{VPN_PROFILE_NAME}'"
+            "  -UserName $env:BK_VPN_USER -Password $pass -Force;"
+            "  Write-Output 'OK'"
+            "} catch {"
+            "  Write-Error $_.Exception.Message"
+            "}"
         )
+        result = self._ps(ps, env=env)
         output = (result.stdout + result.stderr).strip()
-        return result.returncode == 0, output
+        return "OK" in result.stdout, output
 
     def _wait_for_connected(self) -> bool:
         """
@@ -185,15 +206,15 @@ class IKEv2Engine(Engine):
         ok, output = self._connect()
         if not ok:
             self._log.error(
-                "rasdial failed for profile '%s'. Output: %s",
+                "Connect-VpnConnection failed for profile '%s'. Output: %s",
                 VPN_PROFILE_NAME, output or "(no output)",
             )
             return False
 
-        # rasdial returned 0 — now wait for the actual "Connected" state
+        # Connection initiated — now wait for the actual "Connected" state
         if not self._wait_for_connected():
             self._log.error(
-                "VPN profile connected via rasdial but never reached 'Connected' "
+                "VPN profile initiated but never reached 'Connected' "
                 "state within %.0fs. Server may have rejected credentials.",
                 _CONNECT_TIMEOUT,
             )
@@ -212,7 +233,7 @@ class IKEv2Engine(Engine):
              f'  Start-Sleep 5'
              f'}}'],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            creationflags=subprocess.CREATE_NO_WINDOW,
+            creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )
         return True
 

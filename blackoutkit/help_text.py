@@ -204,6 +204,9 @@ Smart one-command connect: scan → pick best engine → start in background.
 [bold]Usage:[/bold]
   blackout connect                      Full auto (scan + start best engine)
   blackout connect --engine warp        Skip scan, use specific engine
+  blackout connect --iran               🔥 Apply Iran bypass profile
+                                        (Firefox fingerprint + private mode)
+  blackout connect -d                   Run in background
 
 [bold]What it does:[/bold]
   1. Runs a Cloudflare IP scan (unless --engine is specified)
@@ -220,7 +223,7 @@ Smart one-command connect: scan → pick best engine → start in background.
 [bold cyan]blackout fix[/bold cyan]
 Diagnose and auto-repair common issues in one command.
 
-[bold]What it checks and fixes:[/bold]
+[bold]What it checks and fixes (Live Checklist):[/bold]
   ✓ System proxy not set → sets it
   ✓ DNS cache stale → flushes it
   ✓ Winsock corrupted → resets it
@@ -229,7 +232,7 @@ Diagnose and auto-repair common issues in one command.
   ✓ Cloudflare IP outdated → rescans
 
 [bold]Usage:[/bold]
-  blackout fix                          Run all auto-repairs
+  blackout fix                          Run all auto-repairs with live status
 """,
 
 # ── Settings & config ─────────────────────────────────────────────────────────
@@ -272,6 +275,10 @@ Manage V2Ray proxy configurations.
   blackout config remove <n>            Remove config #n
   blackout config encrypt               Encrypt configs.txt with AES-256-GCM
   blackout config decrypt               Decrypt configs.enc back to configs.txt
+
+[bold]Testing configs:[/bold]
+  Analyze your configs: [bold]blackout test[/bold]
+  Shows which configs are SNI-compatible and their basic details.
 
 [bold]SNI-compatible configs:[/bold]
   Configs must use address 127.0.0.1:40443 to route through the SNI engine.
@@ -356,6 +363,88 @@ All bypass engines in Blackout Kit and when to use each.
   tor        ✓     ✓✓     ✓     ✓    ✓
 
   See: [bold]blackout help countries[/bold] for detailed per-country guidance.
+""",
+
+"network": """
+[bold cyan]blackout network[/bold cyan]
+WiFi network management and ISP intelligence.
+
+[bold]Usage:[/bold]
+  blackout network                      Show current network status and ISP
+  blackout network scan                 Show all available WiFi networks
+  blackout network isp                  Detailed ISP + ASN + location info
+  blackout network auto                 Auto-switch to best saved network
+  blackout network switch <SSID>        Switch to a specific WiFi profile
+
+[bold]Features:[/bold]
+  • [bold]ISP Detection:[/bold] Identifies your provider and country censorship level
+  • [bold]Auto-Switch:[/bold] Finds nearby saved WiFi networks and connects to the
+    one with the strongest signal if your current one drops
+  • [bold]Signal Bars:[/bold] Visual signal strength indicators for all nearby nets
+""",
+
+"logs": """
+[bold cyan]blackout logs[/bold cyan]
+View the real-time output of the background daemon and engines.
+
+[bold]Usage:[/bold]
+  blackout logs                         Show last 50 lines of logs
+  blackout logs --lines 200             Show last 200 lines
+
+[bold]What's logged:[/bold]
+  • Engine startup and shutdown events
+  • Process IDs (PIDs) of running binaries
+  • Connection successes and failures
+  • Error messages from xray, sni-spoofer, etc.
+""",
+
+"test": """
+[bold cyan]blackout test[/bold cyan]
+Analyze and verify your saved V2Ray configurations.
+
+[bold]Usage:[/bold]
+  blackout test
+
+[bold]What it checks:[/bold]
+  • [bold]Protocol:[/bold] Trojan, VLESS, etc.
+  • [bold]SNI Compatibility:[/bold] Does the config point to 127.0.0.1:40443?
+  • [bold]Address/Port:[/bold] Valid server coordinates
+  • [bold]Name:[/bold] User-friendly name from the URI remark
+
+[dim]Coming soon: Real-time latency testing for every saved config.[/dim]
+""",
+
+"mode": """
+[bold cyan]blackout mode[/bold cyan]
+Switch between pre-configured security and performance profiles.
+
+[bold]Usage:[/bold]
+  blackout mode                         Show current mode and descriptions
+  blackout mode speed                   Max speed, minimal overhead
+  blackout mode private                 Random fingerprint + DoH
+  blackout mode legend                  Multi-hop + timing obfuscation
+
+[bold]Detailed info:[/bold]
+  See: [bold]blackout help security[/bold]
+""",
+
+"preflight": """
+[bold cyan]blackout preflight[/bold cyan]
+Ensure you are ready for an impending internet blackout.
+
+[bold]What is checked:[/bold]
+  ✓ Essential binaries present in bins/
+  ✓ At least one working V2Ray config saved
+  ✓ Cloudflare IP cache is fresh
+  ✓ Settings are valid for your country
+  ✓ Disk space and permissions
+
+[bold]Usage:[/bold]
+  blackout preflight
+
+[bold]Tip:[/bold]
+  Run this command while you still have internet access. If it fails,
+  run [bold]blackout doctor --fix[/bold] to prepare your system.
 """,
 
 "vpn": """
@@ -620,7 +709,7 @@ Uses Cloudflare WARP protocol — gives you a clean Cloudflare IP.
   • Run blackout scan → apply fastest IP
   • Try xray_fingerprint chrome (default)
   • Try a different engine: blackout start --engine warp
-  • Check your config latency: blackout config test (coming soon)
+  • Check your configs: [bold]blackout test[/bold]
 
 [bold]GoodbyeDPI crashes immediately:[/bold]
   Cause: WinDivert.dll missing OR not running as Administrator.
@@ -757,6 +846,11 @@ Blackout Kit natively supports 5 countries with tailored engine + DNS recommenda
   UK   (GB)        LOW      gdpi          Cloudflare / Google
   USA  (US)        MINIMAL  warp          Cloudflare / Quad9
 
+[bold]Usage:[/bold]
+  blackout country                      Show active profile & detection
+  blackout country set <CODE>           Pin to a specific country (IR/CN/US...)
+  blackout country reset                Return to auto-detection
+
 [bold]Auto-detect your country:[/bold]
   blackout country
   (Reads ISP info from ip-api.com — requires internet)
@@ -793,13 +887,13 @@ Blackout Kit natively supports 5 countries with tailored engine + DNS recommenda
 # Used by the help index to group topics for readability.
 
 _CATEGORIES: dict[str, list[str]] = {
-    "Getting Started":  ["quick_start", "faq", "countries", "bins"],
-    "Core Commands":    ["start", "stop", "scan", "connect", "fix", "status", "emergency"],
+    "Getting Started":  ["quick_start", "faq", "countries", "bins", "network"],
+    "Core Commands":    ["start", "stop", "scan", "connect", "fix", "status", "emergency", "mode"],
     "Configuration":    ["settings", "config"],
     "Engines":          ["engines", "vpn", "warp", "neighbor"],
     "Security":         ["security", "killswitch"],
-    "Maintenance":      ["tools", "cert", "doctor", "update"],
-    "Help":             ["troubleshoot"],
+    "Maintenance":      ["tools", "cert", "doctor", "update", "preflight", "logs"],
+    "Help":             ["troubleshoot", "test"],
 }
 
 # One-liner description for each topic (shown in the index)
@@ -824,6 +918,11 @@ _SUMMARIES: dict[str, str] = {
     "tools":         "Ping, DNS benchmark, speedtest, MTU, netfix...",
     "doctor":        "Self-diagnosis and automatic repair",
     "update":        "Update Blackout Kit + preflight readiness check",
+    "preflight":     "Offline-first readiness check for blackouts",
+    "logs":          "View background daemon and engine output",
+    "test":          "Analyze saved V2Ray configurations",
+    "mode":          "Switch between Speed / Private / Legend security modes",
+    "network":       "WiFi switcher and ISP provider intelligence",
     "troubleshoot":  "Common problems and how to fix them",
     "countries":     "Country profiles: censorship levels, best engines, DNS per country",
     "bins":          "Auto-download engine binaries from GitHub releases in one command",

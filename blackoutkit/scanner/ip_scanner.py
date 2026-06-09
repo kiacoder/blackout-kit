@@ -70,15 +70,26 @@ def generate_cloudflare_ips(count: int = 100) -> list[str]:
     """
     Generate a list of Cloudflare IPs to scan.
     Always includes known-good IPs first, then samples from CF ranges.
+    Uses efficient indexing to avoid memory spikes on large CIDR blocks.
     """
     ips: set[str] = set(KNOWN_GOOD_IPS)
-    per_range = max(1, (count - len(KNOWN_GOOD_IPS)) // len(CLOUDFLARE_RANGES))
+    remaining = max(0, count - len(ips))
 
-    for cidr in CLOUDFLARE_RANGES:
-        network = ipaddress.IPv4Network(cidr)
-        hosts = list(network.hosts())
-        sample = random.sample(hosts, min(per_range, len(hosts)))
-        ips.update(str(ip) for ip in sample)
+    if remaining > 0:
+        per_range = max(1, remaining // len(CLOUDFLARE_RANGES))
+        for cidr in CLOUDFLARE_RANGES:
+            try:
+                network = ipaddress.IPv4Network(cidr)
+                num_addresses = network.num_addresses
+                # We need to sample from num_addresses, but skip network/broadcast
+                # num_addresses includes them. We'll pick random indices.
+                sample_count = min(per_range, num_addresses)
+                for _ in range(sample_count):
+                    # random.randrange(num_addresses) gives an index in the network
+                    ip_obj = network[random.randrange(num_addresses)]
+                    ips.add(str(ip_obj))
+            except Exception:
+                continue
 
     result = list(ips)
     random.shuffle(result)

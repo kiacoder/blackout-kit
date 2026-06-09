@@ -5,6 +5,7 @@ Stores PID and state in ~/.blackout-kit/
 """
 import json
 import logging
+import logging.handlers
 import os
 import sys
 import subprocess
@@ -14,7 +15,9 @@ from pathlib import Path
 APP_DATA_DIR = Path.home() / ".blackout-kit"
 PID_FILE     = APP_DATA_DIR / "daemon.pid"
 LOG_FILE     = APP_DATA_DIR / "daemon.log"
+CRASH_LOG    = APP_DATA_DIR / "daemon.out"
 STATE_FILE   = APP_DATA_DIR / "daemon_state.json"
+LOCK_FILE    = APP_DATA_DIR / "daemon.lock"
 
 
 def _ensure_dir():
@@ -23,11 +26,8 @@ def _ensure_dir():
 
 def is_process_alive(pid: int) -> bool:
     """Check if a process with the given PID is running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError):
-        return False
+    import psutil
+    return psutil.pid_exists(pid)
 
 
 def get_pid() -> int | None:
@@ -51,40 +51,68 @@ def start(engine_name: str) -> int:
     Raises RuntimeError if a daemon is already running.
     """
     _ensure_dir()
-    existing = get_pid()
-    if existing:
-        raise RuntimeError(f"Daemon already running (PID {existing}). Run 'blackout stop' first.")
 
-    entry = Path(__file__).parent.parent / "blackout.py"
+    # Atomic lock creation
+    lock_path = APP_DATA_DIR / "daemon.start.lock"
+    try:
+        try:
+            lock_path.mkdir(exist_ok=False)
+        except FileExistsError:
+            # If lock is old (e.g. 10s), assume it's stale and take it
+            if time.time() - lock_path.stat().st_mtime > 10:
+                try:
+                    lock_path.rmdir()
+                    lock_path.mkdir(exist_ok=False)
+                except Exception:
+                    # Someone else might have just taken it or deleted it
+                    pass
+            else:
+                # Still locked by another 'start' command
+                time.sleep(1)
+                # One retry
+                try:
+                    lock_path.mkdir(exist_ok=False)
+                except FileExistsError:
+                    raise RuntimeError("Another 'blackout start' is in progress. Try again in a moment.")
 
-    cmd = [sys.executable, str(entry), "_daemon_run", "--engine", engine_name]
+        existing = get_pid()
+        if existing:
+            raise RuntimeError(f"Daemon already running (PID {existing}). Run 'blackout stop' first.")
 
-    log_file = open(LOG_FILE, "w", encoding="utf-8")
+        entry = Path(__file__).parent.parent / "blackout.py"
+        cmd = [sys.executable, str(entry), "_daemon_run", "--engine", engine_name]
 
-    kwargs = {
-        "stdout": log_file,
-        "stderr": subprocess.STDOUT,
-        "close_fds": True,
-    }
+        log_handle = open(CRASH_LOG, "w", encoding="utf-8")
 
-    if sys.platform == "win32":
-        DETACHED      = 0x00000008  # DETACHED_PROCESS
-        NO_WINDOW     = 0x08000000  # CREATE_NO_WINDOW
-        NEW_GROUP     = 0x00000200  # CREATE_NEW_PROCESS_GROUP
-        kwargs["creationflags"] = DETACHED | NO_WINDOW | NEW_GROUP
-    else:
-        kwargs["start_new_session"] = True
+        kwargs = {
+            "stdout": log_handle,
+            "stderr": subprocess.STDOUT,
+            "close_fds": True,
+        }
 
-    proc = subprocess.Popen(cmd, **kwargs)
+        if sys.platform == "win32":
+            DETACHED      = 0x00000008  # DETACHED_PROCESS
+            NO_WINDOW     = 0x08000000  # CREATE_NO_WINDOW
+            NEW_GROUP     = 0x00000200  # CREATE_NEW_PROCESS_GROUP
+            kwargs["creationflags"] = DETACHED | NO_WINDOW | NEW_GROUP
+        else:
+            kwargs["start_new_session"] = True
 
-    PID_FILE.write_text(str(proc.pid))
-    STATE_FILE.write_text(json.dumps({
-        "engine":    engine_name,
-        "pid":       proc.pid,
-        "started":   time.strftime("%Y-%m-%d %H:%M:%S"),
-    }))
+        proc = subprocess.Popen(cmd, **kwargs)
 
-    return proc.pid
+        PID_FILE.write_text(str(proc.pid))
+        STATE_FILE.write_text(json.dumps({
+            "engine":    engine_name,
+            "pid":       proc.pid,
+            "started":   time.strftime("%Y-%m-%d %H:%M:%S"),
+        }))
+
+        return proc.pid
+    finally:
+        try:
+            (APP_DATA_DIR / "daemon.start.lock").rmdir()
+        except Exception:
+            pass
 
 
 def stop() -> bool:
@@ -94,14 +122,24 @@ def stop() -> bool:
     """
     pid = get_pid()
     if not pid:
+        # Check for orphan lock file just in case
+        LOCK_FILE.unlink(missing_ok=True)
         return False
 
     try:
         import psutil
         parent = psutil.Process(pid)
         for child in parent.children(recursive=True):
-            child.terminate()
+            try:
+                child.terminate()
+            except Exception:
+                pass
         parent.terminate()
+        # Wait a bit for it to cleanup
+        try:
+            parent.wait(timeout=3)
+        except psutil.TimeoutExpired:
+            parent.kill()
     except ImportError:
         try:
             import signal
@@ -112,6 +150,8 @@ def stop() -> bool:
         pass
 
     PID_FILE.unlink(missing_ok=True)
+    STATE_FILE.unlink(missing_ok=True)
+    LOCK_FILE.unlink(missing_ok=True)
     return True
 
 
@@ -119,7 +159,13 @@ def get_state() -> dict | None:
     if not STATE_FILE.exists():
         return None
     try:
-        return json.loads(STATE_FILE.read_text())
+        data = json.loads(STATE_FILE.read_text())
+        # Verify that the PID in the state file is actually the one in PID_FILE
+        # and that it is still alive.
+        active_pid = get_pid()
+        if not active_pid or data.get("pid") != active_pid:
+            return None
+        return data
     except Exception:
         return None
 
@@ -140,6 +186,15 @@ def run_daemon_loop(engine_name: str):
     Internal: runs inside the background process.
     Starts the requested engine(s) and monitors them.
     """
+    import os
+    import sys
+    try:
+        devnull = open(os.devnull, "w")
+        sys.stdout = devnull
+        sys.stderr = devnull
+    except Exception:
+        pass
+
     from .engines.sni       import SNIEngine
     from .engines.xray      import XRayEngine
     from .engines.gdpi      import GoodbyeDPIEngine
@@ -156,13 +211,21 @@ def run_daemon_loop(engine_name: str):
     from . import security as sec
     from .proxy_manager import set_system_proxy, clear_system_proxy
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%H:%M:%S",
+    # Setup rotating logs
+    handler = logging.handlers.RotatingFileHandler(
+        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
     )
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"
+    ))
+    
     log = logging.getLogger("blackout-daemon")
-    log.info(f"Daemon starting. Engine: {engine_name}")
+    log.setLevel(logging.INFO)
+    log.addHandler(handler)
+    # Also log to stderr so it goes to CRASH_LOG for debugging startup
+    log.addHandler(logging.StreamHandler())
+
+    log.info(f"Daemon starting (PID {os.getpid()}). Engine: {engine_name}")
 
     ENGINE_MAP = {
         "sni":        lambda: (SNIEngine(), XRayEngine()),
@@ -176,6 +239,7 @@ def run_daemon_loop(engine_name: str):
         "wireguard":  lambda: (WireGuardEngine(),),
         "openvpn":    lambda: (OpenVPNEngine(),),
         "softether":  lambda: (SoftEtherEngine(),),
+        "legend":     lambda: (TorEngine(), SNIEngine(), XRayEngine()),
     }
 
     s = cfg.load()
@@ -192,7 +256,18 @@ def run_daemon_loop(engine_name: str):
                 log.info(f"{eng.name} started (PID {eng.pid})")
                 started.append(eng)
             else:
-                log.warning(f"{eng.name} failed to start (binary not in bins/?)")
+                # Treat any failure in the group as a full group failure.
+                # e.g. SNI+XRay: SNI ok but XRay fails → proxy port never opens.
+                # Stop already-started engines and let emergency mode try the next one.
+                log.warning(
+                    f"{eng.name} failed — rolling back partial group start."
+                )
+                for already_started in started:
+                    try:
+                        already_started.stop()
+                    except Exception:
+                        pass
+                return []
         return started
 
     if engine_name == "emergency":
@@ -220,21 +295,74 @@ def run_daemon_loop(engine_name: str):
             log.warning("Could not set system proxy (run as admin?)")
 
     log.info("Daemon running. Monitoring engines...")
-    retry_interval = s.get("retry_interval", 30)
-    # Track which engine stack is active (for stability logging)
+    retry_interval   = s.get("retry_interval", 30)
+    max_restarts     = s.get("max_retries", 3)
+    restart_count    = 0
+    # Track which engine stack is active (for stability logging and restarts)
     active_engine_name = engine_name if engine_name != "emergency" else (
         active[0].name if active else "unknown"
     )
 
+    my_pid = os.getpid()
     try:
         while True:
             time.sleep(retry_interval)
 
+            # Stability check: Ensure we still own the PID file.
+            # If someone else started a daemon, we should exit to avoid conflicts.
+            try:
+                if PID_FILE.exists():
+                    current_pid = int(PID_FILE.read_text().strip())
+                    if current_pid != my_pid:
+                        log.warning(f"PID file changed (new PID {current_pid}). Exiting to avoid conflict.")
+                        break
+                else:
+                    # Re-assert ourselves if the file was accidentally deleted
+                    PID_FILE.write_text(str(my_pid))
+            except Exception:
+                pass
+
             # Check if any engine crashed
             alive = [e for e in active if e.is_running()]
             if not alive:
-                log.warning("All engines stopped unexpectedly.")
-                break
+                if restart_count >= max_restarts:
+                    log.error(
+                        "All engines stopped and max restart attempts (%d) exhausted. "
+                        "Exiting daemon.",
+                        max_restarts,
+                    )
+                    break
+                log.warning(
+                    "All engines stopped unexpectedly. "
+                    "Attempting restart %d/%d...",
+                    restart_count + 1, max_restarts,
+                )
+                # Clean up any stragglers before restarting
+                for eng in active:
+                    try:
+                        eng.stop()
+                    except Exception:
+                        pass
+                active = try_start_engines(active_engine_name)
+                restart_count += 1
+                if not active:
+                    log.error("Restart #%d failed. Exiting daemon.", restart_count)
+                    break
+                log.info(
+                    "Engine restarted successfully (attempt %d/%d).",
+                    restart_count, max_restarts,
+                )
+                # Update state file so 'blackout status' shows accurate info
+                try:
+                    STATE_FILE.write_text(json.dumps({
+                        "engine":   active_engine_name,
+                        "pid":      active[0].pid if active[0].pid else -1,
+                        "started":  time.strftime("%Y-%m-%d %H:%M:%S"),
+                        "restarts": restart_count,
+                    }))
+                except Exception:
+                    pass
+                continue  # Skip latency check this cycle — restart just happened
 
             # Connectivity probe + stability tracking
             from .scanner.proxy_tester import test_tcp_port

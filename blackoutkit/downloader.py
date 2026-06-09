@@ -13,9 +13,11 @@ Epic features:
 import fnmatch
 import json
 import tempfile
+import threading
 import urllib.error
 import urllib.request
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -31,6 +33,7 @@ _DL_TIMEOUT          = 300   # seconds — binary download (5 min for large file
 
 # Per-session cache: repo → release dict — avoids hammering the 60 req/hr rate limit
 _release_cache: dict[str, dict] = {}
+_cache_lock = threading.Lock()
 
 
 # ──────────────────────────── Data model ─────────────────────────
@@ -141,6 +144,48 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         manual_url    = "https://github.com/Psiphon-Labs/psiphon-tunnel-core",
         manual_note   = "No pre-built Windows binary in releases — build from source (Go)",
     ),
+
+    "mhrv": BinInfo(
+        key           = "mhrv",
+        display_name  = "mhrv-rs",
+        description   = "Master HTTP Relay VPN (Rust) — MITM relay via Google Apps Script",
+        github_repo   = "therealaleph/MasterHttpRelayVPN-RUST",
+        asset_pattern = "mhrv-rs-windows-amd64.zip",
+        asset_exclude = None,
+        extract_map   = {"mhrv-rs.exe": "mhrv-rs.exe"},
+        output_bins   = ["mhrv-rs.exe"],
+        required      = False,
+        manual_url    = "https://github.com/therealaleph/MasterHttpRelayVPN-RUST/releases",
+        manual_note   = "",
+    ),
+
+    "softether": BinInfo(
+        key           = "softether",
+        display_name  = "SoftEther VPN Client",
+        description   = "SoftEther VPN — powerful SSL-VPN protocol",
+        github_repo   = "SoftEtherVPN/SoftEtherVPN_Stable",
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {"softether-vpnclient-*.exe": "softether-installer.exe"},
+        output_bins   = ["softether-installer.exe"],
+        required      = False,
+        manual_url    = "https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases",
+        manual_note   = "Downloads installer — run bins/softether-installer.exe, then copy vpnclient.exe to bins/",
+    ),
+
+    "wireguard": BinInfo(
+        key           = "wireguard",
+        display_name  = "WireGuard (Portable)",
+        description   = "WireGuard VPN — high-speed UDP-based tunnel",
+        github_repo   = "DrEm-s/wireguard-windows-portable",
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {"wireguard.exe": "wireguard.exe", "wg.exe": "wg.exe"},
+        output_bins   = ["wireguard.exe", "wg.exe"],
+        required      = False,
+        manual_url    = "https://github.com/DrEm-s/wireguard-windows-portable/releases",
+        manual_note   = "",
+    ),
 }
 
 
@@ -152,8 +197,9 @@ def _fetch_release(repo: str) -> dict | None:
     Uses in-process cache — safe to call multiple times per session.
     Returns None on network error, 404, or rate limit.
     """
-    if repo in _release_cache:
-        return _release_cache[repo]
+    with _cache_lock:
+        if repo in _release_cache:
+            return _release_cache[repo]
 
     url = _GITHUB_RELEASES_API.format(repo=repo)
     try:
@@ -170,7 +216,8 @@ def _fetch_release(repo: str) -> dict | None:
     if "message" in data and "tag_name" not in data:
         return None
 
-    _release_cache[repo] = data
+    with _cache_lock:
+        _release_cache[repo] = data
     return data
 
 
@@ -226,10 +273,15 @@ def _extract_from_zip(zip_path: Path, extract_map: dict[str, str]) -> tuple[bool
 
 def check_installed() -> dict[str, bool]:
     """Return {key: True/False} — True when all expected output_bins files exist in bins/."""
-    return {
-        key: all((BINS_DIR / b).exists() for b in info.output_bins)
-        for key, info in BIN_REGISTRY.items()
-    }
+    engine_bin = BINS_DIR / "blackout-engine.exe"
+    has_engine = engine_bin.exists()
+    status = {}
+    for key, info in BIN_REGISTRY.items():
+        if has_engine and key in ("xray", "sing-box", "mhrv", "sni-spoofing"):
+            status[key] = True
+        else:
+            status[key] = all((BINS_DIR / b).exists() for b in info.output_bins)
+    return status
 
 
 def get_latest_version(key: str) -> str | None:
@@ -283,65 +335,114 @@ def download_binary(
 
     tag    = release.get("tag_name", "unknown")
     assets = release.get("assets", [])
-    asset  = _find_asset(assets, info.asset_pattern, info.asset_exclude)
 
-    if not asset:
-        return False, (
-            f"No asset matching '{info.asset_pattern}' in release {tag}.\n"
-            f"  This may be a repo rename or restructure — check: {info.manual_url}"
-        )
+    is_zip_mode = info.asset_pattern is not None
 
-    download_url = asset["browser_download_url"]
-    total_size   = asset.get("size", 0)
-
-    # ── Stream download to temp file ──────────────────────────────
-    tmp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-            tmp_path = Path(tmp.name)
-
-        req = urllib.request.Request(
-            download_url,
-            headers={"User-Agent": f"blackout-kit/{__version__}"},
-        )
-
-        chunks: list[bytes] = []
-        downloaded = 0
-
-        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
-            # Prefer Content-Length from response if asset size was 0
-            if total_size == 0:
-                cl = resp.headers.get("Content-Length")
-                if cl:
-                    try:
-                        total_size = int(cl)
-                    except ValueError:
-                        pass  # Malformed header — progress bar just won't show total
-
-            while True:
-                chunk = resp.read(65536)   # 64 KB chunks
-                if not chunk:
-                    break
-                chunks.append(chunk)
-                downloaded += len(chunk)
-                if progress_callback:
-                    progress_callback(downloaded, total_size)
-
-        tmp_path.write_bytes(b"".join(chunks))
-
-        # ── Verify zip integrity ──────────────────────────────────
-        if not zipfile.is_zipfile(tmp_path):
-            return False, f"Downloaded file is not a valid ZIP (asset: {asset['name']})."
-
-        # ── Extract to bins/ ──────────────────────────────────────
-        ok, missing = _extract_from_zip(tmp_path, info.extract_map)
-        if not ok:
-            if missing == "corrupt_zip":
-                return False, "ZIP archive is corrupted — try again."
+    if is_zip_mode:
+        asset = _find_asset(assets, info.asset_pattern, info.asset_exclude)
+        if not asset:
             return False, (
-                f"Expected file not found in archive: '{missing}'\n"
-                f"  The zip structure may have changed in {tag}. Report at github.com/kiacoder/blackout-kit/issues"
+                f"No asset matching '{info.asset_pattern}' in release {tag}.\n"
+                f"  This may be a repo rename or restructure — check: {info.manual_url}"
             )
+        assets_to_download = [(asset, None)]
+    else:
+        assets_to_download = []
+        for pattern, out_name in info.extract_map.items():
+            asset = _find_asset(assets, pattern, info.asset_exclude)
+            if not asset:
+                return False, (
+                    f"No asset matching '{pattern}' in release {tag}.\n"
+                    f"  This may be a repo rename or restructure — check: {info.manual_url}"
+                )
+            assets_to_download.append((asset, out_name))
+
+    total_size = sum(a.get("size", 0) for a, _ in assets_to_download)
+    downloaded_so_far = 0
+
+    BINS_DIR.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if is_zip_mode:
+            asset, _ = assets_to_download[0]
+            download_url = asset["browser_download_url"]
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+                    tmp_path = Path(tmp.name)
+
+                req = urllib.request.Request(
+                    download_url,
+                    headers={"User-Agent": f"blackout-kit/{__version__}"},
+                )
+
+                asset_downloaded = 0
+                with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+                    cl = resp.headers.get("Content-Length")
+                    if cl:
+                        try:
+                            asset_size = int(cl)
+                            if total_size == 0 or total_size < asset_size:
+                                total_size = asset_size
+                        except ValueError:
+                            pass
+
+                    with open(tmp_path, "wb") as f:
+                        while True:
+                            chunk = resp.read(65536)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                            asset_downloaded += len(chunk)
+                            if progress_callback:
+                                progress_callback(asset_downloaded, total_size)
+
+                if not zipfile.is_zipfile(tmp_path):
+                    return False, f"Downloaded file is not a valid ZIP (asset: {asset['name']})."
+
+                ok, missing = _extract_from_zip(tmp_path, info.extract_map)
+                if not ok:
+                    if missing == "corrupt_zip":
+                        return False, "ZIP archive is corrupted — try again."
+                    return False, (
+                        f"Expected file not found in archive: '{missing}'\n"
+                        f"  The zip structure may have changed in {tag}. Report at github.com/kiacoder/blackout-kit/issues"
+                    )
+            finally:
+                if tmp_path:
+                    try:
+                        tmp_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+        else:
+            for asset, out_name in assets_to_download:
+                download_url = asset["browser_download_url"]
+                dest_path = BINS_DIR / out_name
+                temp_dest = dest_path.with_suffix(".tmp")
+                try:
+                    req = urllib.request.Request(
+                        download_url,
+                        headers={"User-Agent": f"blackout-kit/{__version__}"},
+                    )
+                    with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+                        with open(temp_dest, "wb") as f:
+                            while True:
+                                chunk = resp.read(65536)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                                downloaded_so_far += len(chunk)
+                                if progress_callback:
+                                    progress_callback(downloaded_so_far, total_size)
+                    if dest_path.exists():
+                        dest_path.unlink()
+                    temp_dest.rename(dest_path)
+                finally:
+                    if temp_dest.exists():
+                        try:
+                            temp_dest.unlink()
+                        except Exception:
+                            pass
 
         return True, f"Installed {info.display_name} ({tag})"
 
@@ -351,12 +452,6 @@ def download_binary(
         return False, f"File system error writing to bins/: {e}"
     except Exception as e:
         return False, f"Unexpected error: {e}"
-    finally:
-        if tmp_path:
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
 
 
 def download_all(
@@ -364,7 +459,7 @@ def download_all(
     progress_callback: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, tuple[bool, str]]:
     """
-    Download all auto-downloadable binaries.
+    Download all auto-downloadable binaries in parallel using 10 agents.
     skip_installed: if True, skip keys whose output_bins are already all present.
     progress_callback(key, bytes_done, total_bytes): called per-binary during download.
     Returns {key: (success, message)}.
@@ -372,6 +467,7 @@ def download_all(
     installed = check_installed()
     results: dict[str, tuple[bool, str]] = {}
 
+    to_download = []
     for key, info in BIN_REGISTRY.items():
         if not info.github_repo:
             note = info.manual_note or "No auto-download available"
@@ -382,10 +478,19 @@ def download_all(
             results[key] = (True, "Already installed")
             continue
 
-        def _cb(done: int, total: int, k: str = key) -> None:
-            if progress_callback:
-                progress_callback(k, done, total)
+        to_download.append(key)
 
-        results[key] = download_binary(key, progress_callback=_cb)
+    def _worker(key: str) -> tuple[str, tuple[bool, str]]:
+        def _cb(done: int, total: int):
+            if progress_callback:
+                progress_callback(key, done, total)
+        return key, download_binary(key, progress_callback=_cb)
+
+    # Use 10 agents as requested!
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        worker_results = executor.map(_worker, to_download)
+
+    for key, res in worker_results:
+        results[key] = res
 
     return results

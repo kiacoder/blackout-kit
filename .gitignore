@@ -50,3 +50,6 @@ env/
 *.swo
 .DS_Store
 Thumbs.db
+
+# Go engine build artifacts
+engine/*.exe
