@@ -53,21 +53,29 @@ func RunSNI(configPath string) error {
 func handleClient(client net.Conn, targetIP string, targetPort int) {
 	defer client.Close()
 
-	// Connect to target
+	// Connect to target with Dialer keepalive
 	targetAddr := fmt.Sprintf("%s:%d", targetIP, targetPort)
-	server, err := net.DialTimeout("tcp", targetAddr, 10*time.Second)
+	dialer := &net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	server, err := dialer.Dial("tcp", targetAddr)
 	if err != nil {
 		fmt.Printf("Connect to target %s failed: %v\n", targetAddr, err)
 		return
 	}
 	defer server.Close()
 
-	// Disable Nagle's algorithm to allow immediate flushing of fragments
+	// Disable Nagle's algorithm and enable KeepAlive to make connections smarter and more reliable
 	if tcpClient, ok := client.(*net.TCPConn); ok {
 		tcpClient.SetNoDelay(true)
+		tcpClient.SetKeepAlive(true)
+		tcpClient.SetKeepAlivePeriod(30 * time.Second)
 	}
 	if tcpServer, ok := server.(*net.TCPConn); ok {
 		tcpServer.SetNoDelay(true)
+		tcpServer.SetKeepAlive(true)
+		tcpServer.SetKeepAlivePeriod(30 * time.Second)
 	}
 
 	// Channel to signal completion of transfer

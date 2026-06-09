@@ -142,6 +142,8 @@ func (p *GASProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			break
 		}
+		// Print a warning to stdout/stderr so the user/logs show which ID failed
+		fmt.Printf("Warning: Google Apps Script relay failed for ID %s...: %v\n", id[:15], err)
 	}
 
 	if gasResp == nil {

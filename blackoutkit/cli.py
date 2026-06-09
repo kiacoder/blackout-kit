@@ -78,6 +78,66 @@ ALL_ENGINE_CHOICES = list(ENGINES.keys()) + ["auto"]
 
 def _start_engine_stack(name: str) -> list:
     """Instantiate and start all engines in a stack. Returns running list."""
+    from . import downloader as dl
+
+    stack_deps = {
+        "sni":        ["xray", "sni-spoofing"],
+        "gdpi":       ["goodbyedpi"],
+        "psiphon":    ["psiphon"],
+        "warp":       ["warp-plus"],
+        "mhrv":       ["mhrv"],
+        "legend":     ["xray", "sni-spoofing"],
+        "wireguard":  ["wireguard"],
+        "softether":  ["softether"],
+    }
+
+    deps = stack_deps.get(name, [])
+    if deps:
+        installed = dl.check_installed()
+        missing = [k for k in deps if not installed.get(k, False)]
+        if missing:
+            auto_downloadable = []
+            manual_only = []
+            for k in missing:
+                info = dl.BIN_REGISTRY.get(k)
+                if info:
+                    if info.github_repo:
+                        auto_downloadable.append((k, info))
+                    else:
+                        manual_only.append(info)
+
+            if manual_only:
+                console.print(f"\n[error]✗ Missing manual-install binaries required for [bold]{name}[/bold]:[/error]")
+                for info in manual_only:
+                    console.print(
+                        f"\n  [bold yellow]{info.display_name}[/bold yellow]\n"
+                        f"  Please download from: [cyan]{info.manual_url}[/cyan]\n"
+                        f"  Note: {info.manual_note or 'Extract to bins/ folder'}\n"
+                    )
+                return []
+
+            if auto_downloadable:
+                console.print(f"\n[warning]⚠️ Required binaries for [bold]{name}[/bold] are missing.[/warning]")
+                for k, info in auto_downloadable:
+                    console.print(f"  • {info.display_name}")
+                try:
+                    ans = console.input("\n[bold cyan]Would you like to download and install them now? (y/n):[/bold cyan] ").strip().lower()
+                except (KeyboardInterrupt, EOFError):
+                    return []
+                if ans in ("y", "yes"):
+                    console.print()
+                    for k, info in auto_downloadable:
+                        _download_single(dl, k, info)
+                    # Recheck
+                    installed = dl.check_installed()
+                    still_missing = [k for k in deps if not installed.get(k, False)]
+                    if still_missing:
+                        console.print("[error]Some binaries are still missing. Aborting connection.[/error]")
+                        return []
+                else:
+                    console.print("[warning]Aborted. Engine cannot start without binaries.[/warning]")
+                    return []
+
     classes = ENGINES.get(name, ())
     running = []
     for cls in classes:
@@ -1840,16 +1900,7 @@ def _interactive_menu():
         "0": _EXIT,
     }
 
-    auto_connect_triggered = False
-
     while True:
-        if not auto_connect_triggered:
-            auto_connect_triggered = True
-            console.print("[info]Auto-connecting on startup...[/info]\n")
-            cmd_connect(_make_fake_args(engine=None, background=False, iran=False))
-            console.print()
-            console.print(Panel(t, title="[bold]What do you want to do?[/bold]", border_style="cyan"))
-            continue
 
         try:
             choice = console.input("\n[bold cyan]Enter choice [0-9, S]:[/bold cyan] ").strip()
