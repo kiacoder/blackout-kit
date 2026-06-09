@@ -326,7 +326,7 @@ def get_engine_proxy_details(engine_name: str, settings: dict = None) -> tuple[s
     if engine_name in ("sni", "xray", "legend"):
         return host, s.get("xray_http_port", 10809)
     elif engine_name == "psiphon":
-        return host, s.get("psiphon_http_port", 8081)
+        return "socks=127.0.0.1", s.get("psiphon_socks_port", 1081)
     elif engine_name == "appsscript":
         return host, s.get("gas_proxy_port", 8087)
     elif engine_name == "mhrv":

@@ -31,7 +31,7 @@ def is_admin() -> bool:
         return False
 
 
-def set_system_proxy(host: str = "127.0.0.1", port: int = 10809) -> bool:
+def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str = "http") -> bool:
     """
     Set Windows system proxy to route HTTP/HTTPS through host:port.
     Bypasses: localhost, 127.*, LAN ranges, <local> hostnames.
@@ -39,10 +39,18 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809) -> bool:
     """
     global _last_error
 
+    if host.startswith("socks="):
+        protocol = "socks"
+        host = host.split("=")[1]
+
     if sys.platform != "win32":
         import os
-        os.environ["http_proxy"]  = f"http://{host}:{port}"
-        os.environ["https_proxy"] = f"http://{host}:{port}"
+        if protocol == "socks":
+            os.environ["http_proxy"]  = f"socks5://{host}:{port}"
+            os.environ["https_proxy"] = f"socks5://{host}:{port}"
+        else:
+            os.environ["http_proxy"]  = f"http://{host}:{port}"
+            os.environ["https_proxy"] = f"http://{host}:{port}"
         return True
 
     try:
@@ -50,7 +58,8 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809) -> bool:
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
-        winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ,   f"{host}:{port}")
+        proxy_str = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
+        winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_str)
         winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ,
                           "localhost;127.*;10.*;172.16.*;192.168.*;<local>")
         winreg.CloseKey(key)
@@ -67,8 +76,9 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809) -> bool:
 
     # Fallback: netsh (works without registry access)
     try:
+        proxy_str = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
         result = subprocess.run(
-            ["netsh", "winhttp", "set", "proxy", f"{host}:{port}"],
+            ["netsh", "winhttp", "set", "proxy", proxy_str],
             capture_output=True, timeout=10,
         )
         if result.returncode == 0:

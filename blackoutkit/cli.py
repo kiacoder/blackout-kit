@@ -1859,32 +1859,24 @@ def cmd_menu_select_engine():
         console.print("[error]Please enter a number.[/error]")
 
 
+import sys
 def _interactive_menu():
-    """Display an interactive numbered menu when blackout is run with no arguments."""
+    """Display an interactive menu navigable with arrow keys when blackout is run with no arguments."""
     menu_items = [
-        ("1", "🚀 Connect",   "Start bypass — smart/preferred engine"),
-        ("2", "⚡ Emergency",  "Try all engines until one works"),
-        ("3", "🔌 Engine",     "Select manual bypass engine (sni/psiphon/warp...)"),
-        ("4", "🌍 Country",    "Show or set country profile (IR/CN/…)"),
-        ("5", "📊 Status",    "Check daemon + connection health"),
-        ("6", "🔍 Scan",      "Scan Cloudflare IPs + SNI domains"),
-        ("7", "🏥 Doctor",    "Self-diagnose and auto-repair"),
-        ("8", "🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP"),
-        ("9", "🌐 Tools",     "Network toolkit (ping, speedtest…)"),
-        ("S", "⚙  Settings",  "View and change settings"),
-        ("0", "❌ Exit",      ""),
+        ("🚀 Connect",   "Start bypass — smart/preferred engine", "1"),
+        ("⚡ Emergency",  "Try all engines until one works", "2"),
+        ("🔌 Engine",     "Select manual bypass engine (sni/psiphon/warp...)", "3"),
+        ("🌍 Country",    "Show or set country profile (IR/CN/…)", "4"),
+        ("📊 Status",    "Check daemon + connection health", "5"),
+        ("🔍 Scan",      "Scan Cloudflare IPs + SNI domains", "6"),
+        ("🏥 Doctor",    "Self-diagnose and auto-repair", "7"),
+        ("🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP", "8"),
+        ("🌐 Tools",     "Network toolkit (ping, speedtest…)", "9"),
+        ("⚙  Settings",  "View and change settings", "S"),
+        ("❌ Exit",      "", "0"),
     ]
 
-    t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
-    t.add_column("Num", style="bold cyan", width=4)
-    t.add_column("Action", style="bold white", width=16)
-    t.add_column("Description", style="dim")
-    for num, action, desc in menu_items:
-        t.add_row(f"[{num}]", action, desc)
-
-    console.print(Panel(t, title="[bold]What do you want to do?[/bold]", border_style="cyan"))
-
-    _EXIT = object()  # sentinel for "0" so we can distinguish exit from unknown input
+    _EXIT = object()
     _dispatch = {
         "1": lambda: cmd_connect(_make_fake_args(engine=None, background=False, iran=False)),
         "2": lambda: cmd_emergency(_make_fake_args(background=False)),
@@ -1900,25 +1892,71 @@ def _interactive_menu():
         "0": _EXIT,
     }
 
-    while True:
+    selected_idx = 0
 
+    def generate_menu(idx):
+        t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
+        t.add_column("Marker", style="bold cyan", width=2)
+        t.add_column("Action", style="bold white", width=18)
+        t.add_column("Description", style="dim")
+        for i, (action, desc, key) in enumerate(menu_items):
+            if i == idx:
+                t.add_row(">", f"[cyan]{action}[/cyan]", f"[cyan]{desc}[/cyan]")
+            else:
+                t.add_row(" ", action, desc)
+        return Panel(t, title="[bold]Use Arrow Keys to Navigate[/bold]", border_style="cyan")
+
+    if sys.platform != "win32":
+        # Fallback to simple input for non-Windows (or write a proper Unix getch)
+        console.print(generate_menu(-1))
         try:
             choice = console.input("\n[bold cyan]Enter choice [0-9, S]:[/bold cyan] ").strip()
         except (KeyboardInterrupt, EOFError):
             console.print("\n[muted]Bye![/muted]")
             return
+        handler = _dispatch.get(choice.upper())
+        if handler is _EXIT: return
+        if handler: handler()
+        return
 
-        handler = _dispatch.get(choice)
+    import msvcrt
+    from rich.live import Live
+
+    while True:
+        with Live(generate_menu(selected_idx), console=console, auto_refresh=False, transient=True) as live:
+            while True:
+                live.update(generate_menu(selected_idx), refresh=True)
+                ch = msvcrt.getch()
+                if ch in (b'\x00', b'\xe0'):
+                    arrow = msvcrt.getch()
+                    if arrow == b'H': # UP
+                        selected_idx = (selected_idx - 1) % len(menu_items)
+                    elif arrow == b'P': # DOWN
+                        selected_idx = (selected_idx + 1) % len(menu_items)
+                elif ch == b'\r':
+                    break
+                elif ch == b'\x03': # Ctrl+C
+                    console.print("\n[muted]Bye![/muted]")
+                    return
+                else:
+                    # Allow quick select via numbers
+                    decoded = ch.decode('utf-8', 'ignore').upper()
+                    for i, (_, _, key) in enumerate(menu_items):
+                        if key.upper() == decoded:
+                            selected_idx = i
+                            break
+
+        action_key = menu_items[selected_idx][2]
+        handler = _dispatch.get(action_key.upper())
         if handler is _EXIT:
             console.print("[muted]Bye![/muted]")
             return
-        elif handler is None:
-            console.print("[warning]Invalid choice.[/warning]")
-        else:
+        elif handler:
             console.print()
             handler()
             console.print()
-            console.print(Panel(t, title="[bold]What do you want to do?[/bold]", border_style="cyan"))
+        else:
+            return
 
 
 def cmd_daemon_run(args):
