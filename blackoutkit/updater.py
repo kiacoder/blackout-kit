@@ -80,25 +80,43 @@ def check_for_update() -> dict | None:
         "body":        data.get("body", "No release notes."),
         "zipball_url": zipball,
         "html_url":    data.get("html_url", ""),
+        "assets":      data.get("assets", []),
     }
 
 
 def download_and_apply(release: dict) -> bool:
     """
-    Stream-download the release zip (with Rich progress bar + SHA256 display),
-    verify archive integrity, then replace the blackoutkit/ source files.
-    Returns True on success.
+    Stream-download the release zip (or .exe if frozen),
+    verify integrity, and replace the source (or swap the .exe).
     """
     from .theme import console
+    import os
+    import subprocess
 
-    url = release.get("zipball_url", "")
+    is_frozen = getattr(sys, "frozen", False)
+    
+    if is_frozen:
+        # Looking for the blackout.exe asset
+        url = None
+        for asset in release.get("assets", []):
+            if asset.get("name", "").lower() == "blackout.exe":
+                url = asset.get("browser_download_url")
+                break
+        if not url:
+            console.print("[error]No blackout.exe found in the latest release assets.[/error]")
+            return False
+        suffix = ".exe"
+    else:
+        url = release.get("zipball_url", "")
+        suffix = ".zip"
+
     if not url:
         return False
 
     tmp_path: Path | None = None
 
     try:
-        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp_path = Path(tmp.name)
 
         req = urllib.request.Request(
@@ -121,7 +139,7 @@ def download_and_apply(release: dict) -> bool:
                 transient=True,
             ) as progress:
                 task = progress.add_task(
-                    "Downloading update...",
+                    f"Downloading update ({suffix})...",
                     total=content_length if content_length > 0 else None,
                 )
                 chunks: list[bytes] = []
@@ -138,71 +156,94 @@ def download_and_apply(release: dict) -> bool:
         tmp_path.write_bytes(data)
 
         console.print(f"  [dim]SHA256:  {sha256_hex}[/dim]")
-        console.print("  [dim]Verifying archive integrity...[/dim]")
 
-        # Verify the zip is not corrupted
-        try:
+        if is_frozen:
+            # ── Binary Executable Hot-Swap ──
+            current_exe = Path(sys.executable)
+            old_exe = current_exe.with_name(current_exe.name + ".old")
+            
+            console.print("  [dim]Hot-swapping executable...[/dim]")
+            # Remove previous old exe if exists
+            if old_exe.exists():
+                try:
+                    old_exe.unlink()
+                except Exception:
+                    pass
+            
+            # Windows allows renaming a running executable!
+            os.rename(current_exe, old_exe)
+            
+            # Move the newly downloaded exe to the original path
+            shutil.move(str(tmp_path), current_exe)
+            
+            console.print("  [bold green]Update applied successfully![/bold green]")
+            console.print("  [dim]Restarting application...[/dim]")
+            
+            # Restart the app
+            subprocess.Popen([str(current_exe)] + sys.argv[1:], creationflags=0x00000008) # CREATE_NO_WINDOW
+            sys.exit(0)
+
+        else:
+            # ── Source Zip Update ──
+            console.print("  [dim]Verifying archive integrity...[/dim]")
+            try:
+                with zipfile.ZipFile(tmp_path) as zf:
+                    bad_file = zf.testzip()
+                    if bad_file:
+                        console.print(f"  [error]Corrupt archive entry: {bad_file}[/error]")
+                        return False
+            except zipfile.BadZipFile:
+                console.print("  [error]Downloaded file is not a valid ZIP archive.[/error]")
+                return False
+
+            console.print("  [dim]Archive OK — applying update...[/dim]")
+
             with zipfile.ZipFile(tmp_path) as zf:
-                bad_file = zf.testzip()
-                if bad_file:
-                    console.print(f"  [error]Corrupt archive entry: {bad_file}[/error]")
-                    return False
-        except zipfile.BadZipFile:
-            console.print("  [error]Downloaded file is not a valid ZIP archive.[/error]")
-            return False
+                names  = zf.namelist()
+                prefix = names[0].split("/")[0] + "/"
 
-        console.print("  [dim]Archive OK — applying update...[/dim]")
+                backup_dir = APP_DATA_DIR / "backup_src"
+                if backup_dir.exists():
+                    shutil.rmtree(backup_dir)
+                shutil.copytree(PROJECT_ROOT / "blackoutkit", backup_dir)
 
-        # Extract and find the blackoutkit/ subfolder inside the zip
-        with zipfile.ZipFile(tmp_path) as zf:
-            names  = zf.namelist()
-            # GitHub zips have a top-level folder like "kiacoder-blackout-kit-abc123/"
-            prefix = names[0].split("/")[0] + "/"
+                for member in names:
+                    if not member.startswith(prefix + "blackoutkit/"):
+                        continue
+                    relative = member[len(prefix):]
+                    dest     = PROJECT_ROOT / relative
+                    
+                    resolved_dest = dest.resolve()
+                    if not resolved_dest.is_relative_to((PROJECT_ROOT / "blackoutkit").resolve()):
+                        raise Exception("Path traversal attempt detected!")
 
-            # Back up current source
-            backup_dir = APP_DATA_DIR / "backup_src"
-            if backup_dir.exists():
-                shutil.rmtree(backup_dir)
-            shutil.copytree(PROJECT_ROOT / "blackoutkit", backup_dir)
+                    if member.endswith("/"):
+                        dest.mkdir(parents=True, exist_ok=True)
+                    else:
+                        dest.parent.mkdir(parents=True, exist_ok=True)
+                        dest.write_bytes(zf.read(member))
 
-            # Extract new blackoutkit/ files
-            for member in names:
-                if not member.startswith(prefix + "blackoutkit/"):
-                    continue
-                relative = member[len(prefix):]      # e.g. "blackoutkit/cli.py"
-                dest     = PROJECT_ROOT / relative
-                
-                resolved_dest = dest.resolve()
-                if not resolved_dest.is_relative_to((PROJECT_ROOT / "blackoutkit").resolve()):
-                    raise Exception("Path traversal attempt detected!")
-
-                if member.endswith("/"):
-                    dest.mkdir(parents=True, exist_ok=True)
-                else:
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    dest.write_bytes(zf.read(member))
-
-        tmp_path.unlink(missing_ok=True)
-        return True
+            tmp_path.unlink(missing_ok=True)
+            return True
 
     except Exception as e:
         console.print(f"[error]Update failed: {e}[/error]")
-        # Restore backup on failure using os.rename instead of rmtree to avoid lock errors
-        backup = APP_DATA_DIR / "backup_src"
-        if backup.exists():
-            try:
-                # Rename current to something else, then restore backup
-                failed_dir = PROJECT_ROOT / f"blackoutkit_failed_{int(time.time())}"
-                if (PROJECT_ROOT / "blackoutkit").exists():
-                    os.rename(PROJECT_ROOT / "blackoutkit", failed_dir)
-                os.rename(backup, PROJECT_ROOT / "blackoutkit")
-            except Exception:
-                pass
+        if not is_frozen:
+            backup = APP_DATA_DIR / "backup_src"
+            if backup.exists():
+                try:
+                    failed_dir = PROJECT_ROOT / f"blackoutkit_failed_{int(time.time())}"
+                    if (PROJECT_ROOT / "blackoutkit").exists():
+                        import os
+                        os.rename(PROJECT_ROOT / "blackoutkit", failed_dir)
+                    import os
+                    os.rename(backup, PROJECT_ROOT / "blackoutkit")
+                except Exception:
+                    pass
         if tmp_path:
             try:
                 tmp_path.unlink(missing_ok=True)
             except Exception:
-                pass
                 pass
         return False
 
