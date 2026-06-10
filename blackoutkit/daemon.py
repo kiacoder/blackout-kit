@@ -79,8 +79,11 @@ def start(engine_name: str) -> int:
         if existing:
             raise RuntimeError(f"Daemon already running (PID {existing}). Run 'blackout stop' first.")
 
-        entry = Path(__file__).parent.parent / "blackout.py"
-        cmd = [sys.executable, str(entry), "_daemon_run", "--engine", engine_name]
+        if getattr(sys, 'frozen', False):
+            cmd = [sys.executable, "_daemon_run", "--engine", engine_name]
+        else:
+            entry = Path(__file__).parent.parent / "blackout.py"
+            cmd = [sys.executable, str(entry), "_daemon_run", "--engine", engine_name]
 
         log_handle = open(CRASH_LOG, "w", encoding="utf-8")
 
