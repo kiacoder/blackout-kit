@@ -110,37 +110,17 @@ Blackout Kit coordinates **13 bypass engines**. Each serves a different threat m
 
 ## Installation
 
-### Option 1 — Full Version (Recommended for Iran/China users)
+### Option 1 — Standalone Executable (Zero Dependencies)
 
-Download the `blackout-kit-full-vX.X.X.zip` from the [Releases page](https://github.com/kiacoder/blackout-kit/releases).
+Download `blackout.exe` from the [Releases page](https://github.com/kiacoder/blackout-kit/releases).
 
-This zip includes **all binaries pre-bundled**. No internet required after download.
+This executable is fully standalone. No Python installation required. Just double-click `blackout.exe` and it will automatically extract its internal engines and open the CLI.
 
-```
-blackout-kit-full-v1.0.1.zip
-├── blackout.py
-├── requirements.txt
-├── blackoutkit/
-└── bins/
-    ├── xray.exe
-    ├── goodbyedpi.exe
-    ├── WinDivert.dll
-    ├── WinDivert64.sys
-    ├── sing-box.exe
-    └── warp-plus.exe
-```
-
-```cmd
-:: Unzip, then:
-pip install -r requirements.txt
-python blackout.py
-```
-
-Done. No extra steps.
+> **Note:** The `.exe` comes pre-packed with native C/C++ DLLs. On first run, it drops them into `~/.blackout-kit/bins/` so they can be securely updated later.
 
 ---
 
-### Option 2 — Slim Version (Developers / Pre-install)
+### Option 2 — Developer Source Version
 
 ```cmd
 git clone https://github.com/kiacoder/blackout-kit.git
@@ -149,9 +129,9 @@ pip install -r requirements.txt
 python blackout.py bins download
 ```
 
-`bins download` auto-downloads all binaries from their official GitHub releases with a progress bar.
+`bins download` auto-downloads all necessary binaries from their official sources with a progress bar.
 
-> **Warning:** The Slim version requires internet to download binaries. If you are already in a blackout, use the Full version instead.
+> **Warning:** The Source version requires internet to download binaries and dependencies. If you are already in a blackout, use the standalone `.exe` instead.
 
 ---
 
@@ -443,15 +423,15 @@ blackout settings set engine_order xray,warp,psiphon,tor
 
 ## Two Versions
 
-| | Full Version | Slim Version |
+| | Standalone `.exe` | Source Code |
 |--|--------------|--------------|
-| **Contains** | Code + all binaries | Code only |
-| **Download size** | ~80 MB | ~2 MB |
-| **Works during blackout** | ✅ Yes | ❌ No — needs internet for `bins download` |
-| **Who it's for** | End users in Iran/China/Iraq | Developers, pre-install |
-| **GitHub Release asset** | `blackout-kit-full-v*.zip` | `blackout-kit-slim-v*.zip` (or `Source code.zip`) |
+| **Contains** | Code + native DLL engines | Code only |
+| **Download size** | ~63 MB | ~2 MB |
+| **Works offline/blackout** | ✅ Yes | ❌ No — needs internet for `bins download` |
+| **Who it's for** | End users, general public | Developers, contributors |
+| **GitHub Release asset** | `blackout.exe` | `Source code.zip` |
 
-**Always share the Full version with people who need it RIGHT NOW.** The Slim version is for developers and people who install it before a crisis.
+**Always share the `blackout.exe` version with people who need it RIGHT NOW.** The Source version is for developers and people who install it before a crisis.
 
 ---
 
