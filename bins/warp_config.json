@@ -1,0 +1,5 @@
+{
+  "socks5-bind": "127.0.0.1:10803",
+  "country": "DE",
+  "verbose": false
+}

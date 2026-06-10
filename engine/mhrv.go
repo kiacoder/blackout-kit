@@ -148,18 +148,17 @@ func (p *GASProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	for i := 0; i < maxTries; i++ {
 		id := p.nextID()
-		// Re-assign body reader for retries
-		if len(reqBody) > 0 {
-			r.Body = io.NopCloser(bytes.NewReader(reqBody))
-		}
+		// Re-assign body reader for retries unconditionally
+		r.Body = io.NopCloser(bytes.NewReader(reqBody))
+		
 		gasResp, err = p.relayRequest(id, r)
 		if err == nil {
 			break
 		}
 		// Print a warning to stdout/stderr so the user/logs show which ID failed
 		safeID := id
-		if len(safeID) > 15 {
-			safeID = safeID[:15] + "..."
+		if len([]rune(safeID)) > 15 {
+			safeID = string([]rune(safeID)[:15]) + "..."
 		}
 		fmt.Printf("Warning: Google Apps Script relay failed for ID %s: %v\n", safeID, err)
 	}

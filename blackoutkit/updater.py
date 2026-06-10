@@ -185,19 +185,24 @@ def download_and_apply(release: dict) -> bool:
         tmp_path.unlink(missing_ok=True)
         return True
 
-    except Exception:
-        # Restore backup on failure
+    except Exception as e:
+        console.print(f"[error]Update failed: {e}[/error]")
+        # Restore backup on failure using os.rename instead of rmtree to avoid lock errors
         backup = APP_DATA_DIR / "backup_src"
         if backup.exists():
             try:
-                shutil.rmtree(PROJECT_ROOT / "blackoutkit", ignore_errors=True)
-                shutil.copytree(backup, PROJECT_ROOT / "blackoutkit", dirs_exist_ok=True)
+                # Rename current to something else, then restore backup
+                failed_dir = PROJECT_ROOT / f"blackoutkit_failed_{int(time.time())}"
+                if (PROJECT_ROOT / "blackoutkit").exists():
+                    os.rename(PROJECT_ROOT / "blackoutkit", failed_dir)
+                os.rename(backup, PROJECT_ROOT / "blackoutkit")
             except Exception:
                 pass
         if tmp_path:
             try:
                 tmp_path.unlink(missing_ok=True)
             except Exception:
+                pass
                 pass
         return False
 

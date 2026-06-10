@@ -51,7 +51,7 @@ class XRayEngine(Engine):
                     "listen": "127.0.0.1",
                     "protocol": "socks",
                     "settings": {"auth": "noauth", "udp": True},
-                    "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+                    "sniffing": {"enabled": True, "destOverride": ["http", "tls", "fakedns"] if s.get("xray_doh_dns") else ["http", "tls"]},
                 },
                 {
                     "tag": "http-in",
@@ -59,10 +59,70 @@ class XRayEngine(Engine):
                     "listen": "127.0.0.1",
                     "protocol": "http",
                     "settings": {},
+                    "sniffing": {"enabled": True, "destOverride": ["http", "tls", "fakedns"] if s.get("xray_doh_dns") else ["http", "tls"]},
                 },
             ],
             "outbounds": [],
+            "routing": {
+                "domainStrategy": "IPIfNonMatch",
+                "rules": []
+            }
         }
+
+        # ── DNS Leak Protection (DoH) ─────────────────────────────
+        if s.get("xray_doh_dns"):
+            config["dns"] = {
+                "servers": [
+                    "https+local://cloudflare-dns.com/dns-query",
+                    "https+local://dns.google/dns-query",
+                    "1.1.1.1",
+                    "8.8.8.8",
+                    "localhost"
+                ],
+                "queryStrategy": "UseIP"
+            }
+            # Route all DNS queries (udp/tcp 53) directly to proxy
+            config["routing"]["rules"].append({
+                "type": "field",
+                "port": 53,
+                "network": "udp,tcp",
+                "outboundTag": "proxy"
+            })
+
+        # ── Smart Split Tunneling ─────────────────────────────────
+        if s.get("xray_split_tunnel"):
+            config["routing"]["rules"].extend([
+                {
+                    "type": "field",
+                    "ip": [
+                        "127.0.0.0/8",
+                        "10.0.0.0/8",
+                        "172.16.0.0/12",
+                        "192.168.0.0/16",
+                        "::1/128",
+                        "fc00::/7",
+                        "fe80::/10"
+                    ],
+                    "outboundTag": "direct"
+                },
+                {
+                    "type": "field",
+                    "domain": [
+                        "regexp:.*\\.ir$",
+                        "regexp:.*\\.gov\\.ir$",
+                        "regexp:.*\\.ac\\.ir$",
+                        "regexp:.*\\.co\\.ir$"
+                    ],
+                    "outboundTag": "direct"
+                }
+            ])
+
+        # Default catch-all rule to route everything else to proxy
+        config["routing"]["rules"].append({
+            "type": "field",
+            "network": "tcp,udp",
+            "outboundTag": "proxy"
+        })
 
         if self.proxy_config:
             outbound = self._build_outbound(self.proxy_config)
@@ -72,10 +132,16 @@ class XRayEngine(Engine):
             if fallback.exists():
                 try:
                     existing = json.loads(fallback.read_text())
-                    # Keep inbounds but use existing outbounds
                     config["outbounds"] = existing.get("outbounds", [])
-                    # If legend mode, we still want to try to chain Tor if possible,
-                    # but custom configs might conflict. For now, we trust the custom config.
+                    # Ensure the first outbound is tagged 'proxy' so our routing rules work
+                    if config["outbounds"] and not any(o.get("tag") == "proxy" for o in config["outbounds"]):
+                        config["outbounds"][0]["tag"] = "proxy"
+                    # Add direct/block if missing
+                    tags = [o.get("tag") for o in config["outbounds"]]
+                    if "direct" not in tags:
+                        config["outbounds"].append({"tag": "direct", "protocol": "freedom"})
+                    if "block" not in tags:
+                        config["outbounds"].append({"tag": "block", "protocol": "blackhole"})
                     return config
                 except (json.JSONDecodeError, OSError):
                     pass  # Corrupt/unreadable fallback — fall through to default

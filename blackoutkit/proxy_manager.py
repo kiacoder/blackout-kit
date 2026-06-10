@@ -169,3 +169,35 @@ def _notify_proxy_change():
         wininet.InternetSetOptionW(0, INTERNET_OPTION_REFRESH,          0, 0)
     except Exception:
         pass
+
+
+_ctrl_handler_ref = None
+
+def install_console_close_handler():
+    """
+    Installs a Windows console control handler to catch when the user 
+    closes the PowerShell/CMD window (CTRL_CLOSE_EVENT).
+    This ensures the system proxy is cleanly disabled before the OS
+    hard-kills the Python process.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        import ctypes.wintypes
+
+        HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.DWORD)
+
+        def ctrl_handler(ctrl_type):
+            # 2 = CTRL_CLOSE_EVENT, 5 = CTRL_LOGOFF_EVENT, 6 = CTRL_SHUTDOWN_EVENT
+            if ctrl_type in (2, 5, 6):
+                clear_system_proxy()
+            return False  # Return False to pass the event to the next handler (default OS exit)
+
+        global _ctrl_handler_ref
+        _ctrl_handler_ref = HandlerRoutine(ctrl_handler)
+
+        ctypes.windll.kernel32.SetConsoleCtrlHandler(_ctrl_handler_ref, True)
+    except Exception as e:
+        # Silently fail if we can't install the handler
+        pass

@@ -140,19 +140,55 @@ def _start_engine_stack(name: str) -> list:
 
     classes = ENGINES.get(name, ())
     running = []
-    for cls in classes:
-        eng = cls()
-        if eng.start():
-            running.append(eng)
-        else:
-            console.print(f"  [warning]⚠ {eng.name} failed to start (check logs for details)[/warning]")
-            # Rollback: stop all already started engines in this stack
-            for r in running:
-                try:
-                    r.stop()
-                except Exception:
-                    pass
-            return []
+
+    import logging
+    from rich.status import Status
+
+    class EngineStatusHandler(logging.Handler):
+        def __init__(self, status_obj, eng_name):
+            super().__init__()
+            self.status_obj = status_obj
+            self.eng_name = eng_name
+            self.setLevel(logging.DEBUG)
+            # Use basic formatting so we just get the message
+            self.setFormatter(logging.Formatter("%(message)s"))
+
+        def emit(self, record):
+            if record.levelno <= logging.INFO:
+                msg = self.format(record)
+                self.status_obj.update(
+                    f"[bold cyan]Starting {self.eng_name}...[/bold cyan]\n  [dim]→ {msg}[/dim]"
+                )
+
+    with console.status(f"[bold cyan]Starting stack: {name}...[/bold cyan]") as status:
+        for cls in classes:
+            eng = cls()
+            
+            # Attach handler to this specific engine's logger
+            handler = EngineStatusHandler(status, eng.name)
+            eng._log.addHandler(handler)
+            # Ensure the logger passes DEBUG messages to our handler
+            old_level = eng._log.level
+            eng._log.setLevel(logging.DEBUG)
+            
+            try:
+                success = eng.start()
+            finally:
+                eng._log.removeHandler(handler)
+                eng._log.setLevel(old_level)
+                
+            if success:
+                running.append(eng)
+            else:
+                console.print(f"  [warning]⚠ {eng.name} failed to start (check logs for details)[/warning]")
+                # Rollback: stop all already started engines in this stack
+                for r in running:
+                    try:
+                        r.stop()
+                    except Exception:
+                        pass
+                return []
+                
     return running
 
 
@@ -389,7 +425,6 @@ def cmd_start(args):
 
     # ── Foreground mode ──
     s = cfg.load()
-    console.print(f"\n[info]Starting engine stack: [bold]{engine_name}[/bold][/info]")
     engines = _start_engine_stack(engine_name)
 
     if not engines:
@@ -411,8 +446,22 @@ def cmd_start(args):
     console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
 
     try:
+        last_check = time.monotonic()
         while all(e.is_running() for e in engines):
             time.sleep(1)
+            
+            # Every 10 seconds, check if the proxy is actually routing traffic
+            now = time.monotonic()
+            if now - last_check > 10.0:
+                last_check = now
+                if s.get("auto_set_proxy") and proxy_info:
+                    import socket
+                    try:
+                        # Fast check to see if local proxy port is still accepting connections
+                        with socket.create_connection(proxy_info, timeout=2.0):
+                            pass
+                    except Exception:
+                        console.print("\n[warning]⚠ Proxy port stopped responding. Check your internet connection.[/warning]")
     except KeyboardInterrupt:
         pass
     finally:
@@ -465,7 +514,6 @@ def cmd_emergency(args):
     active        = []
 
     for ename in order:
-        console.print(f"\n[info]Trying [bold]{ename}[/bold]...[/info]")
         engines = _start_engine_stack(ename)
         if not engines:
             console.print(f"  [error]✗ {ename} — no binaries found[/error]")
@@ -498,8 +546,21 @@ def cmd_emergency(args):
 
     console.print("\n[muted]Press Ctrl+C to stop.[/muted]")
     try:
+        last_check = time.monotonic()
         while all(e.is_running() for e in active):
             time.sleep(1)
+            
+            # Every 10 seconds, check if the proxy is actually routing traffic
+            now = time.monotonic()
+            if now - last_check > 10.0:
+                last_check = now
+                if s.get("auto_set_proxy") and proxy_info:
+                    import socket
+                    try:
+                        with socket.create_connection(proxy_info, timeout=2.0):
+                            pass
+                    except Exception:
+                        console.print("\n[warning]⚠ Proxy port stopped responding. Check your internet connection.[/warning]")
     except KeyboardInterrupt:
         pass
     finally:
@@ -1824,39 +1885,82 @@ def cmd_menu_select_engine():
         ("softether",  "SoftEther SSL-VPN"),
     ]
 
-    for i, (key, desc) in enumerate(options, 1):
-        active_marker = "[success]● active[/success]" if key == current else ""
-        t.add_row(f"{i}", f"{key}", f"{desc} {active_marker}")
+    # Start interactive menu instead of prompt
+    _EXIT = object()
+    
+    # We will repurpose the _interactive_menu's logic
+    import msvcrt
+    from rich.live import Live
 
-    console.print(Panel(
-        t,
-        title="[bold]Select Bypass Strategy (Manual Engine Selection)[/bold]",
-        border_style="cyan",
-    ))
-    console.print("  [0] Cancel")
+    selected_idx = 0
 
-    try:
-        choice = console.input("\n[bold cyan]Choose option [0-12]:[/bold cyan] ").strip()
-    except (KeyboardInterrupt, EOFError):
-        return
-
-    if choice == "0" or not choice:
-        return
-
-    try:
-        idx = int(choice) - 1
-        if 0 <= idx < len(options):
-            selected_key = options[idx][0]
-            cfg.set_value("selected_engine", selected_key)
-            console.print(f"\n[success]✓ Preferred engine set to [bold]{selected_key}[/bold]![/success]")
-
-            # Immediately offer to connect
-            console.print("[info]Starting connection with new strategy...[/info]\n")
-            cmd_connect(_make_fake_args(engine=None, background=False, iran=False))
+    def generate_menu(idx):
+        t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
+        t.add_column("Marker", style="bold cyan", width=2)
+        t.add_column("Engine", style="bold white", width=14)
+        t.add_column("Description", style="dim")
+        for i, (key, desc) in enumerate(options):
+            active_marker = "[success]● active[/success]" if key == current else ""
+            if i == idx:
+                t.add_row(">", f"[cyan]{key}[/cyan]", f"[cyan]{desc}[/cyan] {active_marker}")
+            else:
+                t.add_row(" ", key, f"{desc} {active_marker}")
+        
+        t.add_row(" ", "", "")
+        if idx == len(options):
+            t.add_row(">", "[red]Cancel[/red]", "[dim]Return to main menu[/dim]")
         else:
-            console.print("[error]Invalid option.[/error]")
-    except ValueError:
-        console.print("[error]Please enter a number.[/error]")
+            t.add_row(" ", "[red]Cancel[/red]", "[dim]Return to main menu[/dim]")
+            
+        return Panel(t, title="[bold]Select Bypass Strategy (Manual Engine Selection)[/bold]", border_style="cyan")
+
+    if sys.platform != "win32":
+        console.print(generate_menu(-1))
+        try:
+            choice = console.input("\n[bold cyan]Choose option [0-12]:[/bold cyan] ").strip()
+        except (KeyboardInterrupt, EOFError):
+            return
+        if not choice or choice == "0": return
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(options):
+                selected_key = options[idx][0]
+                cfg.set_value("selected_engine", selected_key)
+                console.print(f"\n[success]✓ Preferred engine set to [bold]{selected_key}[/bold]![/success]")
+                console.print("[info]Engine selected. You can now use the 'Connect' option from the main menu.[/info]\n")
+        except ValueError:
+            pass
+        return
+
+    while True:
+        with Live(generate_menu(selected_idx), console=console, auto_refresh=False, transient=True) as live:
+            while True:
+                live.update(generate_menu(selected_idx), refresh=True)
+                ch = msvcrt.getch()
+                if ch in (b'\x00', b'\xe0'):
+                    arrow = msvcrt.getch()
+                    if arrow == b'H': # UP
+                        selected_idx = (selected_idx - 1) % (len(options) + 1)
+                    elif arrow == b'P': # DOWN
+                        selected_idx = (selected_idx + 1) % (len(options) + 1)
+                elif ch == b'\r':
+                    break
+                elif ch == b'\x03': # Ctrl+C
+                    return
+                else:
+                    decoded = ch.decode('utf-8', 'ignore')
+                    if decoded == '0':
+                        selected_idx = len(options)
+                        break
+
+        if selected_idx == len(options):
+            return
+            
+        selected_key = options[selected_idx][0]
+        cfg.set_value("selected_engine", selected_key)
+        console.print(f"\n[success]✓ Preferred engine set to [bold]{selected_key}[/bold]![/success]")
+        console.print("[info]Engine selected. You can now use the 'Connect' option from the main menu.[/info]\n")
+        break
 
 
 import sys
@@ -1955,6 +2059,13 @@ def _interactive_menu():
             console.print()
             handler()
             console.print()
+            
+            # Don't pause if the user just started the engine (foreground), 
+            # because they already hit Ctrl+C to stop it.
+            if action_key not in ("1", "2"):
+                console.print("[dim]Press any key to return to menu...[/dim]")
+                msvcrt.getch()
+                console.print()
         else:
             return
 

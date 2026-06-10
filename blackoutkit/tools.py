@@ -49,7 +49,7 @@ def flush_dns() -> bool:
     """Flush the operating system DNS cache."""
     try:
         if sys.platform == "win32":
-            subprocess.run(["ipconfig", "/flushdns"], capture_output=True, check=True)
+            subprocess.run(["ipconfig", "/flushdns"], capture_output=True, check=True, timeout=10)
         else:
             # Try common Linux DNS cache flush methods
             for cmd in [
@@ -58,7 +58,7 @@ def flush_dns() -> bool:
                 ["nscd", "-i", "hosts"],
             ]:
                 try:
-                    subprocess.run(cmd, capture_output=True, check=True)
+                    subprocess.run(cmd, capture_output=True, check=True, timeout=10)
                     break
                 except Exception:
                     continue

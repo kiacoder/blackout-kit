@@ -21,6 +21,7 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 
 
 
+
 /* End of preamble from import "C" comments.  */
 
 
@@ -82,6 +83,8 @@ extern __declspec(dllexport) GoInt StartSNIC(char* configPath);
 extern __declspec(dllexport) void StopSNIC();
 extern __declspec(dllexport) GoInt StartMHRVC(int port, char* ids);
 extern __declspec(dllexport) void StopMHRVC();
+extern __declspec(dllexport) int StartWireGuardC(char* configPath, int socksPort);
+extern __declspec(dllexport) void StopWireGuardC();
 
 #ifdef __cplusplus
 }

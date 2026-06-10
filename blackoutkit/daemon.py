@@ -225,6 +225,20 @@ def run_daemon_loop(engine_name: str):
     # Also log to stderr so it goes to CRASH_LOG for debugging startup
     log.addHandler(logging.StreamHandler())
 
+    # Spawn the watchdog process to handle forceful termination (End Task)
+    try:
+        watchdog_script = Path(__file__).parent / "watchdog.py"
+        subprocess.Popen(
+            [sys.executable, str(watchdog_script), str(os.getpid())],
+            creationflags=0x08000000 | 0x00000008, # DETACHED_PROCESS | CREATE_NO_WINDOW
+            close_fds=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        log.info("Watchdog process spawned for proxy safety.")
+    except Exception as e:
+        log.warning(f"Failed to spawn watchdog: {e}")
+
     log.info(f"Daemon starting (PID {os.getpid()}). Engine: {engine_name}")
 
     ENGINE_MAP = {
@@ -301,6 +315,25 @@ def run_daemon_loop(engine_name: str):
         else:
             log.info("Network-level engine active — no system proxy needed.")
 
+    # Start system tray integration
+    try:
+        from .tray import start_tray
+        import threading
+        
+        def _on_tray_stop():
+            log.info("Tray requested shutdown.")
+            global _shutdown_requested
+            _shutdown_requested = True
+
+        global _shutdown_requested
+        _shutdown_requested = False
+        
+        tray_thread = threading.Thread(target=start_tray, args=(active_engine_name, _on_tray_stop), daemon=True)
+        tray_thread.start()
+        log.info("System tray initialized.")
+    except Exception as e:
+        log.warning(f"Failed to start system tray: {e}")
+
     log.info("Daemon running. Monitoring engines...")
     retry_interval   = s.get("retry_interval", 30)
     max_restarts     = s.get("max_retries", 3)
@@ -310,7 +343,14 @@ def run_daemon_loop(engine_name: str):
     my_pid = os.getpid()
     try:
         while True:
-            time.sleep(retry_interval)
+            # Sleep in small increments to respond to shutdown requests faster
+            for _ in range(retry_interval):
+                time.sleep(1)
+                if _shutdown_requested:
+                    break
+            
+            if _shutdown_requested:
+                break
 
             # Stability check: Ensure we still own the PID file.
             # If someone else started a daemon, we should exit to avoid conflicts.

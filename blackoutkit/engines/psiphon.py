@@ -58,25 +58,65 @@ class PsiphonEngine(Engine):
             self.country, self.http_port, self.socks_port,
         )
 
-        config_path = self._write_config()
-
         from ..core import get_warp_dll
         dll = get_warp_dll()
-        if not dll:
-            self._log.error("WARP DLL missing! Ensure blackout_warp.dll is built.")
+        if dll:
+            self._log.info("Launching Psiphon via native DLL (Warp+ backend)")
+            c_country = (self.country or "DE").encode("utf-8")
+            if dll.StartPsiphonC(self.socks_port, self.http_port, c_country) == 0:
+                self._dll_stop_func = dll.StopPsiphonC
+                if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
+                    self._log.error("Psiphon natively via DLL timed out. Falling back to executable.")
+                    self.stop()
+                    self._dll_stop_func = None
+                else:
+                    self._log.info("Psiphon ready natively  socks=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
+                    return True
+            else:
+                self._log.warning("Native DLL StartPsiphonC failed, falling back to executable")
+
+        binary = self.find_binary(PSIPHON_BIN_NAMES)
+        if not binary:
             return False
 
-        self._log.info("Launching pure Psiphon natively")
-        c_config_path = str(config_path.absolute()).encode("utf-8")
-        if dll.StartPsiphonC(c_config_path) == 0:
-            self._dll_stop_func = dll.StopPsiphonC
-            if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
-                self._log.error("Psiphon natively via DLL timed out.")
-                self.stop()
-                return False
-            else:
-                self._log.info("Psiphon ready natively  socks=127.0.0.1:%d  country=%s.", self.socks_port, self.country)
-                return True
-        else:
-            self._log.error("Native DLL StartPsiphonC failed")
+        config_path = self._write_config()
+        self._log.debug("Psiphon config written to %s", config_path)
+
+        try:
+            # psiphon-tunnel-core reads config with -config flag
+            self._process = subprocess.Popen(
+                [str(binary), "-config", str(config_path)],
+                cwd=str(binary.parent),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
+            )
+        except Exception as exc:
+            self._log.error("Failed to launch Psiphon: %s", exc)
             return False
+
+        # Psiphon needs time to find a working server — use a long timeout
+        self._log.debug(
+            "Waiting up to %.0fs for Psiphon HTTP proxy on port %d…",
+            _STARTUP_TIMEOUT, self.http_port,
+        )
+        if not self.wait_for_port(self.http_port, timeout=_STARTUP_TIMEOUT):
+            if not self.check_process_alive():
+                self._log.error(
+                    "Psiphon exited before HTTP port %d opened (rc=%s).",
+                    self.http_port, self._process.returncode,
+                )
+            else:
+                self._log.error(
+                    "Psiphon started but HTTP port %d never opened within %.0fs "
+                    "(server may be unreachable in this region).",
+                    self.http_port, _STARTUP_TIMEOUT,
+                )
+            self.stop()
+            return False
+
+        self._log.info(
+            "Psiphon connected  http=127.0.0.1:%d  socks=127.0.0.1:%d  (pid=%s).",
+            self.http_port, self.socks_port, self._process.pid,
+        )
+        return True

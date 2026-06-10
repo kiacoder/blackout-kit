@@ -1,0 +1,62 @@
+{
+  "private_key": "KP4RgPvf8tluR9bejYtKg2iGs3v60Xmmlfnmml4NYG8=",
+  "key": "cpfjyUWmDJWAIPQf3alYQsVFzh29ARGcL/fHtQWPUFM=",
+  "account": {
+    "created": "2026-06-09T17:38:21.403887781Z",
+    "updated": "2026-06-09T17:38:21.403887781Z",
+    "license": "k3nG05E7-i7c063em-qAat7536",
+    "premium_data": 0,
+    "warp_plus": true,
+    "account_type": "free",
+    "referral_renewal_countdown": 0,
+    "role": "child",
+    "id": "38a71d56-9ce0-4585-b82b-45575314bf1b",
+    "quota": 0,
+    "usage": 0,
+    "referral_count": 0,
+    "ttl": "2026-09-07T17:38:21.403885961Z"
+  },
+  "place": 0,
+  "fcm_token": "",
+  "name": "",
+  "tos": "2026-06-09T21:08:19.2005696+03:30",
+  "locale": "en-US",
+  "install_id": "",
+  "warp_enabled": true,
+  "type": "a",
+  "model": "PC",
+  "config": {
+    "peers": [
+      {
+        "public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+        "endpoint": {
+          "v4": "162.159.192.4:0",
+          "v6": "[2606:4700:d0::a29f:c004]:0",
+          "host": "engage.cloudflareclient.com:2408",
+          "ports": [
+            2408,
+            500,
+            1701,
+            4500
+          ]
+        }
+      }
+    ],
+    "interface": {
+      "addresses": {
+        "v4": "172.16.0.2",
+        "v6": "2606:4700:110:8441:51bd:9826:93ef:9f1a"
+      }
+    },
+    "services": {
+      "http_proxy": "172.16.0.1:2480"
+    },
+    "client_id": "5v1w"
+  },
+  "token": "180e0ab0-494b-4e8d-a16c-618c271c5850",
+  "enabled": true,
+  "id": "5ea357d3-d4b8-4fd9-b70e-9fe7dab0be9d",
+  "created": "2026-06-09T17:38:21.010143271Z",
+  "updated": "2026-06-09T17:38:21.010143271Z",
+  "waitlist_enabled": false
+}

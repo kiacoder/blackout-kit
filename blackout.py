@@ -116,11 +116,29 @@ if __name__ == "__main__":
         for w in compat_warnings:
             _con.print(f"[yellow]Warning:[/yellow] {w}")
 
+    # 1.5 Extract bundled binaries if running as PyInstaller EXE
+    if getattr(sys, 'frozen', False):
+        import shutil
+        from blackoutkit import BINS_DIR, _MEIPASS
+        bundled_bins = _MEIPASS / "bins"
+        if bundled_bins.exists():
+            for item in bundled_bins.iterdir():
+                dest = BINS_DIR / item.name
+                if not dest.exists() or dest.stat().st_size != item.stat().st_size:
+                    try:
+                        if item.is_file():
+                            shutil.copy2(item, dest)
+                    except Exception:
+                        pass
+
     # 2. First-run nudge (only if no settings file yet)
     _first_run_hint()
 
     # 3. Run the CLI
     try:
+        from blackoutkit.proxy_manager import install_console_close_handler
+        install_console_close_handler()
+        
         from blackoutkit.cli import main
         main()
     except KeyboardInterrupt:
@@ -140,6 +158,13 @@ if __name__ == "__main__":
         tb_last = traceback.format_exc().strip().splitlines()
         # Show last 10 lines of traceback — enough context without flooding the screen
         tb_snippet = "\n".join(tb_last[-10:]) if len(tb_last) > 10 else "\n".join(tb_last)
+
+        # Try to clear system proxy in case we crashed while foreground proxy was active
+        try:
+            from blackoutkit.proxy_manager import clear_system_proxy
+            clear_system_proxy()
+        except Exception:
+            pass
 
         # Epic upgrade: suggest auto-fix
         con.print(Panel(

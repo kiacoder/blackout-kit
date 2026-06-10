@@ -21,7 +21,6 @@ typedef struct { const char *p; ptrdiff_t n; } _GoString_;
 
 
 
-
 /* End of preamble from import "C" comments.  */
 
 
@@ -77,7 +76,7 @@ extern "C" {
 
 extern __declspec(dllexport) int StartWarpC(int socksPort, char* cCountry);
 extern __declspec(dllexport) void StopWarpC();
-extern __declspec(dllexport) int StartPsiphonC(char* configPath);
+extern __declspec(dllexport) int StartPsiphonC(int socksPort, int httpPort, char* cCountry);
 extern __declspec(dllexport) void StopPsiphonC();
 
 #ifdef __cplusplus

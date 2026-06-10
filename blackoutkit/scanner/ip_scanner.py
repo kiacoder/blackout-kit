@@ -144,9 +144,12 @@ def save_cache(results: list[tuple[str, float]]):
             "timestamp": _dt.now(_tz.utc).isoformat(),
             "results": [[ip, ms] for ip, ms in results],
         }
-        tmp_file = _CACHE_FILE.with_suffix(".tmp")
-        tmp_file.write_text(_json.dumps(data, indent=2))
-        tmp_file.replace(_CACHE_FILE)
+        import tempfile
+        import os
+        fd, path = tempfile.mkstemp(dir=_CACHE_FILE.parent, suffix=".tmp")
+        with os.fdopen(fd, "w") as f:
+            _json.dump(data, f, indent=2)
+        os.replace(path, _CACHE_FILE)
     except Exception:
         pass
 

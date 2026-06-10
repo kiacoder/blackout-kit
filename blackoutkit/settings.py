@@ -100,6 +100,10 @@ DEFAULTS = {
     # Iran 2026 Evasion
     "xray_fragment":        "10-50,10-50",  # TLS record fragment mode (range,range)
 
+    # Routing & Privacy
+    "xray_split_tunnel":    True,        # Bypass proxy for LAN and .ir domestic traffic
+    "xray_doh_dns":         True,        # Use encrypted DNS-over-HTTPS through XRay
+
     # Bypass strategy selection
     "selected_engine":      "auto",      # auto / sni / gdpi / psiphon / warp / legend / etc.
 }
@@ -125,6 +129,8 @@ _VALIDATORS: dict[str, tuple] = {
     "neighbor_proxy_port":(int,   *_PORT_RANGE),
     "gas_proxy_port":     (int,   *_PORT_RANGE),
     "xray_fragment":      (str,   lambda v: v.count(",") == 1, "must be 'range,range' (e.g. 10-50,10-50)"),
+    "xray_split_tunnel":  (bool,  lambda v: True,            "must be true or false"),
+    "xray_doh_dns":       (bool,  lambda v: True,            "must be true or false"),
     "scan_concurrency":   (int,   lambda v: 1 <= v <= 500,   "must be 1–500"),
     "scan_timeout":       (float, lambda v: 0.1 <= v <= 30,  "must be 0.1–30.0"),
     "scan_ip_count":      (int,   lambda v: 1 <= v <= 5000,  "must be 1–5000"),
@@ -311,6 +317,8 @@ def describe(key: str) -> str:
         "gas_proxy_port":     "Local port for Google Apps Script HTTP relay proxy",
         "country":            "Country profile code (IR/US/GB/CN/IQ). Empty = auto-detect from ISP.",
         "xray_fragment":      "XRay TLS record fragment: range,range (TIC 2026 evasion)",
+        "xray_split_tunnel":  "Bypass proxy for local LAN and domestic (.ir) traffic",
+        "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
     }
     return descriptions.get(key, "No description available.")

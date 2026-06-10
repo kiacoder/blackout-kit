@@ -25,10 +25,28 @@ __python_requires__ = ">=3.9"
 # ─────────────────────────── Shared path constants ───────────────────────────
 # Import from here instead of recomputing in every module.
 
-PROJECT_ROOT = Path(__file__).parent.parent
+import sys
+
 APP_DATA_DIR = Path.home() / ".blackout-kit"
-BINS_DIR     = PROJECT_ROOT / "bins"
-DATA_DIR     = PROJECT_ROOT / "data"
+
+if getattr(sys, 'frozen', False):
+    # Running as compiled PyInstaller executable
+    # Use the folder where the .exe is as PROJECT_ROOT, or just use APP_DATA_DIR for everything
+    PROJECT_ROOT = Path(sys.executable).parent
+    BINS_DIR     = APP_DATA_DIR / "bins"
+    DATA_DIR     = APP_DATA_DIR / "data"
+    
+    # Also define _MEIPASS for internal bundled assets
+    _MEIPASS = Path(sys._MEIPASS)
+else:
+    # Running from source
+    PROJECT_ROOT = Path(__file__).parent.parent
+    BINS_DIR     = PROJECT_ROOT / "bins"
+    DATA_DIR     = PROJECT_ROOT / "data"
+
+# Ensure persistent directories exist
+BINS_DIR.mkdir(parents=True, exist_ok=True)
+DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─────────────────────────── Version helpers ─────────────────────────────────
 
