@@ -1736,13 +1736,49 @@ def cmd_connect(args):
 
     # Apply Iran bypass profile if requested
     if iran_mode:
-        console.print("[info]Applying Iran bypass profile: Firefox fingerprint + private mode...[/info]")
+        from .theme import success_panel
+        arvancloud_sni = s.get("sni_arvancloud_sni", "www.arvancloud.ir")
+        profile_changes = []
+
         try:
             sec.apply_mode("private")
-            cfg.set_value("xray_fingerprint", "firefox")
-            s = cfg.load()
+            profile_changes.append("Security mode: PRIVATE")
         except Exception:
             pass
+
+        try:
+            cfg.set_value("xray_fingerprint", "firefox")
+            profile_changes.append("TLS fingerprint: Firefox")
+        except Exception:
+            pass
+
+        try:
+            current_sni = s.get("sni_fake_sni", "")
+            # Only overwrite if still at the default — respect user's custom SNI choice
+            if current_sni in ("www.hcaptcha.com", "") and current_sni != arvancloud_sni:
+                cfg.set_value("sni_fake_sni", arvancloud_sni)
+                profile_changes.append(f"Fake SNI → {arvancloud_sni} (Iran domestic CDN)")
+        except Exception:
+            pass
+
+        try:
+            current_frag = s.get("xray_fragment", "")
+            if not current_frag:
+                cfg.set_value("xray_fragment", "10-50,10-50")
+                profile_changes.append("TLS fragmentation enabled")
+        except Exception:
+            pass
+
+        s = cfg.load()
+
+        console.print()
+        console.print(success_panel(
+            "[bold]Iran Bypass Profile Active[/bold]\n\n" +
+            "\n".join(f"  • {c}" for c in profile_changes) +
+            "\n\n[dim]ArvanCloud SNI makes traffic look like domestic CDN — "
+            "Iran's DPI can't block it without breaking their own infrastructure.[/dim]",
+            title="Iran 2026 — TIC Evasion",
+        ))
 
     # Print country-aware hint
     connect_profile = _get_active_profile()
@@ -1789,6 +1825,10 @@ def cmd_connect(args):
 
 def cmd_fix(args):
     """Auto-fix common network issues — live Rich checklist with real-time results."""
+    if sys.platform != "win32":
+        console.print("[yellow]`blackout fix` currently only supports Windows (netsh/ipconfig).[/yellow]")
+        console.print("[dim]Run manually: flush dns, sudo systemctl restart systemd-resolved, etc.[/dim]")
+        return
     import subprocess as _sp
 
     def _run(cmd: list[str]) -> bool:
@@ -2098,7 +2138,7 @@ def main():
     conn_p.add_argument("-d", "--background", action="store_true",
                         help="Run as background daemon")
     conn_p.add_argument("--iran", action="store_true",
-                        help="Apply Iran bypass profile (Firefox fingerprint + private mode)")
+                        help="🔥 TIC 2026 evasion: ArvanCloud SNI + Firefox fingerprint + private mode + TLS fragment")
 
     # ── fix ──
     sub.add_parser("fix", help="Auto-fix DNS / Winsock / TCP/IP and clear system proxy")

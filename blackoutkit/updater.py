@@ -250,19 +250,6 @@ def download_and_apply(release: dict) -> bool:
 
 # ─────────────────────────── Preflight check ────────────────────
 
-REQUIRED_BINS = [
-    "sni-spoofing.exe",
-    "xray.exe",
-]
-
-RECOMMENDED_BINS = [
-    "goodbyedpi.exe",
-    "psiphon-tunnel-core-x86_64.exe",
-    "warp-plus.exe",
-    "sing-box.exe",
-]
-
-
 class PreflightResult:
     def __init__(self, name: str, ok: bool, critical: bool, message: str):
         self.name     = name

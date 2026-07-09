@@ -99,6 +99,7 @@ DEFAULTS = {
 
     # Iran 2026 Evasion
     "xray_fragment":        "10-50,10-50",  # TLS record fragment mode (range,range)
+    "sni_arvancloud_sni":   "www.arvancloud.ir",  # Fake SNI using Iran's domestic CDN (can't be blocked)
 
     # Routing & Privacy
     "xray_split_tunnel":    True,        # Bypass proxy for LAN and .ir domestic traffic
@@ -317,6 +318,7 @@ def describe(key: str) -> str:
         "gas_proxy_port":     "Local port for Google Apps Script HTTP relay proxy",
         "country":            "Country profile code (IR/US/GB/CN/IQ). Empty = auto-detect from ISP.",
         "xray_fragment":      "XRay TLS record fragment: range,range (TIC 2026 evasion)",
+        "sni_arvancloud_sni": "Fake SNI using Iran domestic CDN (arvancloud.ir) — unblockable inside Iran",
         "xray_split_tunnel":  "Bypass proxy for local LAN and domestic (.ir) traffic",
         "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",

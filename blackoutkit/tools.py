@@ -19,15 +19,7 @@ from rich.panel import Panel
 from rich import box
 
 from .theme import console, make_table, latency_color
-
-def _is_admin() -> bool:
-    if sys.platform != "win32":
-        return False
-    import ctypes
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except Exception:
-        return False
+from .proxy_manager import is_admin as _is_admin
 
 # ─────────────────────────── DNS tools ───────────────────────────
 

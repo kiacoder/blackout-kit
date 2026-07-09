@@ -19,6 +19,8 @@ CRASH_LOG    = APP_DATA_DIR / "daemon.out"
 STATE_FILE   = APP_DATA_DIR / "daemon_state.json"
 LOCK_FILE    = APP_DATA_DIR / "daemon.lock"
 
+_shutdown_requested = False
+
 
 def _ensure_dir():
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -191,6 +193,7 @@ def run_daemon_loop(engine_name: str):
     """
     import os
     import sys
+    global _shutdown_requested
     try:
         devnull = open(os.devnull, "w")
         sys.stdout = devnull
@@ -328,9 +331,6 @@ def run_daemon_loop(engine_name: str):
             global _shutdown_requested
             _shutdown_requested = True
 
-        global _shutdown_requested
-        _shutdown_requested = False
-        
         tray_thread = threading.Thread(target=start_tray, args=(active_engine_name, _on_tray_stop), daemon=True)
         tray_thread.start()
         log.info("System tray initialized.")

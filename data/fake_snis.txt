@@ -51,6 +51,17 @@ www.ignitelimit.com
 www.calmlunch.com
 www.calmloud.com
 
+# === Iran (TIC 2026) — domestic CDN domains ===
+# Iran's DPI cannot block ArvanCloud or Aparat without breaking their own infrastructure.
+# Use these as the fake SNI when operating inside Iran for maximum camouflage.
+# The traffic looks like a normal domestic CDN connection — firewall passes it through.
+www.arvancloud.ir
+arvancloud.ir
+cdn.arvancloud.ir
+cdn.aras.ir
+www.aparat.com
+aparat.com
+
 # === China (Great Firewall) — domestic CDN domains ===
 # Chinese CDN endpoints whitelisted by GFW DPI.
 # Use these when operating from mainland China.

@@ -204,8 +204,8 @@ Smart one-command connect: scan → pick best engine → start in background.
 [bold]Usage:[/bold]
   blackout connect                      Full auto (scan + start best engine)
   blackout connect --engine warp        Skip scan, use specific engine
-  blackout connect --iran               🔥 Apply Iran bypass profile
-                                        (Firefox fingerprint + private mode)
+  blackout connect --iran               🔥 TIC 2026 evasion: ArvanCloud SNI + Firefox
+                                        fingerprint + PRIVATE mode + TLS fragment
   blackout connect -d                   Run in background
 
 [bold]What it does:[/bold]
