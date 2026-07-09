@@ -157,18 +157,39 @@ def check_bins_present() -> list[CheckResult]:
 
     # Check for native DLLs
     core_dll = _BINS_DIR / "blackout_core.dll"
+    engine_exe = _BINS_DIR / "blackout-engine.exe"
     if core_dll.exists():
         size_kb = core_dll.stat().st_size // 1024
         results.append(CheckResult("bins: blackout_core.dll", True, f"Found ({size_kb} KB)"))
+    elif engine_exe.exists():
+        results.append(CheckResult("bins: blackout_core.dll", True, "Emulated via blackout-engine.exe — OK"))
     else:
-        results.append(CheckResult("bins: blackout_core.dll", False, "Missing — please compile the engine", fixable=False))
+        results.append(CheckResult(
+            "bins: blackout_core.dll", False,
+            "Missing — SNI, XRay, and WireGuard will not work. "
+            "Build from engine/ (Go 1.22+) or wait for pre-built release.",
+            fixable=False,
+        ))
 
     warp_dll = _BINS_DIR / "blackout_warp.dll"
     if warp_dll.exists():
         size_kb = warp_dll.stat().st_size // 1024
         results.append(CheckResult("bins: blackout_warp.dll", True, f"Found ({size_kb} KB)"))
     else:
-        results.append(CheckResult("bins: blackout_warp.dll", False, "Missing — please compile the engine", fixable=False))
+        # Check if warp-plus.exe or psiphon binary is available as fallback
+        warp_fallback = any((_BINS_DIR / b).exists() for b in ["warp-plus.exe"])
+        psiphon_fallback = any((_BINS_DIR / b).exists() for b in ["psiphon-tunnel-core-x86_64.exe"])
+        fallback_hint = ""
+        if warp_fallback:
+            fallback_hint = "  (warp-plus.exe available — WARP will use binary fallback)"
+        elif psiphon_fallback:
+            fallback_hint = "  (psiphon binary available — Psiphon will use binary fallback)"
+        results.append(CheckResult(
+            "bins: blackout_warp.dll", False,
+            "Missing — WARP and Psiphon native modes unavailable." + fallback_hint
+            + "  Build from engine/warp/ (Go 1.22+) or run 'blackout bins download' for binary fallbacks.",
+            fixable=False,
+        ))
 
     for key, info in BIN_REGISTRY.items():
         all_present = all((_BINS_DIR / b).exists() for b in info.output_bins)

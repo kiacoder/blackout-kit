@@ -50,7 +50,11 @@ class WireGuardEngine(Engine):
         from ..core import get_core_dll
         dll = get_core_dll()
         if not dll:
-            self._log.error("Core DLL missing! Ensure blackout_core.dll is built.")
+            self._log.error(
+                "Core DLL missing! WireGuard native engine requires blackout_core.dll.\n"
+                "  Build from engine/ with: cd engine && go build -buildmode=c-shared -o ../bins/blackout_core.dll .\n"
+                "  Or wait for a pre-built release. Other engines (SNI, XRay) are unaffected."
+            )
             return False
 
         c_config_path = str(cfg_path.absolute()).encode("utf-8")

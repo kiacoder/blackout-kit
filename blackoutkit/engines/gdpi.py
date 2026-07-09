@@ -35,9 +35,31 @@ class GoodbyeDPIEngine(Engine):
         if not binary:
             return False
 
+        # Verify WinDivert DLLs are present alongside the binary
+        windivert_dll = binary.parent / "WinDivert.dll"
+        windivert_sys = binary.parent / "WinDivert64.sys"
+        if not windivert_dll.exists() or not windivert_sys.exists():
+            self._log.error(
+                "WinDivert DLLs not found next to goodbyedpi.exe. "
+                "Run: blackout bins download goodbyedpi"
+            )
+            return False
+
+        # Check admin rights — GoodbyeDPI always needs them
+        try:
+            import ctypes
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+            if not is_admin:
+                self._log.error(
+                    "GoodbyeDPI requires Administrator privileges (WinDivert kernel driver). "
+                    "Restart terminal as Admin and try again."
+                )
+                return False
+        except Exception:
+            pass
+
         self._log.info("Starting GoodbyeDPI  flags=%s", " ".join(self.flags))
 
-        # WinDivert DLL must be in the same folder as goodbyedpi.exe
         try:
             self._process = subprocess.Popen(
                 [str(binary)] + self.flags,
@@ -54,19 +76,11 @@ class GoodbyeDPIEngine(Engine):
         # Give it 0.5 s and check that it is still alive.
         time.sleep(0.5)
         if not self.check_process_alive():
-            # Capture any stderr output to help diagnose the crash
-            try:
-                stderr_output = self._process.stderr.read(512).decode(errors="replace").strip()
-            except Exception:
-                stderr_output = ""
-            if stderr_output:
-                self._log.error("GoodbyeDPI crashed immediately. stderr: %s", stderr_output)
-            else:
-                self._log.error(
-                    "GoodbyeDPI exited immediately (rc=%s). "
-                    "WinDivert DLL missing or not running as Administrator?",
-                    self._process.returncode,
-                )
+            self._log.error(
+                "GoodbyeDPI exited immediately (rc=%s). "
+                "Try running as Administrator. If that fails: blackout doctor --fix",
+                self._process.returncode,
+            )
             return False
 
         self._log.info("GoodbyeDPI is running (pid=%s).", self._process.pid)

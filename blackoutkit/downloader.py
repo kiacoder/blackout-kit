@@ -102,6 +102,34 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         manual_url    = "https://github.com/DrEm-s/wireguard-windows-portable/releases",
         manual_note   = "",
     ),
+
+    "warp-plus": BinInfo(
+        key           = "warp-plus",
+        display_name  = "WARP+ (warp-plus)",
+        description   = "Cloudflare WARP — clean residential-class IP, bypasses captchas",
+        github_repo   = "bepass-org/warp-plus",
+        asset_pattern = "warp-plus_windows_amd64.zip",
+        asset_exclude = None,
+        extract_map   = {"warp-plus.exe": "warp-plus.exe"},
+        output_bins   = ["warp-plus.exe"],
+        required      = False,
+        manual_url    = "https://github.com/bepass-org/warp-plus/releases",
+        manual_note   = "",
+    ),
+
+    "psiphon": BinInfo(
+        key           = "psiphon",
+        display_name  = "Psiphon Tunnel Core",
+        description   = "Psiphon multi-protocol VPN — best fallback for heavy censorship",
+        github_repo   = "Psiphon-Labs/psiphon-tunnel-core-binaries",
+        asset_pattern = "psiphon-tunnel-core-windows-amd64.zip",
+        asset_exclude = "android",
+        extract_map   = {"psiphon-tunnel-core-x86_64.exe": "psiphon-tunnel-core-x86_64.exe"},
+        output_bins   = ["psiphon-tunnel-core-x86_64.exe"],
+        required      = False,
+        manual_url    = "https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/releases",
+        manual_note   = "",
+    ),
 }
 
 
