@@ -13,7 +13,7 @@ Rare upgrades:
 import json
 import subprocess
 from pathlib import Path
-from .base import Engine, BINS_DIR
+from .base import Engine
 from .. import settings as cfg
 
 PSIPHON_BIN_NAMES = [
@@ -36,6 +36,7 @@ class PsiphonEngine(Engine):
         self.country    = country    or s["psiphon_country"]
         self.http_port  = http_port  or s["psiphon_http_port"]
         self.socks_port = socks_port or s["psiphon_socks_port"]
+        self._health_check_addr = ("127.0.0.1", self.http_port)
 
     def _write_config(self) -> Path:
         config = {
@@ -48,7 +49,7 @@ class PsiphonEngine(Engine):
             "DisableLocalSocksProxy": False,
             "UpstreamProxyUrl":      "",
         }
-        path = BINS_DIR / "psiphon_config.json"
+        path = self._config_dir / "psiphon_config.json"
         path.write_text(json.dumps(config, indent=2))
         return path
 

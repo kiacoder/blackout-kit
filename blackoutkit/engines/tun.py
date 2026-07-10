@@ -20,9 +20,10 @@ Rare upgrades:
 """
 import json
 import subprocess
+import sys
 import time
 from pathlib import Path
-from .base import Engine, BINS_DIR
+from .base import Engine
 from .. import settings as cfg
 
 TUN_BIN_NAMES = [
@@ -129,7 +130,7 @@ class TUNEngine(Engine):
 
     def _write_config(self) -> Path:
         config = self._generate_singbox_config()
-        path = BINS_DIR / "singbox_tun_config.json"
+        path = self._config_dir / "singbox_tun_config.json"
         path.write_text(json.dumps(config, indent=2))
         return path
 
@@ -140,6 +141,19 @@ class TUNEngine(Engine):
             self.socks_upstream, self.socks_port,
             len(self.bypass_ips), len(self.bypass_domains),
         )
+
+        # TUN mode requires Administrator (WinTUN kernel driver)
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                if not ctypes.windll.shell32.IsUserAnAdmin():
+                    self._log.error(
+                        "TUN mode requires Administrator privileges (WinTUN kernel driver). "
+                        "Restart terminal as Admin and try again."
+                    )
+                    return False
+            except Exception:
+                pass
 
         config_path = self._write_config()
         self._log.debug("sing-box TUN config written to %s", config_path)

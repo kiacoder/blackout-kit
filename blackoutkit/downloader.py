@@ -213,6 +213,64 @@ def _extract_from_zip(zip_path: Path, extract_map: dict[str, str]) -> tuple[bool
     return True, ""
 
 
+# ──────────────────────────── Integrity verification ──────────────
+
+_PE_MAGIC = b"MZ"
+_PE_SIGNATURE = b"PE\x00\x00"
+
+
+def verify_binary(path: Path) -> tuple[bool, str]:
+    """
+    Verify that a downloaded binary is structurally valid.
+    Checks:
+      - .exe / .dll files: valid PE header (MZ + PE signature)
+      - .sys files: valid PE header (kernel driver)
+      - Other files: exists and non-empty
+
+    Returns (True, "") or (False, reason).
+    """
+    if not path.exists():
+        return False, "File not found"
+
+    size = path.stat().st_size
+    if size == 0:
+        return False, "File is empty (0 bytes)"
+
+    ext = path.suffix.lower()
+
+    if ext in (".exe", ".dll", ".sys"):
+        try:
+            raw = path.read_bytes()
+            if not raw.startswith(_PE_MAGIC):
+                return False, "Missing MZ DOS header — not a valid PE executable"
+            # PE signature is at offset 0x3C (pointer to PE header)
+            pe_offset = int.from_bytes(raw[0x3C:0x40], "little")
+            if pe_offset + 4 > len(raw) or raw[pe_offset:pe_offset + 4] != _PE_SIGNATURE:
+                return False, (
+                    f"PE signature not found (offset {pe_offset:#x}) — "
+                    "file is corrupted or not a valid Windows binary"
+                )
+        except (OSError, MemoryError) as e:
+            return False, f"Verification read error: {e}"
+
+    return True, ""
+
+
+def verify_bins_integrity() -> dict[str, str]:
+    """
+    Verify ALL binary files in the bins/ directory.
+    Returns {filename: "OK" or error_reason}.
+    """
+    if not BINS_DIR.exists():
+        return {}
+    results = {}
+    for f in BINS_DIR.iterdir():
+        if f.is_file() and not f.name.endswith(".json"):
+            ok, msg = verify_binary(f)
+            results[f.name] = "OK" if ok else msg
+    return results
+
+
 # ──────────────────────────── Public API ─────────────────────────
 
 def check_installed() -> dict[str, bool]:
@@ -358,6 +416,21 @@ def download_binary(
                         f"Expected file not found in archive: '{missing}'\n"
                         f"  The zip structure may have changed in {tag}. Report at github.com/kiacoder/blackout-kit/issues"
                     )
+
+                # Verify extracted binaries have valid PE headers
+                for out_name in info.output_bins:
+                    dest = BINS_DIR / out_name
+                    ok_verify, msg = verify_binary(dest)
+                    if not ok_verify:
+                        try:
+                            dest.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        return False, (
+                            f"Integrity check FAILED for {out_name}: {msg}\n"
+                            f"  The downloaded file may be corrupted or tampered with.\n"
+                            f"  Try again or download manually: {info.manual_url}"
+                        )
             finally:
                 if tmp_path:
                     try:
@@ -388,6 +461,19 @@ def download_binary(
                     
                     if expected_size > 0 and temp_dest.stat().st_size != expected_size:
                         raise Exception("Downloaded file size mismatch (truncated or corrupted)")
+
+                    # Verify PE header validity before finalizing
+                    ok_verify, msg = verify_binary(temp_dest)
+                    if not ok_verify:
+                        try:
+                            temp_dest.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                        return False, (
+                            f"Integrity check FAILED for {out_name}: {msg}\n"
+                            f"  The downloaded file may be corrupted or tampered with.\n"
+                            f"  Try again or download manually: {info.manual_url}"
+                        )
 
                     if dest_path.exists():
                         dest_path.unlink()

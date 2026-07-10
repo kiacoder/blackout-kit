@@ -12,7 +12,7 @@ Rare upgrades:
 import json
 import subprocess
 from pathlib import Path
-from .base import Engine, BINS_DIR
+from .base import Engine
 from .. import settings as cfg
 
 WARP_BIN_NAMES = [
@@ -34,6 +34,7 @@ class WARPEngine(Engine):
         # WARP-plus exposes SOCKS5 on a different port to avoid conflict with XRay
         self.socks_port = socks_port or 1080
         self.country    = country or s.get("psiphon_country", "DE")
+        self._health_check_addr = ("127.0.0.1", self.socks_port)
 
     def _write_config(self) -> Path:
         config = {
@@ -41,7 +42,7 @@ class WARPEngine(Engine):
             "country":     self.country,
             "verbose":     False,
         }
-        path = BINS_DIR / "warp_config.json"
+        path = self._config_dir / "warp_config.json"
         path.write_text(json.dumps(config, indent=2))
         return path
 

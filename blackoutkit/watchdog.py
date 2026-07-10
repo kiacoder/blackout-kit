@@ -23,10 +23,19 @@ def monitor(daemon_pid: int):
         while psutil.pid_exists(daemon_pid):
             time.sleep(1)
 
-    # Daemon has died. Check if we need to clean up the proxy.
+    # Daemon has died. Check if we need to clean up.
     try:
         from blackoutkit.proxy_manager import clear_system_proxy
         clear_system_proxy()
+    except Exception:
+        pass
+
+    # Also disable kill switch if active — prevents permanent internet block
+    # after a crash/End Task. The daemon normally disables it on clean shutdown,
+    # but on abrupt termination only the watchdog can do this.
+    try:
+        from blackoutkit.security import disable_kill_switch
+        disable_kill_switch()
     except Exception:
         pass
 

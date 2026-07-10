@@ -38,6 +38,7 @@ class XRayEngine(Engine):
         self.proxy_config = proxy_config
         self.socks_port   = socks_port or s["xray_socks_port"]
         self.http_port    = http_port  or s["xray_http_port"]
+        self._health_check_addr = ("127.0.0.1", self.http_port)
 
     def generate_config(self) -> dict:
         s    = cfg.load()
@@ -293,7 +294,7 @@ class XRayEngine(Engine):
             # SPEED: no probe, allowInsecure=True always — zero overhead
 
         config      = self.generate_config()
-        config_path = BINS_DIR / "active_xray_config.json"
+        config_path = self._config_dir / "xray_config.json"
         config_path.write_text(json.dumps(config, indent=2))
 
         from ..core import get_core_dll

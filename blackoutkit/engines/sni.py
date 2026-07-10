@@ -12,7 +12,7 @@ Rare upgrades:
 import json
 import subprocess
 from pathlib import Path
-from .base import Engine, BINS_DIR
+from .base import Engine
 from .. import settings as cfg
 
 SNI_BIN_NAMES = [
@@ -38,8 +38,9 @@ class SNIEngine(Engine):
         self.connect_ip  = connect_ip  or s["sni_connect_ip"]
         self.fake_sni    = fake_sni    or s["sni_fake_sni"]
         self.listen_port = listen_port or s["sni_listen_port"]
+        self._health_check_addr = ("127.0.0.1", self.listen_port)
 
-    def _write_config(self, binary_dir: Path) -> Path:
+    def _write_config(self) -> Path:
         config = {
             "LISTEN_HOST":  "0.0.0.0",
             "LISTEN_PORT":  self.listen_port,
@@ -47,7 +48,7 @@ class SNIEngine(Engine):
             "CONNECT_PORT": 443,
             "FAKE_SNI":     self.fake_sni,
         }
-        path = binary_dir / "config.json"
+        path = self._config_dir / "config.json"
         path.write_text(json.dumps(config, indent=2))
         return path
 
@@ -57,7 +58,7 @@ class SNIEngine(Engine):
             self.connect_ip, self.fake_sni, self.listen_port,
         )
 
-        config_path = self._write_config(BINS_DIR)
+        config_path = self._write_config()
         self._log.debug("Config written to %s", config_path)
 
         from ..core import get_core_dll

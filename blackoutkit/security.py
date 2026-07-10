@@ -19,6 +19,7 @@ Also handles:
 import base64
 import hashlib
 import json
+import logging
 import os
 import platform
 import subprocess
@@ -27,6 +28,8 @@ import tempfile
 from pathlib import Path
 
 from . import settings as cfg
+
+_log = logging.getLogger(__name__)
 
 APP_DATA_DIR  = Path.home() / ".blackout-kit"
 PROJECT_ROOT  = Path(__file__).parent.parent
@@ -118,84 +121,239 @@ _KS_RULES = [
     "BlackoutKit-KillSwitch-Block",
     "BlackoutKit-KillSwitch-Allow-Proxy",
     "BlackoutKit-KillSwitch-Allow-LAN",
+    "BlackoutKit-KillSwitch-Allow-DNS",
+    "BlackoutKit-KillSwitch-Allow-DNS-TCP",
+    "BlackoutKit-KillSwitch-Allow-DHCP",
     "BlackoutKit-KillSwitch-Block-DoH",   # TCP port 853 (DoH/DoT leaks)
     "BlackoutKit-KillSwitch-Block-DoT",   # UDP port 853 (DNS-over-TLS leaks)
 ]
 
 # Minimum rules that MUST exist for the kill switch to be considered active.
-# The allow-rules are optional (missing them = more restrictive, not less safe).
 _KS_REQUIRED_RULES = [
     "BlackoutKit-KillSwitch-Block",
-    "BlackoutKit-KillSwitch-Block-DoH",
-    "BlackoutKit-KillSwitch-Block-DoT",
+    "BlackoutKit-KillSwitch-Allow-Proxy",
+    "BlackoutKit-KillSwitch-Allow-DNS",
+    "BlackoutKit-KillSwitch-Allow-DNS-TCP",
+    "BlackoutKit-KillSwitch-Allow-DHCP",
 ]
+
+
+def _get_proxy_processes() -> list[str]:
+    """Return full paths to known proxy binaries in the bins/ folder."""
+    candidates = [
+        "xray.exe", "sni-spoofing.exe", "sni-spoof.exe", "sni.exe",
+        "tor.exe", "goodbyedpi.exe", "warp-plus.exe",
+        "psiphon-tunnel-core-x86_64.exe", "psiphon-tunnel-core.exe",
+        "sing-box.exe", "blackout-engine.exe", "blackout_core.dll",
+        "wireguard.exe", "openvpn.exe", "softether.exe",
+        "mhrv.exe", "mhrv-rs.exe",
+    ]
+    results = []
+    for name in candidates:
+        path = (BINS_DIR / name).resolve()
+        if path.exists():
+            results.append(str(path))
+    return results
 
 
 def enable_kill_switch() -> bool:
     """
     Block all internet traffic unless it goes through our proxy.
-    Uses Windows Firewall rules (requires admin).
+    Uses Windows Firewall with per-process allow rules (requires admin).
 
-    Epic upgrade: also blocks port 853 TCP+UDP (DoH/DoT) to prevent
-    DNS leaks that bypass the standard outbound block.
+    The key design improvement over the old version:
+    - OLD: used 'localport=10808,10809,...' which FAILED because proxy
+           outbound connections use random source ports, not the listen port
+    - NEW: allows proxy EXECUTABLES by path, so their outbound connections
+           are always permitted regardless of source port
+
+    Also allows: DNS (port 53), DHCP (port 67/68), LAN IP ranges.
+    Also blocks: DoH/DoT (port 853) to prevent encrypted DNS leaks.
     """
     if sys.platform != "win32":
         return False
+
+    proxy_paths = _get_proxy_processes()
+    proxy_allow_rules = ""
+    for i, p in enumerate(proxy_paths):
+        safe_path = p.replace("'", "''")
+        proxy_allow_rules += (
+            f'New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-Proxy-{i}" '
+            f'-Direction Outbound -Action Allow -Program \'{safe_path}\' -Profile Any | Out-Null\n'
+        )
+    if not proxy_allow_rules:
+        # No proxy binaries found — create a generic TCP allow rule as fallback
+        # This is less secure but prevents complete internet loss
+        proxy_allow_rules = (
+            'New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-Proxy" '
+            '-Direction Outbound -Action Allow -Profile Any | Out-Null\n'
+        )
+
+    ps = f"""
+# ── Remove old-style rules if they exist (pre-v2.0 format) ──
+$oldRules = @("BlackoutKit-KillSwitch-Allow-Proxy", "BlackoutKit-KillSwitch-Allow-LAN")
+foreach ($r in $oldRules) {{
+    try {{ netsh advfirewall firewall delete rule name="$r" 2>$null | Out-Null }} catch {{}}
+}}
+# Remove old Allow-Proxy-N rules if they exist
+for ($i = 0; $i -lt 50; $i++) {{
+    try {{ netsh advfirewall firewall delete rule name="BlackoutKit-KillSwitch-Allow-Proxy-$i" 2>$null | Out-Null }} catch {{}}
+}}
+
+# ── Block all outbound traffic ──
+New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Block" -Direction Outbound -Action Block -Profile Any | Out-Null
+
+# ── Allow proxy processes (per-process rules) ──
+{proxy_allow_rules}
+
+# ── Allow LAN traffic (SMB, printer, local services) ──
+New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-LAN" -Direction Outbound -Action Allow `
+    -RemoteIP 192.168.0.0/16,10.0.0.0/8,172.16.0.0/12,169.254.0.0/16,127.0.0.0/8,::1/128,fe80::/10,fc00::/7 | Out-Null
+
+# ── Allow DNS (port 53) — needed for name resolution ──
+New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-DNS" -Direction Outbound -Action Allow `
+    -Protocol UDP -RemotePort 53 | Out-Null
+New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-DNS-TCP" -Direction Outbound -Action Allow `
+    -Protocol TCP -RemotePort 53 | Out-Null
+
+# ── Allow DHCP (port 67/68) — needed for IP address renewal ──
+New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-DHCP" -Direction Outbound -Action Allow `
+    -Protocol UDP -RemotePort 67,68 | Out-Null
+
+# ── Block DoH/DoT (port 853) — prevents encrypted DNS leaks ──
+New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Block-DoH" -Direction Outbound -Action Block `
+    -Protocol TCP -RemotePort 853 | Out-Null
+New-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Block-DoT" -Direction Outbound -Action Block `
+    -Protocol UDP -RemotePort 853 | Out-Null
+
+Write-Output "OK:kill_switch_enabled"
+"""
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-Command", ps],
+        capture_output=True, text=True, timeout=30,
+    )
+    if "OK" not in result.stdout:
+        _log.warning("Kill switch enable failed. stdout=%s stderr=%s", result.stdout.strip(), result.stderr.strip())
+        return False
+    return kill_switch_is_active()
+
+
+def test_kill_switch() -> tuple[bool, str]:
+    """
+    Verify the kill switch actually blocks non-proxy traffic.
+    Connects to an external host DIRECTLY (not through proxy) and
+    expects the connection to FAIL.
+
+    Returns (passed: bool, details: str).
+    """
+    if sys.platform != "win32":
+        return True, "Not on Windows — kill switch is N/A"
+    if not kill_switch_is_active():
+        return False, "Kill switch is NOT active. Enable it first: blackout killswitch on"
+
+    import socket
+    test_hosts = ["8.8.8.8", "1.1.1.1", "google.com"]
+    for host in test_hosts:
+        try:
+            with socket.create_connection((host, 443), timeout=3.0):
+                return False, (
+                    f"Kill switch FAILED! Direct connection to {host}:443 succeeded.\n"
+                    "Traffic can bypass the proxy — your real IP is exposed."
+                )
+        except (OSError, socket.timeout):
+            continue  # Expected — kill switch blocked it
+
+    # Try DNS as well (should be allowed via our DNS allow rules)
+    try:
+        import socket as _s
+        _s.setdefaulttimeout(3.0)
+        _s.getaddrinfo("google.com", 443)
+        dns_status = "DNS: ALLOWED (can resolve names)"
+    except Exception:
+        dns_status = "[WARN] DNS: BLOCKED (cannot resolve names — DoH must be enabled in XRay)"
+    finally:
+        _s.setdefaulttimeout(None)
+
+    return True, (
+        f"Kill switch VERIFIED: all direct outbound connections blocked.\n"
+        f"{dns_status}\n"
+        f"Proxy traffic is ALLOWED via per-process firewall rules."
+    )
+
+
+def disable_kill_switch() -> bool:
+    """Remove all kill-switch firewall rules (including DoH/DoT blocks + per-process proxy rules)."""
+    if sys.platform != "win32":
+        return False
+
+    # ── Remove via PowerShell (handles both netsh & PowerShell-created rules) ──
     ps = r"""
-# Block all outbound traffic
-netsh advfirewall firewall add rule name="BlackoutKit-KillSwitch-Block" dir=out action=block profile=any | Out-Null
-# Allow loopback (proxy ports)
-netsh advfirewall firewall add rule name="BlackoutKit-KillSwitch-Allow-Proxy" dir=out action=allow protocol=tcp localport=10808,10809,40443,9050 | Out-Null
-# Allow LAN
-netsh advfirewall firewall add rule name="BlackoutKit-KillSwitch-Allow-LAN" dir=out action=allow remoteip=192.168.0.0/16,10.0.0.0/8,172.16.0.0/12 | Out-Null
-# Block DoH/DoT (port 853 TCP+UDP) — prevents DNS leaks through encrypted DNS
-netsh advfirewall firewall add rule name="BlackoutKit-KillSwitch-Block-DoH" dir=out action=block protocol=tcp remoteport=853 | Out-Null
-netsh advfirewall firewall add rule name="BlackoutKit-KillSwitch-Block-DoT" dir=out action=block protocol=udp remoteport=853 | Out-Null
+$prefix = "BlackoutKit-KillSwitch"
+Get-NetFirewallRule -DisplayGroup "$prefix-*" -ErrorAction SilentlyContinue | ForEach-Object {
+    try { Remove-NetFirewallRule -DisplayName $_.DisplayName -ErrorAction SilentlyContinue } catch {}
+}
+# Also catch netsh rules (they don't have a display group)
+$names = @(
+    "BlackoutKit-KillSwitch-Block",
+    "BlackoutKit-KillSwitch-Allow-Proxy",
+    "BlackoutKit-KillSwitch-Allow-LAN",
+    "BlackoutKit-KillSwitch-Allow-DNS",
+    "BlackoutKit-KillSwitch-Allow-DNS-TCP",
+    "BlackoutKit-KillSwitch-Allow-DHCP",
+    "BlackoutKit-KillSwitch-Block-DoH",
+    "BlackoutKit-KillSwitch-Block-DoT"
+)
+foreach ($n in $names) {
+    try { Remove-NetFirewallRule -DisplayName $n -ErrorAction SilentlyContinue } catch {}
+}
+# Remove per-process Allow-Proxy-N rules
+for ($i = 0; $i -lt 50; $i++) {
+    try { Remove-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-Proxy-$i" -ErrorAction SilentlyContinue } catch {}
+}
 Write-Output "OK"
 """
     result = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
-        capture_output=True, text=True, timeout=20,
+        capture_output=True, text=True, timeout=15,
     )
-    if "OK" not in result.stdout:
-        return False
-    # Authoritative post-install check — verify rules actually exist in firewall
-    return kill_switch_is_active()
-
-
-def disable_kill_switch() -> bool:
-    """Remove all kill-switch firewall rules (including DoH/DoT blocks)."""
-    if sys.platform != "win32":
-        return False
-    for rule in _KS_RULES:
-        subprocess.run(
-            ["netsh", "advfirewall", "firewall", "delete", "rule", f"name={rule}"],
-            capture_output=True,
-        )
-    return True
+    return "OK" in result.stdout
 
 
 def kill_switch_is_active() -> bool:
     """
     Query Windows Firewall to verify ALL required kill-switch rules exist.
-    Returns True only if Block + DoH-Block + DoT-Block rules are all confirmed present.
-    Checking only the main Block rule misses the case where DoH/DoT leak rules
-    were manually deleted — giving a false sense of protection.
+    Required: Block + Allow-Proxy + Allow-DNS + Allow-DHCP.
     """
     if sys.platform != "win32":
         return False
-    for rule in _KS_REQUIRED_RULES:
-        try:
-            result = subprocess.run(
-                ["netsh", "advfirewall", "firewall", "show", "rule", f"name={rule}"],
-                capture_output=True, text=True, timeout=10,
-            )
-            # netsh outputs "No rules match" when the rule is missing
-            if "No rules match" in result.stdout or result.returncode != 0:
-                return False
-        except Exception:
-            return False
-    return True
+
+    # PowerShell can query by display name regardless of how the rule was created
+    ps = r"""
+$required = @(
+    "BlackoutKit-KillSwitch-Block",
+    "BlackoutKit-KillSwitch-Allow-DNS",
+    "BlackoutKit-KillSwitch-Allow-DNS-TCP",
+    "BlackoutKit-KillSwitch-Allow-DHCP"
+)
+# Check per-process proxy rules OR generic Allow-Proxy
+$proxyRules = Get-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-Proxy-*" -ErrorAction SilentlyContinue
+$genericProxy = Get-NetFirewallRule -DisplayName "BlackoutKit-KillSwitch-Allow-Proxy" -ErrorAction SilentlyContinue
+$proxyOk = ($proxyRules.Count -gt 0) -or ($genericProxy -ne $null)
+$allOk = $proxyOk
+foreach ($r in $required) {
+    $rule = Get-NetFirewallRule -DisplayName $r -ErrorAction SilentlyContinue
+    if ($rule -eq $null) { $allOk = $false }
+}
+if ($allOk) { Write-Output "ACTIVE" } else { Write-Output "INACTIVE" }
+"""
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps],
+            capture_output=True, text=True, timeout=15,
+        )
+        return "ACTIVE" in result.stdout
+    except Exception:
+        return False
 
 
 # ─────────────────────────── Config encryption (AES-256-GCM) ─────

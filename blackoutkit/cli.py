@@ -75,8 +75,31 @@ ENGINES = {
 
 ALL_ENGINE_CHOICES = list(ENGINES.keys()) + ["auto"]
 
+# Snapshot of settings before --iran changes were applied.
+# Restored by cmd_start() cleanup so the Iran profile doesn't persist permanently.
+_pre_iran_snapshot: dict | None = None
 
-def _start_engine_stack(name: str) -> list:
+
+def _save_iran_snapshot():
+    global _pre_iran_snapshot
+    _pre_iran_snapshot = {
+        "security_mode": cfg.load().get("security_mode"),
+        "xray_fingerprint": cfg.load().get("xray_fingerprint"),
+        "sni_fake_sni": cfg.load().get("sni_fake_sni"),
+        "xray_fragment": cfg.load().get("xray_fragment"),
+    }
+
+
+def _restore_iran_snapshot():
+    global _pre_iran_snapshot
+    if _pre_iran_snapshot is None:
+        return
+    try:
+        for key, value in _pre_iran_snapshot.items():
+            cfg.set_value(key, value)
+    except Exception:
+        pass
+    _pre_iran_snapshot = None
     """Instantiate and start all engines in a stack. Returns running list."""
     from . import downloader as dl
 
@@ -470,6 +493,7 @@ def cmd_start(args):
             eng.stop()
         if s.get("auto_set_proxy"):
             clear_system_proxy()
+        _restore_iran_snapshot()
         console.print("[success]Stopped. System proxy cleared.[/success]")
 
 
@@ -1117,6 +1141,22 @@ def cmd_killswitch(args):
         else:
             console.print("[error]Failed — try running as administrator.[/error]")
 
+    elif action == "test":
+        console.print("[info]Testing kill switch effectiveness...[/info]\n")
+        passed, details = sec.test_kill_switch()
+        if passed:
+            console.print(Panel(
+                f"[success]✓ KILL SWITCH WORKS![/success]\n\n{details}",
+                title="[bold green]Kill Switch Test Passed[/bold green]",
+                border_style="green",
+            ))
+        else:
+            console.print(Panel(
+                f"[error]✗ KILL SWITCH TEST FAILED![/error]\n\n{details}",
+                title="[bold red]Kill Switch Test Failed[/bold red]",
+                border_style="red",
+            ))
+
 
 def cmd_neighbor(args):
     """Neighbor internet — share or connect via a nearby Blackout Kit device."""
@@ -1736,6 +1776,7 @@ def cmd_connect(args):
 
     # Apply Iran bypass profile if requested
     if iran_mode:
+        _save_iran_snapshot()
         from .theme import success_panel
         arvancloud_sni = s.get("sni_arvancloud_sni", "www.arvancloud.ir")
         profile_changes = []
@@ -2188,8 +2229,8 @@ def main():
 
     # ── killswitch ──
     ks_p = sub.add_parser("killswitch", help="Enable/disable kill switch (blocks net if proxy drops)")
-    ks_p.add_argument("action", nargs="?", choices=["on", "off"],
-                      metavar="on|off", help="Enable or disable (omit to check status)")
+    ks_p.add_argument("action", nargs="?", choices=["on", "off", "test"],
+                      metavar="on|off|test", help="Enable, disable, or test (omit to check status)")
 
     # ── neighbor ──
     nb_p   = sub.add_parser("neighbor", help="Connect via a nearby Blackout Kit device")

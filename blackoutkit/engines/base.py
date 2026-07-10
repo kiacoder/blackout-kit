@@ -3,9 +3,11 @@ Blackout Kit - Base engine class.
 All bypass engines inherit from this.
 """
 import logging
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -24,6 +26,14 @@ class Engine(ABC):
         self._process: subprocess.Popen | None = None
         self._dll_stop_func = None
         self._log = logger.getChild(self.name or self.__class__.__name__)
+        # Set this to a (host, port) tuple if the engine listens on a known port.
+        # is_running() will probe it periodically for DLL-based engines to detect
+        # silent crashes (DLL segfault, deadlock, etc.) where _dll_stop_func
+        # is still non-None but the engine is actually dead.
+        self._health_check_addr: tuple[str, int] | None = None
+        # Per-engine temp directory for config files — prevents races when two
+        # Blackout instances share the same bins/ folder.
+        self._config_dir = Path(tempfile.mkdtemp(prefix="bk_engine_"))
 
     @abstractmethod
     def start(self) -> bool:
@@ -34,6 +44,7 @@ class Engine(ABC):
         """
         Terminate the engine and all child processes.
         Gives the process 3 seconds to exit gracefully, then force-kills.
+        Also cleans up the per-engine config directory.
         """
         if self._dll_stop_func:
             try:
@@ -41,9 +52,11 @@ class Engine(ABC):
             except Exception as e:
                 self._log.error("Error stopping via DLL: %s", e)
             self._dll_stop_func = None
+            self._cleanup_config_dir()
             return
 
         if self._process is None:
+            self._cleanup_config_dir()
             return
         try:
             try:
@@ -86,17 +99,44 @@ class Engine(ABC):
         finally:
             self._process = None
 
+        self._cleanup_config_dir()
+
     def is_running(self) -> bool:
-        """Return True if the engine subprocess is alive."""
+        """Return True if the engine is alive (subprocess or DLL)."""
+        # ── Subprocess check ──────────────────────────────────────────
+        if self._process is not None:
+            return self._process.poll() is None
+
+        # ── DLL check (with port health probe) ────────────────────────
         if self._dll_stop_func is not None:
-            return True
-        if self._process is None:
-            return False
-        return self._process.poll() is None
+            if self._health_check_addr is not None:
+                host, port = self._health_check_addr
+                try:
+                    with socket.create_connection((host, port), timeout=1.0):
+                        return True
+                except OSError:
+                    self._log.warning(
+                        "DLL engine health check FAILED — port %s:%d is closed. "
+                        "Engine likely crashed silently.",
+                        host, port,
+                    )
+                    self._dll_stop_func = None
+                    return False
+            return True  # No health check port set — assume alive
+
+        return False
 
     @property
     def pid(self) -> int | None:
         return self._process.pid if self._process else None
+
+    def _cleanup_config_dir(self):
+        """Remove the per-engine config directory. Called by stop()."""
+        if self._config_dir and self._config_dir.exists():
+            try:
+                shutil.rmtree(self._config_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     # ──────────────────────────── Helpers ────────────────────────
 
