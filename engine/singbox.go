@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -21,7 +22,7 @@ func startSingBoxInternal(configPath string) error {
 	}
 
 	var options option.Options
-	if err := options.UnmarshalJSON(configJSON); err != nil {
+	if err := json.Unmarshal(configJSON, &options); err != nil {
 		return fmt.Errorf("failed to parse config JSON: %w", err)
 	}
 
@@ -57,7 +58,6 @@ func stopSingBoxInternal() {
 	}
 }
 
-// RunSingBox starts sing-box using the config file at path and blocks
 func RunSingBox(configPath string) error {
 	if err := startSingBoxInternal(configPath); err != nil {
 		return err

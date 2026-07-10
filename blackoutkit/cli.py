@@ -106,8 +106,6 @@ def _restore_iran_snapshot():
     stack_deps = {
         "sni":        ["xray", "sni-spoofing"],
         "gdpi":       ["goodbyedpi"],
-        "psiphon":    ["psiphon"],
-        "warp":       ["warp-plus"],
         "mhrv":       ["mhrv"],
         "legend":     ["xray", "sni-spoofing"],
         "wireguard":  ["wireguard"],

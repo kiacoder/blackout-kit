@@ -103,33 +103,6 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         manual_note   = "",
     ),
 
-    "warp-plus": BinInfo(
-        key           = "warp-plus",
-        display_name  = "WARP+ (warp-plus)",
-        description   = "Cloudflare WARP — clean residential-class IP, bypasses captchas",
-        github_repo   = "bepass-org/warp-plus",
-        asset_pattern = "warp-plus_windows_amd64.zip",
-        asset_exclude = None,
-        extract_map   = {"warp-plus.exe": "warp-plus.exe"},
-        output_bins   = ["warp-plus.exe"],
-        required      = False,
-        manual_url    = "https://github.com/bepass-org/warp-plus/releases",
-        manual_note   = "",
-    ),
-
-    "psiphon": BinInfo(
-        key           = "psiphon",
-        display_name  = "Psiphon Tunnel Core",
-        description   = "Psiphon multi-protocol VPN — best fallback for heavy censorship",
-        github_repo   = "Psiphon-Labs/psiphon-tunnel-core-binaries",
-        asset_pattern = "psiphon-tunnel-core-windows-amd64.zip",
-        asset_exclude = "android",
-        extract_map   = {"psiphon-tunnel-core-x86_64.exe": "psiphon-tunnel-core-x86_64.exe"},
-        output_bins   = ["psiphon-tunnel-core-x86_64.exe"],
-        required      = False,
-        manual_url    = "https://github.com/Psiphon-Labs/psiphon-tunnel-core-binaries/releases",
-        manual_note   = "",
-    ),
 }
 
 
@@ -275,17 +248,13 @@ def verify_bins_integrity() -> dict[str, str]:
 
 def check_installed() -> dict[str, bool]:
     """Return {key: True/False} — True when all expected output_bins files exist in bins/."""
-    engine_bin = BINS_DIR / "blackout-engine.exe"
     engine_dll = BINS_DIR / "blackout_core.dll"
-    warp_dll = BINS_DIR / "blackout_warp.dll"
-    has_engine = engine_bin.exists() or engine_dll.exists()
-    has_warp = warp_dll.exists()
-    
+    engine_exe = BINS_DIR / "blackout-engine.exe"
+    has_engine = engine_dll.exists() or engine_exe.exists()
+
     status = {}
     for key, info in BIN_REGISTRY.items():
         if has_engine and key in ("xray", "sing-box", "mhrv", "sni-spoofing"):
-            status[key] = True
-        elif has_warp and key in ("warp-plus", "psiphon"):
             status[key] = True
         else:
             status[key] = all((BINS_DIR / b).exists() for b in info.output_bins)
