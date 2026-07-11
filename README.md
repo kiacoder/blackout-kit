@@ -488,6 +488,15 @@ blackout bins download
 
 Or if you have the Full version, make sure you're running from the correct folder where `bins/` exists.
 
+### YouTube website loads but videos won't play (GoodbyeDPI)
+
+GoodbyeDPI is a **TCP-only** tool. It cannot bypass DPI for UDP traffic. Because YouTube uses the UDP-based **QUIC** protocol for video streaming by default, the videos bypass the engine and get blocked by your ISP, even though the website shell (HTML/CSS) loads perfectly.
+
+To fix this, force your browser to use TCP:
+1. Go to `chrome://flags/#enable-quic` (or `edge://flags/#enable-quic`).
+2. Set **Experimental QUIC protocol** to **Disabled**.
+3. Relaunch your browser.
+
 ### DNS not resolving after disconnecting
 
 ```
