@@ -149,6 +149,8 @@ _VALIDATORS: dict[str, tuple] = {
     "color_theme":        (str,   lambda v: v in ("red","blue","green","purple"),
                            "must be: red / blue / green / purple"),
     "selected_engine":    (str,   lambda v: v in _ENGINE_CHOICES, "must be: auto or one of " + ", ".join(_ENGINE_CHOICES)),
+    "engine_order":       (list,  lambda v: len(v) > 0 and all(e in _ENGINE_CHOICES for e in v),
+                            "must be a non-empty list of valid engines: " + ", ".join(_ENGINE_CHOICES)),
 }
 
 # ──────────────────────────── Env overrides ───────────────────────
@@ -192,7 +194,12 @@ def load() -> dict:
         merged = dict(DEFAULTS)
         merged.update(saved)
         return _apply_env_overrides(merged)
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Settings file '%s' is corrupted (%s). Falling back to defaults.",
+            SETTINGS_FILE, exc,
+        )
         return _apply_env_overrides(dict(DEFAULTS))
 
 

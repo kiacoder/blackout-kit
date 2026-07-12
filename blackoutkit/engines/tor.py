@@ -64,6 +64,11 @@ class TorEngine(Engine):
         )
 
         try:
+            subprocess.run(["taskkill", "/F", "/IM", "tor.exe"], capture_output=True, timeout=3)
+        except Exception:
+            pass
+
+        try:
             self._process = subprocess.Popen(
                 [str(binary), "-f", str(torrc)],
                 cwd=str(binary.parent),

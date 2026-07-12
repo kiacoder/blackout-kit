@@ -25,6 +25,7 @@ import time
 from pathlib import Path
 from .base import Engine
 from .. import settings as cfg
+from ..elevate import restart_as_admin
 
 TUN_BIN_NAMES = [
     "sing-box.exe",
@@ -144,16 +145,15 @@ class TUNEngine(Engine):
 
         # TUN mode requires Administrator (WinTUN kernel driver)
         if sys.platform == "win32":
-            try:
-                import ctypes
-                if not ctypes.windll.shell32.IsUserAnAdmin():
-                    self._log.error(
-                        "TUN mode requires Administrator privileges (WinTUN kernel driver). "
-                        "Restart terminal as Admin and try again."
-                    )
+            from ..elevate import is_admin
+            if not is_admin():
+                self._log.warning("TUN mode requires Administrator privileges (WinTUN kernel driver).")
+                self._log.info("Requesting elevation via UAC…")
+                if restart_as_admin():
+                    self._log.info("Elevation accepted — new admin terminal opened.")
                     return False
-            except Exception:
-                pass
+                self._log.error("UAC elevation was denied. TUN mode requires admin rights.")
+                return False
 
         config_path = self._write_config()
         self._log.debug("sing-box TUN config written to %s", config_path)

@@ -100,6 +100,9 @@ def _restore_iran_snapshot():
     except Exception:
         pass
     _pre_iran_snapshot = None
+
+
+def _start_engine_stack(name: str):
     """Instantiate and start all engines in a stack. Returns running list."""
     from . import downloader as dl
 
@@ -110,6 +113,11 @@ def _restore_iran_snapshot():
         "legend":     ["xray", "sni-spoofing"],
         "wireguard":  ["wireguard"],
         "softether":  ["softether"],
+        "tor":        ["tor"],
+        "openvpn":    ["openvpn"],
+        "warp":       ["warp_dll"],
+        "psiphon":    ["warp_dll"],
+        "tun":        ["sing-box"],
     }
 
     deps = stack_deps.get(name, [])
@@ -500,6 +508,11 @@ def cmd_stop(args):
         s = cfg.load()
         if s.get("auto_set_proxy"):
             clear_system_proxy()
+        if s.get("kill_switch", False):
+            try:
+                sec.disable_kill_switch()
+            except Exception:
+                pass
         console.print("[success]✓ Daemon stopped. System proxy cleared.[/success]")
     else:
         console.print("[warning]No daemon is running.[/warning]")
@@ -1768,7 +1781,11 @@ def cmd_connect(args):
         else:
             resolved_default = "sni"
 
-    engine_name = getattr(args, "engine", None) or resolved_default
+    # Read positional engine first, fallback to --engine, then to resolved_default
+    engine_name = getattr(args, "pos_engine", None) or getattr(args, "engine", None)
+    if engine_name == "auto" or not engine_name:
+        engine_name = resolved_default
+
     background  = getattr(args, "background", False)
     iran_mode   = getattr(args, "iran", False)
 
@@ -2167,11 +2184,11 @@ def main():
 
     # ── connect ──
     conn_p = sub.add_parser("connect", help="Smart connect — auto-preps and starts the best engine")
+    conn_p.add_argument("pos_engine", nargs="?", choices=ALL_ENGINE_CHOICES, default=None, metavar="[ENGINE]")
     conn_p.add_argument(
         "--engine",
         choices=ALL_ENGINE_CHOICES,
         default=None,
-        metavar="ENGINE",
         help="sni | gdpi | psiphon | warp | tun | … (default: auto)",
     )
     conn_p.add_argument("-d", "--background", action="store_true",
@@ -2193,19 +2210,19 @@ def main():
 
     # ── start ──
     start_p = sub.add_parser("start", help="Start bypass engine")
+    start_p.add_argument("pos_engine", nargs="?", choices=ALL_ENGINE_CHOICES, default=None, metavar="[ENGINE]")
     start_p.add_argument("--engine",
                          choices=ALL_ENGINE_CHOICES,
                          default="auto",
-                         metavar="ENGINE",
-                         help=(
-                             "sni | gdpi | psiphon | warp | tun | tor | mhrv | "
-                             "ikev2 | wireguard | openvpn | softether | appsscript | legend | auto"
-                         ))
+                         help=argparse.SUPPRESS)
     start_p.add_argument("-d", "--background", action="store_true",
                          help="Run as background daemon (survives terminal close)")
 
     # ── stop ──
     sub.add_parser("stop", help="Stop background daemon")
+
+    # ── disconnect ──
+    sub.add_parser("disconnect", help="Stop background daemon (alias for stop)")
 
     # ── emergency ──
     em_p = sub.add_parser("emergency", help="Try all engines until one works")
@@ -2353,8 +2370,9 @@ def main():
         "fix":         cmd_fix,
         "scan":        cmd_scan,
         "test":        cmd_test,
-        "start":       cmd_start,
+        "start":       cmd_connect,
         "stop":        cmd_stop,
+        "disconnect":  cmd_stop,
         "emergency":   cmd_emergency,
         "status":      cmd_status,
         "logs":        cmd_logs,

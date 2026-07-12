@@ -109,6 +109,8 @@ def clear_system_proxy() -> bool:
         key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
         winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+        winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
+        winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "")
         winreg.CloseKey(key)
         _notify_proxy_change()
         _last_error = ""

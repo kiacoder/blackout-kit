@@ -9,6 +9,7 @@ import logging.handlers
 import os
 import sys
 import subprocess
+import threading as _threading
 import time
 from pathlib import Path
 
@@ -193,7 +194,8 @@ def run_daemon_loop(engine_name: str):
     """
     import os
     import sys
-    global _shutdown_requested
+    global _shutdown_requested, cfg_lock
+    cfg_lock = _threading.Lock()
     try:
         devnull = open(os.devnull, "w")
         sys.stdout = devnull
@@ -410,17 +412,46 @@ def run_daemon_loop(engine_name: str):
                 except Exception:
                     pass
                 continue  # Skip latency check this cycle — restart just happened
-
             # Connectivity probe + stability tracking
-            from .scanner.proxy_tester import test_tcp_port
-            latency = test_tcp_port("127.0.0.1", s["xray_http_port"])
+            with cfg_lock:
+                pinfo = cfg.get_engine_proxy_details(active_engine_name, s)
+            if pinfo:
+                p_host, p_port = pinfo
+                from .scanner.proxy_tester import test_tcp_port
+                latency = test_tcp_port(p_host, p_port)
+            else:
+                latency = None
+
             try:
                 sec.record_latency(active_engine_name, latency)
             except Exception:
                 pass
 
             if latency is None:
-                log.warning("HTTP proxy port closed — engine may have crashed.")
+                log.warning("Proxy port closed — engine may have crashed.")
+                if restart_count < max_restarts:
+                    log.warning("Attempting restart %d/%d...", restart_count+1, max_restarts+1)
+                    for eng in active:
+                        try:
+                            eng.stop()
+                        except Exception:
+                            pass
+                    active = try_start_engines(active_engine_name)
+                    restart_count += 1
+                    if not active:
+                        log.error("Restart #%d failed.", restart_count)
+                    else:
+                        log.info("Engine restarted (attempt %d/%d).", restart_count, max_restarts)
+                        try:
+                            STATE_FILE.write_text(json.dumps({
+                                "engine":   active_engine_name,
+                                "pid":      active[0].pid if active[0].pid else -1,
+                                "started":  time.strftime("%Y-%m-%d %H:%M:%S"),
+                                "restarts": restart_count,
+                            }))
+                        except Exception:
+                            pass
+                        continue  # Skip rest of the loop iteration
             else:
                 log.info(f"Heartbeat OK — proxy latency: {latency:.0f}ms")
 

@@ -103,6 +103,104 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         manual_note   = "",
     ),
 
+    "tor": BinInfo(
+        key           = "tor",
+        display_name  = "Tor (Expert Bundle)",
+        description   = "Tor onion network router",
+        github_repo   = "kiacoder/blackout-kit",
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {"tor.exe": "tor.exe"},
+        output_bins   = ["tor.exe"],
+        required      = False,
+        manual_url    = "https://github.com/kiacoder/blackout-kit",
+        manual_note   = "",
+    ),
+
+    "openvpn": BinInfo(
+        key           = "openvpn",
+        display_name  = "OpenVPN",
+        description   = "OpenVPN executable",
+        github_repo   = "kiacoder/blackout-kit",
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {"openvpn.exe": "openvpn.exe"},
+        output_bins   = ["openvpn.exe"],
+        required      = False,
+        manual_url    = "https://github.com/kiacoder/blackout-kit",
+        manual_note   = "",
+    ),
+
+    "warp_dll": BinInfo(
+        key           = "warp_dll",
+        display_name  = "Blackout WARP DLL (64-bit)",
+        description   = "Native DLL required for WARP and Psiphon",
+        github_repo   = "kiacoder/blackout-kit",
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {"*warp*64*.dll": "blackout_warp.dll"},
+        output_bins   = ["blackout_warp.dll"],
+        required      = False,
+        manual_url    = "https://github.com/kiacoder/blackout-kit",
+        manual_note   = "",
+    ),
+
+    "sing-box": BinInfo(
+        key           = "sing-box",
+        display_name  = "Sing-Box",
+        description   = "Universal proxy platform",
+        github_repo   = "SagerNet/sing-box",
+        asset_pattern = "sing-box-*-windows-amd64.zip",
+        asset_exclude = "beta",
+        extract_map   = {"*/sing-box.exe": "sing-box.exe"},
+        output_bins   = ["sing-box.exe"],
+        required      = False,
+        manual_url    = "https://github.com/SagerNet/sing-box/releases",
+        manual_note   = "",
+    ),
+
+    "xray": BinInfo(
+        key           = "xray",
+        display_name  = "Xray Core",
+        description   = "Xray-core proxy engine",
+        github_repo   = "XTLS/Xray-core",
+        asset_pattern = "Xray-windows-64.zip",
+        asset_exclude = None,
+        extract_map   = {"xray.exe": "xray.exe"},
+        output_bins   = ["xray.exe"],
+        required      = True,
+        manual_url    = "https://github.com/XTLS/Xray-core/releases",
+        manual_note   = "",
+    ),
+
+    "mhrv": BinInfo(
+        key           = "mhrv",
+        display_name  = "mhrv",
+        description   = "mhrv-rs transparent MITM proxy",
+        github_repo   = "kiacoder/blackout-kit",
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {"mhrv.exe": "mhrv.exe"},
+        output_bins   = ["mhrv.exe"],
+        required      = False,
+        manual_url    = "https://github.com/kiacoder/blackout-kit",
+        manual_note   = "",
+    ),
+
+    "sni-spoofing": BinInfo(
+        key           = "sni-spoofing",
+        display_name  = "Blackout Core DLL (64-bit)",
+        description   = "Native DLL required for SNI spoofing and Xray",
+        github_repo   = "kiacoder/blackout-kit",
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {"*core*64*.dll": "blackout_core.dll"},
+        output_bins   = ["blackout_core.dll"],
+        required      = True,
+        manual_url    = "https://github.com/kiacoder/blackout-kit",
+        manual_note   = "",
+    ),
+
 }
 
 
@@ -248,16 +346,9 @@ def verify_bins_integrity() -> dict[str, str]:
 
 def check_installed() -> dict[str, bool]:
     """Return {key: True/False} — True when all expected output_bins files exist in bins/."""
-    engine_dll = BINS_DIR / "blackout_core.dll"
-    engine_exe = BINS_DIR / "blackout-engine.exe"
-    has_engine = engine_dll.exists() or engine_exe.exists()
-
     status = {}
     for key, info in BIN_REGISTRY.items():
-        if has_engine and key in ("xray", "sing-box", "mhrv", "sni-spoofing"):
-            status[key] = True
-        else:
-            status[key] = all((BINS_DIR / b).exists() for b in info.output_bins)
+        status[key] = all((BINS_DIR / b).exists() for b in info.output_bins)
     return status
 
 

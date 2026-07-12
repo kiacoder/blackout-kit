@@ -188,7 +188,7 @@ class _GASProxyHandler(http.server.BaseHTTPRequestHandler):
         # Write response back to client
         status  = result.get("status", 200)
         headers = result.get("headers", {})
-        body_b64 = result.get("body", "")
+        body_b64 = result.get("body") or ""
 
         try:
             resp_body = base64.b64decode(body_b64)

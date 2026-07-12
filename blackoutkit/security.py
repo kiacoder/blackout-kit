@@ -28,6 +28,7 @@ import tempfile
 from pathlib import Path
 
 from . import settings as cfg
+from . import elevate
 
 _log = logging.getLogger(__name__)
 
@@ -116,6 +117,9 @@ def is_mode_enforced() -> tuple[bool, list[str]]:
 
 # ─────────────────────────── Kill switch ─────────────────────────
 
+# Thread lock to prevent races on rapid enable/disable
+import threading as _ks_th ; _ks_lock = _ks_th.Lock()
+
 # All rule names managed by the kill switch (kept in sync across enable/disable)
 _KS_RULES = [
     "BlackoutKit-KillSwitch-Block",
@@ -157,6 +161,11 @@ def _get_proxy_processes() -> list[str]:
 
 
 def enable_kill_switch() -> bool:
+    with _ks_lock:
+        return _enable_kill_switch_impl()
+
+
+def _enable_kill_switch_impl() -> bool:
     """
     Block all internet traffic unless it goes through our proxy.
     Uses Windows Firewall with per-process allow rules (requires admin).
@@ -282,6 +291,11 @@ def test_kill_switch() -> tuple[bool, str]:
 
 
 def disable_kill_switch() -> bool:
+    with _ks_lock:
+        return _disable_kill_switch_impl()
+
+
+def _disable_kill_switch_impl() -> bool:
     """Remove all kill-switch firewall rules (including DoH/DoT blocks + per-process proxy rules)."""
     if sys.platform != "win32":
         return False
@@ -491,33 +505,73 @@ def add_defender_exclusion(path: Path | None = None) -> bool:
     """
     Add the bins/ folder to Windows Defender exclusions.
     Prevents Defender from flagging WinDivert, sni-spoofing.exe, etc.
-    Requires administrator privileges.
+    Auto-elevates via UAC if not running as admin.
     """
     if sys.platform != "win32":
         return False
     target = str(path or BINS_DIR.resolve())
-    # Pass path via env var to prevent PowerShell injection
     env = {**os.environ, "BLACKOUT_EXCL_PATH": target}
     ps = 'Add-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; Write-Output "OK"'
     result = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
         capture_output=True, text=True, timeout=20, env=env,
     )
-    return "OK" in result.stdout
+    if "OK" in result.stdout:
+        return True
+
+    _log.info("Defender exclusion needs admin — requesting elevation via UAC…")
+    import tempfile
+    marker = Path(tempfile.mktemp(suffix=".txt"))
+    ps_elevated = (
+        f'Add-MpPreference -ExclusionPath "{target}"; '
+        f'Write-Output "OK" | Out-File -FilePath "{marker}" -Encoding UTF8'
+    )
+    handle, pid = elevate.launch_elevated(
+        "powershell.exe",
+        ["-NoProfile", "-Command", ps_elevated],
+    )
+    if handle is None:
+        return False
+    import ctypes
+    ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
+    ctypes.windll.kernel32.CloseHandle(handle)
+    ok = marker.exists() and "OK" in marker.read_text()
+    marker.unlink(missing_ok=True)
+    return ok
 
 
 def remove_defender_exclusion(path: Path | None = None) -> bool:
     if sys.platform != "win32":
         return False
     target = str(path or BINS_DIR.resolve())
-    # Pass path via env var to prevent PowerShell injection
     env = {**os.environ, "BLACKOUT_EXCL_PATH": target}
     ps = 'Remove-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; Write-Output "OK"'
     result = subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps],
         capture_output=True, text=True, timeout=20, env=env,
     )
-    return "OK" in result.stdout
+    if "OK" in result.stdout:
+        return True
+
+    _log.info("Defender exclusion removal needs admin — requesting elevation via UAC…")
+    import tempfile
+    marker = Path(tempfile.mktemp(suffix=".txt"))
+    ps_elevated = (
+        f'Remove-MpPreference -ExclusionPath "{target}"; '
+        f'Write-Output "OK" | Out-File -FilePath "{marker}" -Encoding UTF8'
+    )
+    handle, pid = elevate.launch_elevated(
+        "powershell.exe",
+        ["-NoProfile", "-Command", ps_elevated],
+    )
+    if handle is None:
+        return False
+    import ctypes
+    ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
+    ctypes.windll.kernel32.CloseHandle(handle)
+    ok = marker.exists() and "OK" in marker.read_text()
+    marker.unlink(missing_ok=True)
+    return ok
 
 
 def verify_exclusion_added(path: Path | None = None) -> bool:

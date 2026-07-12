@@ -52,7 +52,9 @@ func StartWarpC(socksPort C.int, cCountry *C.char) C.int {
 	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	go func() {
-		_ = app.RunWarp(warpCtx, l, opts)
+		if err := app.RunWarp(warpCtx, l, opts); err != nil {
+			l.Error("warp run failed", "error", err)
+		}
 	}()
 
 	return 0
@@ -100,7 +102,9 @@ func StartPsiphonC(socksPort C.int, httpPort C.int, cCountry *C.char) C.int {
 	l := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	go func() {
-		_ = app.RunWarp(psiCtx, l, opts)
+		if err := app.RunWarp(psiCtx, l, opts); err != nil {
+			l.Error("psiphon run failed", "error", err)
+		}
 	}()
 
 	return 0

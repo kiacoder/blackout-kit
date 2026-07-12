@@ -150,10 +150,20 @@ class SoftEtherEngine(Engine):
 
         try:
             # Start the VPN client service (idempotent if already running)
-            subprocess.run(
+            # Track with Popen so stop() can kill it properly
+            self._process = subprocess.Popen(
                 [str(client), "start"],
-                capture_output=True, timeout=15,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
             )
+            try:
+                self._process.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                self._process.kill()
+                self._process.wait(timeout=5)
+                return False
+            self._process = None  # vpnclient runs as a service, not a child
             time.sleep(2)  # Let service initialize
 
             # Sanitize values — newlines in any field would inject extra vpncmd commands
@@ -206,7 +216,15 @@ class SoftEtherEngine(Engine):
         client = self._find_client()
         if client:
             try:
-                subprocess.run([str(client), "stop"], capture_output=True, timeout=15)
+                proc = subprocess.Popen([str(client), "stop"],
+                                        stdout=subprocess.DEVNULL,
+                                        stderr=subprocess.DEVNULL,
+                                        creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0)
+                try:
+                    proc.wait(timeout=15)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=5)
             except Exception:
                 pass
         self._process = None

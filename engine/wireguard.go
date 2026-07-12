@@ -25,13 +25,20 @@ var (
 	wgCancel context.CancelFunc
 )
 
-func parseConfigToIPC(configPath string) (string, error) {
+type wireGuardConfig struct {
+	ipc       string
+	localIPs  []netip.Addr
+	dnsIPs    []netip.Addr
+}
+
+func parseWGConfig(configPath string) (*wireGuardConfig, error) {
 	file, err := os.Open(configPath)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer file.Close()
 
+	wgc := &wireGuardConfig{}
 	var ipc strings.Builder
 	scanner := bufio.NewScanner(file)
 
@@ -75,25 +82,58 @@ func parseConfigToIPC(configPath string) (string, error) {
 			}
 		case "persistentkeepalive":
 			ipc.WriteString(fmt.Sprintf("persistent_keepalive_interval=%s\n", val))
+		case "address":
+			ips := strings.Split(val, ",")
+			for _, ip := range ips {
+				ipStr := strings.TrimSpace(ip)
+				// Strip CIDR prefix if present (e.g. "10.0.0.2/32" -> "10.0.0.2")
+				addr, err := netip.ParsePrefix(ipStr)
+				if err != nil {
+					// Try as plain address
+					if a, err2 := netip.ParseAddr(ipStr); err2 == nil {
+						wgc.localIPs = append(wgc.localIPs, a)
+					}
+				} else {
+					wgc.localIPs = append(wgc.localIPs, addr.Addr())
+				}
+			}
+		case "dns":
+			ips := strings.Split(val, ",")
+			for _, ip := range ips {
+				ipStr := strings.TrimSpace(ip)
+				if a, err := netip.ParseAddr(ipStr); err == nil {
+					wgc.dnsIPs = append(wgc.dnsIPs, a)
+				}
+			}
 		}
 	}
-	return ipc.String(), nil
+	wgc.ipc = ipc.String()
+	return wgc, nil
 }
 
 func startWireGuardInternal(configPath string, socksPort int) error {
 	// Create userspace TUN device via netstack
-	localIPs := []netip.Addr{netip.MustParseAddr("10.0.0.2")} 
+	// Fallback addresses if config has no Address or DNS
+	localIPs := []netip.Addr{netip.MustParseAddr("10.0.0.2")}
 	dnsIPs := []netip.Addr{netip.MustParseAddr("1.1.1.1")}
+
+	wgc, err := parseWGConfig(configPath)
+	if err != nil {
+		return err
+	}
+	if len(wgc.localIPs) > 0 {
+		localIPs = wgc.localIPs
+	}
+	if len(wgc.dnsIPs) > 0 {
+		dnsIPs = wgc.dnsIPs
+	}
 
 	tun, tnet, err := netstack.CreateNetTUN(localIPs, dnsIPs, 1420)
 	if err != nil {
 		return err
 	}
 
-	ipcString, err := parseConfigToIPC(configPath)
-	if err != nil {
-		return err
-	}
+	ipcString := wgc.ipc
 
 	logger := device.NewLogger(device.LogLevelError, "wg")
 	wgDevice = device.NewDevice(tun, conn.NewDefaultBind(), logger)

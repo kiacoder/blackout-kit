@@ -169,13 +169,7 @@ class IKEv2Engine(Engine):
     # ── Engine interface ─────────────────────────────────────────
 
     def is_running(self) -> bool:
-        """
-        Override: also check the live VPN connection status in addition to
-        the monitor process, since the VPN can drop without killing the process.
-        """
-        if not super().is_running():
-            return False
-        return self._is_connected()
+        return super().is_running()
 
     def start(self) -> bool:
         if sys.platform != "win32":

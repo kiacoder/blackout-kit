@@ -1,11 +1,15 @@
 package main
 
-import "C"
+import (
+	"C"
+	"fmt"
+)
 
 //export StartXrayC
 func StartXrayC(configPath *C.char) int {
 	err := startXrayInternal(C.GoString(configPath))
 	if err != nil {
+		fmt.Println("StartXrayC Error:", err)
 		return 1
 	}
 	return 0

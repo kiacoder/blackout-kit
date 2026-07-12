@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -45,16 +46,12 @@ func startSNIInternal(configPath string) error {
 		for {
 			clientConn, err := sniListener.Accept()
 			if err != nil {
-				// if listener was closed, break
-				if opErr, ok := err.(*net.OpError); ok && opErr.Err.Error() == "use of closed network connection" {
+				if errors.Is(err, net.ErrClosed) {
 					break
 				}
 				fmt.Printf("Accept connection failed: %v\n", err)
-				if ne, ok := err.(net.Error); ok && ne.Temporary() {
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-				break
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
 			go handleClient(clientConn, config.ConnectIP, config.ConnectPort)
 		}
@@ -166,6 +163,7 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 		io.Copy(client, server)
 	}()
 
-	// Wait until either direction closes
+	// Wait until both directions finish
+	<-done
 	<-done
 }

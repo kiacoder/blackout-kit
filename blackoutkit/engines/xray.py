@@ -198,7 +198,6 @@ class XRayEngine(Engine):
             "security": "tls",
             "tlsSettings": {
                 "serverName":    c.sni,
-                "allowInsecure": allow_insecure,
                 "fingerprint":   s["xray_fingerprint"],
             },
             "wsSettings": {
@@ -207,6 +206,15 @@ class XRayEngine(Engine):
             },
         }
         
+        if allow_insecure:
+            try:
+                import ssl, hashlib
+                cert_pem = ssl.get_server_certificate((c.address, c.port), timeout=3.0)
+                sha256 = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert_pem)).hexdigest()
+                stream["tlsSettings"]["pinnedPeerCertSha256"] = sha256
+            except Exception as e:
+                self._log.debug("Failed to fetch cert hash for pinnedPeerCertSha256: %s", e)
+
         if fragment_settings:
             stream["tlsSettings"]["fragment"] = fragment_settings
             self._log.debug("TLS Fragmentation enabled: %s", frag)
@@ -228,12 +236,13 @@ class XRayEngine(Engine):
                 "streamSettings": stream,
                 "mux": {"enabled": s["xray_mux_enabled"]},
             }
-        raise ValueError(f"Unsupported protocol: {c.protocol}")
+        self._log.warning("Protocol '%s' is unsupported, falling back to trojan", c.protocol)
+        return self._default_outbound()
 
     def _default_outbound(self) -> dict:
         """Use the built-in Trojan config from the SNI-Spoofer package."""
         s = cfg.load()
-        return {
+        out = {
             "tag":      "proxy",
             "protocol": "trojan",
             "settings": {"servers": [{"address": "127.0.0.1", "port": s["sni_listen_port"], "password": "humanity"}]},
@@ -242,12 +251,19 @@ class XRayEngine(Engine):
                 "security": "tls",
                 "tlsSettings": {
                     "serverName":    "www.creationlong.org",
-                    "allowInsecure": True,
                     "fingerprint":   s["xray_fingerprint"],
                 },
                 "wsSettings": {"path": "/assignment", "headers": {"Host": "www.creationlong.org"}},
             },
         }
+        try:
+            import ssl, hashlib
+            cert_pem = ssl.get_server_certificate(("127.0.0.1", s["sni_listen_port"]), timeout=3.0)
+            sha256 = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert_pem)).hexdigest()
+            out["streamSettings"]["tlsSettings"]["pinnedPeerCertSha256"] = sha256
+        except Exception:
+            pass
+        return out
 
     def start(self) -> bool:
 

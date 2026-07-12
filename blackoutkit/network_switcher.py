@@ -128,6 +128,18 @@ def _signal_bar(pct: int, width: int = 10) -> str:
     return "█" * filled + "░" * (width - filled)
 
 
+def _netsh_encoding() -> str:
+    """Return the OEM code page encoding used by netsh on this system."""
+    if sys.platform != "win32":
+        return "utf-8"
+    try:
+        import ctypes
+        codepage = ctypes.windll.kernel32.GetOEMCP()
+        return f"cp{codepage}"
+    except Exception:
+        return "utf-8"
+
+
 def _run_netsh(*args: str, timeout: int = 10) -> str | None:
     """
     Run a netsh command and return stdout text.
@@ -141,8 +153,8 @@ def _run_netsh(*args: str, timeout: int = 10) -> str | None:
             ["netsh"] + list(args),
             capture_output=True,
             text=True,
-            encoding="utf-8",
-            errors="ignore",
+            encoding=_netsh_encoding(),
+            errors="replace",
             timeout=timeout,
         )
         return result.stdout

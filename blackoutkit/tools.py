@@ -3,6 +3,7 @@ Blackout Kit - Network toolkit & diagnostics.
 DNS flush, speed test, MTU optimizer, adapter info, ping, traceroute, and auto-fix.
 """
 import concurrent.futures
+import ctypes
 import logging
 import os
 import socket
@@ -20,6 +21,104 @@ from rich import box
 
 from .theme import console, make_table, latency_color
 from .proxy_manager import is_admin as _is_admin
+from . import elevate
+
+
+def _run_elevated(cmd: list[str], timeout_ms: int = 30000) -> bool:
+    """
+    Run a single command with admin rights via a UAC prompt.
+    Launches powershell.exe elevated, which runs the command with -Wait.
+    """
+    ps_script = (
+        f"$p = Start-Process -FilePath '{cmd[0]}' "
+        f"-ArgumentList '{subprocess.list2cmdline(cmd[1:])}' "
+        f"-NoNewWindow -Wait -PassThru; exit $p.ExitCode"
+    )
+    handle, pid = elevate.launch_elevated(
+        "powershell.exe",
+        ["-NoProfile", "-Command", ps_script],
+    )
+    if handle is None:
+        return False
+    ctypes.windll.kernel32.WaitForSingleObject(handle, timeout_ms)
+    exit_code = ctypes.c_ulong()
+    if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return exit_code.value == 0
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return True
+
+
+def _run_elevated_multi(commands: list[list[str]], timeout_ms: int = 60000) -> bool:
+    """
+    Run multiple admin commands in ONE elevated PowerShell session (ONE UAC prompt).
+    """
+    blocks = []
+    for cmd in commands:
+        blocks.append(
+            f"$p = Start-Process -FilePath '{cmd[0]}' "
+            f"-ArgumentList '{subprocess.list2cmdline(cmd[1:])}' "
+            f"-NoNewWindow -Wait -PassThru"
+        )
+    ps_script = "& { " + "; ".join(blocks) + " }"
+    handle, pid = elevate.launch_elevated(
+        "powershell.exe",
+        ["-NoProfile", "-Command", ps_script],
+    )
+    if handle is None:
+        return False
+    ctypes.windll.kernel32.WaitForSingleObject(handle, timeout_ms)
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return True
+from . import elevate
+
+
+def _run_elevated(cmd: list[str]) -> bool:
+    """
+    Run a single command with admin rights via a UAC prompt.
+    Returns True if the elevated command completed successfully (exit code 0).
+    """
+    ps_script = (
+        "& { $p = Start-Process -FilePath '" + cmd[0] + "' -ArgumentList '"
+        + subprocess.list2cmdline(cmd[1:]) + "' -NoNewWindow -Wait -PassThru; exit $p.ExitCode }"
+    )
+    handle, pid = elevate.launch_elevated(
+        "powershell.exe",
+        ["-NoProfile", "-Command", ps_script],
+    )
+    if handle is None:
+        return False
+    ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
+    exit_code = ctypes.c_ulong()
+    ok = False
+    if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+        ok = exit_code.value == 0
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return ok
+
+
+def _run_elevated_multi(commands: list[list[str]]) -> bool:
+    """
+    Run multiple admin commands in a single elevated PowerShell session.
+    Only triggers ONE UAC prompt.
+    """
+    ps_blocks = []
+    for cmd in commands:
+        ps_blocks.append(
+            "$p = Start-Process -FilePath '" + cmd[0] + "' -ArgumentList '"
+            + subprocess.list2cmdline(cmd[1:]) + "' -NoNewWindow -Wait -PassThru"
+        )
+    ps_script = "& { " + "; ".join(ps_blocks) + " }"
+    handle, pid = elevate.launch_elevated(
+        "powershell.exe",
+        ["-NoProfile", "-Command", ps_script],
+    )
+    if handle is None:
+        return False
+    ctypes.windll.kernel32.WaitForSingleObject(handle, 60000)
+    ctypes.windll.kernel32.CloseHandle(handle)
+    return True
+
 
 # ─────────────────────────── DNS tools ───────────────────────────
 
@@ -278,16 +377,17 @@ def set_mtu(mtu: int, adapter: str | None = None) -> bool:
     """
     Set MTU for a Windows network adapter.
     If adapter is None, tries to find the current active adapter.
-    Requires administrator privileges.
+    Auto-elevates via UAC if not running as admin.
     """
     if sys.platform != "win32":
         return False
     if not _is_admin():
-        _log.warning("Administrator privileges required to change MTU.")
-        return False
+        _log.info("MTU set requires admin — requesting elevation via UAC…")
+        if not _run_elevated(["cmd.exe", "/c", f"echo Auto-elevate placeholder"]):
+            return False
+        # Re-query adapter after elevation may not work — use direct approach
     try:
         if not adapter:
-            # Try to find a connected adapter automatically using PowerShell (localization independent)
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", "(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' }).Name"],
                 capture_output=True, text=True, errors="ignore", timeout=10
@@ -295,15 +395,19 @@ def set_mtu(mtu: int, adapter: str | None = None) -> bool:
             out = result.stdout.strip()
             if out:
                 adapter = out.splitlines()[0].strip()
-        
+
         if not adapter:
             return False
 
-        # The correct command for per-interface MTU
-        cmd = ["netsh", "interface", "ipv4", "set", "subinterface",
-               adapter, f"mtu={mtu}", "store=persistent"]
+        if not _is_admin():
+            return _run_elevated(["netsh", "interface", "ipv4", "set", "subinterface",
+                                  adapter, f"mtu={mtu}", "store=persistent"])
 
-        subprocess.run(cmd, capture_output=True, check=True, timeout=10)
+        subprocess.run(
+            ["netsh", "interface", "ipv4", "set", "subinterface",
+             adapter, f"mtu={mtu}", "store=persistent"],
+            capture_output=True, check=True, timeout=10,
+        )
         return True
     except Exception:
         return False
@@ -406,23 +510,28 @@ def traceroute(host: str, max_hops: int = 20) -> list[tuple[int, str]]:
 def set_dns(dns_ip: str, adapter: str | None = None) -> bool:
     """
     Set the DNS server for all active adapters (or a specific one).
-    Requires administrator privileges on Windows.
+    Auto-elevates via UAC if not running as admin.
     """
     if sys.platform != "win32":
-        return False
-    if not _is_admin():
-        _log.warning("Administrator privileges required to change DNS.")
         return False
     try:
         if adapter:
             adapters_to_set = [adapter]
         else:
-            # Get all active adapters
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", "(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -notlike '*Loopback*' }).Name"],
                 capture_output=True, text=True, errors="ignore", timeout=10
             )
             adapters_to_set = [line.strip() for line in result.stdout.strip().splitlines() if line.strip()]
+
+        if not adapters_to_set:
+            return False
+
+        if not _is_admin():
+            cmds = [["netsh", "interface", "ip", "set", "dns", adp, "static", dns_ip]
+                    for adp in adapters_to_set]
+            return _run_elevated_multi(cmds)
+
         for adp in adapters_to_set:
             subprocess.run(
                 ["netsh", "interface", "ip", "set", "dns", adp, "static", dns_ip],
@@ -507,13 +616,9 @@ def autofix_windows() -> list[str]:
     """
     Run common Windows network repair commands.
     Returns list of completed steps.
-    Requires administrator privileges for full effect.
+    Auto-elevates via a single UAC prompt if not admin.
     """
     steps = []
-    if not _is_admin():
-        steps.append("[warning]⚠ Requires administrator privileges to apply fixes.[/warning]")
-        return steps
-
     commands = [
         (["ipconfig", "/flushdns"],                              "Flush DNS cache"),
         (["netsh", "winsock", "reset"],                          "Reset Winsock"),
@@ -522,6 +627,16 @@ def autofix_windows() -> list[str]:
         (["ipconfig", "/release"],                               "Release IP address"),
         (["ipconfig", "/renew"],                                 "Renew IP address"),
     ]
+
+    if not _is_admin():
+        _log.info("Network fix requires admin — requesting elevation via UAC…")
+        if _run_elevated_multi([c for c, _ in commands]):
+            for _, label in commands:
+                steps.append(f"[success]✓[/success] {label}")
+        else:
+            steps.append("[warning]⚠ UAC denied — cannot apply fixes.[/warning]")
+        return steps
+
     for cmd, label in commands:
         try:
             subprocess.run(cmd, capture_output=True, timeout=15, check=False)

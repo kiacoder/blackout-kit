@@ -7,31 +7,55 @@ protects users in high-risk environments — we take this seriously.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.1.x   | ✅ Active support  |
-| 1.0.x   | ✅ Security patches |
-| < 1.0   | ❌ Unsupported     |
+| 1.1.x   | Active support     |
+| 1.0.x   | Security patches   |
+| < 1.0   | Unsupported        |
 
 Only the latest minor release receives full updates. Critical patches are
 backported to the previous minor for 30 days.
+
+## Threat Model
+
+Blackout Kit assumes the following adversary capabilities:
+
+| Adversary | Capabilities | Mitigation |
+|-----------|-------------|------------|
+| **ISP / DPI** | Packet inspection, SNI blocking, port blocking | Multi-protocol obfuscation, SNI spoofing, random ports |
+| **National Firewall (GFW)** | Active probing, protocol classification, IP blacklisting | Obfs4, v2fly websocket, random padding, domain fronting |
+| **Local Network Admin** | DNS poisoning, deep packet inspection, throttling | DNS-over-HTTPS, kill switch, noise injection |
+| **Passive Eavesdropper** | Traffic correlation, metadata analysis | TLS 1.3, cert pinning (LEGEND), traffic masking |
+
+**We do NOT protect against:**
+- A state actor with physical device access
+- Targeted malware/keylogger on the user's machine
+- Traffic correlation via timing analysis at scale
+- Compromise of upstream proxy/VPN servers
 
 ## Reporting a Vulnerability
 
 **DO NOT open a public issue.** Vulnerabilities in circumvention tools can
 put users at risk if disclosed before a fix is available.
 
-### Private reporting (preferred)
-- Use GitHub's [private vulnerability reporting](https://github.com/kiacoder/blackout-kit/security/advisories/new)
-- Encrypt sensitive details with our [PGP key](#pgp-key)
+### Preferred: GitHub Private Reporting
+Use GitHub's [private vulnerability reporting](https://github.com/kiacoder/blackout-kit/security/advisories/new).
+GitHub handles the encrypted channel end-to-end.
 
-### Anonymous reporting
-- Email: base64-encode your report and send via an anonymous remailer
-- Signal: available on request for verified reporters
+### Alternative: Encrypted Email
+```
+PGP key:  https://github.com/kiacoder.gpg
+Email:    Encrypt the armored output and send to the address
+          associated with your GitHub account's PGP key.
+```
+
+If you don't have a PGP key, use the GitHub private reporting above.
 
 ### What to expect
+
 - **Acknowledgment**: within 48 hours
 - **Status update**: every 5 days until resolved
 - **Fix timeline**: critical (7 days), high (14 days), medium (30 days)
 - **Credit**: you'll be credited in the advisory (or remain anonymous if you prefer)
+- **CVE**: we will request a CVE ID for confirmed vulnerabilities
 
 ### Scope
 
@@ -42,7 +66,51 @@ put users at risk if disclosed before a fix is available.
 | Binary integrity / supply chain | `blackout doctor` false positives |
 | DNS leak through any engine | DoS without privacy impact |
 | Config encryption weaknesses | Vulnerabilities in external engines (report upstream) |
-| Proxy authentication bypass | Vulnerabilities in outdated Go deps already flagged by Dependabot |
+| Proxy authentication bypass | Dependabot-flagged Go dep vulns (transitive deps pinned by xray-core, sing-box, warp-plus — see Known Trade-offs) |
+
+## Coordinated Disclosure
+
+We follow a 90-day coordinated disclosure window:
+
+1. **Report received** — we acknowledge within 48h
+2. **Fix developed** — we aim for a patch within the fix timeline above
+3. **Patch released** — a new version is published with a security advisory
+4. **Public disclosure** — 90 days after the fix release, we publish details
+
+We appreciate reporters who respect this window.
+
+## Supply Chain Security
+
+### Go Module Pinning
+- All dependencies are pinned via `go.sum` in `engine/` and `engine/warp/`
+- Dependabot runs daily and creates PRs for any vulnerable transitive dep
+- We do not use `replace` directives unless absolutely required
+- Upstream forks (utls, quic-go) are reviewed before updating
+
+### Release Attestation
+- All release artifacts are built from the tagged commit in CI
+- The GitHub release page includes SHA-256 checksums
+- Build from source to verify: `cd engine && go build ...` (see below)
+
+### Dependency Audit
+- `go mod verify` is run before every release
+- `govulncheck` is run periodically to catch known CVEs
+- We prioritize upgrading `golang.org/x/crypto` (the primary attack surface,
+  a transitive dep of xray-core, sing-box, and warp-plus)
+
+## Recent Security Improvements (v1.1.0)
+
+- **Kill switch rewritten**: old `localport`-based rules never matched proxy
+  outbound traffic (proxy uses random source ports). Now uses per-process
+  firewall rules via PowerShell. Run `blackout killswitch test` to verify.
+- **Download integrity**: all downloaded binaries verified for valid PE
+  headers (MZ + PE signature) before install. Corrupt/tampered files rejected.
+- **Watchdog cleanup**: if the daemon is End-Tasked while kill switch is on,
+  internet is no longer permanently blocked.
+- **DLL crash detection**: engines that crash silently (segfault, deadlock)
+  are now detected via TCP port probes and auto-restarted by the daemon.
+- **Config isolation**: each engine writes to a unique temp directory
+  instead of shared `bins/`, preventing cross-instance corruption.
 
 ## Binary Integrity
 
@@ -56,36 +124,45 @@ cd warp
 go build -buildmode=c-shared -o ../../bins/blackout_warp.dll .
 ```
 
-Pre-built binaries are signed with SSH key attestation (coming soon).
+Pre-built release binaries are the same artifacts produced by these
+commands on a clean Go 1.26+ toolchain. Compare the SHA-256 hash of
+the downloaded artifact against `go tool objdump` output to ensure
+reproducibility.
 
-SHA256 hashes of release binaries are published in the release notes.
+## Data Privacy & Telemetry
 
-## Dependency Management
+Blackout Kit **does not**:
+- Collect usage analytics or telemetry
+- Log destination IPs, domains, or visited URLs
+- Phone home or ping external servers (except for updates when you run `blackout update`)
+- Store connection metadata beyond the current session
 
-- `golang.org/x/crypto`, `cloudflare/circl`, and other crypto deps are
-  pinned to latest versions at release time
-- Dependabot monitors all Go modules daily
-- Critical crypto patches are applied within 48 hours
-- Engine Go modules in `engine/` and `engine/warp/` are updated together
+The only persistent data is:
+- `settings.json` (your config — encrypted if you run `blackout config encrypt`)
+- Engine binary cache in `bins/`
 
 ## Known Trade-offs
 
 This tool intentionally trades some security for circumvention effectiveness:
 
-- **allowInsecure = true** (SPEED/PRIVATE modes) — trusts self-signed certs
+- **`allowInsecure = true`** (SPEED/PRIVATE modes) — trusts self-signed certs
   to bypass DPI. Use LEGEND mode for strict cert validation.
 - **Config encryption** is per-machine, not portable — prevents at-rest
   discovery but not offline brute-force.
 - **Kill switch** uses Windows Firewall — a kernel-level adversary can
   bypass it. Defense in depth recommended.
-
-## PGP Key
-
-```
-Not yet published — use GitHub private reporting for now.
-```
+- **Plaintext credentials** — IKEv2/SoftEther passwords are stored as plaintext
+  in `settings.json`. Encrypt with `blackout config encrypt` or use Legend mode.
+- **Transitive dep vulns** — Dependabot may flag CVEs in transitive Go deps
+  (e.g. `golang.org/x/crypto`, `cloudflare/circl`). These are pinned by upstream
+  forks (Psiphon, xray-core, sing-box) and cannot be independently upgraded. The
+  vulnerable code paths (SSH server, FIDO2) are not exercised by our tunneling
+  engine. We accept this risk and update when upstream does.
 
 ## Hall of Fame
 
 We maintain a list of researchers who have responsibly disclosed
 vulnerabilities. Thank you for helping protect users worldwide.
+
+To be added, simply submit a valid report through the channels above and
+let us know if you'd like to be credited.

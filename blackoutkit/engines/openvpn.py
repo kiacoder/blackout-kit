@@ -18,6 +18,7 @@ Or use a provider that gives you .ovpn files.
 import logging
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from .base import Engine, BINS_DIR
@@ -144,6 +145,11 @@ class OpenVPNEngine(Engine):
 
         try:
             LOG_PATH.write_text("")
+        except Exception:
+            pass
+
+        try:
+            subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True, timeout=3)
         except Exception:
             pass
 

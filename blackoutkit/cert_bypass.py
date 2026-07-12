@@ -15,8 +15,11 @@ Legendary features:
 from __future__ import annotations
 
 import json
+import os
 import socket
 import ssl
+import tempfile
+import threading
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -63,19 +66,36 @@ class HostCertRecord:
 
 # ──────────────────────────── Persistence ────────────────────────
 
+_store_lock = threading.Lock()
+
 def _load_store() -> dict[str, dict]:
-    """Load the cert record store from disk. Returns {} on any error."""
+    """Load the cert record store from disk. Returns {} only if file genuinely missing."""
     if not STORE_FILE.exists():
         return {}
     try:
         return json.loads(STORE_FILE.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, PermissionError, OSError) as exc:
+        print(f"[cert_bypass] Warning: failed to read cert store: {exc}")
         return {}
 
 
 def _save_store(store: dict[str, dict]) -> None:
+    """Atomically write the cert store to disk."""
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    STORE_FILE.write_text(json.dumps(store, indent=2), encoding="utf-8")
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=str(APP_DATA_DIR),
+        prefix="cert_records_", suffix=".tmp", delete=False,
+    )
+    try:
+        tmp.write(json.dumps(store, indent=2))
+        tmp.close()
+        os.replace(tmp.name, str(STORE_FILE))
+    except Exception:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+        raise
 
 
 def _store_key(host: str, port: int) -> str:
@@ -84,8 +104,9 @@ def _store_key(host: str, port: int) -> str:
 
 def get_record(host: str, port: int = 443) -> HostCertRecord | None:
     """Return the stored cert record for host:port, or None if not yet checked."""
-    store = _load_store()
-    raw   = store.get(_store_key(host, port))
+    with _store_lock:
+        store = _load_store()
+        raw   = store.get(_store_key(host, port))
     if not raw:
         return None
     try:
@@ -95,10 +116,11 @@ def get_record(host: str, port: int = 443) -> HostCertRecord | None:
 
 
 def save_record(record: HostCertRecord) -> None:
-    """Persist a cert record to the store."""
-    store = _load_store()
-    store[_store_key(record.host, record.port)] = asdict(record)
-    _save_store(store)
+    """Persist a cert record to the store (thread-safe + atomic)."""
+    with _store_lock:
+        store = _load_store()
+        store[_store_key(record.host, record.port)] = asdict(record)
+        _save_store(store)
 
 
 def allow_host(host: str, port: int = 443) -> None:
