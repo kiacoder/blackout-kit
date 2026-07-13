@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	wgDevice *device.Device
-	wgCtx    context.Context
-	wgCancel context.CancelFunc
+	wgDevice   *device.Device
+	wgCtx      context.Context
+	wgCancel   context.CancelFunc
+	wgListener net.Listener
 )
 
 type wireGuardConfig struct {
@@ -163,9 +164,10 @@ func startWireGuardInternal(configPath string, socksPort int) error {
 	if err != nil {
 		return err
 	}
+	wgListener = listener
 
 	go func() {
-		_ = server.Serve(listener)
+		_ = server.Serve(wgListener)
 	}()
 
 	fmt.Printf("WireGuard started natively via userspace TUN. SOCKS5 on port %d\n", socksPort)
@@ -188,6 +190,10 @@ func StopWireGuardC() {
 	if wgCancel != nil {
 		wgCancel()
 		wgCancel = nil
+	}
+	if wgListener != nil {
+		wgListener.Close()
+		wgListener = nil
 	}
 	if wgDevice != nil {
 		wgDevice.Close()

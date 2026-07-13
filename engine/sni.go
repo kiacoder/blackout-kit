@@ -107,7 +107,11 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 
 	// Forward client -> server with TLS ClientHello fragmentation
 	go func() {
-		defer func() { done <- struct{}{} }()
+		defer func() {
+			server.Close()
+			client.Close()
+			done <- struct{}{}
+		}()
 		
 		buf := make([]byte, 32*1024)
 		hasWritten := false
@@ -159,7 +163,11 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 
 	// Forward server -> client directly
 	go func() {
-		defer func() { done <- struct{}{} }()
+		defer func() {
+			client.Close()
+			server.Close()
+			done <- struct{}{}
+		}()
 		io.Copy(client, server)
 	}()
 

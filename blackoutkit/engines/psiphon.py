@@ -19,7 +19,8 @@ class PsiphonEngine(Engine):
         self.country    = country    or s["psiphon_country"]
         self.http_port  = http_port  or s["psiphon_http_port"]
         self.socks_port = socks_port or s["psiphon_socks_port"]
-        self._health_check_addr = ("127.0.0.1", self.http_port)
+        # Go DLL only opens SOCKS port for psiphon, not HTTP port
+        self._health_check_addr = ("127.0.0.1", self.socks_port)
 
     def start(self) -> bool:
         self._log.info(
