@@ -33,7 +33,7 @@ DEFAULTS = {
     "xray_fingerprint":     "chrome",    # chrome / firefox / safari / random
 
     # GoodbyeDPI
-    "gdpi_flags":           "-9",        # -9 = max bypass, -5 = balanced
+    "gdpi_flags":           "auto",      # auto = try all modesets, or specify e.g. -1 -2 -5
 
     # Psiphon
     "psiphon_country":      "DE",        # Country code for exit node
@@ -289,7 +289,7 @@ def describe(key: str) -> str:
         "sni_fake_sni":       "Fake SNI domain shown to DPI (e.g. www.hcaptcha.com)",
         "xray_log_level":     "XRay log verbosity: debug/info/warning/error/none",
         "xray_fingerprint":   "TLS fingerprint to mimic: chrome/firefox/safari/random",
-        "gdpi_flags":         "GoodbyeDPI command-line flags (-9=max, -5=balanced)",
+        "gdpi_flags":         "GoodbyeDPI flags (auto=tries all modesets, or specify e.g. -1 -2 -5)",
         "psiphon_country":    "Psiphon exit country code (DE/US/CA/NL…)",
         "auto_set_proxy":     "Auto-configure Windows system proxy on start/stop",
         "proxy_host":         "System proxy host (usually 127.0.0.1)",

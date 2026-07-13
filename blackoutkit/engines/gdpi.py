@@ -7,8 +7,12 @@ Does not require a separate proxy — works at the network level.
 Auto-elevation: if running from a non-admin terminal, the engine launches
 powershell.exe elevated via UAC, which then spawns goodbyedpi.exe with
 full admin rights. The CLI stays in the normal terminal.
+
+Auto modeset: set gdpi_flags to "auto" to try all 6 modesets automatically
+and pick the first one that provides internet connectivity.
 """
 import os
+import socket
 import subprocess
 import tempfile
 import time
@@ -23,6 +27,22 @@ GDPI_BIN_NAMES = [
     "goodbyedpi-x86_64.exe",
 ]
 
+MODESETS = [
+    "-1",
+    "-2",
+    "-3",
+    "-4",
+    "-5",
+    "-6",
+]
+
+CONNECTIVITY_TARGETS = [
+    ("google.com", 443),
+    ("1.1.1.1", 443),
+    ("8.8.8.8", 443),
+    ("youtube.com", 443),
+]
+
 
 class GoodbyeDPIEngine(Engine):
     name = "gdpi"
@@ -30,11 +50,12 @@ class GoodbyeDPIEngine(Engine):
 
     def __init__(self, flags: str | None = None):
         super().__init__()
-        raw = flags or cfg.get("gdpi_flags") or "-5"
+        raw = flags or cfg.get("gdpi_flags") or "auto"
         self.flags: list[str] = raw.split()
         self._elevated_pid: int | None = None
         self._elevated_handle: int | None = None
         self._pid_file: Path | None = None
+        self._working_mode: str | None = None
 
     def start(self) -> bool:
         binary = self.find_binary(GDPI_BIN_NAMES)
@@ -50,22 +71,54 @@ class GoodbyeDPIEngine(Engine):
             )
             return False
 
-        # Attempt to kill any lingering zombies before starting
-        try:
-            subprocess.run(
-                ["taskkill", "/F", "/IM", "goodbyedpi.exe"],
-                capture_output=True, timeout=3,
-            )
-        except Exception:
-            pass
+        raw_flags = " ".join(self.flags).strip()
+        if raw_flags == "auto":
+            return self._start_auto(binary)
 
-        self._log.info("Starting GoodbyeDPI  flags=%s", " ".join(self.flags))
+        self._log.info("Starting GoodbyeDPI  flags=%s", raw_flags)
 
         if self._try_direct_launch(binary):
             return True
 
         self._log.info("Direct launch failed — requesting elevation via UAC…")
         return self._try_elevated_launch(binary)
+
+    def _start_auto(self, binary) -> bool:
+        self._log.info("Auto-detecting best GoodbyeDPI modeset...")
+        for mode in MODESETS:
+            self._log.info("Trying modeset %s ...", mode)
+            self.flags = mode.split()
+
+            if not self._try_direct_launch(binary):
+                self._log.info("Direct launch failed for %s — trying elevated...", mode)
+                if not self._try_elevated_launch(binary):
+                    self._log.warning("Modeset %s could not start.", mode)
+                    continue
+
+            time.sleep(2.0)
+
+            if self._test_connectivity(mode):
+                self._working_mode = mode
+                cfg.set_value("gdpi_flags", mode)
+                self._log.info("Modeset %s works — saved as default.", mode)
+                return True
+
+            self._log.warning("Modeset %s started but no connectivity — trying next.", mode)
+            self.stop()
+
+        self._log.error("All modesets failed — no connectivity.")
+        return False
+
+    def _test_connectivity(self, mode: str) -> bool:
+        for host, port in CONNECTIVITY_TARGETS:
+            try:
+                s = socket.create_connection((host, port), timeout=3.0)
+                s.close()
+                self._log.debug("Connectivity OK via %s:%d (%s)", host, port, mode)
+                return True
+            except (socket.timeout, OSError):
+                continue
+        return False
 
     def _try_direct_launch(self, binary) -> bool:
         try:
