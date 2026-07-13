@@ -193,8 +193,11 @@ class GoodbyeDPIEngine(Engine):
                 pass
         if self._elevated_handle is not None:
             import ctypes
-            from ctypes import wintypes
-            exit_code = wintypes.DWORD()
+            if sys.platform == 'win32':
+                from ctypes import wintypes
+                exit_code = wintypes.DWORD()
+            else:
+                exit_code = ctypes.c_uint32()
             if ctypes.windll.kernel32.GetExitCodeProcess(self._elevated_handle, ctypes.byref(exit_code)):
                 return exit_code.value == 259
         return super().is_running()
@@ -211,8 +214,11 @@ class GoodbyeDPIEngine(Engine):
                 return False
         if self._elevated_handle is not None:
             import ctypes
-            from ctypes import wintypes
-            exit_code = wintypes.DWORD()
+            if sys.platform == 'win32':
+                from ctypes import wintypes
+                exit_code = wintypes.DWORD()
+            else:
+                exit_code = ctypes.c_uint32()
             if ctypes.windll.kernel32.GetExitCodeProcess(self._elevated_handle, ctypes.byref(exit_code)):
                 alive = exit_code.value == 259
                 if not alive:

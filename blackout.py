@@ -90,19 +90,26 @@ def _first_run_hint():
     else:
         show = _cfg.load().get("show_first_run", False)  # hidden after setup unless user re-enables
     if show:
-        from rich.console import Console
-        from rich.panel import Panel
-        Console().print(Panel(
-            "[bold]Welcome to Blackout Kit![/bold]  Looks like your first launch.\n\n"
-            "Get started in 3 commands:\n"
-            "  [cyan]python blackout.py bins download[/cyan]      — auto-download all engine binaries\n"
-            "  [cyan]python blackout.py doctor[/cyan]             — verify everything is ready\n"
-            "  [cyan]python blackout.py connect[/cyan]            — start bypassing\n\n"
-            "[dim]Tip: run 'python blackout.py help quick_start' for the full setup guide.[/dim]",
-            title="[bold green]First Run[/bold green]",
-            border_style="green",
-            padding=(0, 2),
-        ))
+        try:
+            from rich.console import Console
+            from rich.panel import Panel
+            Console().print(Panel(
+                "[bold]Welcome to Blackout Kit![/bold]  Looks like your first launch.\n\n"
+                "Get started in 3 commands:\n"
+                "  [cyan]python blackout.py bins download[/cyan]      — auto-download all engine binaries\n"
+                "  [cyan]python blackout.py doctor[/cyan]             — verify everything is ready\n"
+                "  [cyan]python blackout.py connect[/cyan]            — start bypassing\n\n"
+                "[dim]Tip: run 'python blackout.py help quick_start' for the full setup guide.[/dim]",
+                title="[bold green]First Run[/bold green]",
+                border_style="green",
+                padding=(0, 2),
+            ))
+        except ImportError:
+            print("Welcome to Blackout Kit! Looks like your first launch.")
+            print("Get started in 3 commands:")
+            print("  python blackout.py bins download")
+            print("  python blackout.py doctor")
+            print("  python blackout.py connect")
 
 
 # ──────────────────────────── Main ───────────────────────────────────────────
@@ -143,7 +150,12 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         from rich.console import Console
-        Console().print("\n[yellow]Interrupted.[/yellow]")
+        Console().print("\n[yellow]Interrupted. Cleaning up...[/yellow]")
+        try:
+            from blackoutkit.proxy_manager import clear_system_proxy
+            clear_system_proxy()
+        except Exception:
+            pass
         sys.exit(0)
     except SystemExit:
         raise
