@@ -53,26 +53,27 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
             os.environ["https_proxy"] = f"http://{host}:{port}"
         return True
 
-    try:
-        import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
-        winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
-        proxy_str = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
-        winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_str)
-        winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ,
-                          "localhost;127.*;10.*;172.16.*;192.168.*;<local>")
-        winreg.CloseKey(key)
-        _notify_proxy_change()
-        _last_error = ""
-        return True
-    except PermissionError:
-        _last_error = (
-            f"Registry write denied — run Blackout Kit as Administrator "
-            f"or enable '{key_path}'."
-        )
-    except Exception as exc:
-        _last_error = f"Registry error: {exc}"
+    if sys.platform == "win32":
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
+            winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
+            proxy_str = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
+            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_str)
+            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ,
+                              "localhost;127.*;10.*;172.16.*;192.168.*;<local>")
+            winreg.CloseKey(key)
+            _notify_proxy_change()
+            _last_error = ""
+            return True
+        except PermissionError:
+            _last_error = (
+                f"Registry write denied — run Blackout Kit as Administrator "
+                f"or enable '{key_path}'."
+            )
+        except Exception as exc:
+            _last_error = f"Registry error: {exc}"
 
     # Fallback: netsh (works without registry access)
     try:
@@ -104,21 +105,22 @@ def clear_system_proxy() -> bool:
         os.environ.pop("https_proxy", None)
         return True
 
-    try:
-        import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
-        winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
-        winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
-        winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "")
-        winreg.CloseKey(key)
-        _notify_proxy_change()
-        _last_error = ""
-        return True
-    except PermissionError:
-        _last_error = "Registry write denied — run as Administrator."
-    except Exception as exc:
-        _last_error = f"Registry error: {exc}"
+    if sys.platform == "win32":
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
+            winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
+            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "")
+            winreg.CloseKey(key)
+            _notify_proxy_change()
+            _last_error = ""
+            return True
+        except PermissionError:
+            _last_error = "Registry write denied — run as Administrator."
+        except Exception as exc:
+            _last_error = f"Registry error: {exc}"
 
     try:
         result = subprocess.run(
@@ -145,19 +147,21 @@ def get_proxy_status() -> dict:
         proxy = os.environ.get("http_proxy", "")
         return {"enabled": bool(proxy), "server": proxy}
 
-    try:
-        import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
-        key      = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+    if sys.platform == "win32":
         try:
-            enabled = winreg.QueryValueEx(key, "ProxyEnable")[0]
-            server  = winreg.QueryValueEx(key, "ProxyServer")[0]
-        except FileNotFoundError:
-            enabled, server = 0, ""
-        winreg.CloseKey(key)
-        return {"enabled": bool(enabled), "server": server}
-    except Exception:
-        return {"enabled": False, "server": ""}
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+            key      = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+            try:
+                enabled = winreg.QueryValueEx(key, "ProxyEnable")[0]
+                server  = winreg.QueryValueEx(key, "ProxyServer")[0]
+            except FileNotFoundError:
+                enabled, server = 0, ""
+            winreg.CloseKey(key)
+            return {"enabled": bool(enabled), "server": server}
+        except Exception:
+            return {"enabled": False, "server": ""}
+    return {"enabled": False, "server": ""}
 
 
 def _notify_proxy_change():

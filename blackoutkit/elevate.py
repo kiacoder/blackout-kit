@@ -7,10 +7,11 @@ import ctypes
 import subprocess
 import sys
 import time
-import winreg
-from ctypes import wintypes
 from pathlib import Path
 
+if sys.platform == "win32":
+    import winreg
+    from ctypes import wintypes
 
 ENGINES_REQUIRING_ADMIN = frozenset({"gdpi", "tun", "softether", "ikev2", "wireguard", "openvpn"})
 
@@ -21,28 +22,30 @@ SW_SHOW = 1
 SW_SHOWDEFAULT = 10
 ERROR_CANCELLED = 1223
 
-
-class _SHELLEXECUTEINFOW(ctypes.Structure):
-    _fields_ = [
-        ("cbSize", wintypes.DWORD),
-        ("fMask", wintypes.ULONG),
-        ("hwnd", wintypes.HWND),
-        ("lpVerb", wintypes.LPCWSTR),
-        ("lpFile", wintypes.LPCWSTR),
-        ("lpParameters", wintypes.LPCWSTR),
-        ("lpDirectory", wintypes.LPCWSTR),
-        ("nShow", ctypes.c_int),
-        ("hInstApp", wintypes.HINSTANCE),
-        ("lpIDList", wintypes.LPVOID),
-        ("lpClass", wintypes.LPCWSTR),
-        ("hkeyClass", wintypes.HKEY),
-        ("dwHotKey", wintypes.DWORD),
-        ("hMonitor", wintypes.HANDLE),
-        ("hProcess", wintypes.HANDLE),
-    ]
+if sys.platform == "win32":
+    class _SHELLEXECUTEINFOW(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("fMask", wintypes.ULONG),
+            ("hwnd", wintypes.HWND),
+            ("lpVerb", wintypes.LPCWSTR),
+            ("lpFile", wintypes.LPCWSTR),
+            ("lpParameters", wintypes.LPCWSTR),
+            ("lpDirectory", wintypes.LPCWSTR),
+            ("nShow", ctypes.c_int),
+            ("hInstApp", wintypes.HINSTANCE),
+            ("lpIDList", wintypes.LPVOID),
+            ("lpClass", wintypes.LPCWSTR),
+            ("hkeyClass", wintypes.HKEY),
+            ("dwHotKey", wintypes.DWORD),
+            ("hMonitor", wintypes.HANDLE),
+            ("hProcess", wintypes.HANDLE),
+        ]
 
 
 def is_admin() -> bool:
+    if sys.platform != "win32":
+        return os.geteuid() == 0 if hasattr(os, "geteuid") else False
     try:
         if ctypes.windll.shell32.IsUserAnAdmin() != 0:
             return True
@@ -62,12 +65,10 @@ def needs_admin(engine_name: str) -> bool:
 
 
 def launch_elevated(exe_path: str | Path, args: list[str] = None, cwd: str | Path = None) -> tuple[int | None, int | None]:
-    """
-    Launch a subprocess with administrator privileges via ShellExecuteEx(runas).
-    Triggers a single UAC prompt for this specific binary.
-    Returns (handle, pid) on success, (None, None) on failure or user denial.
-    The caller is responsible for closing the handle when done.
-    """
+    if sys.platform != "win32":
+        # Basic implementation for Linux/Mac if needed, or just run normally
+        return None, None
+
     args = args or []
     params = " ".join(args) if args else None
     sei = _SHELLEXECUTEINFOW()
@@ -97,11 +98,15 @@ def launch_elevated(exe_path: str | Path, args: list[str] = None, cwd: str | Pat
 
 
 def terminate_elevated(handle: int) -> None:
+    if sys.platform != "win32":
+        return
     ctypes.windll.kernel32.TerminateProcess(handle, 0)
     ctypes.windll.kernel32.CloseHandle(handle)
 
 
 def is_elevated_alive(handle: int) -> bool:
+    if sys.platform != "win32":
+        return False
     exit_code = wintypes.DWORD()
     if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
         return exit_code.value == STILL_ACTIVE
@@ -109,10 +114,8 @@ def is_elevated_alive(handle: int) -> bool:
 
 
 def restart_as_admin() -> bool:
-    """
-    Restart THIS process with administrator privileges via UAC.
-    Used for engines that must run in-process (e.g. TUN DLL).
-    """
+    if sys.platform != "win32":
+        return False
     try:
         params = subprocess.list2cmdline(sys.argv)
         result = ctypes.windll.shell32.ShellExecuteW(
