@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -216,14 +217,19 @@ func startMHRVInternal(port int, idsComma string) error {
 
 	proxy := NewGASProxy(ids)
 	mhrvServer = &http.Server{
-		Addr:    fmt.Sprintf("127.0.0.1:%d", port),
 		Handler: proxy,
 	}
 
-	fmt.Printf("MHRV (Google Apps Script HTTP Relay) running at 127.0.0.1:%d\n", port)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to start MHRV listener on port %d: %w", port, err)
+	}
+
+	fmt.Printf("MHRV (Google Apps Script HTTP Relay) running at %s\n", addr)
 	
 	go func() {
-		if err := mhrvServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := mhrvServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("MHRV Server error: %v\n", err)
 		}
 	}()
