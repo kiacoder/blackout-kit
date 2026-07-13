@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -78,7 +79,7 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 	defer client.Close()
 
 	// Connect to target with Dialer keepalive
-	targetAddr := fmt.Sprintf("%s:%d", targetIP, targetPort)
+	targetAddr := net.JoinHostPort(targetIP, strconv.Itoa(targetPort))
 	dialer := &net.Dialer{
 		Timeout:   10 * time.Second,
 		KeepAlive: 30 * time.Second,

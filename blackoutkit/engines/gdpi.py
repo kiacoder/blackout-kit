@@ -90,7 +90,9 @@ class GoodbyeDPIEngine(Engine):
         return False
 
     def _try_elevated_launch(self, binary) -> bool:
-        self._pid_file = Path(tempfile.mktemp(suffix=".bkpid", prefix="gdpi_"))
+        fd_pid, pid_path = tempfile.mkstemp(suffix=".bkpid", prefix="gdpi_")
+        os.close(fd_pid) # We just want the file created securely, PowerShell will overwrite it
+        self._pid_file = Path(pid_path)
         pid_file_str = str(self._pid_file)
         binary_str = str(binary)
         args_str = subprocess.list2cmdline(self.flags)
@@ -100,13 +102,18 @@ class GoodbyeDPIEngine(Engine):
             f"taskkill /F /IM goodbyedpi.exe 2>$null; "
             f"Start-Sleep -Milliseconds 500; "
             f"$p = Start-Process -FilePath '{binary_str}' -WorkingDirectory '{cwd_str}' "
-            f"-ArgumentList '{args_str}' -Verb RunAs -WindowStyle Hidden -PassThru; "
+            f"-ArgumentList '{args_str}' -Verb RunAs -WindowStyle Normal -PassThru; "
             f"$p.Id | Out-File -FilePath '{pid_file_str}' -Encoding UTF8"
         )
 
+        fd, ps1_path = tempfile.mkstemp(suffix=".ps1", prefix="gdpi_launcher_")
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            f.write(ps_cmd)
+        ps1_file = Path(ps1_path)
+
         try:
             subprocess.run(
-                ["powershell.exe", "-NoProfile", "-Command", ps_cmd],
+                ["cmd.exe", "/c", "powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-File", str(ps1_file)],
                 timeout=60,
             )
         except subprocess.TimeoutExpired:
@@ -114,6 +121,11 @@ class GoodbyeDPIEngine(Engine):
         except Exception as exc:
             self._log.error("Elevation launch failed: %s", exc)
             return False
+        finally:
+            try:
+                ps1_file.unlink(missing_ok=True)
+            except Exception:
+                pass
 
         time.sleep(1.0)
 
