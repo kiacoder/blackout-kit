@@ -48,7 +48,7 @@ def parse_v2ray_uri(uri: str) -> "ProxyConfig | None":
         return None
 
     try:
-        if uri.startswith(("vless://", "trojan://")):
+        if uri.startswith(("vless://", "trojan://", "hysteria2://", "tuic://")):
             return _parse_vless_trojan(uri)
         if uri.startswith("vmess://"):
             return _parse_vmess(uri)
@@ -76,6 +76,8 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
     else:
         host_port_str, params_str = host_part, ""
 
+    host_port_str = host_port_str.rstrip("/")
+
     # IPv6 support
     if host_port_str.startswith("["):
         bracket_end = host_port_str.index("]")
@@ -94,12 +96,24 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
     insecure_val = q("insecure", "0")
     insecure = insecure_val.lower() in ("1", "true", "yes")
 
+    password = ""
+    uuid = ""
+    if proto in ("trojan", "hysteria2"):
+        password = credential
+    elif proto == "vless":
+        uuid = credential
+    elif proto == "tuic":
+        if ":" in credential:
+            uuid, password = credential.split(":", 1)
+        else:
+            uuid = credential
+
     return ProxyConfig(
         protocol  = proto,
         address   = host,
         port      = port,
-        password  = credential if proto == "trojan" else "",
-        uuid      = credential if proto == "vless"  else "",
+        password  = password,
+        uuid      = uuid,
         sni       = q("sni"),
         host      = q("host"),
         path      = q("path", "/"),
@@ -108,7 +122,7 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
         transport = q("type", "ws"),
         insecure  = insecure,
         name      = name,
-        raw_uri   = f"vless://{rest}#{name}" if proto == "vless" else f"trojan://{rest}#{name}",
+        raw_uri   = f"{proto}://{rest}#{name}",
     )
 
 

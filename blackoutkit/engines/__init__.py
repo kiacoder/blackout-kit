@@ -25,6 +25,7 @@ from .openvpn    import OpenVPNEngine
 from .softether  import SoftEtherEngine
 from .neighbor   import NeighborShareEngine, NeighborConnectEngine
 from .appsscript import AppsScriptEngine
+from .singbox_proxy import SingBoxProxyEngine
 from .base       import Engine
 
 # ──────────────────────────── Registry ───────────────────────────────────────
@@ -46,6 +47,8 @@ ENGINE_REGISTRY: dict[str, type[Engine]] = {
     "softether":  SoftEtherEngine,
     "neighbor":   NeighborShareEngine,
     "appsscript": AppsScriptEngine,
+    "hysteria2":  SingBoxProxyEngine,
+    "tuic":       SingBoxProxyEngine,
 }
 
 

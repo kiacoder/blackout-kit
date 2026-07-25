@@ -36,6 +36,15 @@ class XRayEngine(Engine):
         super().__init__()
         s = cfg.load()
         self.proxy_config = proxy_config
+        if not self.proxy_config:
+            try:
+                from ..config.manager import load_configs
+                for c in load_configs():
+                    if c.protocol in ("vless", "trojan", "vmess"):
+                        self.proxy_config = c
+                        break
+            except Exception:
+                pass
         self.socks_port   = socks_port or s["xray_socks_port"]
         self.http_port    = http_port  or s["xray_http_port"]
         self._health_check_addr = ("127.0.0.1", self.http_port)

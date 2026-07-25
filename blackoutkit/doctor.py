@@ -450,6 +450,30 @@ def check_binary_runnable() -> list[CheckResult]:
     return results
 
 
+def check_config_security() -> CheckResult:
+    """Checks if the proxy configuration file is encrypted at rest (AES-256)."""
+    from . import security as sec
+    if sec.configs_are_obfuscated():
+        return CheckResult("Config Encryption", True, "OK (AES-256 encrypted at rest)")
+    
+    # Check if configs.txt actually has user configurations
+    from .config.manager import load_configs
+    try:
+        configs = load_configs()
+    except Exception:
+        configs = []
+        
+    if not configs:
+        return CheckResult("Config Encryption", True, "No configs to encrypt")
+        
+    return CheckResult(
+        "Config Encryption", False,
+        "Proxy configs are stored in plaintext. Run 'blackout config encrypt' to secure them.",
+        fixable=True,
+        fix=sec.obfuscate_configs
+    )
+
+
 # ──────────────────────────── Runner ─────────────────────────────
 
 def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
@@ -463,6 +487,7 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_network_driver(),
         check_windivert(),
         check_system_path(),
+        check_config_security(),
     )
     all_results = list(checks)
     all_results.extend(check_data_files())

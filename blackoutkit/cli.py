@@ -25,6 +25,7 @@ from . import settings as cfg
 from . import daemon
 from .engines.sni     import SNIEngine
 from .engines.xray    import XRayEngine
+from .engines.singbox_proxy import SingBoxProxyEngine
 from .engines.gdpi    import GoodbyeDPIEngine
 from .engines.psiphon import PsiphonEngine
 from .proxy_manager   import set_system_proxy, clear_system_proxy, get_proxy_status
@@ -69,6 +70,9 @@ ENGINES = {
     "softether":    (SoftEtherEngine,),
     # Domain fronting — no binary needed, pure Python
     "appsscript":   (AppsScriptEngine,),
+    # QUIC bypass engines
+    "hysteria2":    (SingBoxProxyEngine,),
+    "tuic":         (SingBoxProxyEngine,),
     # Multi-hop stacks
     "legend":       (TorEngine, SNIEngine, XRayEngine),
 }
@@ -118,6 +122,8 @@ def _start_engine_stack(name: str):
         "warp":       ["warp_dll"],
         "psiphon":    ["warp_dll"],
         "tun":        ["sing-box"],
+        "hysteria2":  [],
+        "tuic":       [],
     }
 
     deps = stack_deps.get(name, [])
