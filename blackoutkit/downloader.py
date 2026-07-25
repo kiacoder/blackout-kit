@@ -24,8 +24,7 @@ from typing import Callable
 
 from . import __version__
 
-PROJECT_ROOT = Path(__file__).parent.parent
-BINS_DIR     = PROJECT_ROOT / "bins"
+from . import PROJECT_ROOT, BINS_DIR
 
 _GITHUB_RELEASES_API = "https://api.github.com/repos/{repo}/releases/latest"
 _API_TIMEOUT         = 10    # seconds — GitHub API lookup

@@ -32,8 +32,7 @@ from rich.progress import (
 
 from . import __version__
 
-PROJECT_ROOT  = Path(__file__).parent.parent
-APP_DATA_DIR  = Path.home() / ".blackout-kit"
+from . import PROJECT_ROOT, APP_DATA_DIR
 GITHUB_REPO   = "kiacoder/blackout-kit"
 RELEASES_API  = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 UPDATE_TIMEOUT = 10  # seconds

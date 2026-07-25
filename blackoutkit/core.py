@@ -6,7 +6,7 @@ import logging
 
 _log = logging.getLogger("blackoutkit.core")
 
-BINS_DIR = Path(__file__).parent.parent / "bins"
+from . import BINS_DIR
 
 _dll = None
 

@@ -12,7 +12,7 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-BINS_DIR = Path(__file__).parent.parent.parent / "bins"
+from .. import BINS_DIR
 
 # Module-level logger — each engine gets a child: logger.getChild("sni") etc.
 logger = logging.getLogger("blackoutkit.engine")

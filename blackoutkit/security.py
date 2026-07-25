@@ -32,10 +32,7 @@ from . import elevate
 
 _log = logging.getLogger(__name__)
 
-APP_DATA_DIR  = Path.home() / ".blackout-kit"
-PROJECT_ROOT  = Path(__file__).parent.parent
-BINS_DIR      = PROJECT_ROOT / "bins"
-DATA_DIR      = PROJECT_ROOT / "data"
+from . import PROJECT_ROOT, APP_DATA_DIR, BINS_DIR, DATA_DIR
 CONFIGS_FILE  = DATA_DIR / "configs.txt"
 ENC_CONFIGS   = APP_DATA_DIR / "configs.enc"
 

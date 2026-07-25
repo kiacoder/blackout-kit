@@ -54,7 +54,7 @@ from .base import Engine, BINS_DIR
 # ── GAS endpoint builder ─────────────────────────────────────────
 
 GAS_BASE_URL  = "https://script.google.com/macros/s/{id}/exec"
-DATA_DIR      = Path(__file__).parent.parent.parent / "data"
+from .. import DATA_DIR
 GAS_IDS_FILE  = DATA_DIR / "gas_ids.txt"
 
 # Community-shared relay IDs (from meme.txt — public relay pool)

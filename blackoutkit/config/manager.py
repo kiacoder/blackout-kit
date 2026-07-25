@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+from .. import DATA_DIR
 CONFIGS_FILE = DATA_DIR / "configs.txt"
 
 
