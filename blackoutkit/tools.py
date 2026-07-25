@@ -18,7 +18,7 @@ _log = logging.getLogger(__name__)
 from rich.table import Table
 from rich import box
 
-from .theme import console, make_table, latency_color
+from .theme import console, make_table
 from .proxy_manager import is_admin as _is_admin
 from . import elevate
 
