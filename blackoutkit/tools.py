@@ -16,7 +16,6 @@ from pathlib import Path
 _log = logging.getLogger(__name__)
 
 from rich.table import Table
-from rich.panel import Panel
 from rich import box
 
 from .theme import console, make_table, latency_color
