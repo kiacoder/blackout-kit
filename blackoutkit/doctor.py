@@ -474,6 +474,81 @@ def check_config_security() -> CheckResult:
     )
 
 
+def check_process_conflicts() -> CheckResult:
+    """Detects if stale bypass processes from previous runs are still alive and blocking ports."""
+    import psutil
+    conflicts = []
+    current_pid = os.getpid()
+    
+    target_names = {"goodbyedpi.exe", "xray.exe", "sing-box.exe", "singbox.exe"}
+    
+    for p in psutil.process_iter(attrs=["pid", "name"]):
+        try:
+            name_info = p.info.get("name")
+            if not name_info:
+                continue
+            pname = name_info.lower()
+            if pname in target_names and p.info["pid"] != current_pid:
+                try:
+                    exe_path = p.exe()
+                    if "blackout-kit" in exe_path.lower() or ".blackout-kit" in exe_path.lower():
+                        conflicts.append(p)
+                except (psutil.AccessDenied, psutil.NoSuchProcess):
+                    conflicts.append(p)
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    if not conflicts:
+        return CheckResult("Process conflicts", True, "OK")
+
+    def _fix_conflicts():
+        for p in conflicts:
+            try:
+                p.terminate()
+            except Exception:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+
+    p_list = ", ".join(f"{p.name()} ({p.pid})" for p in conflicts)
+    return CheckResult(
+        "Process conflicts", False,
+        f"Stale processes found: {p_list}. May block ports or driver.",
+        fixable=True,
+        fix=_fix_conflicts
+    )
+
+
+def check_firewall_rules() -> CheckResult:
+    """Verifies if the Windows Firewall killswitch rules exist when enabled."""
+    if sys.platform != "win32":
+        return CheckResult("Firewall integrity", True, "N/A (not Windows)")
+
+    s = cfg.load()
+    enabled = s.get("kill_switch", False)
+    if not enabled:
+        return CheckResult("Firewall integrity", True, "OK (Kill switch disabled)")
+
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-NetFirewallRule -Name 'Blackout-KillSwitch' -ErrorAction SilentlyContinue"],
+            capture_output=True, text=True, errors="ignore"
+        )
+        if "Blackout-KillSwitch" in r.stdout:
+            return CheckResult("Firewall integrity", True, "OK (Kill switch rules active)")
+    except Exception:
+        pass
+
+    from . import security as sec
+    return CheckResult(
+        "Firewall integrity", False,
+        "Kill switch rules are missing from Windows Firewall.",
+        fixable=True,
+        fix=sec.enable_kill_switch
+    )
+
+
 # ──────────────────────────── Runner ─────────────────────────────
 
 def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
@@ -488,6 +563,8 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_windivert(),
         check_system_path(),
         check_config_security(),
+        check_process_conflicts(),
+        check_firewall_rules(),
     )
     all_results = list(checks)
     all_results.extend(check_data_files())
