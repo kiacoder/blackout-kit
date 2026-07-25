@@ -19,7 +19,7 @@ from rich.table import Table
 from rich.panel import Panel
 from rich import box
 
-from .theme import console, make_table, latency_color
+from .theme import console, make_table
 from .proxy_manager import is_admin as _is_admin
 from . import elevate
 
