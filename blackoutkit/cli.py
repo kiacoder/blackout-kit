@@ -28,7 +28,7 @@ from .engines.xray    import XRayEngine
 from .engines.gdpi    import GoodbyeDPIEngine
 from .engines.psiphon import PsiphonEngine
 from .proxy_manager   import set_system_proxy, clear_system_proxy, get_proxy_status
-from .scanner.ip_scanner  import generate_cloudflare_ips, scan_ips, check_ip, CLOUDFLARE_RANGES
+from .scanner.ip_scanner  import generate_cloudflare_ips, scan_ips, check_ip, CLOUDFLARE_RANGES, save_cache
 from .scanner.proxy_tester import test_direct, test_http_proxy, test_tcp_port, full_connectivity_report
 from .config.manager  import (
     load_configs, save_configs, add_config, remove_config,
@@ -367,6 +367,9 @@ def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
         results = asyncio.run(
             scan_ips(ips, concurrency=concurrency, timeout=timeout, progress_callback=on_done)
         )
+
+    if results:
+        save_cache(results)
 
     if not results:
         console.print("[error]No reachable Cloudflare IPs found. Your internet may be fully blocked.[/error]")
