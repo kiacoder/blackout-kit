@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engines | Blackout Kit</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Shared Styles */
+        :root {
+            --bg-color: #050505;
+            --surface: #111111;
+            --primary: #00ffcc;
+            --primary-glow: rgba(0, 255, 204, 0.3);
+            --text-main: #ffffff;
+            --text-muted: #888888;
+            --glass-bg: rgba(25, 25, 25, 0.6);
+            --glass-border: rgba(255, 255, 255, 0.08);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            background-image: 
+                radial-gradient(circle at 15% 50%, rgba(0, 255, 204, 0.05), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(0, 150, 255, 0.05), transparent 25%);
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 2rem 5%;
+            position: absolute;
+            width: 100%;
+            top: 0;
+            z-index: 10;
+        }
+        .logo {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 1.5rem;
+            color: var(--primary);
+            text-shadow: 0 0 15px var(--primary-glow);
+            letter-spacing: -1px;
+        }
+        .nav-links a {
+            color: var(--text-main);
+            text-decoration: none;
+            margin-left: 2rem;
+            font-weight: 600;
+            transition: color 0.3s ease;
+        }
+        .nav-links a:hover { color: var(--primary); }
+        .github-btn {
+            background: transparent;
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            padding: 0.6rem 1.2rem;
+            border-radius: 6px;
+            text-decoration: none;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .github-btn:hover { background: var(--primary); color: var(--bg-color); }
+        
+        .page-header {
+            padding: 10rem 5% 4rem;
+            text-align: center;
+        }
+        h1 {
+            font-size: 4rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 0%, #a0a0a0 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .content {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 2rem 5%;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+        }
+        .glass-panel {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            padding: 2rem;
+            border-radius: 16px;
+            backdrop-filter: blur(10px);
+        }
+        h2 { color: var(--primary); margin-bottom: 0.5rem; font-size: 1.5rem; }
+        .badge { display: inline-block; padding: 3px 8px; background: rgba(255,255,255,0.1); border-radius: 4px; font-size: 0.8rem; margin-bottom: 1rem; font-family: 'JetBrains Mono', monospace; }
+        p { color: var(--text-muted); font-size: 0.95rem; }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="logo"><a href="index.html" style="text-decoration:none; color:inherit;">BLACKOUT_KIT</a></div>
+        <div class="nav-links">
+            <a href="engines.html" style="color: var(--primary);">Engines</a>
+            <a href="privacy.html">Privacy</a>
+            <a href="download.html">Download</a>
+            <a href="https://github.com/kiacoder/blackout-kit" class="github-btn" target="_blank">GitHub</a>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <h1>13+ Bypass Engines</h1>
+        <p style="color: var(--text-muted); font-size: 1.2rem; margin-top: 1rem;">Blackout Kit automatically orchestrates the world's most powerful bypass protocols.</p>
+    </div>
+
+    <div class="content">
+        <div class="glass-panel">
+            <h2>SNI Spoofing</h2>
+            <span class="badge">Iran / Iraq</span>
+            <p>Injects a fake TLS ClientHello before the real handshake to fool ISP DPI systems into believing you are connecting to an allowed domain (like hcaptcha.com).</p>
+        </div>
+        <div class="glass-panel">
+            <h2>GoodbyeDPI</h2>
+            <span class="badge">Europe / UK / Russia</span>
+            <p>Fragments TCP packets at the IP layer so stateless DPI engines receive split packets and cannot reconstruct the SNI field for inspection. Extremely fast.</p>
+        </div>
+        <div class="glass-panel">
+            <h2>Xray / V2Ray</h2>
+            <span class="badge">China (GFW)</span>
+            <p>Encrypted proxy tunnel using VLESS/Trojan with advanced TLS fingerprint camouflage. Essential for bypassing the Great Firewall of China.</p>
+        </div>
+        <div class="glass-panel">
+            <h2>Cloudflare WARP</h2>
+            <span class="badge">Global</span>
+            <p>High-speed tunneling through Cloudflare's massive global network using the WireGuard/MASQUE protocol.</p>
+        </div>
+        <div class="glass-panel">
+            <h2>Psiphon</h2>
+            <span class="badge">Heavy Blackouts</span>
+            <p>A multi-protocol VPN that automatically switches between SSH, meek, and obfuscated SSH depending on the threat model and censorship level.</p>
+        </div>
+        <div class="glass-panel">
+            <h2>Tor</h2>
+            <span class="badge">Extreme Privacy</span>
+            <p>3-hop anonymized onion routing. Very slow, but guarantees maximum privacy and anonymity against targeted surveillance.</p>
+        </div>
+        <div class="glass-panel">
+            <h2>WireGuard & OpenVPN</h2>
+            <span class="badge">General VPN</span>
+            <p>Support for native, high-speed UDP WireGuard tunnels and battle-tested TCP:443 OpenVPN tunnels.</p>
+        </div>
+        <div class="glass-panel">
+            <h2>TUN (Sing-box)</h2>
+            <span class="badge">System Tunnel</span>
+            <p>Creates a system-level virtual network interface to route ALL app traffic (not just proxy-aware apps) through the bypass engines.</p>
+        </div>
+    </div>
+</body>
+</html>

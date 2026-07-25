@@ -90,6 +90,19 @@ _PROFILES: list[CountryProfile] = [
         psiphon_country  = "DE",
         notes            = "ISP DPI similar to Iran; social media blocks",
     ),
+    CountryProfile(
+        code             = "EU",
+        name             = "Europe (EU)",
+        censorship_level = "low",
+        engine_order     = ["gdpi", "warp", "wireguard", "psiphon"],
+        bypass_dns       = [
+            ("Mullvad (Adblock)", "194.242.2.3"),
+            ("AdGuard DNS",       "94.140.14.14"),
+        ],
+        test_urls        = ["thepiratebay.org", "1337x.to"],
+        psiphon_country  = "CH",
+        notes            = "Strict privacy. Bypasses ISP piracy blocks using GoodbyeDPI + Adblocking DNS.",
+    ),
 ]
 
 # Fast lookup by code
@@ -103,6 +116,13 @@ _COUNTRY_NAME_MAP: dict[str, str] = {
     "United Kingdom":      "GB",
     "China":               "CN",
     "Iraq":                "IQ",
+    "Portugal":            "EU",
+    "Germany":             "EU",
+    "France":              "EU",
+    "Spain":               "EU",
+    "Italy":               "EU",
+    "Netherlands":         "EU",
+    "Sweden":              "EU",
 }
 
 

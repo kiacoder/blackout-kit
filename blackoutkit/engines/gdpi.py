@@ -155,7 +155,7 @@ class GoodbyeDPIEngine(Engine):
             f"taskkill /F /IM goodbyedpi.exe 2>$null; "
             f"Start-Sleep -Milliseconds 500; "
             f"$p = Start-Process -FilePath '{binary_str}' -WorkingDirectory '{cwd_str}' "
-            f"-ArgumentList '{args_str}' -Verb RunAs -WindowStyle Normal -PassThru; "
+            f"-ArgumentList '{args_str}' -Verb RunAs -WindowStyle Hidden -PassThru; "
             f"$p.Id | Out-File -FilePath '{pid_file_str}' -Encoding UTF8"
         )
 

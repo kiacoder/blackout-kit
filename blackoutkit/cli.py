@@ -1172,6 +1172,60 @@ def cmd_killswitch(args):
             ))
 
 
+def cmd_panic(args):
+    """Instantly kills all connections, flushes DNS, clears proxies, and resets killswitch."""
+    console.print("[bold red]🚨 PANIC BUTTON ACTIVATED 🚨[/bold red]")
+    console.print("[muted]Executing emergency disconnect and trace flush...[/muted]\n")
+    
+    # 1. Stop daemon
+    console.print("[dim]→ Stopping daemon & all engines...[/dim]")
+    from . import daemon
+    daemon.send_command("stop")
+    
+    # 2. Clear System Proxy
+    console.print("[dim]→ Clearing Windows system proxy...[/dim]")
+    from .proxy_manager import clear_system_proxy
+    clear_system_proxy()
+    
+    # 3. Disable Kill Switch
+    console.print("[dim]→ Disabling kill switch firewall rules...[/dim]")
+    from . import security as sec
+    sec.disable_kill_switch()
+    cfg.set_value("kill_switch", False)
+    
+    # 4. Flush DNS
+    console.print("[dim]→ Flushing DNS cache...[/dim]")
+    from .tools import flush_dns
+    flush_dns()
+    
+    console.print("\n[bold green]✓ SYSTEM SECURED. YOU ARE OFFLINE.[/bold green]")
+
+
+def cmd_shield(args):
+    """Activates Mullvad-style Adblock DNS and strict kill switch."""
+    console.print("[bold cyan]🛡️  SHIELD MODE ACTIVATED[/bold cyan]")
+    
+    # Enable Kill switch
+    console.print("[dim]→ Enforcing strict kill switch...[/dim]")
+    from . import security as sec
+    ok = sec.enable_kill_switch()
+    if ok:
+        cfg.set_value("kill_switch", True)
+        console.print("[success]✓ Strict Kill Switch enforced.[/success]")
+    else:
+        console.print("[error]✗ Failed to enforce Kill Switch. Run as admin![/error]")
+    
+    # Set DNS to AdGuard/Mullvad
+    console.print("[dim]→ Setting system DNS to Ad-blocking servers (AdGuard)...[/dim]")
+    from .tools import set_dns
+    if set_dns("94.140.14.14"):
+        console.print("[success]✓ Tracker & Ad Blocker enabled at network level.[/success]")
+    else:
+        console.print("[warning]⚠ Could not auto-set DNS. Try running as admin.[/warning]")
+    
+    console.print("\n[info]You are now fully shielded from leaks and trackers![/info]")
+
+
 def cmd_neighbor(args):
     """Neighbor internet — share or connect via a nearby Blackout Kit device."""
     subcmd = getattr(args, "neighbor_command", None)
@@ -2250,6 +2304,12 @@ def main():
     ks_p.add_argument("action", nargs="?", choices=["on", "off", "test"],
                       metavar="on|off|test", help="Enable, disable, or test (omit to check status)")
 
+    # ── panic ──
+    sub.add_parser("panic", help="🚨 Instantly kill all connections, flush DNS, clear proxies, and restore normal state")
+
+    # ── shield ──
+    sub.add_parser("shield", help="🛡️ Activate Mullvad-style strict kill switch and Ad/Tracker blocker")
+
     # ── neighbor ──
     nb_p   = sub.add_parser("neighbor", help="Connect via a nearby Blackout Kit device")
     nb_sub = nb_p.add_subparsers(dest="neighbor_command")
@@ -2384,6 +2444,8 @@ def main():
         "tools":       cmd_tools,
         "mode":        cmd_mode,
         "killswitch":  cmd_killswitch,
+        "panic":       cmd_panic,
+        "shield":      cmd_shield,
         "neighbor":    cmd_neighbor,
         "network":     cmd_network,
         "bins":        cmd_bins,

@@ -66,6 +66,17 @@ Key design decisions:
 
 ---
 
+## Privacy First (Zero Logs)
+
+Blackout Kit is built on absolute privacy and transparency:
+
+- **Zero Telemetry:** The tool does not phone home, track usage, or report analytics to any server.
+- **Zero Remote Logging:** All operational logs (like connection statuses and engine errors) are stored strictly locally on your own machine in the `~/.blackout-kit/` folder.
+- **Local Evasion:** Engines like GoodbyeDPI and SNI Spoofing manipulate packets *locally* on your PC. Your traffic goes straight to the destination website without ever passing through a middleman server.
+- **Fully Open Source:** The entire codebase is open for you (or any AI) to verify.
+
+---
+
 ## Supported Countries
 
 | Country | Censorship Level | Best Engine | Notes |

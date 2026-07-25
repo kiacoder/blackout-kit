@@ -236,6 +236,51 @@ def check_network_driver() -> CheckResult:
         return CheckResult("Winsock catalog", False, str(e))
 
 
+def check_system_path() -> CheckResult:
+    """Check if the directory containing the blackout executable is in the system PATH."""
+    if sys.platform != "win32":
+        return CheckResult("System PATH", True, "N/A (not Windows)")
+
+    exe_path = Path(sys.argv[0]).resolve()
+    exe_dir = exe_path.parent
+    
+    # If running directly via python.exe, skip this check
+    if exe_path.name.lower() == "python.exe":
+        return CheckResult("System PATH", True, "N/A (Running via Python)")
+
+    current_path = os.environ.get("PATH", "")
+    if str(exe_dir).lower() in current_path.lower():
+        return CheckResult("System PATH", True, f"Found in PATH ({exe_dir.name})")
+
+    def _fix_path():
+        import winreg
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+                try:
+                    val, _ = winreg.QueryValueEx(key, "PATH")
+                except OSError:
+                    val = ""
+                if str(exe_dir).lower() not in val.lower():
+                    new_path = val.rstrip(";") + ";" + str(exe_dir) if val else str(exe_dir)
+                    winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
+            
+            # Broadcast the environment change to running windows
+            import ctypes
+            HWND_BROADCAST = 0xFFFF
+            WM_SETTINGCHANGE = 0x001A
+            ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", 2, 1000, None)
+            
+            # Also update current process env so later checks don't fail if they rely on it
+            os.environ["PATH"] = os.environ.get("PATH", "") + ";" + str(exe_dir)
+        except Exception as exc:
+            raise Exception(f"Failed to update registry: {exc}")
+
+    return CheckResult(
+        "System PATH", False, f"Missing {exe_dir.name} from PATH",
+        fixable=True, fix=_fix_path
+    )
+
+
 def _load_country_profile_quietly():
     """Load country profile without printing anything — returns profile or None."""
     try:
@@ -417,6 +462,7 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_country_profile(),   # Country profile (informational)
         check_network_driver(),
         check_windivert(),
+        check_system_path(),
     )
     all_results = list(checks)
     all_results.extend(check_data_files())
