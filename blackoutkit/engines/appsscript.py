@@ -231,6 +231,12 @@ class _GASProxyHandler(http.server.BaseHTTPRequestHandler):
         )
 
 
+class SilentThreadingTCPServer(socketserver.ThreadingTCPServer):
+    """Threading TCP Server that suppresses stdout tracebacks on client disconnect."""
+    def handle_error(self, request, client_address):
+        pass
+
+
 # ── Engine class ─────────────────────────────────────────────────
 
 class AppsScriptEngine(Engine):
@@ -282,7 +288,7 @@ class AppsScriptEngine(Engine):
         try:
             # Allow quick port reuse after restart
             socketserver.TCPServer.allow_reuse_address = True
-            self._server = socketserver.ThreadingTCPServer(
+            self._server = SilentThreadingTCPServer(
                 ("127.0.0.1", self.proxy_port),
                 _GASProxyHandler,
             )

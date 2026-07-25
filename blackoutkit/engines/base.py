@@ -163,15 +163,19 @@ class Engine(ABC):
         Call this in start() before launching a process to catch port conflicts early.
         If already occupied, logs an actionable error and returns False.
         """
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
-            with socket.create_connection((host, port), timeout=0.3):
-                self._log.error(
-                    "Port %d is already in use — another process may be running. "
-                    "Stop it first or change the port in settings.", port
-                )
-                return False
+            s.bind((host, port))
+            return True
         except OSError:
-            return True  # Connection refused = nothing listening = port is free
+            self._log.error(
+                "Port %d is already in use — another process may be running. "
+                "Stop it first or change the port in settings.", port
+            )
+            return False
+        finally:
+            s.close()
 
     def wait_for_port(
         self,
