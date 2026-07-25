@@ -549,6 +549,88 @@ def check_firewall_rules() -> CheckResult:
     )
 
 
+def check_windows_compat() -> CheckResult:
+    """Verifies that the operating system and architecture are compatible with Blackout Kit."""
+    if sys.platform != "win32":
+        return CheckResult("OS Compatibility", True, f"Non-Windows ({sys.platform}) — bypass engines may need manual config")
+    
+    import platform
+    arch = platform.machine()
+    is_64bit = "64" in arch or "AMD64" in arch.upper() or "ARM64" in arch.upper()
+    if not is_64bit:
+        return CheckResult("OS Compatibility", False, f"32-bit architecture ({arch}) is unsupported. x64 required.")
+
+    try:
+        release = platform.release()
+        version = platform.version()
+        major = int(version.split(".")[0])
+        if major < 10:
+            return CheckResult("OS Compatibility", False, f"Windows {release} (Version {version}) is too old. Windows 10/11 required.")
+        return CheckResult("OS Compatibility", True, f"Windows {release} ({arch}) — OK")
+    except Exception as e:
+        return CheckResult("OS Compatibility", True, f"Windows (arch {arch}) — {e}")
+
+
+def check_admin_privileges() -> CheckResult:
+    """Checks if the console is running with Administrative privileges."""
+    from .proxy_manager import is_admin
+    if is_admin():
+        return CheckResult("Admin Rights", True, "OK (Elevated)")
+    
+    return CheckResult(
+        "Admin Rights", False,
+        "Running without Administrator privileges. Fixes and engines will trigger UAC prompts.",
+        fixable=False
+    )
+
+
+def check_stale_proxy() -> CheckResult:
+    """Detects if a system proxy is active pointing to our SOCKS/HTTP port while the daemon is offline."""
+    if sys.platform != "win32":
+        return CheckResult("System Proxy", True, "N/A (not Windows)")
+
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Internet Settings", 0, winreg.KEY_READ) as key:
+            try:
+                enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
+                server, _ = winreg.QueryValueEx(key, "ProxyServer")
+            except OSError:
+                enabled = 0
+                server = ""
+    except Exception:
+        return CheckResult("System Proxy", True, "OK")
+
+    if not enabled or not server:
+        return CheckResult("System Proxy", True, "OK (Proxy disabled)")
+
+    s = cfg.load()
+    socks_port = s.get("xray_socks_port", 10808)
+    http_port = s.get("xray_http_port", 10809)
+    ports = {str(socks_port), str(http_port)}
+
+    is_ours = False
+    for p in ports:
+        if f"127.0.0.1:{p}" in server or f"localhost:{p}" in server:
+            is_ours = True
+            break
+
+    if not is_ours:
+        return CheckResult("System Proxy", True, f"OK (External proxy active: {server})")
+
+    from . import daemon
+    if daemon.get_pid() is not None:
+        return CheckResult("System Proxy", True, "OK (Proxy active & daemon running)")
+
+    from .proxy_manager import clear_system_proxy
+    return CheckResult(
+        "System Proxy", False,
+        f"Stale system proxy pointing to offline port ({server}). Browsing will be blocked.",
+        fixable=True,
+        fix=clear_system_proxy
+    )
+
+
 # ──────────────────────────── Runner ─────────────────────────────
 
 def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
@@ -565,6 +647,9 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_config_security(),
         check_process_conflicts(),
         check_firewall_rules(),
+        check_windows_compat(),
+        check_admin_privileges(),
+        check_stale_proxy(),
     )
     all_results = list(checks)
     all_results.extend(check_data_files())
