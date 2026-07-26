@@ -41,6 +41,9 @@ DEFAULTS = {
     # Psiphon
     "psiphon_country":      "DE",        # Country code for exit node
 
+    # MHRV
+    "mhrv_direct":          False,       # Run mhrv in direct transparent mode without Google Apps Script relay
+
     # System proxy
     "auto_set_proxy":       True,        # Automatically set Windows system proxy
     "proxy_host":           "127.0.0.1",
@@ -123,6 +126,7 @@ _ENGINE_CHOICES = ["auto", "sni", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv
 
 _VALIDATORS: dict[str, tuple] = {
     "gdpi_always_test_all": (bool,  lambda v: True,            "must be true or false"),
+    "mhrv_direct":        (bool,  lambda v: True,              "must be true or false"),
     "sni_always_test_all_ips": (bool, lambda v: True,          "must be true or false"),
     "sni_custom_ips":     (list,  lambda v: True,              "must be a list of strings"),
     "sni_listen_port":    (int,   *_PORT_RANGE),

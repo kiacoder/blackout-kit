@@ -39,10 +39,13 @@ class MhrvEngine(Engine):
         self.socks_port = socks_port
 
     def start(self) -> bool:
+        from .. import settings as cfg
+        s = cfg.load()
+        direct = s.get("mhrv_direct", False)
 
         self._log.info(
-            "Starting mhrv  http_port=%d  socks_port=%d",
-            self.http_port, self.socks_port,
+            "Starting mhrv  http_port=%d  socks_port=%d  direct_mode=%s",
+            self.http_port, self.socks_port, direct,
         )
 
         from ..core import get_core_dll
@@ -52,12 +55,16 @@ class MhrvEngine(Engine):
             return False
 
         self._log.info("Launching mhrv via native DLL")
-        try:
-            from .appsscript import _load_gas_ids
-            ids = _load_gas_ids()
-            ids_str = ",".join(ids)
-        except Exception:
+        if direct:
             ids_str = ""
+        else:
+            try:
+                from .appsscript import _load_gas_ids
+                ids = _load_gas_ids()
+                ids_str = ",".join(ids)
+            except Exception:
+                ids_str = ""
+
         c_ids = ids_str.encode("utf-8")
         if dll.StartMHRVC(self.http_port, c_ids) == 0:
             self._dll_stop_func = dll.StopMHRVC
