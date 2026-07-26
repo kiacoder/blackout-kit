@@ -25,33 +25,6 @@ SNI_BIN_NAMES = [
 _STARTUP_TIMEOUT = 10.0   # seconds to wait for port to open
 
 
-class SilenceOS:
-    """Temporarily silence stdout and stderr at the OS level (captures C-level printf)."""
-    def __enter__(self):
-        import os
-        try:
-            self.null_fd = os.open(os.devnull, os.O_RDWR)
-            self.old_stdout = os.dup(1)
-            self.old_stderr = os.dup(2)
-            os.dup2(self.null_fd, 1)
-            os.dup2(self.null_fd, 2)
-            self.success = True
-        except Exception:
-            self.success = False
-
-    def __exit__(self, *_):
-        import os
-        if getattr(self, "success", False):
-            try:
-                os.dup2(self.old_stdout, 1)
-                os.dup2(self.old_stderr, 2)
-                os.close(self.old_stdout)
-                os.close(self.old_stderr)
-                os.close(self.null_fd)
-            except Exception:
-                pass
-
-
 class SNIEngine(Engine):
     name = "sni"
     description = "SNI packet injection (patterniha method) — most effective against DPI"
@@ -109,11 +82,7 @@ class SNIEngine(Engine):
         self._log.info("Launching SNI spoofer via native DLL")
         c_path = str(config_path).encode("utf-8")
         
-        # Start the final production instance silently
-        with SilenceOS():
-            started = (dll.StartSNIC(c_path) == 0)
-            
-        if started:
+        if dll.StartSNIC(c_path) == 0:
             self._dll_stop_func = dll.StopSNIC
             if not self.wait_for_port(self.listen_port, timeout=_STARTUP_TIMEOUT):
                 self._log.error("SNI spoofer started via DLL but port %d never opened.", self.listen_port)
@@ -127,11 +96,10 @@ class SNIEngine(Engine):
 
     def stop(self):
         if hasattr(self, "_dll_stop_func") and self._dll_stop_func:
-            with SilenceOS():
-                try:
-                    self._dll_stop_func()
-                except Exception:
-                    pass
+            try:
+                self._dll_stop_func()
+            except Exception:
+                pass
             self._dll_stop_func = None
         super().stop()
 
@@ -183,8 +151,7 @@ class SNIEngine(Engine):
             
             # Start SNI Spoofer temporarily
             c_path_bytes = str(config_path).encode("utf-8")
-            with SilenceOS():
-                started = (dll.StartSNIC(c_path_bytes) == 0)
+            started = (dll.StartSNIC(c_path_bytes) == 0)
                 
             if not started:
                 self._log.warning("Could not start SNI Spoofer for candidate %s", ip)
@@ -204,8 +171,7 @@ class SNIEngine(Engine):
             scan_report[ip] = ip_report
             
             # Stop SNI Spoofer
-            with SilenceOS():
-                dll.StopSNIC()
+            dll.StopSNIC()
             time.sleep(0.2)
             
         # Print results table
