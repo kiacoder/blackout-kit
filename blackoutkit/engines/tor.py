@@ -37,7 +37,7 @@ class TorEngine(Engine):
         config = (
             f"SocksPort {self.socks_port}\n"
             f"ControlPort 9051\n"
-            f"DNSPort 5353\n"
+            f"DNSPort 5354\n"
             f"AutomapHostsOnResolve 1\n"
         )
         torrc_path.write_text(config)

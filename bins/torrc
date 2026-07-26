@@ -1,0 +1,4 @@
+SocksPort 9050
+ControlPort 9051
+DNSPort 5354
+AutomapHostsOnResolve 1
