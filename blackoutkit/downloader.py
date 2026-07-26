@@ -382,6 +382,10 @@ def download_binary(
         return False, f"Unknown binary key: '{key}'. Valid keys: {', '.join(BIN_REGISTRY)}"
 
     if not info.github_repo:
+        if key == "tor":
+            return _download_tor_binary(progress_callback)
+        elif key == "openvpn":
+            return _download_openvpn_binary(progress_callback)
         note = f"  Note: {info.manual_note}" if info.manual_note else ""
         return False, f"Manual download required.\n  Visit: {info.manual_url}{note}"
 
@@ -569,7 +573,7 @@ def download_all(
 
     to_download = []
     for key, info in BIN_REGISTRY.items():
-        if not info.github_repo:
+        if not info.github_repo and key not in ("tor", "openvpn"):
             note = info.manual_note or "No auto-download available"
             results[key] = (False, f"Manual only — {note}\n  {info.manual_url}")
             continue
@@ -594,3 +598,180 @@ def download_all(
         results[key] = res
 
     return results
+
+
+def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = None) -> tuple[bool, str]:
+    """Helper to download and extract Tor Expert Bundle."""
+    import re
+    import tarfile
+    try:
+        req = urllib.request.Request(
+            "https://dist.torproject.org/torbrowser/",
+            headers={"User-Agent": f"blackout-kit/{__version__}"},
+        )
+        with urllib.request.urlopen(req, timeout=_API_TIMEOUT) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        return False, f"Failed to connect to Tor archive: {e}"
+
+    versions = []
+    for match in re.finditer(r'href="(\d+\.\d+(?:\.\d+)?)/"', html):
+        versions.append(match.group(1))
+    
+    if not versions:
+        version = "15.0.19"
+    else:
+        def version_key(v):
+            return [int(x) for x in v.split(".")]
+        versions.sort(key=version_key)
+        version = versions[-1]
+
+    download_url = f"https://dist.torproject.org/torbrowser/{version}/tor-expert-bundle-windows-x86_64-{version}.tar.gz"
+    
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+
+        req = urllib.request.Request(
+            download_url,
+            headers={"User-Agent": f"blackout-kit/{__version__}"},
+        )
+        
+        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+            cl = resp.headers.get("Content-Length")
+            total_size = int(cl) if cl else 0
+            downloaded = 0
+            with open(tmp_path, "wb") as f:
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if progress_callback:
+                        progress_callback(downloaded, total_size or downloaded)
+
+        with tarfile.open(tmp_path, "r:gz") as tf:
+            members = tf.getmembers()
+            tor_exe_member = next((m for m in members if m.name.endswith("tor.exe")), None)
+            if not tor_exe_member:
+                return False, "tor.exe not found in downloaded tar.gz"
+            
+            prefix = ""
+            if "/" in tor_exe_member.name:
+                prefix = tor_exe_member.name.rsplit("/", 1)[0] + "/"
+            
+            BINS_DIR.mkdir(parents=True, exist_ok=True)
+            for member in members:
+                if member.name.startswith(prefix) and not member.isdir():
+                    rel_path = member.name[len(prefix):]
+                    if "/" not in rel_path:
+                        dest = BINS_DIR / rel_path
+                        f_in = tf.extractfile(member)
+                        if f_in:
+                            dest.write_bytes(f_in.read())
+        
+        return True, f"Installed Tor (Expert Bundle) v{version}"
+    except Exception as e:
+        return False, f"Tor download/extraction failed: {e}"
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+
+
+def _download_openvpn_binary(progress_callback: Callable[[int, int], None] | None = None) -> tuple[bool, str]:
+    """Helper to download OpenVPN MSI and extract openvpn.exe and DLLs using msiexec."""
+    import re
+    import subprocess
+    import shutil
+    try:
+        req = urllib.request.Request(
+            "https://build.openvpn.net/downloads/releases/",
+            headers={"User-Agent": f"blackout-kit/{__version__}"},
+        )
+        with urllib.request.urlopen(req, timeout=_API_TIMEOUT) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+    except Exception as e:
+        return False, f"Failed to connect to OpenVPN build archive: {e}"
+
+    msi_files = []
+    for match in re.finditer(r'href="(OpenVPN-[\d\.\-]+-amd64\.msi)"', html):
+        msi_files.append(match.group(1))
+
+    if not msi_files:
+        msi_file = "OpenVPN-2.7.5-I001-amd64.msi"
+    else:
+        def msi_key(name):
+            parts = re.findall(r'\d+', name)
+            return [int(x) for x in parts]
+        msi_files.sort(key=msi_key)
+        msi_file = msi_files[-1]
+
+    download_url = f"https://build.openvpn.net/downloads/releases/{msi_file}"
+
+    tmp_path = None
+    temp_dir = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".msi", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+
+        req = urllib.request.Request(
+            download_url,
+            headers={"User-Agent": f"blackout-kit/{__version__}"},
+        )
+        
+        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+            cl = resp.headers.get("Content-Length")
+            total_size = int(cl) if cl else 0
+            downloaded = 0
+            with open(tmp_path, "wb") as f:
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if progress_callback:
+                        progress_callback(downloaded, total_size or downloaded)
+
+        temp_dir = Path(tempfile.mkdtemp())
+        
+        cmd = ["msiexec", "/a", str(tmp_path), "/qb", f"TARGETDIR={temp_dir}"]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            cmd = ["msiexec", "/a", str(tmp_path), "/qn", f"TARGETDIR={temp_dir}"]
+            subprocess.run(cmd, check=True)
+
+        openvpn_exe = None
+        for p in temp_dir.rglob("openvpn.exe"):
+            openvpn_exe = p
+            break
+        
+        if not openvpn_exe:
+            return False, "openvpn.exe not found in extracted MSI contents"
+
+        bin_dir = openvpn_exe.parent
+        BINS_DIR.mkdir(parents=True, exist_ok=True)
+        
+        for item in bin_dir.iterdir():
+            if item.is_file() and (item.suffix.lower() == ".exe" or item.suffix.lower() == ".dll"):
+                shutil.copy(item, BINS_DIR / item.name)
+
+        return True, f"Installed OpenVPN (extracted from {msi_file})"
+    except Exception as e:
+        return False, f"OpenVPN download/extraction failed: {e}"
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except Exception:
+                pass
+        if temp_dir and temp_dir.exists():
+            try:
+                shutil.rmtree(temp_dir)
+            except Exception:
+                pass

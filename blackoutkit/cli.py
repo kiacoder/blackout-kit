@@ -1716,7 +1716,7 @@ def cmd_bins(args):
                 console.print(f"[error]Unknown binary: '{target_key}'[/error]  Valid: {valid}")
                 return
 
-            if not info.github_repo:
+            if not info.github_repo and target_key not in ("tor", "openvpn"):
                 console.print(_Panel(
                     f"[yellow]{info.display_name}[/yellow] requires manual download.\n\n"
                     f"  [dim]{info.manual_note}[/dim]\n\n"
@@ -1733,8 +1733,8 @@ def cmd_bins(args):
             # Download ALL missing auto-downloadable binaries
             all_bins  = dl.list_available()
             installed = dl.check_installed()
-            to_dl     = [b for b in all_bins if b.github_repo and not installed.get(b.key)]
-            manual    = [b for b in all_bins if not b.github_repo and not installed.get(b.key)]
+            to_dl     = [b for b in all_bins if (b.github_repo or b.key in ("tor", "openvpn")) and not installed.get(b.key)]
+            manual    = [b for b in all_bins if not b.github_repo and b.key not in ("tor", "openvpn") and not installed.get(b.key)]
 
             if not to_dl and not manual:
                 console.print("[success]✓ All binaries are already installed![/success]")
@@ -1762,10 +1762,9 @@ def cmd_bins(args):
 
     # ── update ────────────────────────────────────────────────────
     elif subcmd == "update":
-        installed = dl.check_installed()
         to_update = [
             b for b in dl.list_available()
-            if b.github_repo and installed.get(b.key)
+            if (b.github_repo or b.key in ("tor", "openvpn")) and installed.get(b.key)
         ]
 
         if not to_update:
@@ -1785,7 +1784,12 @@ def _download_single(dl, key: str, info, force: bool = False):
     )
 
     label = f"Downloading [bold]{info.display_name}[/bold]..."
-    console.print(f"  [dim]→[/dim] {info.display_name}  [dim]{info.github_repo}[/dim]")
+    repo_disp = info.github_repo or (
+        "dist.torproject.org" if key == "tor" else
+        "build.openvpn.net" if key == "openvpn" else
+        "manual"
+    )
+    console.print(f"  [dim]→[/dim] {info.display_name}  [dim]{repo_disp}[/dim]")
 
     task_ref: dict = {"id": None, "progress": None}
 
