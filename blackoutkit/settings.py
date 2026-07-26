@@ -26,6 +26,8 @@ DEFAULTS = {
     "sni_connect_ip":       "104.19.229.21",
     "sni_connect_port":     443,
     "sni_fake_sni":         "www.hcaptcha.com",
+    "sni_always_test_all_ips": False,   # If True, runs full TLS tests on all scanned IPs in auto mode
+    "sni_custom_ips":       [],         # Custom user-defined IPs to test first
 
     # XRay Engine
     "xray_log_level":       "warning",   # debug / info / warning / error / none
@@ -121,6 +123,8 @@ _ENGINE_CHOICES = ["auto", "sni", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv
 
 _VALIDATORS: dict[str, tuple] = {
     "gdpi_always_test_all": (bool,  lambda v: True,            "must be true or false"),
+    "sni_always_test_all_ips": (bool, lambda v: True,          "must be true or false"),
+    "sni_custom_ips":     (list,  lambda v: True,              "must be a list of strings"),
     "sni_listen_port":    (int,   *_PORT_RANGE),
     "xray_socks_port":    (int,   *_PORT_RANGE),
     "xray_http_port":     (int,   *_PORT_RANGE),

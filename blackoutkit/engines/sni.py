@@ -158,8 +158,13 @@ class SNIEngine(Engine):
             self._log.error("No reachable Cloudflare IPs found. Check your internet connection.")
             return None
             
-        top_candidates = [ip for ip, latency in cf_results[:5]]
-        self._log.info("Top candidates to test: %s", top_candidates)
+        always_test_all = cfg.get("sni_always_test_all_ips")
+        if always_test_all:
+            top_candidates = [ip for ip, latency in cf_results]
+            self._log.info("Testing ALL reachable candidates: %d IPs", len(top_candidates))
+        else:
+            top_candidates = [ip for ip, latency in cf_results[:5]]
+            self._log.info("Top candidates to test: %s", top_candidates)
         
         test_hosts = [
             "www.youtube.com",

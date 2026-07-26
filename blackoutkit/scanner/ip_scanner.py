@@ -69,31 +69,64 @@ async def check_ip(ip: str, port: int = 443, timeout: float = 2.0) -> tuple[str,
 def generate_cloudflare_ips(count: int = 100) -> list[str]:
     """
     Generate a list of Cloudflare IPs to scan.
-    Always includes known-good IPs first, then samples from CF ranges.
-    Uses efficient indexing to avoid memory spikes on large CIDR blocks.
+    Always prioritizes custom user IPs, then known-good IPs, then samples from CF ranges.
     """
+    custom_ips = []
+    
+    # 1. From settings
+    try:
+        from .. import settings as cfg
+        custom_ips.extend(cfg.get("sni_custom_ips") or [])
+    except Exception:
+        pass
+        
+    # 2. From data/custom_ips.txt
+    try:
+        from pathlib import Path
+        custom_file = Path(__file__).parent.parent.parent / "data" / "custom_ips.txt"
+        if custom_file.exists():
+            lines = custom_file.read_text(encoding="utf-8").splitlines()
+            for line in lines:
+                cleaned = line.strip()
+                if cleaned and not cleaned.startswith("#"):
+                    custom_ips.append(cleaned)
+    except Exception:
+        pass
+
+    # Unique list preserving order of custom IPs
+    seen = set()
+    unique_custom = []
+    for ip in custom_ips:
+        if ip not in seen:
+            seen.add(ip)
+            unique_custom.append(ip)
+
     ips: set[str] = set(KNOWN_GOOD_IPS)
-    remaining = max(0, count - len(ips))
+    ips.difference_update(seen)
+    
+    remaining = max(0, count - len(unique_custom) - len(ips))
 
     if remaining > 0:
         per_range = max(1, remaining // len(CLOUDFLARE_RANGES))
         for cidr in CLOUDFLARE_RANGES:
             try:
+                import ipaddress
                 network = ipaddress.IPv4Network(cidr)
                 num_addresses = network.num_addresses
-                # We need to sample from num_addresses, but skip network/broadcast
-                # num_addresses includes them. We'll pick random indices.
                 sample_count = min(per_range, num_addresses)
                 for _ in range(sample_count):
-                    # random.randrange(num_addresses) gives an index in the network
                     ip_obj = network[random.randrange(num_addresses)]
-                    ips.add(str(ip_obj))
+                    ip_str = str(ip_obj)
+                    if ip_str not in seen:
+                        ips.add(ip_str)
             except Exception:
                 continue
 
     result = list(ips)
     random.shuffle(result)
-    return result[:count]
+    
+    final_list = unique_custom + result
+    return final_list[:count]
 
 
 async def scan_ips(
