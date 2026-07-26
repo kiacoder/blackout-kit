@@ -84,7 +84,10 @@ class GoodbyeDPIEngine(Engine):
         return self._try_elevated_launch(binary)
 
     def _start_auto(self, binary) -> bool:
+        always_test_all = cfg.get("gdpi_always_test_all")
         self._log.info("Auto-detecting best GoodbyeDPI modeset...")
+        
+        working_modes = []
         for mode in MODESETS:
             self._log.info("Trying modeset %s ...", mode)
             self.flags = mode.split()
@@ -98,13 +101,25 @@ class GoodbyeDPIEngine(Engine):
             time.sleep(2.0)
 
             if self._test_connectivity(mode):
-                self._working_mode = mode
-                cfg.set_value("gdpi_flags", mode)
-                self._log.info("Modeset %s works — saved as default.", mode)
-                return True
+                self._log.info("Modeset %s works!", mode)
+                working_modes.append(mode)
+                if not always_test_all:
+                    self._working_mode = mode
+                    cfg.set_value("gdpi_flags", mode)
+                    self._log.info("Saved modeset %s as default.", mode)
+                    return True
+            else:
+                self._log.warning("Modeset %s started but no connectivity.", mode)
 
-            self._log.warning("Modeset %s started but no connectivity — trying next.", mode)
             self.stop()
+
+        if working_modes:
+            best_mode = working_modes[0]
+            self._log.info("Modeset scan complete. Working modes: %s. Starting GoodbyeDPI with: %s", working_modes, best_mode)
+            self.flags = best_mode.split()
+            if not self._try_direct_launch(binary):
+                self._try_elevated_launch(binary)
+            return True
 
         self._log.error("All modesets failed — no connectivity.")
         return False

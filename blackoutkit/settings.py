@@ -34,6 +34,7 @@ DEFAULTS = {
 
     # GoodbyeDPI
     "gdpi_flags":           "auto",      # auto = try all modesets, or specify e.g. -1 -2 -5
+    "gdpi_always_test_all": False,      # If True, auto-detection tests all modesets on every launch
 
     # Psiphon
     "psiphon_country":      "DE",        # Country code for exit node
@@ -119,6 +120,7 @@ _POSITIVE     = (lambda v: v > 0,           "must be > 0")
 _ENGINE_CHOICES = ["auto", "sni", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "legend"]
 
 _VALIDATORS: dict[str, tuple] = {
+    "gdpi_always_test_all": (bool,  lambda v: True,            "must be true or false"),
     "sni_listen_port":    (int,   *_PORT_RANGE),
     "xray_socks_port":    (int,   *_PORT_RANGE),
     "xray_http_port":     (int,   *_PORT_RANGE),
