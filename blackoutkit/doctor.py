@@ -468,7 +468,7 @@ def check_config_security() -> CheckResult:
         
     return CheckResult(
         "Config Encryption", False,
-        "Proxy configs are stored in plaintext. Run 'blackout config encrypt' to secure them.",
+        f"Proxy configs are stored in plaintext. Run '{get_command_prefix()} config encrypt' to secure them.",
         fixable=True,
         fix=sec.obfuscate_configs
     )
@@ -631,6 +631,36 @@ def check_stale_proxy() -> CheckResult:
     )
 
 
+def get_command_prefix() -> str:
+    """Return the prefix used to run the app (either 'blackout' or 'python blackout.py')."""
+    import sys
+    from pathlib import Path
+    exe_name = Path(sys.argv[0]).name.lower()
+    if exe_name == "blackout.py":
+        return "python blackout.py"
+    elif "blackout" in exe_name:
+        return "blackout"
+    return "python blackout.py"
+
+
+def get_execution_context() -> dict:
+    """Returns information about how and where the app is running."""
+    import sys
+    from pathlib import Path
+    from . import __version__
+    
+    script_path = Path(sys.argv[0]).resolve()
+    # Check if run from a global Python path (Scripts, site-packages, or python installation)
+    is_global = "site-packages" in str(script_path).lower() or "scripts" in str(script_path).lower() or not script_path.exists()
+    
+    return {
+        "version": __version__,
+        "path": script_path,
+        "is_global": is_global,
+        "prefix": get_command_prefix(),
+    }
+
+
 # ──────────────────────────── Runner ─────────────────────────────
 
 def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
@@ -692,6 +722,10 @@ def print_report(results: list[CheckResult], auto_fixed: bool = False):
         table.add_row(r.name, status, r.message)
 
     console.print()
+    # Execution Context Header
+    ctx = get_execution_context()
+    run_type = "[bold cyan]Global Executable[/bold cyan]" if ctx["is_global"] else "[bold green]Local Source Script[/bold green]"
+    console.print(f"[dim]Running via: {run_type} | Path: {ctx['path']} | Version: {ctx['version']}[/dim]")
     console.print(table)
 
     if fail_count > 0 and not auto_fixed:
@@ -699,7 +733,7 @@ def print_report(results: list[CheckResult], auto_fixed: bool = False):
         if fixable:
             console.print(
                 f"\n[yellow]{fixable} issues can be auto-fixed.[/yellow]  "
-                f"Run: [bold]blackout doctor --fix[/bold]"
+                f"Run: [bold]{ctx['prefix']} doctor --fix[/bold]"
             )
     elif fail_count == 0:
         console.print("\n[success]Everything looks good! Ready to use.[/success]")
