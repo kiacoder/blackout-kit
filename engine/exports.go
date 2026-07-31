@@ -3,6 +3,7 @@ package main
 import (
 	"C"
 	"fmt"
+	"strings"
 )
 
 //export StartXrayC
@@ -61,3 +62,31 @@ func StartMHRVC(port C.int, ids *C.char) int {
 func StopMHRVC() {
 	stopMHRVInternal()
 }
+
+//export StartNeighborC
+func StartNeighborC(listenPort C.int, targetPort C.int) int {
+	err := startNeighborInternal(int(listenPort), int(targetPort))
+	if err != nil {
+		fmt.Println("StartNeighborC Error:", err)
+		return 1
+	}
+	return 0
+}
+
+//export StopNeighborC
+func StopNeighborC() {
+	stopNeighborInternal()
+}
+
+//export ScanIPsC
+func ScanIPsC(ipsC *C.char, port C.int, concurrency C.int, timeoutMs C.int) *C.char {
+	ipsStr := C.GoString(ipsC)
+	if ipsStr == "" {
+		return C.CString("")
+	}
+	ips := strings.Split(ipsStr, ",")
+	res := scanIPsInternal(ips, int(port), int(concurrency), int(timeoutMs))
+	return C.CString(res)
+}
+
+

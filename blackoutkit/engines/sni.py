@@ -112,13 +112,19 @@ class SNIEngine(Engine):
         
         console.print("[cyan]Auto-detecting best Cloudflare IP for SNI spoofing...[/cyan]")
         
-        # Generate and scan 30 IPs (concurrency=15, timeout=2.0)
-        ips = ip_scanner.generate_cloudflare_ips(30)
-        console.print("[dim]Scanning 30 Cloudflare IPs for basic TCP reachability...[/dim]")
+        scan_ip_count = cfg.get("scan_ip_count", 100)
+        scan_concurrency = cfg.get("scan_concurrency", 100)
+        scan_timeout = cfg.get("scan_timeout", 2.0)
+        
+        # Generate IPs using settings
+        ips = ip_scanner.generate_cloudflare_ips(scan_ip_count)
+        console.print(f"[dim]Scanning {scan_ip_count} Cloudflare IPs for basic TCP reachability...[/dim]")
         
         loop = asyncio.new_event_loop()
         try:
-            cf_results = loop.run_until_complete(ip_scanner.scan_ips(ips, concurrency=15, timeout=2.0))
+            cf_results = loop.run_until_complete(ip_scanner.scan_ips(
+                ips, concurrency=scan_concurrency, timeout=scan_timeout
+            ))
         finally:
             loop.close()
             
@@ -127,20 +133,33 @@ class SNIEngine(Engine):
             return None
             
         always_test_all = cfg.get("sni_always_test_all_ips")
+        custom_ips = cfg.get("sni_custom_ips") or []
         if always_test_all:
-            top_candidates = [ip for ip, latency in cf_results]
-            self._log.info("Testing ALL reachable candidates: %d IPs", len(top_candidates))
+            reachable_ips = [ip for ip, _ in cf_results]
+            # Combine custom IPs with all reachable IPs, preserving order and removing duplicates
+            top_candidates = list(dict.fromkeys(custom_ips + reachable_ips))
+            self._log.info("Testing ALL reachable candidates (including custom): %d IPs", len(top_candidates))
         else:
-            top_candidates = [ip for ip, latency in cf_results[:5]]
-            self._log.info("Top candidates to test: %s", top_candidates)
+            # Test custom IPs plus top 5 reachable candidates
+            reachable_top = [ip for ip, _ in cf_results[:5]]
+            top_candidates = list(dict.fromkeys(custom_ips + reachable_top))
+            
+            # Fast-path cache: if current connect IP is still good, prioritize it
+            current_ip = cfg.get("sni_connect_ip")
+            if current_ip and current_ip not in top_candidates:
+                top_candidates.insert(0, current_ip)
+                
+            self._log.info("Top candidates to test (including custom/cached): %s", top_candidates)
         
+        # Combine default test hosts with any user‑provided custom fake SNI hostnames
+        custom_fakes = cfg.get("sni_custom_fakes") or []
         test_hosts = [
             "www.youtube.com",
             "www.google.com",
             "gemini.google.com",
             "www.microsoft.com",
-            "www.discord.com"
-        ]
+            "www.discord.com",
+        ] + custom_fakes
         
         scan_report = {}
         
@@ -159,14 +178,21 @@ class SNIEngine(Engine):
                 
             time.sleep(0.5)  # Wait for spoofer to bind
             
+            import concurrent.futures
             ip_report = {}
-            for host in test_hosts:
-                latency = self._test_tls_handshake(host)
-                ip_report[host] = latency
-                if latency:
-                    self._log.debug("  • %s: %dms", host, latency)
-                else:
-                    self._log.debug("  • %s: FAILED", host)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(test_hosts)) as executor:
+                future_to_host = {executor.submit(self._test_http_get, host): host for host in test_hosts}
+                for future in concurrent.futures.as_completed(future_to_host):
+                    host = future_to_host[future]
+                    try:
+                        latency = future.result()
+                    except Exception:
+                        latency = None
+                    ip_report[host] = latency
+                    if latency:
+                        self._log.debug("  • %s: %dms", host, latency)
+                    else:
+                        self._log.debug("  • %s: FAILED", host)
                     
             scan_report[ip] = ip_report
             
@@ -174,8 +200,16 @@ class SNIEngine(Engine):
             dll.StopSNIC()
             time.sleep(0.2)
             
+            # Fast-path abort: if this IP succeeded all tests quickly, just use it
+            success_count = sum(1 for lat in ip_report.values() if lat is not None)
+            if success_count == len(test_hosts) and not always_test_all:
+                avg_lat = sum(lat for lat in ip_report.values() if lat is not None) / success_count
+                if avg_lat < 1500: # Decent latency
+                    self._log.info("Fast-path: IP %s passed all tests quickly! Skipping remaining.", ip)
+                    break
+            
         # Print results table
-        table = Table(title="[bold]SNI Auto-Scan Results (Direct TLS Handshake)[/bold]", border_style="dim")
+        table = Table(title="[bold]SNI Auto-Scan Results (HTTP GET Speed Test)[/bold]", border_style="dim")
         table.add_column("Cloudflare IP", style="cyan")
         for host in test_hosts:
             name = host.split(".")[1] if "www" in host else host.split(".")[0]
@@ -217,7 +251,7 @@ class SNIEngine(Engine):
         
         return winner_ip
 
-    def _test_tls_handshake(self, target_host: str) -> float | None:
+    def _test_http_get(self, target_host: str) -> float | None:
         import socket
         import ssl
         import time
@@ -228,7 +262,12 @@ class SNIEngine(Engine):
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
             with context.wrap_socket(sock, server_hostname=target_host) as ssock:
+                req = f"GET / HTTP/1.1\r\nHost: {target_host}\r\nConnection: close\r\n\r\n"
+                ssock.sendall(req.encode())
+                resp = ssock.recv(4096)
                 latency = (time.monotonic() - start) * 1000
-                return latency
+                if b"HTTP/" in resp:
+                    return latency
+                return None
         except Exception:
             return None

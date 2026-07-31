@@ -40,9 +40,6 @@ func startSNIInternal(configPath string) error {
 	}
 	sniListener = listener
 
-	fmt.Printf("SNI Spoofer running at %s (forwarding to %s:%d, fake SNI: %s)\n",
-		addr, config.ConnectIP, config.ConnectPort, config.FakeSNI)
-
 	go func() {
 		for {
 			clientConn, err := sniListener.Accept()
@@ -116,39 +113,26 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 		
 		buf := make([]byte, 32*1024)
 		hasWritten := false
-
 		for {
 			n, err := client.Read(buf)
 			if n > 0 {
 				data := buf[:n]
-				// Check if this is a TLS ClientHello
-				// 0x16 = Handshake, 0x03 = TLS version (usually 0x03 0x01, 0x03 0x02, 0x03 0x03)
-				if !hasWritten {
-					hasWritten = true
-					if n > 5 && data[0] == 0x16 && data[1] == 0x03 {
-					
-						// Fragment the ClientHello at the TLS record layer to bypass DPI.
-						// We write the first 5 bytes (TLS record header), sleep to force a packet push,
-						// then write the rest.
-						_, err1 := server.Write(data[:5])
-						if err1 != nil {
-							return
+				if !hasWritten && n > 20 {
+					// DPI Bypass: Fragment the ENTIRE ClientHello into 10-byte chunks.
+					// We rely on Go's default TCP_NODELAY (Nagle's disabled) to push them
+					// as separate TCP segments instantly, bypassing DPI without artificial lag!
+					chunkSize := 10
+					for i := 0; i < len(data); i += chunkSize {
+						end := i + chunkSize
+						if end > len(data) {
+							end = len(data)
 						}
-						
-						// Sleep for 15ms to ensure the TCP packet is pushed out separately.
-						// This overwhelms typical DPI reassembly buffers that inspect packet boundaries.
-						time.Sleep(15 * time.Millisecond)
-						
-						_, err2 := server.Write(data[5:])
-						if err2 != nil {
-							return
-						}
-					} else {
-						_, errW := server.Write(data)
+						_, errW := server.Write(data[i:end])
 						if errW != nil {
 							return
 						}
 					}
+					hasWritten = true
 				} else {
 					_, errW := server.Write(data)
 					if errW != nil {

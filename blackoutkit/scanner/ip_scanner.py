@@ -137,26 +137,44 @@ async def scan_ips(
     progress_callback=None,
 ) -> list[tuple[str, float]]:
     """
-    Scan a list of IPs concurrently.
+    Scan a list of IPs concurrently using the high-performance Go DLL.
     Returns sorted list of (ip, latency_ms) for reachable IPs.
     """
-    semaphore = asyncio.Semaphore(concurrency)
-
-    async def bounded(ip: str):
-        async with semaphore:
-            result = await check_ip(ip, port, timeout)
-            if progress_callback:
-                progress_callback()
-            return result
-
-    results = await asyncio.gather(*[bounded(ip) for ip in ips])
-    working = [r for r in results if r is not None]
-    return sorted(working, key=lambda x: x[1])
+    return scan_sync(ips, port=port, concurrency=concurrency, timeout=timeout, progress_callback=progress_callback)
 
 
-def scan_sync(ips: list[str], **kwargs) -> list[tuple[str, float]]:
-    """Synchronous wrapper for scan_ips."""
-    return asyncio.run(scan_ips(ips, **kwargs))
+def scan_sync(ips: list[str], port: int = 443, concurrency: int = 100, timeout: float = 2.0, progress_callback=None) -> list[tuple[str, float]]:
+    """Synchronous wrapper using Go DLL."""
+    from ..core import get_core_dll
+    import ctypes
+    dll = get_core_dll()
+    if not dll:
+        # Fallback if DLL fails to load (very unlikely now)
+        return []
+
+    if progress_callback:
+        progress_callback()
+
+    ips_str = ",".join(ips)
+    c_res_ptr = dll.ScanIPsC(ips_str.encode("utf-8"), port, concurrency, int(timeout * 1000))
+    if not c_res_ptr:
+        return []
+
+    c_res_str = ctypes.cast(c_res_ptr, ctypes.c_char_p).value
+    if not c_res_str:
+        return []
+
+    result_str = c_res_str.decode("utf-8")
+    if not result_str:
+        return []
+
+    results = []
+    for chunk in result_str.split(","):
+        if "|" in chunk:
+            ip, lat = chunk.split("|", 1)
+            results.append((ip, float(lat)))
+
+    return results
 
 
 # ─────────────────────────── Cache ───────────────────────────────

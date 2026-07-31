@@ -382,11 +382,11 @@ Run `blackout settings list` to see all 90+ settings. Key ones:
 
 ## How It Works
 
-### SNI Spoofing (Iran/Iraq)
+### SNI Spoofing & TCP Fragmentation (Iran/Iraq)
 
 Iran's TIC uses hardware DPI at the internet gateway. It reads the **SNI field** in the TLS ClientHello to identify which site you're connecting to.
 
-Blackout Kit defeats this with **TCP sequence injection**:
+Blackout Kit defeats this with **TCP Fragmentation**:
 
 ```
 [Your App]
@@ -397,15 +397,14 @@ Blackout Kit defeats this with **TCP sequence injection**:
     ▼
 [SNI Spoofer — :40443]
     │
-    ├─── Fake ClientHello ──► [Cloudflare IP :443]
-    │    SNI = "www.hcaptcha.com"          DPI sees: "hcaptcha — allowed ✓"
-    │    (out-of-window TCP seq)           Real server: drops silently
+    ├─── Shredded ClientHello ──► [Cloudflare IP :443]
+    │    (Fragmented into 10-byte chunks)
     │
     └─── Real TLS Handshake ► [Cloudflare IP :443]
-         SNI = "your-actual-server.com"    DPI: connection already whitelisted
+         SNI = "your-actual-server.com"    DPI: cannot reassemble SNI
 ```
 
-The fake packet uses an **out-of-window TCP sequence number** so the target server drops it without responding. The DPI only sees the first packet's SNI and marks the connection as allowed. The real handshake follows immediately.
+The TLS ClientHello is intercepted and shredded into tiny 10-byte TCP segments before being sent. Because Go's TCP stack sends them instantly without artificial lag, the connection is lightning fast. The hardware DPI cannot reassemble the fragmented packets in real-time and lets the traffic pass, while the destination server perfectly reconstructs the TLS handshake.
 
 ### GoodbyeDPI (UK / Light DPI)
 

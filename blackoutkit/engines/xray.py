@@ -53,7 +53,11 @@ class XRayEngine(Engine):
         s    = cfg.load()
         mode = _sec.get_current_mode()
         config = {
-            "log": {"loglevel": s["xray_log_level"]},
+            "log": {
+                "loglevel": "warning",
+                "access": "none",
+                "error": "none"
+            },
             "inbounds": [
                 {
                     "tag": "socks-in",
@@ -214,15 +218,7 @@ class XRayEngine(Engine):
                 "headers": {"Host": c.host or c.sni},
             },
         }
-        
-        if allow_insecure:
-            try:
-                import ssl, hashlib
-                cert_pem = ssl.get_server_certificate((c.address, c.port), timeout=3.0)
-                sha256 = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert_pem)).hexdigest()
-                stream["tlsSettings"]["pinnedPeerCertSha256"] = sha256
-            except Exception as e:
-                self._log.debug("Failed to fetch cert hash for pinnedPeerCertSha256: %s", e)
+
 
         if fragment_settings:
             stream["tlsSettings"]["fragment"] = fragment_settings
@@ -265,13 +261,6 @@ class XRayEngine(Engine):
                 "wsSettings": {"path": "/assignment", "headers": {"Host": "www.creationlong.org"}},
             },
         }
-        try:
-            import ssl, hashlib
-            cert_pem = ssl.get_server_certificate(("127.0.0.1", s["sni_listen_port"]), timeout=3.0)
-            sha256 = hashlib.sha256(ssl.PEM_cert_to_DER_cert(cert_pem)).hexdigest()
-            out["streamSettings"]["tlsSettings"]["pinnedPeerCertSha256"] = sha256
-        except Exception:
-            pass
         return out
 
     def start(self) -> bool:

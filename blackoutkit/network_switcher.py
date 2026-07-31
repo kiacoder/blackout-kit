@@ -251,7 +251,7 @@ def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
     except Exception as e:
         _log.debug("ipinfo.io lookup failed: %s", e)
 
-    _log.warning("All ISP lookup APIs failed — no internet or both endpoints unreachable.")
+    _log.debug("All ISP lookup APIs failed — no internet or both endpoints unreachable.")
     return None
 
 

@@ -91,6 +91,9 @@ extern GoInt StartSNIC(char* configPath);
 extern void StopSNIC(void);
 extern GoInt StartMHRVC(int port, char* ids);
 extern void StopMHRVC(void);
+extern GoInt StartNeighborC(int listenPort, int targetPort);
+extern void StopNeighborC(void);
+extern char* ScanIPsC(char* ipsC, int port, int concurrency, int timeoutMs);
 extern int StartWireGuardC(char* configPath, int socksPort);
 extern void StopWireGuardC(void);
 

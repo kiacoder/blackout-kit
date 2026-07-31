@@ -661,6 +661,95 @@ def get_execution_context() -> dict:
     }
 
 
+def check_ports_in_use() -> CheckResult:
+    """Detects if configured ports (SNI, XRay) are already bound by another app."""
+    import psutil
+    s = cfg.load()
+    ports_to_check = {
+        "SNI": s.get("sni_listen_port", 40443),
+        "XRay SOCKS": s.get("xray_socks_port", 10808),
+        "XRay HTTP": s.get("xray_http_port", 10809),
+    }
+    
+    in_use = {}
+    try:
+        conns = psutil.net_connections(kind="inet")
+        for conn in conns:
+            if conn.status == "LISTEN" and conn.laddr:
+                port = conn.laddr.port
+                for name, p in ports_to_check.items():
+                    if port == p:
+                        try:
+                            proc = psutil.Process(conn.pid)
+                            pname = proc.name()
+                        except Exception:
+                            pname = "Unknown"
+                        if "blackout" not in pname.lower():
+                            in_use[name] = (port, pname)
+    except Exception as e:
+        return CheckResult("Port Conflicts", True, f"Could not check: {e}")
+        
+    if not in_use:
+        return CheckResult("Port Conflicts", True, "OK (All ports free)")
+        
+    msg = ", ".join(f"{n} ({p}) by {proc}" for n, (p, proc) in in_use.items())
+    
+    def _fix_ports():
+        import random
+        for name, (port, _) in in_use.items():
+            new_port = random.randint(15000, 50000)
+            if name == "SNI": cfg.set_value("sni_listen_port", new_port)
+            elif name == "XRay SOCKS": cfg.set_value("xray_socks_port", new_port)
+            elif name == "XRay HTTP": cfg.set_value("xray_http_port", new_port)
+            
+    return CheckResult("Port Conflicts", False, f"Ports in use: {msg}", fixable=True, fix=_fix_ports)
+
+
+def check_tun_adapter() -> CheckResult:
+    """Verifies if a TUN/TAP virtual network adapter is installed."""
+    if sys.platform != "win32":
+        return CheckResult("TUN/TAP Adapter", True, "N/A")
+    try:
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-NetAdapter -Name '*TAP*', '*TUN*', '*WireGuard*' -ErrorAction SilentlyContinue"],
+            capture_output=True, text=True, errors="ignore"
+        )
+        if r.stdout.strip():
+            return CheckResult("TUN/TAP Adapter", True, "OK (Found virtual adapter)")
+    except Exception:
+        pass
+        
+    return CheckResult("TUN/TAP Adapter", False, "No TAP/TUN virtual adapter found. Routing engines (WireGuard/TUN) may fail.", fixable=False)
+
+
+def check_firewall_exclusion() -> CheckResult:
+    """Check if the Blackout bins directory is excluded from Windows Defender."""
+    if sys.platform != "win32":
+        return CheckResult("Windows Defender", True, "N/A")
+    try:
+        from .proxy_manager import is_admin
+        if not is_admin():
+            return CheckResult("Windows Defender", True, "OK (Skipped, needs admin)")
+            
+        r = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", "Get-MpPreference | Select-Object -ExpandProperty ExclusionPath"],
+            capture_output=True, text=True, errors="ignore"
+        )
+        bins_str = str(BINS_DIR).lower()
+        if bins_str in r.stdout.lower():
+            return CheckResult("Windows Defender", True, "OK (bins/ is excluded)")
+            
+        def _fix_exclusion():
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", f"Add-MpPreference -ExclusionPath '{BINS_DIR}'"],
+                capture_output=True
+            )
+            
+        return CheckResult("Windows Defender", False, "bins/ directory is not excluded from AV scans. False positives may occur.", fixable=True, fix=_fix_exclusion)
+    except Exception:
+        return CheckResult("Windows Defender", True, "OK (Could not verify)")
+
+
 # ──────────────────────────── Runner ─────────────────────────────
 
 def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
@@ -677,7 +766,10 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_config_security(),
         check_process_conflicts(),
         check_firewall_rules(),
+        check_firewall_exclusion(),
         check_windows_compat(),
+        check_tun_adapter(),
+        check_ports_in_use(),
         check_admin_privileges(),
         check_stale_proxy(),
     )

@@ -45,6 +45,13 @@ def get_core_dll():
         _dll.StartMHRVC.restype = ctypes.c_int
         _dll.StopMHRVC.argtypes = []
 
+        _dll.StartNeighborC.argtypes = [ctypes.c_int, ctypes.c_int]
+        _dll.StartNeighborC.restype = ctypes.c_int
+        _dll.StopNeighborC.argtypes = []
+
+        _dll.ScanIPsC.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+        _dll.ScanIPsC.restype = ctypes.c_void_p
+
         _dll.StartWireGuardC.argtypes = [ctypes.c_char_p, ctypes.c_int]
         _dll.StartWireGuardC.restype = ctypes.c_int
         _dll.StopWireGuardC.argtypes = []

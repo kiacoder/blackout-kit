@@ -58,43 +58,46 @@ class NeighborShareEngine(Engine):
         super().__init__()
         from .. import settings as cfg
         s = cfg.load()
-        self.proxy_port = proxy_port or s.get("xray_http_port", 10809)
+        self.target_port = proxy_port or s.get("xray_http_port", 10809)
+        self.listen_port = s.get("neighbor_proxy_port", 10809)
+        if self.listen_port == self.target_port:
+            # If the proxy is already bound to 0.0.0.0, binding again will fail.
+            # But the Go forwarder needs to bind on listen_port.
+            # If they match, we could either assume the existing proxy is accessible,
+            # or we offset the listen port. Let's offset it so the Go reverse proxy is always used.
+            self.listen_port = self.target_port + 1
+        
         self._running   = False
-        self._thread: threading.Thread | None = None
-
-    def _beacon_loop(self):
-        """Continuously send UDP multicast beacons until stopped."""
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
-            sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, 3)
-            payload = BEACON_PREFIX + str(self.proxy_port).encode()
-
-            while self._running:
-                try:
-                    sock.sendto(payload, (MCAST_GROUP, MCAST_PORT))
-                except Exception:
-                    pass
-                time.sleep(BEACON_INTERVAL)
-        except Exception:
-            pass
-        finally:
-            try:
-                sock.close()
-            except Exception:
-                pass
 
     def start(self) -> bool:
-        self._running = True
-        self._thread  = threading.Thread(target=self._beacon_loop, daemon=True)
-        self._thread.start()
-        return True
+        from ..core import get_core_dll
+        dll = get_core_dll()
+        if not dll:
+            self._log.error("Core DLL missing! Ensure blackout_core.dll is built.")
+            return False
+
+        self._log.info("Starting high-performance Go reverse proxy for LAN sharing...")
+        if dll.StartNeighborC(self.listen_port, self.target_port) == 0:
+            self._dll_stop_func = dll.StopNeighborC
+            self._running = True
+            self._log.info("Neighbor LAN sharing active on port %d (forwarding to %d)", self.listen_port, self.target_port)
+            return True
+        else:
+            self._log.error("Native DLL StartNeighborC failed")
+            return False
 
     def stop(self):
+        if hasattr(self, "_dll_stop_func") and self._dll_stop_func:
+            try:
+                self._dll_stop_func()
+            except Exception:
+                pass
+            self._dll_stop_func = None
         self._running = False
         super().stop()
 
     def is_running(self) -> bool:
-        return self._running and self._thread is not None and self._thread.is_alive()
+        return self._running
 
 
 class NeighborConnectEngine(Engine):

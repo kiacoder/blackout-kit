@@ -25,6 +25,7 @@ DEFAULTS = {
     # SNI Engine
     "sni_connect_ip":       "104.19.229.21",
     "sni_connect_port":     443,
+    "sni_custom_fakes":      [],         # Custom fake SNI hostnames to test
     "sni_fake_sni":         "www.hcaptcha.com",
     "sni_always_test_all_ips": False,   # If True, runs full TLS tests on all scanned IPs in auto mode
     "sni_custom_ips":       [],         # Custom user-defined IPs to test first
