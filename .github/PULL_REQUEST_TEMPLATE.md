@@ -10,6 +10,7 @@ Why is this change required? What problem does it solve?
 ## How Has This Been Tested?
 Please describe in detail how you tested your changes.
 Include details of your testing environment, and the tests you ran to see how your change affects other areas of the code, etc.
+Mention engine type(s), country profile assumptions, and whether you tested HTTP proxy, SOCKS proxy, daemon mode, or non-interactive fallback paths.
 
 ## Screenshots (if appropriate):
 

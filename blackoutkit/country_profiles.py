@@ -134,7 +134,7 @@ def get_profile(code: str) -> CountryProfile | None:
 
 
 def get_all_profiles() -> list[CountryProfile]:
-    """Return all 5 country profiles."""
+    """Return all configured country profiles."""
     return list(_PROFILES)
 
 

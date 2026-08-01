@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Fixed
+- **Engine selection consistency:** `xray` is now exposed consistently across CLI choices, daemon startup, and settings validation.
+- **QUIC engine routing:** `hysteria2` and `tuic` now use protocol-specific engine classes and refuse mismatched configs instead of silently picking the wrong sing-box config.
+- **Status accuracy:** `blackout status` now derives HTTP/SOCKS checks from the active engine instead of assuming XRay ports for every engine.
+- **Background health checks:** SOCKS-style proxy targets are normalized before heartbeat/health probes in foreground and daemon monitoring paths.
+- **Binary updater stability:** `blackout bins update` no longer references an undefined `installed` variable.
+- **CLI startup fallback:** missing-`rich` error handling in `blackout.py` now degrades to plain-text output without secondary crash loops in non-interactive mode.
+
+### Changed
+- **Theme setting behavior:** `color_theme` now takes effect in the CLI settings flow instead of being dead configuration.
+- **Docs consistency:** README, roadmap, and metadata text now reflect the actual engine set, country profiles, and current command surface.
+
 ## [1.1.0] - 2026-07-25
 ### Added
 - **Consolidated Test Suite:** Created a robust suite under `tests/` using `pytest`, testing VMess parsing (`_parse_vmess`), configuration saving, `is_sni_compatible`, and network utility diagnostics (`ping_stats`).

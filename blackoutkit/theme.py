@@ -19,7 +19,7 @@ from rich.text import Text
 from rich.theme import Theme
 from rich import box
 
-from . import __version__
+from . import __version__, settings as _cfg
 
 # ──────────────────────────────── Color detection ─────────────────────────────
 # Respect NO_COLOR spec (https://no-color.org/) and CI/non-TTY environments.
@@ -30,21 +30,46 @@ _no_color: bool = (
 )
 
 # ─────────────────────────────────── Theme ────────────────────────────────────
-BLACKOUT_THEME = Theme({
-    "info":         "bold cyan",
-    "success":      "bold green",
-    "warning":      "bold yellow",
-    "error":        "bold red",
-    "engine":       "bold magenta",
-    "muted":        "dim white",
-    "accent":       "bold red",
-    "heading":      "bold white",
-    "panel.title":  "bold white",
-    "panel.border": "cyan",
-    "table.header": "bold cyan",
-})
+_THEME_ACCENTS = {
+    "red": "red",
+    "blue": "blue",
+    "green": "green",
+    "purple": "magenta",
+}
 
-console = Console(theme=BLACKOUT_THEME, no_color=_no_color)
+
+def build_theme(theme_name: str | None = None) -> Theme:
+    name = (theme_name or _cfg.load().get("color_theme", "red")).lower()
+    accent = _THEME_ACCENTS.get(name, _THEME_ACCENTS["red"])
+    return Theme({
+        "info":         f"bold {accent}",
+        "success":      "bold green",
+        "warning":      "bold yellow",
+        "error":        "bold red",
+        "engine":       f"bold {accent}",
+        "muted":        "dim white",
+        "accent":       f"bold {accent}",
+        "heading":      "bold white",
+        "panel.title":  "bold white",
+        "panel.border": accent,
+        "table.header": f"bold {accent}",
+    })
+
+
+console = Console(theme=build_theme(), no_color=_no_color)
+
+_theme_override_active = False
+
+
+def refresh_console_theme() -> None:
+    global _theme_override_active
+    if _theme_override_active:
+        try:
+            console.pop_theme()
+        except Exception:
+            pass
+    console.push_theme(build_theme())
+    _theme_override_active = True
 
 # ─────────────────────────────────── Banner ───────────────────────────────────
 BANNER = f"""[bold red]

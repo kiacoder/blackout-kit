@@ -8,7 +8,6 @@ import sys
 import time
 from pathlib import Path
 
-from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
     Progress, SpinnerColumn, BarColumn,
@@ -16,24 +15,23 @@ from rich.progress import (
 )
 from rich.table import Table
 from rich.live import Live
-from rich.columns import Columns
 from rich import box
 
 from . import __version__
-from .theme import console, print_banner, make_table, latency_color, engine_badge, BLACKOUT_THEME
+from .theme import console, print_banner, make_table, latency_color, refresh_console_theme
 from . import settings as cfg
 from . import daemon
 from .engines.sni     import SNIEngine
 from .engines.xray    import XRayEngine
-from .engines.singbox_proxy import SingBoxProxyEngine
+from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
 from .engines.gdpi    import GoodbyeDPIEngine
 from .engines.psiphon import PsiphonEngine
 from .proxy_manager   import set_system_proxy, clear_system_proxy, get_proxy_status
-from .scanner.ip_scanner  import generate_cloudflare_ips, scan_ips, check_ip, CLOUDFLARE_RANGES, save_cache
-from .scanner.proxy_tester import test_direct, test_http_proxy, test_tcp_port, full_connectivity_report
+from .scanner.ip_scanner  import generate_cloudflare_ips, scan_ips, save_cache
+from .scanner.proxy_tester import test_direct, test_http_proxy, test_socks5_proxy, test_tcp_port
 from .config.manager  import (
-    load_configs, save_configs, add_config, remove_config,
-    parse_v2ray_uri, import_and_merge,
+    load_configs, add_config, remove_config,
+    import_and_merge,
 )
 from . import tools as net_tools
 from . import doctor as doc
@@ -57,6 +55,7 @@ from . import country_profiles as cp
 ENGINES = {
     # Core bypass engines
     "sni":          (SNIEngine, XRayEngine),
+    "xray":         (XRayEngine,),
     "gdpi":         (GoodbyeDPIEngine,),
     "psiphon":      (PsiphonEngine,),
     "warp":         (WARPEngine,),
@@ -71,13 +70,34 @@ ENGINES = {
     # Domain fronting — no binary needed, pure Python
     "appsscript":   (AppsScriptEngine,),
     # QUIC bypass engines
-    "hysteria2":    (SingBoxProxyEngine,),
-    "tuic":         (SingBoxProxyEngine,),
+    "hysteria2":    (Hysteria2Engine,),
+    "tuic":         (TuicEngine,),
     # Multi-hop stacks
     "legend":       (TorEngine, SNIEngine, XRayEngine),
 }
 
-ALL_ENGINE_CHOICES = list(ENGINES.keys()) + ["auto"]
+ALL_ENGINE_CHOICES = ["auto", *ENGINES.keys()]
+VALID_COUNTRY_CODES = tuple(sorted(cp._BY_CODE.keys()))
+EXTRA_ADMIN_ENGINES = {"gdpi", "warp", "tun"}
+AUTO_SCAN_ENGINES = {"sni"}
+AUTO_DOWNLOAD_DEPENDENCIES = {
+    "sni": ["xray", "sni-spoofing"],
+    "xray": ["xray"],
+    "gdpi": ["goodbyedpi"],
+    "mhrv": ["mhrv"],
+    "legend": ["xray", "sni-spoofing"],
+    "wireguard": ["wireguard"],
+    "softether": ["softether"],
+    "tor": ["tor"],
+    "openvpn": ["openvpn"],
+    "warp": ["warp_dll"],
+    "psiphon": ["warp_dll"],
+    "tun": ["sing-box"],
+    "hysteria2": [],
+    "tuic": [],
+    "ikev2": [],
+    "appsscript": [],
+}
 
 # Snapshot of settings before --iran changes were applied.
 # Restored by cmd_start() cleanup so the Iran profile doesn't persist permanently.
@@ -110,23 +130,7 @@ def _start_engine_stack(name: str):
     """Instantiate and start all engines in a stack. Returns running list."""
     from . import downloader as dl
 
-    stack_deps = {
-        "sni":        ["xray", "sni-spoofing"],
-        "gdpi":       ["goodbyedpi"],
-        "mhrv":       ["mhrv"],
-        "legend":     ["xray", "sni-spoofing"],
-        "wireguard":  ["wireguard"],
-        "softether":  ["softether"],
-        "tor":        ["tor"],
-        "openvpn":    ["openvpn"],
-        "warp":       ["warp_dll"],
-        "psiphon":    ["warp_dll"],
-        "tun":        ["sing-box"],
-        "hysteria2":  [],
-        "tuic":       [],
-    }
-
-    deps = stack_deps.get(name, [])
+    deps = AUTO_DOWNLOAD_DEPENDENCIES.get(name, [])
     if deps:
         installed = dl.check_installed()
         missing = [k for k in deps if not installed.get(k, False)]
@@ -251,7 +255,7 @@ def cmd_country(args):
         if not profile:
             console.print(
                 f"[error]Unknown country code: {code}[/error]  "
-                "Valid codes: IR, US, GB, CN, IQ"
+                f"Valid codes: {', '.join(VALID_COUNTRY_CODES)}"
             )
             return
         cfg.set_value("country", code)
@@ -273,7 +277,7 @@ def cmd_country(args):
         console.print(Panel(
             "  [warning]Could not detect country.[/warning]\n\n"
             "  [dim]Set manually: [bold]blackout country set IR[/bold][/dim]\n"
-            "  [dim]Valid codes:  IR  US  GB  CN  IQ[/dim]",
+            f"  [dim]Valid codes: {'  '.join(VALID_COUNTRY_CODES)}[/dim]",
             title="[bold]Country Profile[/bold]",
             border_style="yellow",
             width=56,
@@ -441,9 +445,35 @@ def cmd_test(args):
     console.print(table)
 
 
+def _resolve_engine_name(args, default: str = "sni") -> str:
+    pos_engine = getattr(args, "pos_engine", None)
+    flag_engine = getattr(args, "engine", None)
+    selected = pos_engine or flag_engine or default
+    return default if selected == "auto" else selected
+
+
+def _health_check_target(proxy_info):
+    if not proxy_info:
+        return None
+    host, port = proxy_info
+    if host.startswith("socks="):
+        host = host.split("=", 1)[1]
+    return (host, port)
+
+
 def cmd_start(args):
-    engine_name = args.engine if args.engine != "auto" else "sni"
+    engine_name = _resolve_engine_name(args)
     background  = getattr(args, "background", False)
+    proxy_info = None
+    health_target = None
+    s = cfg.load()
+
+    import ctypes
+    is_admin = False
+    try:
+        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        pass
 
     if background:
         try:
@@ -462,7 +492,45 @@ def cmd_start(args):
         return
 
     # ── Foreground mode ──
-    s = cfg.load()
+    if sys.platform == "win32" and not is_admin and engine_name in EXTRA_ADMIN_ENGINES:
+        console.print("[warning]Elevating to Administrator... Please accept the UAC prompt.[/warning]")
+        try:
+            pid = daemon.start(engine_name)
+            if not pid:
+                console.print("[error]Failed to start daemon (UAC prompt declined or timed out).[/error]")
+                return
+            console.print(f"  [success]✓ {engine_name}[/success] running in background (PID {pid})")
+            console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
+            
+            # Tail daemon log
+            with open(daemon.LOG_FILE, "r", encoding="utf-8") as f:
+                f.seek(0, 2)
+                try:
+                    while daemon.get_pid() is not None:
+                        line = f.readline()
+                        if not line:
+                            time.sleep(0.1)
+                            continue
+                        # Print pretty log
+                        if "[ERROR]" in line:
+                            console.print(f"[red]{line.strip()}[/red]")
+                        elif "[WARNING]" in line:
+                            console.print(f"[yellow]{line.strip()}[/yellow]")
+                        elif "[success]" in line:
+                            console.print(f"[green]{line.strip()}[/green]")
+                        else:
+                            console.print(f"[dim]{line.strip()}[/dim]")
+                except KeyboardInterrupt:
+                    pass
+                finally:
+                    console.print("\n[warning]Stopping...[/warning]")
+                    daemon.stop()
+            return
+        except RuntimeError as e:
+            console.print(f"[error]{e}[/error]")
+            return
+
+    # Normal foreground mode (admin or no elevation needed)
     engines = _start_engine_stack(engine_name)
 
     if not engines:
@@ -478,6 +546,7 @@ def cmd_start(args):
             p_host, p_port = proxy_info
             if set_system_proxy(p_host, p_port):
                 console.print(f"  [success]✓ System proxy set[/success] → {p_host}:{p_port}")
+            health_target = _health_check_target(proxy_info)
         else:
             console.print("  [info]Network-level engine — no system proxy needed[/info]")
 
@@ -492,11 +561,10 @@ def cmd_start(args):
             now = time.monotonic()
             if now - last_check > 10.0:
                 last_check = now
-                if s.get("auto_set_proxy") and proxy_info:
+                if s.get("auto_set_proxy") and health_target:
                     import socket
                     try:
-                        # Fast check to see if local proxy port is still accepting connections
-                        with socket.create_connection(proxy_info, timeout=2.0):
+                        with socket.create_connection(health_target, timeout=2.0):
                             pass
                     except Exception:
                         console.print("\n[warning]⚠ Proxy port stopped responding. Check your internet connection.[/warning]")
@@ -556,6 +624,8 @@ def cmd_emergency(args):
     default_order = em_profile.engine_order if em_profile else ["sni", "gdpi", "psiphon"]
     order         = s.get("engine_order") or default_order
     active        = []
+    health_target = None
+    proxy_info = None
 
     for ename in order:
         engines = _start_engine_stack(ename)
@@ -585,6 +655,7 @@ def cmd_emergency(args):
             p_host, p_port = proxy_info
             if set_system_proxy(p_host, p_port):
                 console.print(f"[success]✓ System proxy set[/success] → {p_host}:{p_port}")
+            health_target = _health_check_target(proxy_info)
         else:
             console.print("  [info]Network-level engine — no system proxy needed[/info]")
 
@@ -598,10 +669,10 @@ def cmd_emergency(args):
             now = time.monotonic()
             if now - last_check > 10.0:
                 last_check = now
-                if s.get("auto_set_proxy") and proxy_info:
+                if s.get("auto_set_proxy") and health_target:
                     import socket
                     try:
-                        with socket.create_connection(proxy_info, timeout=2.0):
+                        with socket.create_connection(health_target, timeout=2.0):
                             pass
                     except Exception:
                         console.print("\n[warning]⚠ Proxy port stopped responding. Check your internet connection.[/warning]")
@@ -623,13 +694,14 @@ def cmd_status(args):
 
     console.print()
 
+    active_engine = state.get("engine", "unknown") if state else "unknown"
+    started = state.get("started", "-") if state else "-"
+
     # Daemon panel
     if pid:
-        engine_name = state.get("engine", "unknown") if state else "unknown"
-        started     = state.get("started", "-") if state else "-"
         daemon_info = (
             f"[success]● Running[/success]  (PID {pid})\n"
-            f"  Engine:  [bold]{engine_name}[/bold]\n"
+            f"  Engine:  [bold]{active_engine}[/bold]\n"
             f"  Started: {started}\n"
             f"  Log:     [dim]{daemon.LOG_FILE}[/dim]"
         )
@@ -647,7 +719,24 @@ def cmd_status(args):
 
     # Connectivity
     console.print("\n[muted]Running connectivity checks...[/muted]")
-    report = full_connectivity_report(s["xray_http_port"], s["xray_socks_port"])
+    report = {"direct": test_direct()[0]}
+
+    proxy_target = cfg.get_engine_proxy_details(active_engine, s) if pid else None
+    http_port = None
+    socks_port = None
+    if proxy_target:
+        host, port = proxy_target
+        if isinstance(host, str) and host.startswith("socks="):
+            socks_port = port
+        else:
+            http_port = port
+            if active_engine in ("sni", "xray", "legend"):
+                socks_port = s.get("xray_socks_port", 10808)
+
+    report["http_proxy_port_open"] = test_tcp_port("127.0.0.1", http_port) is not None if http_port else False
+    report["socks_proxy_port_open"] = test_tcp_port("127.0.0.1", socks_port) is not None if socks_port else False
+    report["http_proxy_latency"] = test_http_proxy(proxy_port=http_port) if http_port else None
+    report["socks_proxy_latency"] = test_socks5_proxy(proxy_port=socks_port) if socks_port else None
 
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
     table.add_column(style="dim", width=22)
@@ -659,11 +748,14 @@ def cmd_status(args):
     def lat(ms):
         return latency_color(ms) if ms is not None else "[error]✗ unreachable[/error]"
 
+    http_label = f"HTTP proxy port{f' ({http_port})' if http_port else ''}"
+    socks_label = f"SOCKS proxy port{f' ({socks_port})' if socks_port else ''}"
+    inactive_label = "[dim]n/a (daemon off)[/dim]" if not pid else "[dim]n/a[/dim]"
     table.add_row("Direct internet",       ck(report["direct"]))
-    table.add_row("HTTP proxy port",        ck(report["http_proxy_port_open"]))
-    table.add_row("SOCKS proxy port",       ck(report["socks_proxy_port_open"]))
-    table.add_row("HTTP proxy latency",     lat(report["http_proxy_latency"]))
-    table.add_row("SOCKS5 proxy latency",   lat(report["socks_proxy_latency"]))
+    table.add_row(http_label,               ck(report["http_proxy_port_open"]) if http_port else inactive_label)
+    table.add_row(socks_label,              ck(report["socks_proxy_port_open"]) if socks_port else inactive_label)
+    table.add_row("HTTP proxy latency",    lat(report["http_proxy_latency"]) if http_port else inactive_label)
+    table.add_row("SOCKS5 proxy latency",  lat(report["socks_proxy_latency"]) if socks_port else inactive_label)
 
     console.print(Panel(table, title="[bold]Connectivity[/bold]", border_style="cyan"))
 
@@ -768,6 +860,7 @@ def cmd_config(args):
 
 
 def cmd_settings(args):
+    refresh_console_theme()
     s = cfg.load()
 
     if not hasattr(args, "settings_command") or not args.settings_command:
@@ -799,6 +892,8 @@ def cmd_settings(args):
             else:
                 value = args.value
             cfg.set_value(args.key, value)
+            if args.key == "color_theme":
+                refresh_console_theme()
             console.print(f"[success]✓ {args.key} = {value}[/success]")
         except (KeyError, ValueError) as e:
             console.print(f"[error]{e}[/error]")
@@ -1762,6 +1857,7 @@ def cmd_bins(args):
 
     # ── update ────────────────────────────────────────────────────
     elif subcmd == "update":
+        installed = dl.check_installed()
         to_update = [
             b for b in dl.list_available()
             if (b.github_repo or b.key in ("tor", "openvpn")) and installed.get(b.key)
@@ -2036,9 +2132,12 @@ def cmd_menu_select_engine():
     options = [
         ("auto",       "Smart Auto-Select (recommended, uses country profile)"),
         ("sni",        "SNI Packet Injection + XRay (best for Iran)"),
+        ("xray",       "XRay proxy core only (best manual option for China)"),
         ("gdpi",       "GoodbyeDPI (Windows-only passive DPI bypass)"),
         ("psiphon",    "Psiphon VPN (multi-protocol VPN fallback)"),
         ("warp",       "Cloudflare WARP (clean residential IP)"),
+        ("hysteria2",  "Hysteria2 QUIC proxy via sing-box"),
+        ("tuic",       "TUIC QUIC proxy via sing-box"),
         ("legend",     "Legend Mode (Tor + SNI + XRay chained)"),
         ("appsscript", "Google Apps Script HTTP Relay (ultimate fallback)"),
         ("mhrv",       "mhrv-rs transparent MITM proxy"),
@@ -2397,8 +2496,8 @@ def main():
     # ── country ──
     ctr_p   = sub.add_parser("country", help="Show or set active country profile")
     ctr_sub = ctr_p.add_subparsers(dest="country_command")
-    ctr_set = ctr_sub.add_parser("set",   help="Pin country code (IR/US/GB/CN/IQ)")
-    ctr_set.add_argument("code", help="ISO code: IR, US, GB, CN, IQ")
+    ctr_set = ctr_sub.add_parser("set",   help=f"Pin country code ({'/'.join(VALID_COUNTRY_CODES)})")
+    ctr_set.add_argument("code", help=f"ISO code: {', '.join(VALID_COUNTRY_CODES)}")
     ctr_sub.add_parser("reset", help="Remove pin — return to auto-detect")
 
     # ── help ──
@@ -2443,7 +2542,7 @@ def main():
         "fix":         cmd_fix,
         "scan":        cmd_scan,
         "test":        cmd_test,
-        "start":       cmd_connect,
+        "start":       cmd_start,
         "stop":        cmd_stop,
         "disconnect":  cmd_stop,
         "emergency":   cmd_emergency,

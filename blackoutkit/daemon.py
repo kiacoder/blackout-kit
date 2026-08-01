@@ -38,7 +38,11 @@ def get_pid() -> int | None:
     if not PID_FILE.exists():
         return None
     try:
-        pid = int(PID_FILE.read_text().strip())
+        raw = PID_FILE.read_text(encoding="utf-8-sig").strip()
+        raw = raw.replace("\x00", "").strip()
+        if not raw:
+            return None
+        pid = int(raw)
         if is_process_alive(pid):
             return pid
         PID_FILE.unlink(missing_ok=True)
@@ -86,34 +90,37 @@ def start(engine_name: str) -> int:
             cmd = [sys.executable, "_daemon_run", "--engine", engine_name]
         else:
             entry = Path(__file__).parent.parent / "blackout.py"
-            cmd = [sys.executable, str(entry), "_daemon_run", "--engine", engine_name]
+            exe = sys.executable
+            exe_w = exe.replace("python.exe", "pythonw.exe")
+            if os.path.exists(exe_w):
+                exe = exe_w
+            cmd = [exe, str(entry), "_daemon_run", "--engine", engine_name]
 
-        log_handle = open(CRASH_LOG, "w", encoding="utf-8")
-
-        kwargs = {
-            "stdout": log_handle,
-            "stderr": subprocess.STDOUT,
-            "close_fds": True,
-        }
-
-        if sys.platform == "win32":
-            DETACHED      = 0x00000008  # DETACHED_PROCESS
-            NO_WINDOW     = 0x08000000  # CREATE_NO_WINDOW
-            NEW_GROUP     = 0x00000200  # CREATE_NEW_PROCESS_GROUP
-            kwargs["creationflags"] = DETACHED | NO_WINDOW | NEW_GROUP
-        else:
-            kwargs["start_new_session"] = True
-
-        proc = subprocess.Popen(cmd, **kwargs)
-
-        PID_FILE.write_text(str(proc.pid))
-        STATE_FILE.write_text(json.dumps({
-            "engine":    engine_name,
-            "pid":       proc.pid,
-            "started":   time.strftime("%Y-%m-%d %H:%M:%S"),
-        }))
-
-        return proc.pid
+        PID_FILE.unlink(missing_ok=True)
+        STATE_FILE.unlink(missing_ok=True)
+        
+        ps_cmd = (
+            f"$p = Start-Process -FilePath '{cmd[0]}' "
+            f"-ArgumentList '{' '.join(cmd[1:])}' -WorkingDirectory '{os.getcwd()}' -Verb RunAs -WindowStyle Hidden -PassThru; "
+            f"if ($p) {{ $p.Id | Out-File -FilePath '{PID_FILE}' -Encoding UTF8; "
+            f"'{{\"engine\":\"{engine_name}\",\"pid\":' + $p.Id.ToString() + ',\"started\":\"' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '\"}}' | Out-File -FilePath '{STATE_FILE}' -Encoding UTF8 }}"
+        )
+        
+        subprocess.run(
+            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", ps_cmd],
+            creationflags=0x08000000
+        )
+        
+        # Wait for PID_FILE (give user time to click UAC)
+        for _ in range(600):
+            if PID_FILE.exists():
+                break
+            time.sleep(0.1)
+            
+        pid = get_pid()
+        if pid:
+            return pid
+        return 0
     finally:
         try:
             (APP_DATA_DIR / "daemon.start.lock").rmdir()
@@ -131,6 +138,9 @@ def stop() -> bool:
         # Check for orphan lock file just in case
         LOCK_FILE.unlink(missing_ok=True)
         return False
+
+    # Create a shutdown request file so the daemon gracefully exits
+    (APP_DATA_DIR / "daemon.stop.request").touch(exist_ok=True)
 
     try:
         import psutil
@@ -165,7 +175,9 @@ def get_state() -> dict | None:
     if not STATE_FILE.exists():
         return None
     try:
-        data = json.loads(STATE_FILE.read_text())
+        raw = STATE_FILE.read_text(encoding="utf-8-sig").strip()
+        raw = raw.replace("\x00", "").strip()
+        data = json.loads(raw)
         # Verify that the PID in the state file is actually the one in PID_FILE
         # and that it is still alive.
         active_pid = get_pid()
@@ -215,6 +227,7 @@ def run_daemon_loop(engine_name: str):
     from .engines.wireguard import WireGuardEngine
     from .engines.openvpn   import OpenVPNEngine
     from .engines.softether import SoftEtherEngine
+    from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
     from . import settings as cfg
     from . import security as sec
     from .proxy_manager import set_system_proxy, clear_system_proxy
@@ -251,6 +264,7 @@ def run_daemon_loop(engine_name: str):
 
     ENGINE_MAP = {
         "sni":        lambda: (SNIEngine(), XRayEngine()),
+        "xray":       lambda: (XRayEngine(),),
         "gdpi":       lambda: (GoodbyeDPIEngine(),),
         "psiphon":    lambda: (PsiphonEngine(),),
         "warp":       lambda: (WARPEngine(),),
@@ -261,9 +275,10 @@ def run_daemon_loop(engine_name: str):
         "wireguard":  lambda: (WireGuardEngine(),),
         "openvpn":    lambda: (OpenVPNEngine(),),
         "softether":  lambda: (SoftEtherEngine(),),
+        "hysteria2":  lambda: (Hysteria2Engine(),),
+        "tuic":       lambda: (TuicEngine(),),
         "legend":     lambda: (TorEngine(), SNIEngine(), XRayEngine()),
     }
-
     s = cfg.load()
 
     def try_start_engines(name: str) -> list:
@@ -357,11 +372,17 @@ def run_daemon_loop(engine_name: str):
             if _shutdown_requested:
                 break
 
+            if (APP_DATA_DIR / "daemon.stop.request").exists():
+                log.info("Shutdown request received from CLI. Exiting cleanly.")
+                (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
+                break
+
             # Stability check: Ensure we still own the PID file.
             # If someone else started a daemon, we should exit to avoid conflicts.
             try:
                 if PID_FILE.exists():
-                    current_pid = int(PID_FILE.read_text().strip())
+                    current_raw = PID_FILE.read_text(encoding="utf-8-sig").strip().replace("\x00", "")
+                    current_pid = int(current_raw) if current_raw else 0
                     if current_pid != my_pid:
                         log.warning(f"PID file changed (new PID {current_pid}). Exiting to avoid conflict.")
                         break
@@ -417,6 +438,8 @@ def run_daemon_loop(engine_name: str):
                 pinfo = cfg.get_engine_proxy_details(active_engine_name, s)
             if pinfo:
                 p_host, p_port = pinfo
+                if isinstance(p_host, str) and p_host.startswith("socks="):
+                    p_host = p_host.split("=", 1)[1]
                 from .scanner.proxy_tester import test_tcp_port
                 latency = test_tcp_port(p_host, p_port)
             else:

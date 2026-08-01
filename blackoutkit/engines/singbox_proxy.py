@@ -3,26 +3,41 @@ Blackout Kit - SingBox Proxy Engine (Hysteria2 & TUIC).
 Uses sing-box library inside blackout_core.dll.
 """
 import json
-import time
-from pathlib import Path
+
 from .base import Engine
 from .. import settings as cfg
+
 
 class SingBoxProxyEngine(Engine):
     name = "singbox_proxy"
     description = "SingBox Proxy Core — runs Hysteria2 / TUIC natively"
+    supported_protocols = ("hysteria2", "tuic")
 
-    def __init__(self, proxy_config=None, socks_port: int | None = None):
+    def __init__(self, proxy_config=None, socks_port: int | None = None, protocol: str | None = None):
         super().__init__()
         s = cfg.load()
+        self.requested_protocol = (protocol or getattr(self, "protocol", None) or "").lower() or None
+        if self.requested_protocol and self.requested_protocol not in self.supported_protocols:
+            raise ValueError(
+                f"Unsupported sing-box protocol '{self.requested_protocol}'. "
+                f"Expected one of: {', '.join(self.supported_protocols)}"
+            )
         self.proxy_config = proxy_config
+        if self.proxy_config and self.requested_protocol and self.proxy_config.protocol != self.requested_protocol:
+            raise ValueError(
+                f"Proxy config protocol '{self.proxy_config.protocol}' does not match requested "
+                f"protocol '{self.requested_protocol}'."
+            )
         if not self.proxy_config:
             try:
                 from ..config.manager import load_configs
                 for c in load_configs():
-                    if c.protocol in ("hysteria2", "tuic"):
-                        self.proxy_config = c
-                        break
+                    if c.protocol not in self.supported_protocols:
+                        continue
+                    if self.requested_protocol and c.protocol != self.requested_protocol:
+                        continue
+                    self.proxy_config = c
+                    break
             except Exception:
                 pass
         self.socks_port = socks_port or s["xray_socks_port"]
@@ -31,7 +46,7 @@ class SingBoxProxyEngine(Engine):
     def _generate_config(self) -> dict:
         pc = self.proxy_config
         outbound = {
-            "type": pc.protocol,  # "hysteria2" or "tuic"
+            "type": pc.protocol,
             "tag": "proxy",
             "server": pc.address,
             "server_port": pc.port,
@@ -39,7 +54,7 @@ class SingBoxProxyEngine(Engine):
                 "enabled": True,
                 "server_name": pc.sni or pc.address,
                 "insecure": pc.insecure,
-            }
+            },
         }
 
         if pc.protocol == "hysteria2":
@@ -59,21 +74,44 @@ class SingBoxProxyEngine(Engine):
                     "tag": "socks-in",
                     "listen": "127.0.0.1",
                     "listen_port": self.socks_port,
-                    "sniff": True
+                    "sniff": True,
                 }
             ],
             "outbounds": [
                 outbound,
-                {"type": "direct", "tag": "direct"}
-            ]
+                {"type": "direct", "tag": "direct"},
+            ],
         }
 
     def start(self) -> bool:
+        if not self.proxy_config:
+            wanted = self.requested_protocol or "hysteria2/tuic"
+            self._log.error("No %s config found. Add one with 'blackout config add <uri>'.", wanted)
+            return False
+
+        if self.proxy_config.protocol not in self.supported_protocols:
+            self._log.error(
+                "Unsupported config protocol '%s' for sing-box proxy engine.",
+                self.proxy_config.protocol,
+            )
+            return False
+
+        if self.requested_protocol and self.proxy_config.protocol != self.requested_protocol:
+            self._log.error(
+                "Selected config protocol '%s' does not match requested '%s'.",
+                self.proxy_config.protocol,
+                self.requested_protocol,
+            )
+            return False
+
+        if not self.check_port_free(self.socks_port):
+            return False
+
         self._log.info(
             "Starting %s (%s)  socks_port=%d",
             self.proxy_config.protocol.upper(),
             self.proxy_config.display_name(),
-            self.socks_port
+            self.socks_port,
         )
 
         config = self._generate_config()
@@ -95,6 +133,18 @@ class SingBoxProxyEngine(Engine):
                 return False
             self._log.info("%s ready  socks5://127.0.0.1:%d", self.proxy_config.protocol.upper(), self.socks_port)
             return True
-        else:
-            self._log.error("Native DLL StartSingBoxC failed")
-            return False
+
+        self._log.error("Native DLL StartSingBoxC failed")
+        return False
+
+
+class Hysteria2Engine(SingBoxProxyEngine):
+    name = "hysteria2"
+    description = "Hysteria2 QUIC proxy via sing-box"
+    protocol = "hysteria2"
+
+
+class TuicEngine(SingBoxProxyEngine):
+    name = "tuic"
+    description = "TUIC QUIC proxy via sing-box"
+    protocol = "tuic"

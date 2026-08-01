@@ -35,8 +35,8 @@ Items marked ✅ are implemented. Ranks: Common → Uncommon → Rare → Epic �
 | SoftEther (real monitoring) | ✅ Done | Epic | vpncmd AccountStatusGet polling |
 | mhrv (Rust MITM proxy) | ✅ Done | Rare | HTTP :8085 / SOCKS :8086 |
 | Google Apps Script relay | ✅ Done | Rare | Domain-fronts through script.google.com, 20 relay IDs, pure Python |
-| **Hysteria 2** | 🔜 v1.1 | — | QUIC-based, extremely hard to block in Iran — HIGH PRIORITY |
-| **TUIC** | 🔜 v1.1 | — | QUIC-based low-latency — HIGH PRIORITY |
+| **Hysteria 2** | ✅ Done | Rare | QUIC-based proxy via sing-box, selectable as `hysteria2` |
+| **TUIC** | ✅ Done | Rare | Low-latency QUIC tunnel via sing-box, selectable as `tuic` |
 | **XRay REALITY protocol** | 🔜 v1.2 | — | Mimics legitimate HTTPS to microsoft.com/etc perfectly. Undetectable. |
 | **ShadowTLS** | 🔜 v1.2 | — | Makes traffic look like real TLS to a real server |
 | **ShadowSocks + Obfs4** | 🔜 v1.2 | — | Via sing-box |
@@ -58,7 +58,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Fake SNI (www.hcaptcha.com / auth.vercel.com) | ✅ Done | Rare | DPI sees whitelisted domain |
 | ArvanCloud / Aparat CDN SNI camouflage | 🔜 v1.1 | — | Iran can't block ArvanCloud (their own CDN), spoof SNI to look like arvancloud.ir |
 | **TLS Record-Layer Fragmentation** | 🔜 v1.1 | — | Fragment at TLS layer, NOT TCP — overwhelms Iran's DPI reassembly. XRay `fragment` mode. HIGH PRIORITY |
-| **`blackout connect --iran` profile** | 🔜 v1.1 | — | One-command: sets arvancloud.ir SNI + firefox fingerprint + fragment mode |
+| **`blackout connect --iran` profile** | ✅ Done | Rare | One-command Iran profile: ArvanCloud SNI + firefox fingerprint + private mode + existing fragment settings |
 | **DoH bootstrapping at startup** | 🔜 v1.1 | — | Use 1.1.1.1/dns-query BEFORE connecting so DNS poisoning can't intercept server lookup |
 | Active probing resistance | 🔜 v1.2 | — | Respond correctly to probes so firewall can't fingerprint the server |
 | Iran White List mode survival (NIN) | 🔜 v1.2 | — | Fall back to ArvanCloud/domestic CDN fronting when NIN is active |
@@ -100,7 +100,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Ping + traceroute | ✅ Done | Uncommon | TCP-based |
 | Hotspot sharing | ✅ Done | Uncommon | Windows Mobile Hotspot toggle |
 | ICS (share VPN over hotspot) | ✅ Done | Uncommon | Internet Connection Sharing |
-| **`blackout fix` shorthand** | 🔜 v1.1 | — | One command that runs ALL repair scripts and shows live checklist |
+| **`blackout fix` shorthand** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
 | **TUN/TAP / Wintun driver reset** | 🔜 v1.1 | — | Force restart virtual adapter when TUN crashes (DPI connection drops can lock it) |
 | **Stale routing table flush** | 🔜 v1.1 | — | `route -f` to clear zombie proxy routes left after crash |
 | **DNS hijack recovery** | 🔜 v1.1 | — | Detect if DNS is still pointing to dead 127.0.0.1, auto-restore |
@@ -122,7 +122,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | ASCII banner + spinner animations | ✅ Done | Rare | On startup and long operations |
 | argparse-based commands | ✅ Done | Uncommon | Works but not beginner-friendly |
 | **Typer migration** | 🔜 v1.1 | — | Replace argparse with Typer: type-safe, auto-help, cleaner code |
-| **Interactive dashboard (Zero-Flag mode)** | 🔜 v1.1 | — | `blackout` with no args = numbered menu (Connect / Fix / Status / Exit) |
+| **Interactive dashboard (Zero-Flag mode)** | ✅ Done | Rare | `blackout` with no args opens a keyboard-driven menu for common actions |
 | **`blackout connect` smart command** | 🔜 v1.1 | — | Auto-selects best engine + connects. One word, done. |
 | **`blackout connect --iran`** | 🔜 v1.1 | — | Forces TIC evasion profile: arvancloud.ir SNI + TLS fragment + firefox fingerprint |
 | **`blackout fix`** | 🔜 v1.1 | — | One command runs ALL network repair scripts with live Rich checklist |

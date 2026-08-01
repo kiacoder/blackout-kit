@@ -98,7 +98,7 @@ We appreciate reporters who respect this window.
 - We prioritize upgrading `golang.org/x/crypto` (the primary attack surface,
   a transitive dep of xray-core, sing-box, and warp-plus)
 
-## Recent Security Improvements (v1.1.0)
+## Recent Security Improvements (v1.1.x)
 
 - **Kill switch rewritten**: old `localport`-based rules never matched proxy
   outbound traffic (proxy uses random source ports). Now uses per-process

@@ -115,13 +115,23 @@ def _first_run_hint():
 # ──────────────────────────── Main ───────────────────────────────────────────
 
 if __name__ == "__main__":
+    import os
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
+
     # 1. Compatibility check — print warnings but do not abort
     compat_warnings = _check_compat()
     if compat_warnings:
-        from rich.console import Console
-        _con = Console(stderr=True)
-        for w in compat_warnings:
-            _con.print(f"[yellow]Warning:[/yellow] {w}")
+        try:
+            from rich.console import Console
+            _con = Console(stderr=True)
+            for w in compat_warnings:
+                _con.print(f"[yellow]Warning:[/yellow] {w}")
+        except Exception:
+            for w in compat_warnings:
+                print(f"Warning: {w}", file=sys.stderr)
 
     # 1.5 Extract bundled binaries if running as PyInstaller EXE
     if getattr(sys, 'frozen', False):
@@ -149,8 +159,11 @@ if __name__ == "__main__":
         from blackoutkit.cli import main
         main()
     except KeyboardInterrupt:
-        from rich.console import Console
-        Console().print("\n[yellow]Interrupted. Cleaning up...[/yellow]")
+        try:
+            from rich.console import Console
+            Console().print("\n[yellow]Interrupted. Cleaning up...[/yellow]")
+        except Exception:
+            print("\nInterrupted. Cleaning up...")
         try:
             from blackoutkit.proxy_manager import clear_system_proxy
             clear_system_proxy()
@@ -160,15 +173,10 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception as exc:
-        from rich.console import Console
-        from rich.panel import Panel
-        con = Console(stderr=True)
-
         # Collect system context to help with bug reports
         py_ver  = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         os_info = f"{platform.system()} {platform.release()} ({platform.machine()})"
         tb_last = traceback.format_exc().strip().splitlines()
-        # Show last 10 lines of traceback — enough context without flooding the screen
         tb_snippet = "\n".join(tb_last[-10:]) if len(tb_last) > 10 else "\n".join(tb_last)
 
         # Try to clear system proxy in case we crashed while foreground proxy was active
@@ -178,17 +186,31 @@ if __name__ == "__main__":
         except Exception:
             pass
 
-        # Epic upgrade: suggest auto-fix
-        con.print(Panel(
-            f"[bold red]{type(exc).__name__}:[/bold red] {exc}\n\n"
-            f"[dim]Python {py_ver}  |  {os_info}[/dim]\n\n"
-            f"[dim]{tb_snippet}[/dim]\n\n"
-            "[bold yellow]Something went wrong.[/bold yellow] Try running the auto-repair tool:\n"
-            "  [bold]blackout doctor --fix[/bold]\n\n"
-            "[dim]Or report this bug at:\n"
-            "  github.com/kiacoder/blackout-kit/issues[/dim]",
-            title="[bold red]Blackout Kit — Crashed[/bold red]",
-            border_style="red",
-            padding=(0, 2),
-        ))
+        try:
+            from rich.console import Console
+            from rich.panel import Panel
+            con = Console(stderr=True)
+            con.print(Panel(
+                f"[bold red]{type(exc).__name__}:[/bold red] {exc}\n\n"
+                f"[dim]Python {py_ver}  |  {os_info}[/dim]\n\n"
+                f"[dim]{tb_snippet}[/dim]\n\n"
+                "[bold yellow]Something went wrong.[/bold yellow] Try running the auto-repair tool:\n"
+                "  [bold]blackout doctor --fix[/bold]\n\n"
+                "[dim]Or report this bug at:\n"
+                "  github.com/kiacoder/blackout-kit/issues[/dim]",
+                title="[bold red]Blackout Kit — Crashed[/bold red]",
+                border_style="red",
+                padding=(0, 2),
+            ))
+        except Exception:
+            print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+            print(f"Python {py_ver} | {os_info}", file=sys.stderr)
+            print(tb_snippet, file=sys.stderr)
+            print("Try running: blackout doctor --fix", file=sys.stderr)
+            print("Report bugs at: github.com/kiacoder/blackout-kit/issues", file=sys.stderr)
+        try:
+            if getattr(sys, 'frozen', False) and sys.stdin is not None and sys.stdin.isatty():
+                input("Press Enter to exit...")
+        except EOFError:
+            pass
         sys.exit(1)

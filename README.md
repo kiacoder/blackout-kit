@@ -20,13 +20,13 @@
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078d4?style=flat-square&logo=windows)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.0.1-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
-*A unified command-line toolkit that orchestrates 13+ bypass engines, auto-switches on failure, sets your system proxy automatically, and includes a full network diagnostic suite — all in one place.*
+*A unified command-line toolkit that orchestrates 16 bypass engines, auto-switches on failure, sets your system proxy automatically, and includes a full network diagnostic suite — all in one place.*
 
-**🇮🇷 Iran · 🇨🇳 China · 🇮🇶 Iraq · 🇬🇧 United Kingdom · 🇺🇸 United States**
+**🇮🇷 Iran · 🇨🇳 China · 🇮🇶 Iraq · 🇬🇧 United Kingdom · 🇺🇸 United States · 🇪🇺 Europe**
 
 </div>
 
@@ -81,11 +81,12 @@ Blackout Kit is built on absolute privacy and transparency:
 
 | Country | Censorship Level | Best Engine | Notes |
 |---------|-----------------|-------------|-------|
-| 🇮🇷 Iran | **HIGH** | SNI → WARP → Psiphon | TIC uses hardware DPI. TCP fragmentation alone no longer works. SNI sequence injection is most effective. |
-| 🇨🇳 China | **EXTREME** | XRay → Psiphon | Great Firewall blocks IPs + SNI simultaneously. V2Ray/VLESS over TLS is most reliable. |
-| 🇮🇶 Iraq | **MEDIUM** | SNI → WARP → GoodbyeDPI | ISP-level DPI similar to Iran. SNI spoofing highly effective. |
-| 🇬🇧 United Kingdom | **LOW** | GoodbyeDPI → WARP | Ofcom ISP content filtering (Pirate Bay etc.). Light DPI, easy to bypass. |
+| 🇮🇷 Iran | **HIGH** | SNI → WARP → Psiphon | TIC uses hardware DPI. Pure TCP fragmentation is no longer enough; SNI sequence injection remains the core bypass. |
+| 🇨🇳 China | **EXTREME** | XRay → Psiphon → WARP → TUN | Great Firewall blocks IPs + SNI simultaneously. XRay is the main manual and auto-selected path. |
+| 🇮🇶 Iraq | **MEDIUM** | SNI → WARP → GoodbyeDPI | ISP-level DPI similar to Iran. SNI spoofing is usually the best first option. |
+| 🇬🇧 United Kingdom | **LOW** | GoodbyeDPI → WARP | Ofcom ISP content filtering and light DPI are easy to bypass. |
 | 🇺🇸 United States | **MINIMAL** | WARP → Psiphon | ISP throttling and geo-restrictions only. No deep inspection. |
+| 🇪🇺 Europe | **LOW** | GoodbyeDPI → WARP → WireGuard | Privacy-focused profile with ad-blocking DNS defaults for common ISP filtering cases. |
 
 Auto-detection: Blackout Kit reads your ISP info at startup and silently selects the optimal engine order and DNS for your country. You can also pin a country manually:
 
@@ -99,7 +100,7 @@ blackout country reset   ← back to auto-detect
 
 ## Engines
 
-Blackout Kit coordinates **13 bypass engines**. Each serves a different threat model.
+Blackout Kit coordinates **16 bypass engines**. Each serves a different threat model.
 
 | Engine | Protocol | What It Does | Best For |
 |--------|----------|--------------|----------|
@@ -108,6 +109,8 @@ Blackout Kit coordinates **13 bypass engines**. Each serves a different threat m
 | **GoodbyeDPI** | TCP fragmentation | Splits TCP packets so the DPI engine can't reassemble the SNI field | UK, light DPI |
 | **Cloudflare WARP** | WireGuard / MASQUE | Tunnels through Cloudflare's network | All countries |
 | **Psiphon** | Multi-protocol VPN | Automatic protocol switching: SSH, meek, obfuscated SSH | Heavy blackouts |
+| **Hysteria2** | QUIC proxy | High-performance QUIC proxy through sing-box | QUIC-friendly networks |
+| **TUIC** | QUIC proxy | Low-latency QUIC tunnel through sing-box | Low-latency censorship bypass |
 | **Tor** | Onion routing | 3-hop anonymized routing | Max privacy |
 | **TUN (sing-box)** | System-level tunnel | Routes ALL app traffic — not just proxy-aware apps | Stubborn apps |
 | **IKEv2 / L2TP** | Windows native VPN | No extra binary — uses Windows built-in RAS | Corporate networks |
@@ -193,6 +196,8 @@ blackout connect openvpn
 blackout connect softether
 blackout connect ikev2
 blackout connect mhrv
+blackout connect hysteria2
+blackout connect tuic
 blackout connect appsscript
 
 blackout connect --background      Run in background (daemon mode)
@@ -238,7 +243,7 @@ blackout bins update               Update all installed binaries to latest
 
 ```
 blackout country                   Show detected country + recommended engines
-blackout country set IR            Pin country (IR / US / GB / CN / IQ)
+blackout country set IR            Pin country (IR / US / GB / CN / IQ / EU)
 blackout country reset             Remove pin — return to auto-detect
 ```
 
@@ -283,7 +288,7 @@ blackout fix                       Quick network repair (Winsock + DNS + TCP res
 ### Settings
 
 ```
-blackout settings list             Show all 90+ settings with descriptions
+blackout settings list             Show all settings with descriptions
 blackout settings get <key>        Get a single setting value
 blackout settings set <key> <val>  Change a setting
 blackout settings reset            Reset all settings to defaults

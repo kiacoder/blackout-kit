@@ -102,7 +102,7 @@ DEFAULTS = {
     "gas_proxy_port":       8087,
 
     # Country profile
-    "country":              "",  # ISO code (IR/US/GB/CN/IQ). Empty = auto-detect from ISP.
+    "country":              "",  # ISO code (IR/US/GB/CN/IQ/EU). Empty = auto-detect from ISP.
 
     # Iran 2026 Evasion
     "xray_fragment":        "10-50,10-50",  # TLS record fragment mode (range,range)
@@ -123,7 +123,11 @@ DEFAULTS = {
 
 _PORT_RANGE   = (lambda v: 1 <= v <= 65535, "must be 1–65535")
 _POSITIVE     = (lambda v: v > 0,           "must be > 0")
-_ENGINE_CHOICES = ["auto", "sni", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "legend"]
+_ENGINE_CHOICES = [
+    "auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
+    "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
+    "tuic", "legend",
+]
 
 _VALIDATORS: dict[str, tuple] = {
     "gdpi_always_test_all": (bool,  lambda v: True,            "must be true or false"),
@@ -334,7 +338,7 @@ def describe(key: str) -> str:
         "neighbor_proxy_port":"Proxy port to share with nearby LAN devices",
         "neighbor_bind_lan":  "Bind proxy to 0.0.0.0 so LAN devices can reach it",
         "gas_proxy_port":     "Local port for Google Apps Script HTTP relay proxy",
-        "country":            "Country profile code (IR/US/GB/CN/IQ). Empty = auto-detect from ISP.",
+        "country":            "Country profile code (IR/US/GB/CN/IQ/EU). Empty = auto-detect from ISP.",
         "xray_fragment":      "XRay TLS record fragment: range,range (TIC 2026 evasion)",
         "sni_arvancloud_sni": "Fake SNI using Iran domestic CDN (arvancloud.ir) — unblockable inside Iran",
         "xray_split_tunnel":  "Bypass proxy for local LAN and domestic (.ir) traffic",
@@ -363,5 +367,7 @@ def get_engine_proxy_details(engine_name: str, settings: dict = None) -> tuple[s
         return "socks=127.0.0.1", 9050
     elif engine_name == "warp":
         return "socks=127.0.0.1", 1080
+    elif engine_name in ("hysteria2", "tuic"):
+        return "socks=127.0.0.1", s.get("xray_socks_port", 10808)
     return None
 
