@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import settings as cfg
 from .theme import console
+from .engines.gdpi import GDPI_BIN_NAMES
 from rich.panel import Panel
 from rich.table import Table
 from rich import box
@@ -147,6 +148,10 @@ def check_python_deps() -> list[CheckResult]:
     return results
 
 
+def _gdpi_backend() -> str:
+    return str(cfg.load().get("gdpi_backend", "legacy")).lower()
+
+
 def check_bins_present() -> list[CheckResult]:
     """Check which binaries are present — suggests 'blackout bins download' for missing ones."""
     results = []
@@ -163,7 +168,7 @@ def check_bins_present() -> list[CheckResult]:
     else:
         results.append(CheckResult(
             "bins: blackout_core.dll", False,
-            "Missing — SNI, XRay, and WireGuard will not work. "
+            "Missing — SNI, XRay, WireGuard, and native GDPI will not work. "
             "Build from engine/ (Go 1.22+) or wait for pre-built release.",
             fixable=False,
         ))
@@ -181,10 +186,28 @@ def check_bins_present() -> list[CheckResult]:
             fixable=False,
         ))
 
+    gdpi_backend = _gdpi_backend()
     for key, info in BIN_REGISTRY.items():
+        if key == "goodbyedpi" and gdpi_backend == "native":
+            present = all((_BINS_DIR / b).exists() for b in info.output_bins)
+            if present:
+                first = _BINS_DIR / info.output_bins[0]
+                size_kb = first.stat().st_size // 1024
+                results.append(CheckResult(
+                    f"bins: {info.display_name}",
+                    True,
+                    f"Found ({size_kb} KB) — optional while gdpi_backend=native",
+                ))
+            else:
+                results.append(CheckResult(
+                    f"bins: {info.display_name}",
+                    True,
+                    "Optional while gdpi_backend=native",
+                ))
+            continue
+
         all_present = all((_BINS_DIR / b).exists() for b in info.output_bins)
         if all_present:
-            # Show size of first expected binary as a proxy for the whole group
             first = _BINS_DIR / info.output_bins[0]
             size_kb = first.stat().st_size // 1024
             results.append(CheckResult(f"bins: {info.display_name}", True, f"Found ({size_kb} KB)"))
@@ -204,14 +227,21 @@ def check_bins_present() -> list[CheckResult]:
 
 
 def check_windivert() -> CheckResult:
-    """Check if WinDivert is present (needed by GoodbyeDPI and SNI spoofer)."""
+    """Check if WinDivert is present for the active GDPI backend and SNI tooling."""
+    backend = _gdpi_backend()
     dll = BINS_DIR / "WinDivert.dll"
     sys_file = BINS_DIR / "WinDivert64.sys"
     if dll.exists() and sys_file.exists():
-        return CheckResult("WinDivert (GoodbyeDPI driver)", True, "Found")
+        return CheckResult("WinDivert (GoodbyeDPI driver)", True, f"Found ({backend} backend compatible)")
+    if backend == "native":
+        return CheckResult(
+            "WinDivert (GoodbyeDPI driver)", False,
+            "Missing — native GDPI still depends on WinDivert. Build/install the native driver prerequisites.",
+            fixable=False,
+        )
     return CheckResult(
         "WinDivert (GoodbyeDPI driver)", False,
-        "Missing — download with goodbyedpi.exe",
+        "Missing — legacy GDPI requires the GoodbyeDPI package (goodbyedpi.exe + WinDivert files).",
         fixable=False,
     )
 
@@ -391,9 +421,9 @@ def check_binary_runnable() -> list[CheckResult]:
             ))
 
     # Map binary → flag that triggers a quick exit without doing real work
-    candidates = {
-        "goodbyedpi.exe": ["--help"],
-    }
+    candidates = {}
+    if _gdpi_backend() == "legacy":
+        candidates["goodbyedpi.exe"] = ["--help"]
     for binary, args in candidates.items():
         if engine_bin.exists() and binary in ("xray.exe", "sing-box.exe"):
             continue
@@ -480,7 +510,9 @@ def check_process_conflicts() -> CheckResult:
     conflicts = []
     current_pid = os.getpid()
     
-    target_names = {"goodbyedpi.exe", "xray.exe", "sing-box.exe", "singbox.exe"}
+    target_names = {"xray.exe", "sing-box.exe", "singbox.exe"}
+    if _gdpi_backend() == "legacy":
+        target_names.update({name.lower() for name in GDPI_BIN_NAMES})
     
     for p in psutil.process_iter(attrs=["pid", "name"]):
         try:

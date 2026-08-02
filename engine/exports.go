@@ -35,6 +35,28 @@ func StopSingBoxC() {
 	stopSingBoxInternal()
 }
 
+//export StartGDPIC
+func StartGDPIC() C.int {
+	err := startGDPIInternal()
+	if err != nil {
+		return 1
+	}
+	return 0
+}
+
+//export StopGDPIC
+func StopGDPIC() {
+	stopGDPIInternal()
+}
+
+//export IsGDPIRunningC
+func IsGDPIRunningC() C.int {
+	if isGDPIRunningInternal() {
+		return 1
+	}
+	return 0
+}
+
 //export StartSNIC
 func StartSNIC(configPath *C.char) int {
 	err := startSNIInternal(C.GoString(configPath))

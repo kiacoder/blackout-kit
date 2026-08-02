@@ -120,6 +120,25 @@ Blackout Kit coordinates **16 bypass engines**. Each serves a different threat m
 | **mhrv** | Rust MITM proxy | HTTP+SOCKS5 proxy with custom obfuscation | Experimental |
 | **Google Apps Script** | HTTPS relay | Domain-fronts traffic through script.google.com | Last resort |
 
+GoodbyeDPI currently has two internal backends:
+- **legacy** — the stable default built around `goodbyedpi.exe`, modesets, connectivity probing, and elevation fallback
+- **native** — an experimental Go/WinDivert backend that is not the default yet
+
+For product safety, the legacy backend remains the default until the native path reaches parity.
+
+**Note for Iran:** GDPI is still weaker than SNI/XRay against modern TIC-style DPI. Keep SNI/XRay as the primary recommendation for Iran.
+
+**Note for UK/light DPI:** GDPI remains a strong first option, and the legacy backend stays the production default until the native path is field-proven.
+
+**Runtime note:** if the legacy backend is unstable on a specific Windows machine, you can switch locally to the experimental backend:
+```bash
+blackout settings set gdpi_backend native
+blackout connect gdpi
+```
+The repository still treats `legacy` as the default product path until native reaches parity.
+
+**For maintainers:** after editing `engine/` sources, rebuild `bins/blackout_core.dll` so the exported native engine changes actually reach the app runtime.
+
 ---
 
 ## Installation
@@ -288,11 +307,15 @@ blackout fix                       Quick network repair (Winsock + DNS + TCP res
 ### Settings
 
 ```
-blackout settings list             Show all settings with descriptions
-blackout settings get <key>        Get a single setting value
-blackout settings set <key> <val>  Change a setting
-blackout settings reset            Reset all settings to defaults
+blackout settings list                  Show all settings with descriptions
+blackout settings get <key>             Get a single setting value
+blackout settings set <key> <val>       Change a setting
+blackout settings set gdpi_backend legacy   Use the stable GoodbyeDPI backend
+blackout settings set gdpi_backend native   Use the experimental Go/WinDivert backend
+blackout settings reset                 Reset all settings to defaults
 ```
+
+`gdpi_flags` and `gdpi_always_test_all` apply to the **legacy** backend only.
 
 ### Help
 

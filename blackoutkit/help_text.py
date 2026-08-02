@@ -255,7 +255,10 @@ Customize every aspect of Blackout Kit.
   auto_set_proxy      true = system proxy is set automatically
   engine_order        sni,gdpi,psiphon — emergency mode priority
   psiphon_country     Exit country for Psiphon (DE/US/CA/NL...)
-  gdpi_flags          -9 = maximum bypass, -5 = balanced, -1 = minimal
+  gdpi_backend        legacy = stable default, native = experimental Go/WinDivert path
+                      Example: blackout settings set gdpi_backend native
+  gdpi_flags          -9 = maximum bypass, -5 = balanced, -1 = minimal (legacy backend only)
+  gdpi_always_test_all  true = test every modeset before picking one (legacy backend only)
   kill_switch         true = block ALL internet if proxy drops (safe mode)
 
 [bold]Environment overrides (advanced):[/bold]
@@ -309,9 +312,10 @@ All bypass engines in Blackout Kit and when to use each.
              Port: 40443 (listen) → HTTP :10809 / SOCKS :10808
              Best for: normal day-to-day use
 
-  [bold]gdpi[/bold]       GoodbyeDPI TCP fragmentation — lightweight, no proxy port
+  [bold]gdpi[/bold]       GoodbyeDPI TCP fragmentation — stable default backend
              Requires: goodbyedpi.exe + WinDivert.dll + Administrator
              Best for: sites that don't need a proxy (Telegram, etc.)
+             Backend: [bold]legacy[/bold] by default; [bold]native[/bold] Go/WinDivert backend is experimental
 
 [bold]VPN / Tunnel Engines:[/bold]
   [bold]psiphon[/bold]    Multi-protocol VPN — works even during heavy blackouts
@@ -515,6 +519,11 @@ Three privacy levels — choose based on your threat model.
 
 [bold]Check current mode:[/bold]
   blackout mode
+
+[bold]GDPI backend note:[/bold]
+  Security modes still tune [bold]gdpi_flags[/bold], which only affect the
+  [bold]legacy[/bold] GDPI backend. The [bold]native[/bold] experimental backend
+  ignores those flags for now.
 
 [bold]Note:[/bold]
   SPEED and PRIVATE still bypass censorship well.

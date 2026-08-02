@@ -36,6 +36,7 @@ DEFAULTS = {
     "xray_fingerprint":     "chrome",    # chrome / firefox / safari / random
 
     # GoodbyeDPI
+    "gdpi_backend":        "legacy",   # legacy = stable goodbyedpi.exe path, native = experimental Go/WinDivert path
     "gdpi_flags":           "auto",      # auto = try all modesets, or specify e.g. -1 -2 -5
     "gdpi_always_test_all": False,      # If True, auto-detection tests all modesets on every launch
 
@@ -130,6 +131,7 @@ _ENGINE_CHOICES = [
 ]
 
 _VALIDATORS: dict[str, tuple] = {
+    "gdpi_backend":      (str,   lambda v: v in ("legacy", "native"), "must be: legacy / native"),
     "gdpi_always_test_all": (bool,  lambda v: True,            "must be true or false"),
     "mhrv_direct":        (bool,  lambda v: True,              "must be true or false"),
     "sni_always_test_all_ips": (bool, lambda v: True,          "must be true or false"),
@@ -304,7 +306,8 @@ def describe(key: str) -> str:
         "sni_fake_sni":       "Fake SNI domain shown to DPI (e.g. www.hcaptcha.com)",
         "xray_log_level":     "XRay log verbosity: debug/info/warning/error/none",
         "xray_fingerprint":   "TLS fingerprint to mimic: chrome/firefox/safari/random",
-        "gdpi_flags":         "GoodbyeDPI flags (auto=tries all modesets, or specify e.g. -1 -2 -5)",
+        "gdpi_backend":      "GoodbyeDPI backend: legacy (stable goodbyedpi.exe) / native (experimental Go/WinDivert)",
+        "gdpi_flags":         "GoodbyeDPI flags (legacy backend only: auto=tries all modesets, or specify e.g. -1 -2 -5)",
         "psiphon_country":    "Psiphon exit country code (DE/US/CA/NL…)",
         "auto_set_proxy":     "Auto-configure Windows system proxy on start/stop",
         "proxy_host":         "System proxy host (usually 127.0.0.1)",

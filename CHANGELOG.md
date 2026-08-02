@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Theme setting behavior:** `color_theme` now takes effect in the CLI settings flow instead of being dead configuration.
-- **Docs consistency:** README, roadmap, and metadata text now reflect the actual engine set, country profiles, and current command surface.
+- **GDPI product direction:** the stable legacy GoodbyeDPI path remains the default backend, while the native Go/WinDivert implementation is treated as experimental until it reaches parity.
+- **Docs consistency:** README, roadmap, and metadata text now reflect the actual engine set, country profiles, current command surface, and GDPI backend split.
 
 ## [1.1.0] - 2026-07-25
 ### Added

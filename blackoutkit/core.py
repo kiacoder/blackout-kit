@@ -41,6 +41,13 @@ def get_core_dll():
         _dll.StartSNIC.restype = ctypes.c_int
         _dll.StopSNIC.argtypes = []
         
+        _dll.StartGDPIC.argtypes = []
+        _dll.StartGDPIC.restype = ctypes.c_int
+        _dll.StopGDPIC.argtypes = []
+        if hasattr(_dll, "IsGDPIRunningC"):
+            _dll.IsGDPIRunningC.argtypes = []
+            _dll.IsGDPIRunningC.restype = ctypes.c_int
+        
         _dll.StartMHRVC.argtypes = [ctypes.c_int, ctypes.c_char_p]
         _dll.StartMHRVC.restype = ctypes.c_int
         _dll.StopMHRVC.argtypes = []

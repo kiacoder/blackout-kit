@@ -87,6 +87,8 @@ extern GoInt StartXrayC(char* configPath);
 extern void StopXrayC(void);
 extern GoInt StartSingBoxC(char* configPath);
 extern void StopSingBoxC(void);
+extern int StartGDPIC(void);
+extern void StopGDPIC(void);
 extern GoInt StartSNIC(char* configPath);
 extern void StopSNIC(void);
 extern GoInt StartMHRVC(int port, char* ids);

@@ -24,7 +24,7 @@ Items marked ✅ are implemented. Ranks: Common → Uncommon → Rare → Epic �
 |---------|--------|------|-------|
 | SNI Spoofing (TCP Sequence Injection) | ✅ Done | Epic | patterniha's engine — core bypass for Iran 2026 |
 | XRay-core (Trojan + VLESS over TLS) | ✅ Done | Epic | Dynamic config generation |
-| GoodbyeDPI (TCP fragmentation) | ✅ Done | Rare | `-9` = max bypass mode |
+| GoodbyeDPI (TCP fragmentation) | ✅ Done | Rare | Legacy backend is the stable default; native Go backend is experimental |
 | Psiphon multi-protocol | ✅ Done | Rare | Germany exit node |
 | Cloudflare WARP | ✅ Done | Rare | warp-plus, reduces captchas |
 | Tor / Onion routing | ✅ Done | Rare | SOCKS5 :9050 |

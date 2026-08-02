@@ -1,26 +1,20 @@
 """
 Blackout Kit - GoodbyeDPI engine.
-Wraps ValdikSS's GoodbyeDPI binary.
-Uses TCP fragmentation and packet manipulation to bypass DPI.
-Does not require a separate proxy — works at the network level.
-
-Auto-elevation: if running from a non-admin terminal, the engine launches
-powershell.exe elevated via UAC, which then spawns goodbyedpi.exe with
-full admin rights. The CLI stays in the normal terminal.
-
-Auto modeset: set gdpi_flags to "auto" to try all 6 modesets automatically
-and pick the first one that provides internet connectivity.
+Supports two backends:
+  - legacy: wraps ValdikSS's goodbyedpi.exe with modeset probing and elevation fallback
+  - native: experimental Go/WinDivert implementation via blackout_core.dll
 """
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
 
 from .base import Engine, BINS_DIR
+from .. import core
 from .. import settings as cfg
-from ..elevate import launch_elevated
 
 GDPI_BIN_NAMES = [
     "goodbyedpi.exe",
@@ -44,9 +38,9 @@ CONNECTIVITY_TARGETS = [
 ]
 
 
-class GoodbyeDPIEngine(Engine):
+class _LegacyGoodbyeDPIEngine(Engine):
     name = "gdpi"
-    description = "GoodbyeDPI TCP fragmentation — lightweight, no proxy needed"
+    description = "GoodbyeDPI TCP fragmentation — stable legacy backend"
 
     def __init__(self, flags: str | None = None):
         super().__init__()
@@ -83,10 +77,10 @@ class GoodbyeDPIEngine(Engine):
         self._log.info("Direct launch failed — requesting elevation via UAC…")
         return self._try_elevated_launch(binary)
 
-    def _start_auto(self, binary) -> bool:
+    def _start_auto(self, binary: Path) -> bool:
         always_test_all = cfg.get("gdpi_always_test_all")
         self._log.info("Auto-detecting best GoodbyeDPI modeset...")
-        
+
         working_modes = []
         for mode in MODESETS:
             self._log.info("Trying modeset %s ...", mode)
@@ -115,7 +109,11 @@ class GoodbyeDPIEngine(Engine):
 
         if working_modes:
             best_mode = working_modes[0]
-            self._log.info("Modeset scan complete. Working modes: %s. Starting GoodbyeDPI with: %s", working_modes, best_mode)
+            self._log.info(
+                "Modeset scan complete. Working modes: %s. Starting GoodbyeDPI with: %s",
+                working_modes,
+                best_mode,
+            )
             self.flags = best_mode.split()
             if not self._try_direct_launch(binary):
                 self._try_elevated_launch(binary)
@@ -127,15 +125,14 @@ class GoodbyeDPIEngine(Engine):
     def _test_connectivity(self, mode: str) -> bool:
         for host, port in CONNECTIVITY_TARGETS:
             try:
-                s = socket.create_connection((host, port), timeout=3.0)
-                s.close()
-                self._log.debug("Connectivity OK via %s:%d (%s)", host, port, mode)
-                return True
+                with socket.create_connection((host, port), timeout=3.0):
+                    self._log.debug("Connectivity OK via %s:%d (%s)", host, port, mode)
+                    return True
             except (socket.timeout, OSError):
                 continue
         return False
 
-    def _try_direct_launch(self, binary) -> bool:
+    def _try_direct_launch(self, binary: Path) -> bool:
         try:
             self._process = subprocess.Popen(
                 [str(binary)] + self.flags,
@@ -157,14 +154,13 @@ class GoodbyeDPIEngine(Engine):
         self._process = None
         return False
 
-    def _try_elevated_launch(self, binary) -> bool:
+    def _try_elevated_launch(self, binary: Path) -> bool:
         fd_pid, pid_path = tempfile.mkstemp(suffix=".bkpid", prefix="gdpi_")
-        os.close(fd_pid) # We just want the file created securely, PowerShell will overwrite it
+        os.close(fd_pid)
         self._pid_file = Path(pid_path)
         pid_file_str = str(self._pid_file)
         binary_str = str(binary)
         args_str = subprocess.list2cmdline(self.flags)
-
         cwd_str = str(binary.parent)
         ps_cmd = (
             f"taskkill /F /IM goodbyedpi.exe 2>$null; "
@@ -175,7 +171,7 @@ class GoodbyeDPIEngine(Engine):
         )
 
         fd, ps1_path = tempfile.mkstemp(suffix=".ps1", prefix="gdpi_launcher_")
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(ps_cmd)
         ps1_file = Path(ps1_path)
 
@@ -224,15 +220,14 @@ class GoodbyeDPIEngine(Engine):
                     pass
             except ImportError:
                 pass
-            
+
             if not killed_with_psutil:
-                # Need elevation to kill an elevated process if psutil access was denied
                 subprocess.run(
                     [
                         "powershell.exe",
                         "-NoProfile",
                         "-Command",
-                        f"Start-Process taskkill -ArgumentList '/F /PID {self._elevated_pid}' -Verb RunAs -WindowStyle Hidden"
+                        f"Start-Process taskkill -ArgumentList '/F /PID {self._elevated_pid}' -Verb RunAs -WindowStyle Hidden",
                     ],
                     capture_output=True,
                     timeout=5,
@@ -261,40 +256,58 @@ class GoodbyeDPIEngine(Engine):
         if self._elevated_pid is not None:
             try:
                 import psutil
-                return psutil.Process(self._elevated_pid).is_running()
-            except (ImportError, psutil.NoSuchProcess):
-                pass
+            except ImportError:
+                psutil = None
+            if psutil is not None:
+                try:
+                    return psutil.Process(self._elevated_pid).is_running()
+                except psutil.NoSuchProcess:
+                    return False
+                except Exception:
+                    pass
             try:
-                subprocess.run(
+                result = subprocess.run(
                     ["tasklist", "/FI", f"PID eq {self._elevated_pid}"],
-                    capture_output=True, timeout=5, check=False,
+                    capture_output=True,
+                    timeout=5,
+                    check=False,
+                    text=True,
                 )
+                return str(self._elevated_pid) in result.stdout
             except Exception:
-                pass
+                return False
         if self._elevated_handle is not None:
             import ctypes
-            if sys.platform == 'win32':
+            if sys.platform == "win32":
                 from ctypes import wintypes
                 exit_code = wintypes.DWORD()
             else:
                 exit_code = ctypes.c_uint32()
             if ctypes.windll.kernel32.GetExitCodeProcess(self._elevated_handle, ctypes.byref(exit_code)):
                 return exit_code.value == 259
+            return False
         return super().is_running()
 
     def check_process_alive(self) -> bool:
         if self._elevated_pid is not None:
             try:
                 import psutil
-                alive = psutil.Process(self._elevated_pid).is_running()
+            except ImportError:
+                psutil = None
+            if psutil is not None:
+                try:
+                    alive = psutil.Process(self._elevated_pid).is_running()
+                except psutil.NoSuchProcess:
+                    return False
+                except Exception:
+                    return False
                 if not alive:
                     self._log.warning("Elevated GoodbyeDPI exited unexpectedly.")
                 return alive
-            except (ImportError, psutil.NoSuchProcess):
-                return False
+            return self.is_running()
         if self._elevated_handle is not None:
             import ctypes
-            if sys.platform == 'win32':
+            if sys.platform == "win32":
                 from ctypes import wintypes
                 exit_code = wintypes.DWORD()
             else:
@@ -312,3 +325,119 @@ class GoodbyeDPIEngine(Engine):
         if self._elevated_pid is not None:
             return self._elevated_pid
         return super().pid
+
+
+class _NativeGoodbyeDPIEngine(Engine):
+    name = "gdpi-native"
+    description = "GoodbyeDPI TCP fragmentation (Native Go, experimental)"
+
+    def __init__(self, flags: str | None = None):
+        super().__init__()
+        self.flags = flags or cfg.get("gdpi_flags") or "auto"
+
+    def start(self) -> bool:
+        self._log.info("Starting experimental native Go-GDPI via blackout_core.dll...")
+        if self.flags not in ("", "auto"):
+            self._log.warning("Native GDPI currently ignores gdpi_flags=%s.", self.flags)
+        dll = core.get_core_dll()
+        if not dll:
+            self._log.error("Could not load blackout_core.dll")
+            return False
+
+        old_cwd = os.getcwd()
+        try:
+            os.chdir(BINS_DIR)
+            rc = dll.StartGDPIC()
+        finally:
+            os.chdir(old_cwd)
+
+        if rc != 0:
+            self._log.error(
+                "Failed to start experimental native Go-GDPI. "
+                "Ensure you are running Blackout Kit as Administrator."
+            )
+            return False
+
+        time.sleep(1.0)
+        if not self.is_running():
+            self._log.error("Experimental native Go-GDPI started but did not stay healthy.")
+            return False
+        self._log.info("Experimental native Go-GDPI started successfully.")
+        return True
+
+    def stop(self):
+        if not self.is_running():
+            self._cleanup_config_dir()
+            return
+
+        dll = core.get_core_dll()
+        if dll:
+            self._log.info("Stopping experimental native Go-GDPI...")
+            try:
+                dll.StopGDPIC()
+            except Exception as exc:
+                self._log.error("Error stopping experimental native Go-GDPI: %s", exc)
+        self._cleanup_config_dir()
+
+    def is_running(self) -> bool:
+        dll = core.get_core_dll()
+        if not dll:
+            return False
+        if not hasattr(dll, "IsGDPIRunningC"):
+            self._log.debug("IsGDPIRunningC export missing — treating native GDPI health as unknown.")
+            return True
+        try:
+            return dll.IsGDPIRunningC() == 1
+        except Exception:
+            return False
+
+    def check_process_alive(self) -> bool:
+        alive = self.is_running()
+        if not alive:
+            self._log.warning("Experimental native Go-GDPI stopped unexpectedly.")
+        return alive
+
+    @property
+    def pid(self) -> int | None:
+        return None
+
+
+class GoodbyeDPIEngine(Engine):
+    name = "gdpi"
+    description = "GoodbyeDPI TCP fragmentation — lightweight, no proxy needed"
+
+    def __init__(self, flags: str | None = None, backend: str | None = None):
+        super().__init__()
+        requested_backend = (backend or cfg.get("gdpi_backend") or "legacy").lower()
+        if requested_backend not in ("legacy", "native"):
+            self._log.warning("Unknown gdpi backend '%s' — falling back to legacy.", requested_backend)
+            requested_backend = "legacy"
+        self.backend = requested_backend
+        self._impl = (
+            _NativeGoodbyeDPIEngine(flags=flags)
+            if self.backend == "native"
+            else _LegacyGoodbyeDPIEngine(flags=flags)
+        )
+        self._cleanup_config_dir()
+        self._config_dir = self._impl._config_dir
+        self._health_check_addr = self._impl._health_check_addr
+        self._log = self._impl._log
+
+    def start(self) -> bool:
+        return self._impl.start()
+
+    def stop(self):
+        return self._impl.stop()
+
+    def is_running(self) -> bool:
+        return self._impl.is_running()
+
+    def check_process_alive(self) -> bool:
+        return self._impl.check_process_alive()
+
+    @property
+    def pid(self) -> int | None:
+        return self._impl.pid
+
+    def __getattr__(self, name):
+        return getattr(self._impl, name)

@@ -98,7 +98,8 @@ def start(engine_name: str) -> int:
 
         PID_FILE.unlink(missing_ok=True)
         STATE_FILE.unlink(missing_ok=True)
-        
+        (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
+
         ps_cmd = (
             f"$p = Start-Process -FilePath '{cmd[0]}' "
             f"-ArgumentList '{' '.join(cmd[1:])}' -WorkingDirectory '{os.getcwd()}' -Verb RunAs -WindowStyle Hidden -PassThru; "
@@ -183,6 +184,12 @@ def get_state() -> dict | None:
         active_pid = get_pid()
         if not active_pid or data.get("pid") != active_pid:
             return None
+        if data.get("engine") == "gdpi":
+            try:
+                from . import settings as cfg
+                data["engine"] = _engine_state_payload_name("gdpi", cfg)
+            except Exception:
+                pass
         return data
     except Exception:
         return None
@@ -198,6 +205,13 @@ def read_logs(lines: int = 50) -> str:
 
 # ─────────────────────────── Daemon runner ───────────────────────
 # This function is called by the background process itself.
+
+def _engine_state_payload_name(engine_name: str, cfg_module) -> str:
+    if engine_name == "gdpi":
+        backend = str(cfg_module.load().get("gdpi_backend", "legacy")).lower()
+        return f"gdpi[{backend}]"
+    return engine_name
+
 
 def run_daemon_loop(engine_name: str):
     """
@@ -425,7 +439,7 @@ def run_daemon_loop(engine_name: str):
                 # Update state file so 'blackout status' shows accurate info
                 try:
                     STATE_FILE.write_text(json.dumps({
-                        "engine":   active_engine_name,
+                        "engine":   _engine_state_payload_name(active_engine_name, cfg),
                         "pid":      active[0].pid if active[0].pid else -1,
                         "started":  time.strftime("%Y-%m-%d %H:%M:%S"),
                         "restarts": restart_count,
@@ -442,45 +456,47 @@ def run_daemon_loop(engine_name: str):
                     p_host = p_host.split("=", 1)[1]
                 from .scanner.proxy_tester import test_tcp_port
                 latency = test_tcp_port(p_host, p_port)
+
+                try:
+                    sec.record_latency(active_engine_name, latency)
+                except Exception:
+                    pass
+
+                if latency is None:
+                    log.warning("Proxy port closed — engine may have crashed.")
+                    if restart_count < max_restarts:
+                        log.warning("Attempting restart %d/%d...", restart_count+1, max_restarts+1)
+                        for eng in active:
+                            try:
+                                eng.stop()
+                            except Exception:
+                                pass
+                        active = try_start_engines(active_engine_name)
+                        restart_count += 1
+                        if not active:
+                            log.error("Restart #%d failed.", restart_count)
+                        else:
+                            log.info("Engine restarted (attempt %d/%d).", restart_count, max_restarts)
+                            try:
+                                STATE_FILE.write_text(json.dumps({
+                                    "engine":   active_engine_name,
+                                    "pid":      active[0].pid if active[0].pid else -1,
+                                    "started":  time.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "restarts": restart_count,
+                                }))
+                            except Exception:
+                                pass
+                            continue  # Skip rest of the loop iteration
+                else:
+                    log.info(f"Heartbeat OK — proxy latency: {latency:.0f}ms")
+
+                # Kill switch: if proxy went down and kill switch is on, block traffic
+                if latency is None and s.get("kill_switch", False):
+                    log.warning("Kill switch active — blocking traffic until proxy recovers.")
             else:
-                latency = None
+                log.debug("Network-level engine has no proxy port; skipping proxy health probe.")
 
-            try:
-                sec.record_latency(active_engine_name, latency)
-            except Exception:
-                pass
-
-            if latency is None:
-                log.warning("Proxy port closed — engine may have crashed.")
-                if restart_count < max_restarts:
-                    log.warning("Attempting restart %d/%d...", restart_count+1, max_restarts+1)
-                    for eng in active:
-                        try:
-                            eng.stop()
-                        except Exception:
-                            pass
-                    active = try_start_engines(active_engine_name)
-                    restart_count += 1
-                    if not active:
-                        log.error("Restart #%d failed.", restart_count)
-                    else:
-                        log.info("Engine restarted (attempt %d/%d).", restart_count, max_restarts)
-                        try:
-                            STATE_FILE.write_text(json.dumps({
-                                "engine":   active_engine_name,
-                                "pid":      active[0].pid if active[0].pid else -1,
-                                "started":  time.strftime("%Y-%m-%d %H:%M:%S"),
-                                "restarts": restart_count,
-                            }))
-                        except Exception:
-                            pass
-                        continue  # Skip rest of the loop iteration
-            else:
-                log.info(f"Heartbeat OK — proxy latency: {latency:.0f}ms")
-
-            # Kill switch: if proxy went down and kill switch is on, block traffic
-            if latency is None and s.get("kill_switch", False):
-                log.warning("Kill switch active — blocking traffic until proxy recovers.")
+            restart_count = 0
 
     except KeyboardInterrupt:
         pass
