@@ -109,15 +109,27 @@ class SNIEngine(Engine):
         scan_concurrency = cfg.get("scan_concurrency", 100)
         scan_timeout = cfg.get("scan_timeout", 2.0)
         
-        # Generate IPs using settings
-        ips = ip_scanner.generate_cloudflare_ips(scan_ip_count)
-        console.print(f"[dim]Scanning {scan_ip_count} Cloudflare IPs for basic TCP reachability...[/dim]")
-        
+        from ..scanner.ip_scanner import KNOWN_GOOD_IPS
         loop = asyncio.new_event_loop()
+        cf_results = []
         try:
+            # Phase 1: Extremely fast scan of known good IPs
+            console.print("[dim]Phase 1: Quick-checking known good IPs...[/dim]")
             cf_results = loop.run_until_complete(ip_scanner.scan_ips(
-                ips, concurrency=scan_concurrency, timeout=scan_timeout
+                KNOWN_GOOD_IPS, concurrency=len(KNOWN_GOOD_IPS), timeout=1.0
             ))
+            
+            if cf_results and cf_results[0][1] < 150.0:
+                console.print(f"[green]Found fast known IP: {cf_results[0][0]} ({cf_results[0][1]:.1f}ms)[/green]")
+            else:
+                # Phase 2: Full scan if no excellent known IPs are found
+                ips = ip_scanner.generate_cloudflare_ips(scan_ip_count)
+                console.print(f"[dim]Phase 2: Scanning {scan_ip_count} Cloudflare IPs...[/dim]")
+                more_results = loop.run_until_complete(ip_scanner.scan_ips(
+                    ips, concurrency=scan_concurrency, timeout=scan_timeout
+                ))
+                cf_results.extend(more_results)
+                cf_results.sort(key=lambda x: x[1])
         finally:
             loop.close()
             
