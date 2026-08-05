@@ -237,9 +237,12 @@ def save(settings: dict):
         raise
 
 
-def get(key: str):
+def get(key: str, default=None):
     """Get a single setting value."""
-    return load().get(key, DEFAULTS.get(key))
+    val = load().get(key, DEFAULTS.get(key))
+    if val is None:
+        return default
+    return val
 
 
 def validate(key: str, value) -> tuple[bool, str]:

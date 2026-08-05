@@ -1898,16 +1898,8 @@ def _download_single(dl, key: str, info, force: bool = False):
             p.update(t, total=total)
         p.update(t, completed=done)
 
-    with Progress(
-        SpinnerColumn(style="bold red"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=34, style="red", complete_style="green"),
-        DownloadColumn(),
-        TransferSpeedColumn(),
-        TimeRemainingColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
+    from .theme import create_download_progress
+    with create_download_progress() as progress:
         task_ref["progress"] = progress
         task_ref["id"] = progress.add_task(label, total=None)
 

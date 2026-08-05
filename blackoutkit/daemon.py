@@ -21,6 +21,7 @@ STATE_FILE   = APP_DATA_DIR / "daemon_state.json"
 LOCK_FILE    = APP_DATA_DIR / "daemon.lock"
 
 _shutdown_requested = False
+cfg_lock = None
 
 
 def _ensure_dir():

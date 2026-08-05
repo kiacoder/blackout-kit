@@ -87,12 +87,6 @@ class NeighborShareEngine(Engine):
             return False
 
     def stop(self):
-        if hasattr(self, "_dll_stop_func") and self._dll_stop_func:
-            try:
-                self._dll_stop_func()
-            except Exception:
-                pass
-            self._dll_stop_func = None
         self._running = False
         super().stop()
 

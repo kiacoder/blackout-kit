@@ -94,14 +94,7 @@ class SNIEngine(Engine):
             self._log.error("Native DLL StartSNIC failed")
             return False
 
-    def stop(self):
-        if hasattr(self, "_dll_stop_func") and self._dll_stop_func:
-            try:
-                self._dll_stop_func()
-            except Exception:
-                pass
-            self._dll_stop_func = None
-        super().stop()
+
 
     def _run_auto_scan(self, dll, c_path) -> str | None:
         import asyncio

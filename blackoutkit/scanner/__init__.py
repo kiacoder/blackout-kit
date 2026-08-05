@@ -82,12 +82,12 @@ def is_connected(
             start_emergency_mode()
     """
     # Try proxy first
-    proxy_latency = test_http_proxy(port=http_port)
+    proxy_latency = test_http_proxy(proxy_port=http_port)
     if proxy_latency is not None:
         return True
     # Fallback: direct internet
     if direct_fallback:
-        return test_direct()
+        return test_direct()[0]
     return False
 
 

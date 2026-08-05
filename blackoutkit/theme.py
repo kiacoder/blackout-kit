@@ -202,3 +202,21 @@ def spinner(description: str = "Working…"):
     """
     with console.status(f"[muted]{description}[/muted]", spinner="dots"):
         yield
+
+
+def create_download_progress():
+    """Create a standardized rich Progress instance for downloads."""
+    from rich.progress import (
+        Progress, SpinnerColumn, TextColumn, BarColumn, 
+        DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
+    )
+    return Progress(
+        SpinnerColumn(style="bold cyan"),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(bar_width=38, style="cyan", complete_style="green"),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+        console=console,
+        transient=True,
+    )

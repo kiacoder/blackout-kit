@@ -68,55 +68,6 @@ def _run_elevated_multi(commands: list[list[str]], timeout_ms: int = 60000) -> b
     ctypes.windll.kernel32.WaitForSingleObject(handle, timeout_ms)
     ctypes.windll.kernel32.CloseHandle(handle)
     return True
-from . import elevate
-
-
-def _run_elevated(cmd: list[str]) -> bool:
-    """
-    Run a single command with admin rights via a UAC prompt.
-    Returns True if the elevated command completed successfully (exit code 0).
-    """
-    ps_script = (
-        "& { $p = Start-Process -FilePath '" + cmd[0] + "' -ArgumentList '"
-        + subprocess.list2cmdline(cmd[1:]) + "' -NoNewWindow -Wait -PassThru; exit $p.ExitCode }"
-    )
-    handle, pid = elevate.launch_elevated(
-        "powershell.exe",
-        ["-NoProfile", "-Command", ps_script],
-    )
-    if handle is None:
-        return False
-    ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
-    exit_code = ctypes.c_ulong()
-    ok = False
-    if ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
-        ok = exit_code.value == 0
-    ctypes.windll.kernel32.CloseHandle(handle)
-    return ok
-
-
-def _run_elevated_multi(commands: list[list[str]]) -> bool:
-    """
-    Run multiple admin commands in a single elevated PowerShell session.
-    Only triggers ONE UAC prompt.
-    """
-    ps_blocks = []
-    for cmd in commands:
-        ps_blocks.append(
-            "$p = Start-Process -FilePath '" + cmd[0] + "' -ArgumentList '"
-            + subprocess.list2cmdline(cmd[1:]) + "' -NoNewWindow -Wait -PassThru"
-        )
-    ps_script = "& { " + "; ".join(ps_blocks) + " }"
-    handle, pid = elevate.launch_elevated(
-        "powershell.exe",
-        ["-NoProfile", "-Command", ps_script],
-    )
-    if handle is None:
-        return False
-    ctypes.windll.kernel32.WaitForSingleObject(handle, 60000)
-    ctypes.windll.kernel32.CloseHandle(handle)
-    return True
-
 
 # ─────────────────────────── DNS tools ───────────────────────────
 

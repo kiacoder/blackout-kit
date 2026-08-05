@@ -518,7 +518,10 @@ def add_defender_exclusion(path: Path | None = None) -> bool:
 
     _log.info("Defender exclusion needs admin — requesting elevation via UAC…")
     import tempfile
-    marker = Path(tempfile.mktemp(suffix=".txt"))
+    import os
+    fd, path = tempfile.mkstemp(suffix=".txt")
+    os.close(fd)
+    marker = Path(path)
     ps_elevated = (
         f'Add-MpPreference -ExclusionPath "{target}"; '
         f'Write-Output "OK" | Out-File -FilePath "{marker}" -Encoding UTF8'
@@ -552,7 +555,10 @@ def remove_defender_exclusion(path: Path | None = None) -> bool:
 
     _log.info("Defender exclusion removal needs admin — requesting elevation via UAC…")
     import tempfile
-    marker = Path(tempfile.mktemp(suffix=".txt"))
+    import os
+    fd, path = tempfile.mkstemp(suffix=".txt")
+    os.close(fd)
+    marker = Path(path)
     ps_elevated = (
         f'Remove-MpPreference -ExclusionPath "{target}"; '
         f'Write-Output "OK" | Out-File -FilePath "{marker}" -Encoding UTF8'

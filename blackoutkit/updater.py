@@ -127,16 +127,8 @@ def download_and_apply(release: dict) -> bool:
         with urllib.request.urlopen(req, timeout=120) as resp:
             content_length = int(resp.headers.get("Content-Length", 0) or 0)
 
-            with Progress(
-                SpinnerColumn(style="bold cyan"),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(bar_width=38, style="cyan", complete_style="green"),
-                DownloadColumn(),
-                TransferSpeedColumn(),
-                TimeRemainingColumn(),
-                console=console,
-                transient=True,
-            ) as progress:
+            from .theme import create_download_progress
+            with create_download_progress() as progress:
                 task = progress.add_task(
                     f"Downloading update ({suffix})...",
                     total=content_length if content_length > 0 else None,
