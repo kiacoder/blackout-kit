@@ -2331,7 +2331,7 @@ def cmd_daemon_run(args):
 
 # ──────────────────────────── Entry point ────────────────────────
 
-def main():
+def _main_impl():
     parser = argparse.ArgumentParser(
         prog="blackout",
         description="Blackout Kit — DPI Bypass & Censorship Circumvention Toolkit",
@@ -2564,3 +2564,22 @@ def main():
         handler(args)
     else:
         parser.print_help()
+
+
+def main():
+    """Global entry point with exception handling to prevent raw tracebacks."""
+    try:
+        _main_impl()
+    except KeyboardInterrupt:
+        from .theme import console
+        console.print("\n[muted]Operation cancelled by user.[/muted]")
+        import sys
+        sys.exit(130)
+    except Exception as e:
+        from .theme import error_panel, console
+        import sys
+        console.print(error_panel(
+            f"An unexpected fatal error occurred:\n{str(e)}\n\n[dim]Please run 'blackout doctor' to auto-fix common issues.[/dim]",
+            title="Fatal Error"
+        ))
+        sys.exit(1)
