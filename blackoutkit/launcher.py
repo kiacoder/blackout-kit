@@ -72,39 +72,50 @@ def start_launcher():
     killswitch_var = ctk.BooleanVar(value=False)
     ctk.CTkSwitch(settings_frame, text="Enable Network Killswitch", variable=killswitch_var, onvalue=True, offvalue=False).pack(anchor="w", pady=10)
 
-    # Launch Button
+    
+    # We will store the launch configuration here
+    launch_config = {}
+    
     def on_launch():
-        env = platform_var.get()
-        use_tray = tray_var.get() == "yes"
-        mode = mode_var.get()
+        launch_config["env"] = platform_var.get()
+        launch_config["use_tray"] = tray_var.get() == "yes"
+        launch_config["mode"] = mode_var.get()
         
-        if env != "powershell":
+        if launch_config["env"] != "powershell":
             # Show a popup for parts still in development
             import tkinter.messagebox
             tkinter.messagebox.showinfo(
                 "Coming Soon", 
                 "This interface is currently In Development and will be available in a future release! Starting the standard PowerShell CLI instead."
             )
-            env = "powershell"
+            launch_config["env"] = "powershell"
 
-        # We destroy the launcher window
-        app.destroy()
+        # Exit the mainloop
+        app.quit()
         
-        # Build the command line
-        if env == "powershell":
-            # For powershell, we run the CLI
-            import blackoutkit.cli as cli
-            import sys
-            
-            # Mock the arguments for cli
-            sys.argv = ["blackout", "connect"]
-            if use_tray:
-                sys.argv.append("--background")
-                
-            cli.main()
-
     launch_btn = ctk.CTkButton(app, text="LAUNCH BLACKOUT KIT 🚀", font=ctk.CTkFont(weight="bold"), height=50, command=on_launch)
     launch_btn.pack(fill="x", padx=50, pady=30)
     
     app.mainloop()
+    
+    # Properly destroy the window after the mainloop exits to prevent background task errors
+    app.destroy()
+    
+    # If the user closed the window without launching, return True so the program exits normally
+    if not launch_config:
+        return True
+        
+    # Build the command line
+    if launch_config["env"] == "powershell":
+        # For powershell, we run the CLI
+        import blackoutkit.cli as cli
+        import sys
+        
+        # Mock the arguments for cli
+        sys.argv = ["blackout", "connect"]
+        if launch_config["use_tray"]:
+            sys.argv.append("--background")
+            
+        cli.main()
+        
     return True
