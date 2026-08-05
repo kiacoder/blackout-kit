@@ -359,7 +359,7 @@ def set_mtu(mtu: int, adapter: str | None = None) -> bool:
         return False
     if not _is_admin():
         _log.info("MTU set requires admin — requesting elevation via UAC…")
-        if not _run_elevated(["cmd.exe", "/c", f"echo Auto-elevate placeholder"]):
+        if not _run_elevated(["cmd.exe", "/c", "echo Auto-elevate placeholder"]):
             return False
         # Re-query adapter after elevation may not work — use direct approach
     try:
