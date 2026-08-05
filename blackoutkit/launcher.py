@@ -16,6 +16,12 @@ def start_launcher():
     ctk.set_default_color_theme("blue")
     
     app = ctk.CTk()
+    
+    # Suppress CustomTkinter background loop 'invalid command' errors after destruction
+    def silent_callback_exception(exc, val, tb):
+        pass
+    app.report_callback_exception = silent_callback_exception
+    
     app.title("Blackout Kit — Universal Launcher")
     app.geometry("600x700")
     app.resizable(False, False)
@@ -98,7 +104,14 @@ def start_launcher():
     
     app.mainloop()
     
-    # Properly destroy the window after the mainloop exits to prevent background task errors
+    # Cancel all pending background tasks (like CustomTkinter's update loop) to prevent Tcl errors
+    try:
+        for after_id in app.tk.call('after', 'info'):
+            app.after_cancel(after_id)
+    except Exception:
+        pass
+        
+    # Properly destroy the window after the mainloop exits
     app.destroy()
     
     # If the user closed the window without launching, return True so the program exits normally
