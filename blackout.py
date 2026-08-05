@@ -151,13 +151,17 @@ if __name__ == "__main__":
     # 2. First-run nudge (only if no settings file yet)
     _first_run_hint()
 
-    # 3. Run the CLI
+    # 3. Run the UI Launcher or CLI
     try:
         from blackoutkit.proxy_manager import install_console_close_handler
         install_console_close_handler()
         
-        from blackoutkit.cli import main
-        main()
+        if len(sys.argv) == 1:
+            from blackoutkit.launcher import start_launcher
+            start_launcher()
+        else:
+            from blackoutkit.cli import main
+            main()
     except KeyboardInterrupt:
         try:
             from rich.console import Console
