@@ -123,6 +123,267 @@ def killswitch(
     args.action = action
     cmd_killswitch(args)
 
+# ── NETWORK GROUP ──
+network_app = typer.Typer(help="WiFi network switcher + ISP detection", no_args_is_help=True)
+app.add_typer(network_app, name="network")
+
+@network_app.command("scan")
+def net_scan():
+    """Show all available WiFi networks"""
+    from .cli import cmd_net_scan
+    class DummyArgs: pass
+    cmd_net_scan(DummyArgs())
+
+@network_app.command("isp")
+def net_isp():
+    """Show current ISP provider info"""
+    from .cli import cmd_net_isp
+    class DummyArgs: pass
+    cmd_net_isp(DummyArgs())
+
+@network_app.command("auto")
+def net_auto():
+    """Auto-switch to best available saved network"""
+    from .cli import cmd_net_auto
+    class DummyArgs: pass
+    cmd_net_auto(DummyArgs())
+
+@network_app.command("switch")
+def net_switch(
+    ssid: str = typer.Argument(None, help="SSID of the network to switch to")
+):
+    """Switch to a specific WiFi network"""
+    from rich.prompt import Prompt
+    from .cli import cmd_net_switch
+    
+    if not ssid:
+        console.print()
+        ssid = Prompt.ask("📶 Enter the SSID of the network to switch to")
+        console.print()
+        
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.ssid = ssid
+    cmd_net_switch(args)
+
+# ── CONFIG GROUP ──
+config_app = typer.Typer(help="Manage V2Ray proxy configs", no_args_is_help=True)
+app.add_typer(config_app, name="config")
+
+@config_app.command("list")
+def cfg_list():
+    """List all saved configs"""
+    from .cli import cmd_cfg_list
+    class DummyArgs: pass
+    cmd_cfg_list(DummyArgs())
+
+@config_app.command("add")
+def cfg_add(uri: str = typer.Argument(None, help="V2Ray URI to add (vmess://, vless://, etc)")):
+    """Add a V2Ray URI"""
+    from rich.prompt import Prompt
+    from .cli import cmd_cfg_add
+    
+    if not uri:
+        console.print()
+        uri = Prompt.ask("🔗 Enter the V2Ray URI (vless://... or trojan://...)")
+        console.print()
+        
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.uri = uri
+    cmd_cfg_add(args)
+
+@config_app.command("import")
+def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import")):
+    """Import from subscription URL"""
+    from rich.prompt import Prompt
+    from .cli import cmd_cfg_import
+    
+    if not url:
+        console.print()
+        url = Prompt.ask("🌐 Enter the subscription URL to import from")
+        console.print()
+        
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.url = url
+    cmd_cfg_import(args)
+
+@config_app.command("remove")
+def cfg_remove(num: int = typer.Argument(None, help="Config number to remove")):
+    """Remove a config by number"""
+    from rich.prompt import IntPrompt
+    from .cli import cmd_cfg_remove
+    
+    if num is None:
+        console.print()
+        num = IntPrompt.ask("🗑️  Enter the config number to remove (see 'config list')")
+        console.print()
+        
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.num = num
+    cmd_cfg_remove(args)
+
+@config_app.command("encrypt")
+def cfg_encrypt():
+    """Obfuscate configs.txt → configs.enc (protects at rest)"""
+    from .cli import cmd_cfg_encrypt
+    class DummyArgs: pass
+    cmd_cfg_encrypt(DummyArgs())
+
+@config_app.command("decrypt")
+def cfg_decrypt():
+    """Restore configs.enc → configs.txt"""
+    from .cli import cmd_cfg_decrypt
+    class DummyArgs: pass
+    cmd_cfg_decrypt(DummyArgs())
+
+# ── TOOLS GROUP ──
+tools_app = typer.Typer(help="Network diagnostics, DNS, hotspot, and more", no_args_is_help=True)
+app.add_typer(tools_app, name="tools")
+
+@tools_app.command("dns-bench")
+def tools_dns_bench():
+    """Benchmark DNS servers"""
+    from .cli import cmd_tools_dns_bench
+    class DummyArgs: pass
+    cmd_tools_dns_bench(DummyArgs())
+
+@tools_app.command("dns-flush")
+def tools_dns_flush():
+    """Flush DNS cache"""
+    from .cli import cmd_tools_dns_flush
+    class DummyArgs: pass
+    cmd_tools_dns_flush(DummyArgs())
+
+@tools_app.command("dns-set")
+def tools_dns_set(
+    ip: str = typer.Argument(None, help="DNS IP (e.g. 1.1.1.1)"),
+    adapter: str = typer.Option(None, "--adapter", "-a", help="Specific adapter name")
+):
+    """Set system DNS server"""
+    from rich.prompt import Prompt
+    from .cli import cmd_tools_dns_set
+    if not ip:
+        console.print()
+        ip = Prompt.ask("🖥️  Enter the DNS IP to set (e.g. 1.1.1.1)")
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.ip = ip
+    args.adapter = adapter
+    cmd_tools_dns_set(args)
+
+@tools_app.command("speedtest")
+def tools_speedtest():
+    """Run download speed test"""
+    from .cli import cmd_tools_speedtest
+    class DummyArgs: pass
+    cmd_tools_speedtest(DummyArgs())
+
+@tools_app.command("adapters")
+def tools_adapters():
+    """List network adapters and IPs"""
+    from .cli import cmd_tools_adapters
+    class DummyArgs: pass
+    cmd_tools_adapters(DummyArgs())
+
+@tools_app.command("netfix")
+def tools_netfix():
+    """Auto-fix common network problems (admin)"""
+    from .cli import cmd_tools_netfix
+    class DummyArgs: pass
+    cmd_tools_netfix(DummyArgs())
+
+@tools_app.command("hotspot")
+def tools_hotspot(
+    action: str = typer.Argument(None, help="on | off")
+):
+    """Start/stop Windows Mobile Hotspot"""
+    from rich.prompt import Prompt
+    from .cli import cmd_tools_hotspot
+    if not action:
+        console.print()
+        action = Prompt.ask("📡 Select hotspot action", choices=["on", "off"])
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.action = action
+    cmd_tools_hotspot(args)
+
+@tools_app.command("share-vpn")
+def tools_share_vpn(
+    action: str = typer.Argument(None, help="on | off")
+):
+    """Share VPN connection via hotspot (ICS)"""
+    from rich.prompt import Prompt
+    from .cli import cmd_tools_share_vpn
+    if not action:
+        console.print()
+        action = Prompt.ask("🌐 Select ICS VPN sharing action", choices=["on", "off"])
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.action = action
+    cmd_tools_share_vpn(args)
+
+@tools_app.command("ping")
+def tools_ping(host: str = typer.Argument(None, help="Host to ping")):
+    """TCP ping test"""
+    from rich.prompt import Prompt
+    from .cli import cmd_tools_ping
+    if not host:
+        console.print()
+        host = Prompt.ask("🏓 Enter host or IP to ping")
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.host = host
+    cmd_tools_ping(args)
+    
+@tools_app.command("mtu")
+def tools_mtu(
+    host: str = typer.Argument("8.8.8.8", help="Host to ping"),
+    set_mtu: bool = typer.Option(False, "--set", help="Auto-set the best MTU")
+):
+    """Detect and optionally set MTU"""
+    from .cli import cmd_tools_mtu
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.host = host
+    args.set = set_mtu
+    cmd_tools_mtu(args)
+
+@tools_app.command("traceroute")
+def tools_traceroute(host: str = typer.Argument(None, help="Host to trace")):
+    """Traceroute to a host"""
+    from rich.prompt import Prompt
+    from .cli import cmd_tools_traceroute
+    if not host:
+        console.print()
+        host = Prompt.ask("🗺️  Enter host or IP to trace")
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.host = host
+    cmd_tools_traceroute(args)
+
+@tools_app.command("cert-check")
+def tools_cert_check(host: str = typer.Argument(None, help="Host to check")):
+    """Check TLS certificate for a host[:port]"""
+    from rich.prompt import Prompt
+    from .cli import cmd_tools_cert_check
+    if not host:
+        console.print()
+        host = Prompt.ask("🔐 Enter host or IP to check TLS certificate")
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.host = host
+    cmd_tools_cert_check(args)
+
+
 def main():
     """Global entry point for the new Typer CLI."""
     try:
