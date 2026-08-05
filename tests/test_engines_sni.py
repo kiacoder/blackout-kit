@@ -1,0 +1,188 @@
+import pytest
+from unittest.mock import patch, MagicMock
+from blackoutkit.engines.sni import SNIEngine
+import blackoutkit.settings as cfg
+
+@patch("blackoutkit.settings.load")
+def test_sni_engine_init(mock_load):
+    mock_load.return_value = {
+        "sni_connect_ip": "1.1.1.1",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234
+    }
+    engine = SNIEngine()
+    assert engine.connect_ip == "1.1.1.1"
+    assert engine.fake_sni == "google.com"
+    assert engine.listen_port == 1234
+    
+@patch("blackoutkit.settings.load")
+def test_sni_engine_write_config(mock_load, tmp_path):
+    mock_load.return_value = {
+        "sni_connect_ip": "1.1.1.1",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234
+    }
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    path = engine._write_config()
+    import json
+    data = json.loads(path.read_text())
+    assert data["CONNECT_IP"] == "1.1.1.1"
+    assert data["FAKE_SNI"] == "google.com"
+
+@patch("blackoutkit.core.get_core_dll")
+@patch("blackoutkit.settings.load")
+@patch("blackoutkit.engines.sni.SNIEngine.wait_for_port")
+def test_sni_engine_start_success(mock_wait, mock_load, mock_get_dll, tmp_path):
+    mock_load.return_value = {
+        "sni_connect_ip": "1.1.1.1",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234
+    }
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    
+    mock_dll = MagicMock()
+    mock_dll.StartSNIC.return_value = 0
+    mock_get_dll.return_value = mock_dll
+    mock_wait.return_value = True
+    
+    assert engine.start() is True
+    mock_dll.StartSNIC.assert_called_once()
+    mock_wait.assert_called_once()
+
+@patch("blackoutkit.core.get_core_dll", return_value=None)
+@patch("blackoutkit.settings.load")
+def test_sni_engine_start_no_dll(mock_load, mock_get_dll, tmp_path):
+    mock_load.return_value = {
+        "sni_connect_ip": "1.1.1.1",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234
+    }
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    assert engine.start() is False
+
+@patch("blackoutkit.core.get_core_dll")
+@patch("blackoutkit.settings.load")
+def test_sni_engine_start_dll_fails(mock_load, mock_get_dll, tmp_path):
+    mock_load.return_value = {
+        "sni_connect_ip": "1.1.1.1",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234
+    }
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    
+    mock_dll = MagicMock()
+    mock_dll.StartSNIC.return_value = -1
+    mock_get_dll.return_value = mock_dll
+    
+    assert engine.start() is False
+
+@patch("blackoutkit.engines.sni.SNIEngine._run_auto_scan")
+@patch("blackoutkit.core.get_core_dll")
+@patch("blackoutkit.settings.load")
+@patch("blackoutkit.settings.set_value")
+@patch("blackoutkit.engines.sni.SNIEngine.wait_for_port")
+def test_sni_engine_start_auto(mock_wait, mock_set, mock_load, mock_get_dll, mock_scan, tmp_path):
+    mock_load.return_value = {
+        "sni_connect_ip": "auto",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234
+    }
+    mock_scan.return_value = "8.8.8.8"
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    
+    mock_dll = MagicMock()
+    mock_dll.StartSNIC.return_value = 0
+    mock_get_dll.return_value = mock_dll
+    mock_wait.return_value = True
+    
+    assert engine.start() is True
+    mock_set.assert_called_with("sni_connect_ip", "8.8.8.8")
+    assert engine.connect_ip == "8.8.8.8"
+
+@patch("blackoutkit.engines.sni.SNIEngine._run_auto_scan", return_value=None)
+@patch("blackoutkit.core.get_core_dll")
+@patch("blackoutkit.settings.load")
+def test_sni_engine_start_auto_fail(mock_load, mock_get_dll, mock_scan, tmp_path):
+    mock_load.return_value = {
+        "sni_connect_ip": "auto",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234
+    }
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    mock_get_dll.return_value = MagicMock()
+    
+    assert engine.start() is False
+
+@patch("asyncio.new_event_loop")
+@patch("blackoutkit.scanner.ip_scanner.scan_ips")
+@patch("blackoutkit.scanner.ip_scanner.generate_cloudflare_ips")
+@patch("blackoutkit.settings.get")
+def test_run_auto_scan_success(mock_get, mock_gen, mock_scan, mock_loop, tmp_path):
+    def mock_settings_get(k, default=None):
+        if k == "scan_ip_count": return 5
+        if k == "scan_concurrency": return 5
+        if k == "scan_timeout": return 1.0
+        if k == "sni_always_test_all_ips": return False
+        if k == "sni_custom_ips": return []
+        if k == "sni_custom_fakes": return []
+        return default
+    mock_get.side_effect = mock_settings_get
+
+    mock_loop_instance = MagicMock()
+    mock_loop.return_value = mock_loop_instance
+    mock_loop_instance.run_until_complete.side_effect = [
+        [],
+        [("2.2.2.2", 120.0), ("3.3.3.3", 150.0)]
+    ]
+    
+    mock_dll = MagicMock()
+    mock_dll.StartSNIC.return_value = 0
+    
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    
+    with patch.object(engine, "_test_http_get", return_value=50.0):
+        winner = engine._run_auto_scan(mock_dll, tmp_path / "c.json")
+    
+    assert winner == "2.2.2.2"
+    assert mock_dll.StartSNIC.call_count > 0
+    assert mock_dll.StopSNIC.call_count > 0
+
+@patch("asyncio.new_event_loop")
+@patch("blackoutkit.scanner.ip_scanner.scan_ips")
+def test_run_auto_scan_no_ips(mock_scan, mock_loop, tmp_path):
+    mock_loop_instance = MagicMock()
+    mock_loop.return_value = mock_loop_instance
+    mock_loop_instance.run_until_complete.return_value = []
+    
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    
+    winner = engine._run_auto_scan(MagicMock(), tmp_path / "c.json")
+    assert winner is None
+
+def test_test_http_get():
+    engine = SNIEngine()
+    
+    with patch("socket.create_connection"), \
+         patch("ssl.create_default_context") as mock_ssl:
+        mock_ctx = MagicMock()
+        mock_ssl.return_value = mock_ctx
+        mock_ssock = MagicMock()
+        mock_ctx.wrap_socket.return_value.__enter__.return_value = mock_ssock
+        mock_ssock.recv.return_value = b"HTTP/1.1 200 OK"
+        
+        lat = engine._test_http_get("google.com")
+        assert lat is not None
+
+def test_test_http_get_fail():
+    engine = SNIEngine()
+    with patch("socket.create_connection", side_effect=Exception("conn err")):
+        lat = engine._test_http_get("google.com")
+        assert lat is None
