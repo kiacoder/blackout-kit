@@ -13,7 +13,7 @@ app = typer.Typer(
     name="blackout",
     help="Blackout Kit — DPI Bypass & Censorship Circumvention Toolkit",
     add_completion=False,
-    no_args_is_help=True,
+    no_args_is_help=False,
     rich_markup_mode="rich"
 )
 
