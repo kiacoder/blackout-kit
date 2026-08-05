@@ -517,8 +517,6 @@ def add_defender_exclusion(path: Path | None = None) -> bool:
         return True
 
     _log.info("Defender exclusion needs admin — requesting elevation via UAC…")
-    import tempfile
-    import os
     fd, path = tempfile.mkstemp(suffix=".txt")
     os.close(fd)
     marker = Path(path)
@@ -554,8 +552,6 @@ def remove_defender_exclusion(path: Path | None = None) -> bool:
         return True
 
     _log.info("Defender exclusion removal needs admin — requesting elevation via UAC…")
-    import tempfile
-    import os
     fd, path = tempfile.mkstemp(suffix=".txt")
     os.close(fd)
     marker = Path(path)
