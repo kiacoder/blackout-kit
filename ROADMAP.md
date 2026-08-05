@@ -124,8 +124,8 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | **Typer migration** | 🔜 v1.1 | — | Replace argparse with Typer: type-safe, auto-help, cleaner code |
 | **Interactive dashboard (Zero-Flag mode)** | ✅ Done | Rare | `blackout` with no args opens a keyboard-driven menu for common actions |
 | **`blackout connect` smart command** | 🔜 v1.1 | — | Auto-selects best engine + connects. One word, done. |
-| **`blackout connect --iran`** | 🔜 v1.1 | — | Forces TIC evasion profile: arvancloud.ir SNI + TLS fragment + firefox fingerprint |
-| **`blackout fix`** | 🔜 v1.1 | — | One command runs ALL network repair scripts with live Rich checklist |
+| **`blackout connect --iran`** | ✅ Done | Rare | Forces TIC evasion profile: arvancloud.ir SNI + firefox fingerprint + existing fragment settings |
+| **`blackout fix`** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
 | **Global exception handler** | 🔜 v1.1 | — | No raw Python tracebacks EVER. All errors caught → Rich red Panel → offer auto-fix |
 | **Rich.Prompt interactive menus** | 🔜 v1.1 | — | User can answer questions instead of typing flags |
 | **Real-time status panel** | 🔜 v1.2 | — | Live updating: IP, latency, engine, bytes transferred |

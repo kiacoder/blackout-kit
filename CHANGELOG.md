@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- **Native GDPI runtime:** Added the experimental Go/WinDivert implementation with `StartGDPIC`, `StopGDPIC`, and `IsGDPIRunningC` exports through `blackout_core.dll`.
+- **GDPI backend selection:** Added `gdpi_backend` with `legacy` as the stable default and `native` as an explicit experimental option.
+
 ### Fixed
 - **Engine selection consistency:** `xray` is now exposed consistently across CLI choices, daemon startup, and settings validation.
 - **QUIC engine routing:** `hysteria2` and `tuic` now use protocol-specific engine classes and refuse mismatched configs instead of silently picking the wrong sing-box config.
