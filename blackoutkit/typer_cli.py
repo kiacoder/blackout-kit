@@ -175,6 +175,12 @@ def add_to_path():
     else:
         console.print(f"[info]Blackout Kit ({target_dir}) is already in your PATH.[/info]")
 
+@app.command(hidden=True)
+def gui():
+    """Start the native desktop app"""
+    from .gui_app import run_gui
+    run_gui()
+
 # ── NETWORK GROUP ──
 network_app = typer.Typer(help="WiFi network switcher + ISP detection", no_args_is_help=True)
 app.add_typer(network_app, name="network")

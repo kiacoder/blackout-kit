@@ -87,8 +87,8 @@ def start_launcher():
         launch_config["use_tray"] = tray_var.get() == "yes"
         launch_config["mode"] = mode_var.get()
         
-        if launch_config["env"] != "powershell":
-            # Show a popup for parts still in development
+        if launch_config["env"] not in ["powershell", "native"]:
+            # Show a popup for parts still in development (web, wsl)
             import tkinter.messagebox
             tkinter.messagebox.showinfo(
                 "Coming Soon", 
@@ -121,8 +121,12 @@ def start_launcher():
     # Execute the selected logic
     if launch_config["env"] == "powershell":
         import blackoutkit.typer_cli as typer_cli
-        
-        # Directly call the connect function
         typer_cli.connect(pos_engine=None, engine=None, background=launch_config["use_tray"], iran=False)
+        
+    elif launch_config["env"] == "native":
+        import subprocess, sys, os
+        cmd = [sys.executable, "gui"] if getattr(sys, 'frozen', False) else [sys.executable, sys.argv[0], "gui"]
+        subprocess.Popen(cmd, creationflags=0x08000000 if os.name == 'nt' else 0) # CREATE_NO_WINDOW
+        os._exit(0)
         
     return True
