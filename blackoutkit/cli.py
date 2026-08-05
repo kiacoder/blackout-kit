@@ -1216,6 +1216,7 @@ def cmd_tools(args):
         console.print("\n[success]Done. Restart may be needed for full effect.[/success]")
 
 
+
 def cmd_mode(args):
     """Set or display the security mode (speed / private / legend)."""
     mode_name = getattr(args, "mode_name", None)
@@ -2362,5 +2363,10 @@ def cmd_daemon_run(args):
     """Hidden command — runs inside the background daemon process."""
     daemon.run_daemon_loop(args.engine)
 
+
+def main():
+    """Fallback entry point to route to typer_cli."""
+    from .typer_cli import main as typer_main
+    typer_main()
 
 # End of file

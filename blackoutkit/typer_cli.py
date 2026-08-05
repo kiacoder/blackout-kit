@@ -130,23 +130,29 @@ app.add_typer(network_app, name="network")
 @network_app.command("scan")
 def net_scan():
     """Show all available WiFi networks"""
-    from .cli import cmd_net_scan
+    from .cli import cmd_network
     class DummyArgs: pass
-    cmd_net_scan(DummyArgs())
+    args = DummyArgs()
+    args.network_command = "scan"
+    cmd_network(args)
 
 @network_app.command("isp")
 def net_isp():
     """Show current ISP provider info"""
-    from .cli import cmd_net_isp
+    from .cli import cmd_network
     class DummyArgs: pass
-    cmd_net_isp(DummyArgs())
+    args = DummyArgs()
+    args.network_command = "isp"
+    cmd_network(args)
 
 @network_app.command("auto")
 def net_auto():
     """Auto-switch to best available saved network"""
-    from .cli import cmd_net_auto
+    from .cli import cmd_network
     class DummyArgs: pass
-    cmd_net_auto(DummyArgs())
+    args = DummyArgs()
+    args.network_command = "auto"
+    cmd_network(args)
 
 @network_app.command("switch")
 def net_switch(
@@ -154,7 +160,7 @@ def net_switch(
 ):
     """Switch to a specific WiFi network"""
     from rich.prompt import Prompt
-    from .cli import cmd_net_switch
+    from .cli import cmd_network
     
     if not ssid:
         console.print()
@@ -163,8 +169,9 @@ def net_switch(
         
     class DummyArgs: pass
     args = DummyArgs()
+    args.network_command = "switch"
     args.ssid = ssid
-    cmd_net_switch(args)
+    cmd_network(args)
 
 # ── CONFIG GROUP ──
 config_app = typer.Typer(help="Manage V2Ray proxy configs", no_args_is_help=True)
@@ -173,15 +180,17 @@ app.add_typer(config_app, name="config")
 @config_app.command("list")
 def cfg_list():
     """List all saved configs"""
-    from .cli import cmd_cfg_list
+    from .cli import cmd_config
     class DummyArgs: pass
-    cmd_cfg_list(DummyArgs())
+    args = DummyArgs()
+    args.config_command = "list"
+    cmd_config(args)
 
 @config_app.command("add")
 def cfg_add(uri: str = typer.Argument(None, help="V2Ray URI to add (vmess://, vless://, etc)")):
     """Add a V2Ray URI"""
     from rich.prompt import Prompt
-    from .cli import cmd_cfg_add
+    from .cli import cmd_config
     
     if not uri:
         console.print()
@@ -190,14 +199,15 @@ def cfg_add(uri: str = typer.Argument(None, help="V2Ray URI to add (vmess://, vl
         
     class DummyArgs: pass
     args = DummyArgs()
+    args.config_command = "add"
     args.uri = uri
-    cmd_cfg_add(args)
+    cmd_config(args)
 
 @config_app.command("import")
 def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import")):
     """Import from subscription URL"""
     from rich.prompt import Prompt
-    from .cli import cmd_cfg_import
+    from .cli import cmd_config
     
     if not url:
         console.print()
@@ -206,38 +216,44 @@ def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import"
         
     class DummyArgs: pass
     args = DummyArgs()
+    args.config_command = "import"
     args.url = url
-    cmd_cfg_import(args)
+    cmd_config(args)
 
 @config_app.command("remove")
 def cfg_remove(num: int = typer.Argument(None, help="Config number to remove")):
     """Remove a config by number"""
     from rich.prompt import IntPrompt
-    from .cli import cmd_cfg_remove
+    from .cli import cmd_config
     
     if num is None:
         console.print()
-        num = IntPrompt.ask("🗑️  Enter the config number to remove (see 'config list')")
+        num = IntPrompt.ask("🗑️  Enter the config number to remove (see \'config list\')")
         console.print()
         
     class DummyArgs: pass
     args = DummyArgs()
-    args.num = num
-    cmd_cfg_remove(args)
+    args.config_command = "remove"
+    args.index = num
+    cmd_config(args)
 
 @config_app.command("encrypt")
 def cfg_encrypt():
     """Obfuscate configs.txt → configs.enc (protects at rest)"""
-    from .cli import cmd_cfg_encrypt
+    from .cli import cmd_config
     class DummyArgs: pass
-    cmd_cfg_encrypt(DummyArgs())
+    args = DummyArgs()
+    args.config_command = "encrypt"
+    cmd_config(args)
 
 @config_app.command("decrypt")
 def cfg_decrypt():
     """Restore configs.enc → configs.txt"""
-    from .cli import cmd_cfg_decrypt
+    from .cli import cmd_config
     class DummyArgs: pass
-    cmd_cfg_decrypt(DummyArgs())
+    args = DummyArgs()
+    args.config_command = "decrypt"
+    cmd_config(args)
 
 # ── TOOLS GROUP ──
 tools_app = typer.Typer(help="Network diagnostics, DNS, hotspot, and more", no_args_is_help=True)
@@ -246,16 +262,20 @@ app.add_typer(tools_app, name="tools")
 @tools_app.command("dns-bench")
 def tools_dns_bench():
     """Benchmark DNS servers"""
-    from .cli import cmd_tools_dns_bench
+    from .cli import cmd_tools
     class DummyArgs: pass
-    cmd_tools_dns_bench(DummyArgs())
+    args = DummyArgs()
+    args.tools_command = "dns-bench"
+    cmd_tools(args)
 
 @tools_app.command("dns-flush")
 def tools_dns_flush():
     """Flush DNS cache"""
-    from .cli import cmd_tools_dns_flush
+    from .cli import cmd_tools
     class DummyArgs: pass
-    cmd_tools_dns_flush(DummyArgs())
+    args = DummyArgs()
+    args.tools_command = "dns_flush".replace("_", "-")
+    cmd_tools(args)
 
 @tools_app.command("dns-set")
 def tools_dns_set(
@@ -264,37 +284,44 @@ def tools_dns_set(
 ):
     """Set system DNS server"""
     from rich.prompt import Prompt
-    from .cli import cmd_tools_dns_set
+    from .cli import cmd_tools
     if not ip:
         console.print()
         ip = Prompt.ask("🖥️  Enter the DNS IP to set (e.g. 1.1.1.1)")
         console.print()
     class DummyArgs: pass
     args = DummyArgs()
-    args.ip = ip
+    args.tools_command = "dns-set"
+    args.server = ip
     args.adapter = adapter
-    cmd_tools_dns_set(args)
+    cmd_tools(args)
 
 @tools_app.command("speedtest")
 def tools_speedtest():
     """Run download speed test"""
-    from .cli import cmd_tools_speedtest
+    from .cli import cmd_tools
     class DummyArgs: pass
-    cmd_tools_speedtest(DummyArgs())
+    args = DummyArgs()
+    args.tools_command = "speedtest".replace("_", "-")
+    cmd_tools(args)
 
 @tools_app.command("adapters")
 def tools_adapters():
     """List network adapters and IPs"""
-    from .cli import cmd_tools_adapters
+    from .cli import cmd_tools
     class DummyArgs: pass
-    cmd_tools_adapters(DummyArgs())
+    args = DummyArgs()
+    args.tools_command = "adapters".replace("_", "-")
+    cmd_tools(args)
 
 @tools_app.command("netfix")
 def tools_netfix():
     """Auto-fix common network problems (admin)"""
-    from .cli import cmd_tools_netfix
+    from .cli import cmd_tools
     class DummyArgs: pass
-    cmd_tools_netfix(DummyArgs())
+    args = DummyArgs()
+    args.tools_command = "netfix"
+    cmd_tools(args)
 
 @tools_app.command("hotspot")
 def tools_hotspot(
@@ -302,15 +329,16 @@ def tools_hotspot(
 ):
     """Start/stop Windows Mobile Hotspot"""
     from rich.prompt import Prompt
-    from .cli import cmd_tools_hotspot
+    from .cli import cmd_tools
     if not action:
         console.print()
         action = Prompt.ask("📡 Select hotspot action", choices=["on", "off"])
         console.print()
     class DummyArgs: pass
     args = DummyArgs()
+    args.tools_command = "hotspot"
     args.action = action
-    cmd_tools_hotspot(args)
+    cmd_tools(args)
 
 @tools_app.command("share-vpn")
 def tools_share_vpn(
@@ -318,29 +346,31 @@ def tools_share_vpn(
 ):
     """Share VPN connection via hotspot (ICS)"""
     from rich.prompt import Prompt
-    from .cli import cmd_tools_share_vpn
+    from .cli import cmd_tools
     if not action:
         console.print()
         action = Prompt.ask("🌐 Select ICS VPN sharing action", choices=["on", "off"])
         console.print()
     class DummyArgs: pass
     args = DummyArgs()
+    args.tools_command = "share-vpn"
     args.action = action
-    cmd_tools_share_vpn(args)
+    cmd_tools(args)
 
 @tools_app.command("ping")
 def tools_ping(host: str = typer.Argument(None, help="Host to ping")):
     """TCP ping test"""
     from rich.prompt import Prompt
-    from .cli import cmd_tools_ping
+    from .cli import cmd_tools
     if not host:
         console.print()
         host = Prompt.ask("🏓 Enter host or IP to ping")
         console.print()
     class DummyArgs: pass
     args = DummyArgs()
+    args.tools_command = "ping"
     args.host = host
-    cmd_tools_ping(args)
+    cmd_tools(args)
     
 @tools_app.command("mtu")
 def tools_mtu(
@@ -348,40 +378,43 @@ def tools_mtu(
     set_mtu: bool = typer.Option(False, "--set", help="Auto-set the best MTU")
 ):
     """Detect and optionally set MTU"""
-    from .cli import cmd_tools_mtu
+    from .cli import cmd_tools
     class DummyArgs: pass
     args = DummyArgs()
+    args.tools_command = "mtu"
     args.host = host
     args.set = set_mtu
-    cmd_tools_mtu(args)
+    cmd_tools(args)
 
 @tools_app.command("traceroute")
 def tools_traceroute(host: str = typer.Argument(None, help="Host to trace")):
     """Traceroute to a host"""
     from rich.prompt import Prompt
-    from .cli import cmd_tools_traceroute
+    from .cli import cmd_tools
     if not host:
         console.print()
         host = Prompt.ask("🗺️  Enter host or IP to trace")
         console.print()
     class DummyArgs: pass
     args = DummyArgs()
+    args.tools_command = "traceroute"
     args.host = host
-    cmd_tools_traceroute(args)
+    cmd_tools(args)
 
 @tools_app.command("cert-check")
 def tools_cert_check(host: str = typer.Argument(None, help="Host to check")):
     """Check TLS certificate for a host[:port]"""
     from rich.prompt import Prompt
-    from .cli import cmd_tools_cert_check
+    from .cli import cmd_tools
     if not host:
         console.print()
         host = Prompt.ask("🔐 Enter host or IP to check TLS certificate")
         console.print()
     class DummyArgs: pass
     args = DummyArgs()
+    args.tools_command = "cert-check"
     args.host = host
-    cmd_tools_cert_check(args)
+    cmd_tools(args)
 
 @app.command()
 def test():
@@ -470,6 +503,17 @@ def update():
     cmd_update(DummyArgs())
 
 @app.command()
+
+@app.command(name="manual")
+def manual_help(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran', 'engines', 'configs')")):
+    """Show detailed manual/help for a specific topic"""
+    from .cli import cmd_help
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.topic = topic
+    cmd_help(args)
+
+@app.command()
 def doctor(
     fix_av: bool = typer.Option(False, "--fix-av", help="Add Windows Defender exclusions")
 ):
@@ -503,9 +547,11 @@ app.add_typer(neighbor_app, name="neighbor")
 @neighbor_app.command("discover")
 def neighbor_discover():
     """Scan LAN for nearby sharers"""
-    from .cli import cmd_neighbor_discover
+    from .cli import cmd_neighbor
     class DummyArgs: pass
-    cmd_neighbor_discover(DummyArgs())
+    args = DummyArgs()
+    args.neighbor_command = "discover"
+    cmd_neighbor(args)
 
 @neighbor_app.command("connect")
 def neighbor_connect(
@@ -513,22 +559,25 @@ def neighbor_connect(
 ):
     """Use a neighbor's proxy"""
     from rich.prompt import Prompt
-    from .cli import cmd_neighbor_connect
+    from .cli import cmd_neighbor
     if not ip:
         console.print()
         ip = Prompt.ask("🤝 Enter neighbor IP to connect to")
         console.print()
     class DummyArgs: pass
     args = DummyArgs()
-    args.ip = ip
-    cmd_neighbor_connect(args)
+    args.neighbor_command = "connect"
+    args.host = ip
+    cmd_neighbor(args)
 
 @neighbor_app.command("share")
 def neighbor_share():
     """Broadcast your proxy so neighbors can connect"""
-    from .cli import cmd_neighbor_share
+    from .cli import cmd_neighbor
     class DummyArgs: pass
-    cmd_neighbor_share(DummyArgs())
+    args = DummyArgs()
+    args.neighbor_command = "share"
+    cmd_neighbor(args)
 
 # ── SETTINGS GROUP ──
 settings_app = typer.Typer(help="View and change all settings", no_args_is_help=True)
@@ -537,18 +586,21 @@ app.add_typer(settings_app, name="settings")
 @settings_app.command("list")
 def settings_list():
     """List all settings"""
-    from .cli import cmd_set_list
+    from .cli import cmd_settings
     class DummyArgs: pass
-    cmd_set_list(DummyArgs())
+    args = DummyArgs()
+    args.settings_command = "list"
+    cmd_settings(args)
 
 @settings_app.command("get")
 def settings_get(key: str = typer.Argument(..., help="Setting key")):
     """Get a setting value"""
-    from .cli import cmd_set_get
+    from .cli import cmd_settings
     class DummyArgs: pass
     args = DummyArgs()
+    args.settings_command = "get"
     args.key = key
-    cmd_set_get(args)
+    cmd_settings(args)
 
 @settings_app.command("set")
 def settings_set(
@@ -556,19 +608,22 @@ def settings_set(
     value: str = typer.Argument(..., help="New value")
 ):
     """Change a setting"""
-    from .cli import cmd_set_set
+    from .cli import cmd_settings
     class DummyArgs: pass
     args = DummyArgs()
+    args.settings_command = "set"
     args.key = key
     args.value = value
-    cmd_set_set(args)
+    cmd_settings(args)
 
 @settings_app.command("reset")
 def settings_reset():
     """Reset all settings to defaults"""
-    from .cli import cmd_set_reset
+    from .cli import cmd_settings
     class DummyArgs: pass
-    cmd_set_reset(DummyArgs())
+    args = DummyArgs()
+    args.settings_command = "reset"
+    cmd_settings(args)
 
 # ── BINS GROUP ──
 bins_app = typer.Typer(help="Download and manage engine binaries", no_args_is_help=True)
@@ -579,18 +634,21 @@ def bins_download(
     engine: str = typer.Argument(None, help="Specific engine (or omit for all missing)")
 ):
     """Download missing binaries"""
-    from .cli import cmd_bins_download
+    from .cli import cmd_bins
     class DummyArgs: pass
     args = DummyArgs()
-    args.engine = engine
-    cmd_bins_download(args)
+    args.bins_command = "download"
+    args.binary = engine
+    cmd_bins(args)
 
 @bins_app.command("clean")
 def bins_clean():
     """Delete all cached binaries to force a fresh download"""
-    from .cli import cmd_bins_clean
+    from .cli import cmd_bins
     class DummyArgs: pass
-    cmd_bins_clean(DummyArgs())
+    args = DummyArgs()
+    args.bins_command = "clean"
+    cmd_bins(args)
 
 @app.command(name="_daemon_run", hidden=True)
 def daemon_run(
