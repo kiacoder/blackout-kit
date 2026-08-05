@@ -383,6 +383,248 @@ def tools_cert_check(host: str = typer.Argument(None, help="Host to check")):
     args.host = host
     cmd_tools_cert_check(args)
 
+@app.command()
+def test():
+    """Analyze saved V2Ray configs"""
+    from .cli import cmd_test
+    class DummyArgs: pass
+    cmd_test(DummyArgs())
+
+@app.command()
+def start(
+    pos_engine: str = typer.Argument(None, help="Engine to use"),
+    engine: str = typer.Option(None, "--engine", help="Engine to use"),
+    background: bool = typer.Option(False, "--background", "-d", help="Run as daemon"),
+    iran: bool = typer.Option(False, "--iran", help="TIC 2026 profile")
+):
+    """Start bypass engine"""
+    from rich.prompt import Prompt
+    from .cli import ALL_ENGINE_CHOICES, cmd_start
+    final_engine = pos_engine or engine
+    if not final_engine:
+        console.print()
+        final_engine = Prompt.ask("⚡ Select engine to start", choices=ALL_ENGINE_CHOICES, default="auto")
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.pos_engine = final_engine
+    args.engine = None
+    args.background = background
+    args.iran = iran
+    cmd_start(args)
+
+@app.command()
+def stop():
+    """Stop background daemon"""
+    from .cli import cmd_stop
+    class DummyArgs: pass
+    cmd_stop(DummyArgs())
+
+@app.command()
+def disconnect():
+    """Stop background daemon (alias for stop)"""
+    from .cli import cmd_stop
+    class DummyArgs: pass
+    cmd_stop(DummyArgs())
+
+@app.command()
+def emergency():
+    """Try all engines until one works"""
+    from .cli import cmd_emergency
+    class DummyArgs: pass
+    cmd_emergency(DummyArgs())
+
+@app.command()
+def status():
+    """Show daemon status and connection health"""
+    from .cli import cmd_status
+    class DummyArgs: pass
+    cmd_status(DummyArgs())
+
+@app.command()
+def logs():
+    """View daemon log output"""
+    from .cli import cmd_logs
+    class DummyArgs: pass
+    cmd_logs(DummyArgs())
+
+@app.command()
+def panic():
+    """🚨 Instantly kill all connections, flush DNS, clear proxies, and restore normal state"""
+    from .cli import cmd_panic
+    class DummyArgs: pass
+    cmd_panic(DummyArgs())
+
+@app.command()
+def shield():
+    """🛡️ Activate Mullvad-style strict kill switch and Ad/Tracker blocker"""
+    from .cli import cmd_shield
+    class DummyArgs: pass
+    cmd_shield(DummyArgs())
+
+@app.command()
+def update():
+    """Update Blackout Kit to latest version"""
+    from .cli import cmd_update
+    class DummyArgs: pass
+    cmd_update(DummyArgs())
+
+@app.command()
+def doctor(
+    fix_av: bool = typer.Option(False, "--fix-av", help="Add Windows Defender exclusions")
+):
+    """Diagnose and fix environment issues"""
+    from .cli import cmd_doctor
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.fix_av = fix_av
+    cmd_doctor(args)
+
+@app.command()
+def country(
+    iso_code: str = typer.Argument(None, help="2-letter ISO code (IR, CN, RU) or 'auto'")
+):
+    """Set censorship country profile"""
+    from rich.prompt import Prompt
+    from .cli import cmd_country
+    if not iso_code:
+        console.print()
+        iso_code = Prompt.ask("🌍 Enter country code (IR, CN, RU, auto)")
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.iso_code = iso_code
+    cmd_country(args)
+
+# ── NEIGHBOR GROUP ──
+neighbor_app = typer.Typer(help="Connect via a nearby Blackout Kit device", no_args_is_help=True)
+app.add_typer(neighbor_app, name="neighbor")
+
+@neighbor_app.command("discover")
+def neighbor_discover():
+    """Scan LAN for nearby sharers"""
+    from .cli import cmd_neighbor_discover
+    class DummyArgs: pass
+    cmd_neighbor_discover(DummyArgs())
+
+@neighbor_app.command("connect")
+def neighbor_connect(
+    ip: str = typer.Argument(None, help="Neighbor IP address (e.g., 192.168.1.5)")
+):
+    """Use a neighbor's proxy"""
+    from rich.prompt import Prompt
+    from .cli import cmd_neighbor_connect
+    if not ip:
+        console.print()
+        ip = Prompt.ask("🤝 Enter neighbor IP to connect to")
+        console.print()
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.ip = ip
+    cmd_neighbor_connect(args)
+
+@neighbor_app.command("share")
+def neighbor_share():
+    """Broadcast your proxy so neighbors can connect"""
+    from .cli import cmd_neighbor_share
+    class DummyArgs: pass
+    cmd_neighbor_share(DummyArgs())
+
+# ── SETTINGS GROUP ──
+settings_app = typer.Typer(help="View and change all settings", no_args_is_help=True)
+app.add_typer(settings_app, name="settings")
+
+@settings_app.command("list")
+def settings_list():
+    """List all settings"""
+    from .cli import cmd_set_list
+    class DummyArgs: pass
+    cmd_set_list(DummyArgs())
+
+@settings_app.command("get")
+def settings_get(key: str = typer.Argument(..., help="Setting key")):
+    """Get a setting value"""
+    from .cli import cmd_set_get
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.key = key
+    cmd_set_get(args)
+
+@settings_app.command("set")
+def settings_set(
+    key: str = typer.Argument(..., help="Setting key"),
+    value: str = typer.Argument(..., help="New value")
+):
+    """Change a setting"""
+    from .cli import cmd_set_set
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.key = key
+    args.value = value
+    cmd_set_set(args)
+
+@settings_app.command("reset")
+def settings_reset():
+    """Reset all settings to defaults"""
+    from .cli import cmd_set_reset
+    class DummyArgs: pass
+    cmd_set_reset(DummyArgs())
+
+# ── BINS GROUP ──
+bins_app = typer.Typer(help="Download and manage engine binaries", no_args_is_help=True)
+app.add_typer(bins_app, name="bins")
+
+@bins_app.command("download")
+def bins_download(
+    engine: str = typer.Argument(None, help="Specific engine (or omit for all missing)")
+):
+    """Download missing binaries"""
+    from .cli import cmd_bins_download
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.engine = engine
+    cmd_bins_download(args)
+
+@bins_app.command("clean")
+def bins_clean():
+    """Delete all cached binaries to force a fresh download"""
+    from .cli import cmd_bins_clean
+    class DummyArgs: pass
+    cmd_bins_clean(DummyArgs())
+
+@app.command(name="_daemon_run", hidden=True)
+def daemon_run(
+    engine: str = typer.Option(..., "--engine")
+):
+    from .cli import cmd_daemon_run
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.engine = engine
+    cmd_daemon_run(args)
+
+@app.command()
+def preflight():
+    """Check readiness for an internet blackout"""
+    from .cli import cmd_preflight
+    class DummyArgs: pass
+    cmd_preflight(DummyArgs())
+
+@app.command(name="0xDEADBEEF", hidden=True)
+def deadbeef():
+    from .cli import cmd_easteregg
+    class DummyArgs: pass
+    cmd_easteregg(DummyArgs())
+
+@app.callback(invoke_without_command=True)
+def app_callback(ctx: typer.Context):
+    if ctx.invoked_subcommand is None:
+        from . import settings as cfg
+        from .cli import print_banner, _interactive_menu
+        s = cfg.load()
+        if s.get("show_banner", True):
+            print_banner()
+        _interactive_menu()
+
 
 def main():
     """Global entry point for the new Typer CLI."""

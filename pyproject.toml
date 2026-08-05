@@ -20,10 +20,11 @@ dependencies = [
     "httpx>=0.24.0",
     "psutil>=5.9.0",
     "cryptography>=41.0.0",
+    "typer>=0.12.0",
 ]
 
 [project.scripts]
-blackout = "blackoutkit.cli:main"
+blackout = "blackoutkit.typer_cli:main"
 
 [tool.setuptools]
 packages = ["blackoutkit"]
