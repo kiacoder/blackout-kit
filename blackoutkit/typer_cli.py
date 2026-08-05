@@ -49,6 +49,26 @@ def scan(
     
     cmd_scan(args)
 
+def _ask_engine(prompt_text: str = "⚡ Type an engine to connect") -> str:
+    from rich.columns import Columns
+    from rich.panel import Panel
+    from rich.align import Align
+    from rich.prompt import Prompt
+    from .cli import ALL_ENGINE_CHOICES
+    
+    console.print()
+    engine_panels = [Panel(f"[bold cyan]{e}[/bold cyan]", border_style="dim blue", expand=True) for e in ALL_ENGINE_CHOICES]
+    console.print(Panel(
+        Align.center(Columns(engine_panels, align="center", expand=True, equal=True)),
+        title="[bold yellow]⚡ AVAILABLE ENGINES[/bold yellow]",
+        border_style="cyan",
+        padding=(1, 2)
+    ))
+    console.print()
+    ans = Prompt.ask(prompt_text, choices=ALL_ENGINE_CHOICES, show_choices=False, default="auto")
+    console.print()
+    return ans
+
 @app.command()
 def connect(
     pos_engine: str = typer.Argument(None, help="Engine to use (e.g. sni, gdpi, psiphon, auto)"),
@@ -63,13 +83,7 @@ def connect(
     # Interactive mode if engine is missing
     final_engine = pos_engine or engine
     if not final_engine:
-        console.print()
-        final_engine = Prompt.ask(
-            "⚡ Select an engine to connect with",
-            choices=ALL_ENGINE_CHOICES,
-            default="auto"
-        )
-        console.print()
+        final_engine = _ask_engine("⚡ Type an engine to connect")
         
     from .cli import cmd_connect
     class DummyArgs: pass
@@ -473,9 +487,7 @@ def start(
     from .cli import ALL_ENGINE_CHOICES, cmd_start
     final_engine = pos_engine or engine
     if not final_engine:
-        console.print()
-        final_engine = Prompt.ask("⚡ Select engine to start", choices=ALL_ENGINE_CHOICES, default="auto")
-        console.print()
+        final_engine = _ask_engine("⚡ Type an engine to start")
     class DummyArgs: pass
     args = DummyArgs()
     args.pos_engine = final_engine
