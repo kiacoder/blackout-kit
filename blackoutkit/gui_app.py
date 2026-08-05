@@ -333,16 +333,33 @@ class BlackoutGUI(ctk.CTk):
         self._connection_attempt += 1
         current_attempt = self._connection_attempt
         
-        # Simulate connection in a background thread
-        threading.Thread(target=self._mock_connect, args=(current_attempt,), daemon=True).start()
+        # Start real connection in a background thread
+        threading.Thread(target=self._real_connect, args=(current_attempt,), daemon=True).start()
         
-    def _mock_connect(self, attempt: int):
-        time.sleep(1.5)
+    def _real_connect(self, attempt: int):
+        from . import daemon
+        engine_name = self.engine_var.get()
+        
+        try:
+            # Ensure no orphaned daemon is running
+            daemon.stop()
+            pid = daemon.start(engine_name)
+            if not pid:
+                self.after(0, self.append_log, "[error]Failed to start background daemon.[/error]")
+                self.after(0, self.disconnect)
+                return
+        except Exception as e:
+            self.after(0, self.append_log, f"[error]Error starting engine: {e}[/error]")
+            self.after(0, self.disconnect)
+            return
+            
+        time.sleep(1.0)
+        
         # Verify we didn't cancel the connection early or start a new one
         if self.current_state != "CONNECTING" or self._connection_attempt != attempt:
             return
             
-        self.append_log("[+] Proxy tunnel established successfully.")
+        self.after(0, self.append_log, f"[+] Proxy tunnel established (PID {pid}).")
         # Update UI from thread
         self.after(0, self._set_connected_state, attempt)
         
@@ -362,6 +379,28 @@ class BlackoutGUI(ctk.CTk):
         self.uptime_seconds = 0
         self._update_uptime()
         
+        # Start log tailer
+        threading.Thread(target=self._tail_logs, args=(attempt,), daemon=True).start()
+        
+    def _tail_logs(self, attempt: int):
+        from . import daemon
+        import os
+        try:
+            if not daemon.LOG_FILE.exists():
+                return
+            with open(daemon.LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                f.seek(0, 2) # Go to end
+                while self.current_state == "SECURE" and self._connection_attempt == attempt:
+                    line = f.readline()
+                    if not line:
+                        time.sleep(0.5)
+                        continue
+                    
+                    # Update UI
+                    self.after(0, self.append_log, line.strip())
+        except Exception:
+            pass
+        
     def _update_uptime(self):
         if self.current_state != "SECURE":
             return
@@ -378,6 +417,12 @@ class BlackoutGUI(ctk.CTk):
         if self._uptime_job:
             self.after_cancel(self._uptime_job)
             self._uptime_job = None
+            
+        from . import daemon
+        if daemon.stop():
+            self.append_log("[-] Connection closed. System proxy cleared.")
+        else:
+            self.append_log("[-] Disconnected.")
             
         self.connect_btn.configure(text="CONNECT", fg_color="#00A8FF", hover_color="#008ecc")
         self.status_label.configure(text="DISCONNECTED", text_color="gray40")
