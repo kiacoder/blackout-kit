@@ -6,8 +6,9 @@ import threading
 def start_launcher():
     try:
         import customtkinter as ctk
-    except ImportError:
-        print("[!] customtkinter is not installed. Falling back to terminal mode.")
+    except ImportError as e:
+        print(f"[!] customtkinter import failed: {e}")
+        print("[!] Falling back to terminal mode.")
         print("[!] Run: pip install customtkinter")
         return False
 
@@ -61,12 +62,6 @@ def start_launcher():
     
     ctk.CTkLabel(settings_frame, text="3. Connection Profile", font=ctk.CTkFont(weight="bold")).pack(anchor="w")
     
-    # Engine Dropdown
-    ctk.CTkLabel(settings_frame, text="Engine Selection:").pack(anchor="w", pady=(10,0))
-    engine_var = ctk.StringVar(value="auto")
-    engine_dropdown = ctk.CTkComboBox(settings_frame, variable=engine_var, values=["auto", "sni", "gdpi", "xray", "wireguard", "psiphon", "hysteria2"])
-    engine_dropdown.pack(fill="x", pady=(0,10))
-    
     # Mode Dropdown
     ctk.CTkLabel(settings_frame, text="Security Mode:").pack(anchor="w")
     mode_var = ctk.StringVar(value="speed")
@@ -81,7 +76,6 @@ def start_launcher():
     def on_launch():
         env = platform_var.get()
         use_tray = tray_var.get() == "yes"
-        engine = engine_var.get()
         mode = mode_var.get()
         
         if env != "powershell":
@@ -104,8 +98,6 @@ def start_launcher():
             
             # Mock the arguments for cli
             sys.argv = ["blackout", "connect"]
-            if engine != "auto":
-                sys.argv.append(engine)
             if use_tray:
                 sys.argv.append("--background")
                 
