@@ -3,42 +3,108 @@ import threading
 import time
 import math
 
-class PulseCanvas(ctk.CTkCanvas):
+WORLD_MAP = [
+    "         .......                                          .......                       ",
+    "       ...........                                      ...........            .....    ",
+    "      .............                                    .............         .........  ",
+    "       .............    ...                            ..............       ........... ",
+    "        ............  .....                           ................     .............",
+    "         ..................                           ................     .............",
+    "          .................                          ..................    .............",
+    "           ................                          ..................   ..............",
+    "            ...............                          ..................   ..............",
+    "              ............                            .................   ............. ",
+    "               ..........                             .................    ...........  ",
+    "                 .......                               ...............      .........   ",
+    "                   ....                                ...............        .....     ",
+    "                    ...                                 .............                   ",
+    "                                                         ...........                ... ",
+    "                                                          .........               ......",
+    "                                                            .....                .......",
+    "                                                              .                   ..... ",
+]
+
+class ConnectionMapCanvas(ctk.CTkCanvas):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
-        self.radius = 10
-        self.max_radius = 80
         self.is_active = False
         self.color = "#00A8FF"
-        self._pulse_job = None
-        self.draw_pulse()
+        self.nodes = {
+            "us": (15, 6),
+            "eu": (48, 5),
+            "asia": (70, 7)
+        }
+        self.current_target = "eu"
+        self.anim_progress = 0.0
+        self._anim_job = None
+        self.bind("<Configure>", self.draw_map)
 
-    def draw_pulse(self):
-        self.delete("pulse")
+    def draw_map(self, event=None):
+        self.delete("all")
         width = int(self.winfo_width())
         height = int(self.winfo_height())
-        if width <= 1: width = 350
-        if height <= 1: height = 150
+        if width <= 1: width = 500
+        if height <= 1: height = 200
         
-        cx, cy = width // 2, height // 2
+        # Calculate cell size
+        rows = len(WORLD_MAP)
+        cols = len(WORLD_MAP[0])
+        cell_w = width / cols
+        cell_h = height / rows
         
-        # Center dot
-        self.create_oval(cx - 5, cy - 5, cx + 5, cy + 5, fill=self.color, outline=self.color, tags="pulse")
+        # Draw dotted map
+        for r, row_str in enumerate(WORLD_MAP):
+            for c, char in enumerate(row_str):
+                if char == ".":
+                    x = c * cell_w + (cell_w/2)
+                    y = r * cell_h + (cell_h/2)
+                    self.create_oval(x-1, y-1, x+1, y+1, fill="#333", outline="#333")
+                    
+        self.cell_w = cell_w
+        self.cell_h = cell_h
+        
+        self.draw_overlay()
+        
+    def draw_overlay(self):
+        self.delete("overlay")
+        
+        us_x = self.nodes["us"][0] * self.cell_w
+        us_y = self.nodes["us"][1] * self.cell_h
+        target_x = self.nodes[self.current_target][0] * self.cell_w
+        target_y = self.nodes[self.current_target][1] * self.cell_h
+        
+        # Draw base nodes
+        self.create_oval(us_x-4, us_y-4, us_x+4, us_y+4, fill=self.color, outline="", tags="overlay")
         
         if self.is_active:
-            # Draw expanding ring
-            self.create_oval(cx - self.radius, cy - self.radius, cx + self.radius, cy + self.radius, 
-                           outline=self.color, width=2, tags="pulse")
-            self.radius += 2
-            if self.radius > self.max_radius:
-                self.radius = 10
-        
-        self._pulse_job = self.after(50, self.draw_pulse)
-        
-    def set_state(self, active: bool, color: str):
+            # Draw target node
+            self.create_oval(target_x-4, target_y-4, target_x+4, target_y+4, fill=self.color, outline="", tags="overlay")
+            
+            # Animate line
+            self.anim_progress += 0.05
+            if self.anim_progress > 1.0:
+                self.anim_progress = 0.0
+                
+            curr_x = us_x + (target_x - us_x) * self.anim_progress
+            curr_y = us_y + (target_y - us_y) * self.anim_progress - (math.sin(self.anim_progress * math.pi) * 30) # Arc effect
+            
+            # Draw trail
+            self.create_line(us_x, us_y, curr_x, curr_y, fill=self.color, width=2, tags="overlay", dash=(4, 4))
+            
+            # Draw pulse ring on target
+            pulse_rad = 15 * (1.0 - self.anim_progress)
+            self.create_oval(target_x-pulse_rad, target_y-pulse_rad, target_x+pulse_rad, target_y+pulse_rad, outline=self.color, tags="overlay")
+            
+            self._anim_job = self.after(50, self.draw_overlay)
+
+    def set_state(self, active: bool, color: str, target: str = "eu"):
         self.is_active = active
         self.color = color
-        self.radius = 10
+        self.current_target = target
+        self.anim_progress = 0.0
+        if self._anim_job:
+            self.after_cancel(self._anim_job)
+        self.draw_overlay()
 
 class BlackoutGUI(ctk.CTk):
     def __init__(self):
@@ -101,18 +167,17 @@ class BlackoutGUI(ctk.CTk):
         self.home_frame.grid_rowconfigure((0, 4), weight=1)
         self.home_frame.grid_columnconfigure(0, weight=1)
         
-        # Animated Pulse Canvas
+        # Animated World Map Canvas
         self.map_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
-        self.map_frame.grid(row=0, column=0, pady=(0, 20))
+        self.map_frame.grid(row=0, column=0, pady=(0, 10), sticky="ew")
         
-        self.radar = PulseCanvas(
+        self.radar = ConnectionMapCanvas(
             self.map_frame, 
-            width=350, 
-            height=150, 
+            height=180, 
             bg="#181818", 
             highlightthickness=0
         )
-        self.radar.pack(pady=10)
+        self.radar.pack(fill="x", padx=10, pady=10)
 
         # Status Header
         self.status_label = ctk.CTkLabel(
