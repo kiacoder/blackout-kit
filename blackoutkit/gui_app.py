@@ -1,16 +1,44 @@
 import customtkinter as ctk
 import threading
 import time
-import sys
-import os
-from PIL import Image
+import math
 
-def get_asset_path(filename):
-    if getattr(sys, 'frozen', False):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_path, "assets", filename)
+class PulseCanvas(ctk.CTkCanvas):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        self.radius = 10
+        self.max_radius = 80
+        self.is_active = False
+        self.color = "#00A8FF"
+        self._pulse_job = None
+        self.draw_pulse()
+
+    def draw_pulse(self):
+        self.delete("pulse")
+        width = int(self.winfo_width())
+        height = int(self.winfo_height())
+        if width <= 1: width = 350
+        if height <= 1: height = 150
+        
+        cx, cy = width // 2, height // 2
+        
+        # Center dot
+        self.create_oval(cx - 5, cy - 5, cx + 5, cy + 5, fill=self.color, outline=self.color, tags="pulse")
+        
+        if self.is_active:
+            # Draw expanding ring
+            self.create_oval(cx - self.radius, cy - self.radius, cx + self.radius, cy + self.radius, 
+                           outline=self.color, width=2, tags="pulse")
+            self.radius += 2
+            if self.radius > self.max_radius:
+                self.radius = 10
+        
+        self._pulse_job = self.after(50, self.draw_pulse)
+        
+    def set_state(self, active: bool, color: str):
+        self.is_active = active
+        self.color = color
+        self.radius = 10
 
 class BlackoutGUI(ctk.CTk):
     def __init__(self):
@@ -19,6 +47,9 @@ class BlackoutGUI(ctk.CTk):
         self.title("Blackout Kit — Stealth Mode")
         self.geometry("1000x700")
         self.resizable(False, False)
+        
+        # Handle graceful shutdown to stop all background Tkinter tasks
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Configure grid layout (1x2)
         self.grid_rowconfigure(0, weight=1)
@@ -70,21 +101,18 @@ class BlackoutGUI(ctk.CTk):
         self.home_frame.grid_rowconfigure((0, 4), weight=1)
         self.home_frame.grid_columnconfigure(0, weight=1)
         
-        # Map Image Background (Or Top Header)
+        # Animated Pulse Canvas
         self.map_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
         self.map_frame.grid(row=0, column=0, pady=(0, 20))
         
-        try:
-            map_image = ctk.CTkImage(
-                light_image=Image.open(get_asset_path("world_map.jpg")),
-                dark_image=Image.open(get_asset_path("world_map.jpg")),
-                size=(350, 200)
-            )
-            self.map_label = ctk.CTkLabel(self.map_frame, text="", image=map_image)
-            self.map_label.pack()
-        except Exception:
-            self.map_label = ctk.CTkLabel(self.map_frame, text="[ MAP ASSET MISSING ]", text_color="gray")
-            self.map_label.pack()
+        self.radar = PulseCanvas(
+            self.map_frame, 
+            width=350, 
+            height=150, 
+            bg="#181818", 
+            highlightthickness=0
+        )
+        self.radar.pack(pady=10)
 
         # Status Header
         self.status_label = ctk.CTkLabel(
@@ -228,6 +256,8 @@ class BlackoutGUI(ctk.CTk):
         self.status_label.configure(text="CONNECTING", text_color="#ff9900")
         self.engine_selector.configure(state="disabled")
         
+        self.radar.set_state(True, "#ff9900")
+        
         self.append_log(f"[*] Preparing {self.engine_var.get()} engine...")
         
         # Simulate connection in a background thread
@@ -245,6 +275,7 @@ class BlackoutGUI(ctk.CTk):
         self.status_label.configure(text="SECURE", text_color="#00cc66")
         self.ip_label.configure(text="104.18.2.19", text_color="#00A8FF")
         self.ping_label.configure(text="42 ms", text_color="#00cc66")
+        self.radar.set_state(True, "#00cc66")
         self.append_log("[✓] You are now secure.")
         
     def disconnect(self):
@@ -254,8 +285,17 @@ class BlackoutGUI(ctk.CTk):
         self.ip_label.configure(text="Hidden", text_color="white")
         self.ping_label.configure(text="-- ms", text_color="white")
         self.engine_selector.configure(state="normal")
+        self.radar.set_state(False, "#00A8FF")
         self.append_log("[-] Connection closed. System proxy cleared.")
 
+    def on_closing(self):
+        # Cancel all pending after tasks before destroying
+        try:
+            for after_id in self.tk.call('after', 'info'):
+                self.after_cancel(after_id)
+        except Exception:
+            pass
+        self.destroy()
 
 def run_gui():
     ctk.set_appearance_mode("Dark")
@@ -269,15 +309,6 @@ def run_gui():
     app.report_callback_exception = silent_callback_exception
     
     app.mainloop()
-    
-    # Cancel pending after tasks
-    try:
-        for after_id in app.tk.call('after', 'info'):
-            app.after_cancel(after_id)
-    except Exception:
-        pass
-        
-    app.destroy()
     return True
 
 if __name__ == "__main__":
