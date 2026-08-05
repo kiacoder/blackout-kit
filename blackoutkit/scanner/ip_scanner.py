@@ -110,7 +110,6 @@ def generate_cloudflare_ips(count: int = 100) -> list[str]:
         per_range = max(1, remaining // len(CLOUDFLARE_RANGES))
         for cidr in CLOUDFLARE_RANGES:
             try:
-                import ipaddress
                 network = ipaddress.IPv4Network(cidr)
                 num_addresses = network.num_addresses
                 sample_count = min(per_range, num_addresses)

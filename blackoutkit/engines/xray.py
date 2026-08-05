@@ -212,6 +212,7 @@ class XRayEngine(Engine):
             "tlsSettings": {
                 "serverName":    c.sni,
                 "fingerprint":   s["xray_fingerprint"],
+                "allowInsecure": allow_insecure,
             },
             "wsSettings": {
                 "path":    c.path or "/",
