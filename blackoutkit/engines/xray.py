@@ -179,6 +179,32 @@ class XRayEngine(Engine):
             outbound["proxySettings"] = {"tag": "tor-out"}
             self._log.info("LEGEND mode: Chaining XRay outbound through Tor (127.0.0.1:9050)")
 
+        # ── Fragment Mode (TIC 2026 Evasion) ─────────────────────
+        frag = s.get("xray_fragment")
+        if frag and "," in frag:
+            try:
+                parts = frag.split(",")
+                fragment_settings = {}
+                if len(parts) == 2:
+                    fragment_settings = {"packets": "tlshello", "length": parts[0], "interval": parts[1]}
+                elif len(parts) >= 3:
+                    fragment_settings = {"packets": parts[0], "length": parts[1], "interval": parts[2]}
+                
+                if fragment_settings:
+                    frag_outbound = {
+                        "tag": "fragment-out",
+                        "protocol": "freedom",
+                        "settings": {
+                            "fragment": fragment_settings
+                        }
+                    }
+                    config["outbounds"].append(frag_outbound)
+                    # Route proxy traffic through the fragment outbound via dialerProxy
+                    outbound.setdefault("streamSettings", {}).setdefault("sockopt", {})["dialerProxy"] = "fragment-out"
+                    self._log.info("TLS Record-Layer Fragmentation enabled: %s", frag)
+            except Exception as e:
+                self._log.error("Failed to parse xray_fragment: %s", e)
+
         config["outbounds"].insert(0, outbound)
         config["outbounds"].extend([
             {"tag": "direct", "protocol": "freedom"},
@@ -191,20 +217,7 @@ class XRayEngine(Engine):
         mode = _sec.get_current_mode()
         allow_insecure, _warn = _cb.should_allow_insecure(c.address, c.port, mode)
         
-        # ── Fragment Mode (TIC 2026 Evasion) ─────────────────────
-        # Only active if xray_fragment is set in settings
-        frag = s.get("xray_fragment")
-        fragment_settings = None
-        if frag and "," in frag:
-            try:
-                packets, length = frag.split(",")
-                fragment_settings = {
-                    "packets": packets,
-                    "length": length,
-                    "system": "tls"
-                }
-            except Exception:
-                pass
+
 
         stream = {
             "network":  "ws",
@@ -221,9 +234,6 @@ class XRayEngine(Engine):
         }
 
 
-        if fragment_settings:
-            stream["tlsSettings"]["fragment"] = fragment_settings
-            self._log.debug("TLS Fragmentation enabled: %s", frag)
 
         if c.protocol == "trojan":
             return {
