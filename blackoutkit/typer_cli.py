@@ -49,6 +49,80 @@ def scan(
     
     cmd_scan(args)
 
+@app.command()
+def connect(
+    pos_engine: str = typer.Argument(None, help="Engine to use (e.g. sni, gdpi, psiphon, auto)"),
+    engine: str = typer.Option(None, "--engine", help="Engine to use"),
+    background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
+    iran: bool = typer.Option(False, "--iran", help="🔥 TIC 2026 evasion profile")
+):
+    """Smart connect — auto-preps and starts the best engine"""
+    from rich.prompt import Prompt
+    from .cli import ALL_ENGINE_CHOICES
+    
+    # Interactive mode if engine is missing
+    final_engine = pos_engine or engine
+    if not final_engine:
+        console.print()
+        final_engine = Prompt.ask(
+            "⚡ Select an engine to connect with",
+            choices=ALL_ENGINE_CHOICES,
+            default="auto"
+        )
+        console.print()
+        
+    from .cli import cmd_connect
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.pos_engine = final_engine
+    args.engine = None
+    args.background = background
+    args.iran = iran
+    
+    cmd_connect(args)
+
+@app.command()
+def mode(
+    mode_name: str = typer.Argument(None, help="speed | private | legend (omit to interactively select)")
+):
+    """View or set security mode"""
+    from rich.prompt import Prompt
+    from .cli import cmd_mode
+    
+    if not mode_name:
+        console.print()
+        mode_name = Prompt.ask(
+            "🛡️ Select a security mode",
+            choices=["speed", "private", "legend"]
+        )
+        console.print()
+        
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.mode_name = mode_name
+    cmd_mode(args)
+
+@app.command()
+def killswitch(
+    action: str = typer.Argument(None, help="on | off | test (omit to interactively select)")
+):
+    """Enable/disable kill switch (blocks net if proxy drops)"""
+    from rich.prompt import Prompt
+    from .cli import cmd_killswitch
+    
+    if not action:
+        console.print()
+        action = Prompt.ask(
+            "☠️ Select killswitch action",
+            choices=["on", "off", "test"]
+        )
+        console.print()
+        
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.action = action
+    cmd_killswitch(args)
+
 def main():
     """Global entry point for the new Typer CLI."""
     try:
