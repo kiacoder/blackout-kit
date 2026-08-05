@@ -217,7 +217,14 @@ class XRayEngine(Engine):
         mode = _sec.get_current_mode()
         allow_insecure, _warn = _cb.should_allow_insecure(c.address, c.port, mode)
         
-
+        target_ip = c.address
+        from ..tools import resolve_doh
+        resolved = resolve_doh(c.address)
+        if resolved and resolved != c.address:
+            target_ip = resolved
+            self._log.debug("DoH Bootstrap: resolved %s -> %s", c.address, target_ip)
+        elif not resolved:
+            self._log.warning("DoH Bootstrap failed to resolve %s", c.address)
 
         stream = {
             "network":  "ws",
@@ -239,7 +246,7 @@ class XRayEngine(Engine):
             return {
                 "tag":      "proxy",
                 "protocol": "trojan",
-                "settings": {"servers": [{"address": c.address, "port": c.port, "password": c.password}]},
+                "settings": {"servers": [{"address": target_ip, "port": c.port, "password": c.password}]},
                 "streamSettings": stream,
                 "mux": {"enabled": s["xray_mux_enabled"]},
             }
@@ -247,7 +254,7 @@ class XRayEngine(Engine):
             return {
                 "tag":      "proxy",
                 "protocol": "vless",
-                "settings": {"vnext": [{"address": c.address, "port": c.port,
+                "settings": {"vnext": [{"address": target_ip, "port": c.port,
                                          "users": [{"id": c.uuid, "encryption": "none"}]}]},
                 "streamSettings": stream,
                 "mux": {"enabled": s["xray_mux_enabled"]},

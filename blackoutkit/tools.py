@@ -142,6 +142,33 @@ def benchmark_dns(domain: str = "www.google.com", repeat: int = 3) -> list[tuple
     return results
 
 
+def resolve_doh(domain: str, timeout: float = 5.0) -> str | None:
+    """Resolve a domain to an IP using Cloudflare DoH (DNS over HTTPS)."""
+    import urllib.request
+    import json
+    import ipaddress
+    try:
+        ipaddress.ip_address(domain)
+        return domain
+    except ValueError:
+        pass
+
+    try:
+        req = urllib.request.Request(
+            f"https://1.1.1.1/dns-query?name={domain}&type=A",
+            headers={"accept": "application/dns-json"}
+        )
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            if data.get("Status") == 0 and data.get("Answer"):
+                for answer in data["Answer"]:
+                    if answer.get("type") == 1:  # A record
+                        return answer["data"]
+    except Exception as e:
+        _log.warning("DoH bootstrap failed for %s: %s", domain, e)
+    return None
+
+
 def _dns_query(dns_ip: str, hostname: str, timeout: float = 3.0) -> str | None:
     """Simple DNS A-record query using raw UDP to a specific server."""
     import struct, random
