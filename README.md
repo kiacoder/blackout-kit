@@ -221,6 +221,7 @@ blackout connect appsscript
 
 blackout connect --background      Run in background (daemon mode)
 blackout connect sni --background
+blackout connect --iran            Apply Iran TIC 2026 evasion profile
 
 blackout emergency                 Try all engines in order until one works
 blackout emergency --background

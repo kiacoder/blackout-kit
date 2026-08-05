@@ -7,10 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+- **Typer CLI rewrite:** Modernized the CLI routing using Typer, maintaining backward compatibility with the monolithic `cli.py` legacy dispatcher functions while improving command organization.
+- **Iran TIC 2026 Evasion Flag:** Added `--iran` flag to `blackout connect` which automatically activates a specialized bypass profile (Private mode, Firefox fingerprinting, ArvanCloud SNI spoofing, and TLS record fragmentation).
 - **Native GDPI runtime:** Added the experimental Go/WinDivert implementation with `StartGDPIC`, `StopGDPIC`, and `IsGDPIRunningC` exports through `blackout_core.dll`.
 - **GDPI backend selection:** Added `gdpi_backend` with `legacy` as the stable default and `native` as an explicit experimental option.
 
 ### Fixed
+- **Syntax and Lint Fixes:** Addressed severe `F821` undefined variable errors (like `os` in `elevate.py`), removed `F401` unused imports, fixed `F541` missing f-string placeholders, and cleared unused local variables.
 - **Engine selection consistency:** `xray` is now exposed consistently across CLI choices, daemon startup, and settings validation.
 - **QUIC engine routing:** `hysteria2` and `tuic` now use protocol-specific engine classes and refuse mismatched configs instead of silently picking the wrong sing-box config.
 - **Status accuracy:** `blackout status` now derives HTTP/SOCKS checks from the active engine instead of assuming XRay ports for every engine.
@@ -19,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CLI startup fallback:** missing-`rich` error handling in `blackout.py` now degrades to plain-text output without secondary crash loops in non-interactive mode.
 
 ### Changed
+- **Dependencies Bump:** Upgraded `cryptography` to `>=43.0.0`, `httpx[http2]` to `>=0.27.0`, `rich` to `>=13.7.1`, and `psutil` to `>=6.0.0` across `pyproject.toml` and `requirements.txt` to clear Dependabot security alerts.
 - **Theme setting behavior:** `color_theme` now takes effect in the CLI settings flow instead of being dead configuration.
 - **GDPI product direction:** the stable legacy GoodbyeDPI path remains the default backend, while the native Go/WinDivert implementation is treated as experimental until it reaches parity.
 - **Docs consistency:** README, roadmap, and metadata text now reflect the actual engine set, country profiles, current command surface, and GDPI backend split.
