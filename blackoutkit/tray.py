@@ -10,14 +10,19 @@ def _create_image():
     try:
         from PIL import Image, ImageDraw
         # Try loading custom icon first
-        icon_path = Path(__file__).parent.parent / "bins" / "icon.png"
+        import sys
+        if getattr(sys, 'frozen', False):
+            icon_path = Path(sys._MEIPASS) / "bins" / "icon.png"
+        else:
+            icon_path = Path(__file__).parent.parent / "bins" / "icon.png"
+
         if icon_path.exists():
             return Image.open(str(icon_path))
             
-        # Fallback to generating one
-        img = Image.new('RGB', (64, 64), color=(0, 0, 0))
+        # Fallback to generating one with transparency
+        img = Image.new('RGBA', (64, 64), color=(0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        d.text((10, 20), 'BK', fill=(255, 0, 0))
+        d.text((10, 20), 'BK', fill=(255, 0, 0, 255))
         return img
     except ImportError:
         return None
@@ -45,7 +50,7 @@ def start_tray(engine_name: str, stop_callback=None):
         if stop_callback:
             # We must call stop_callback in a thread, because icon.stop() 
             # tears down the event loop, but we want to make sure the app shuts down cleanly.
-            threading.Thread(target=stop_callback, daemon=True).start()
+            threading.Thread(target=stop_callback, daemon=False).start()
 
     menu = pystray.Menu(
         item(f"Blackout Kit ({engine_name})", lambda: None, enabled=False),
