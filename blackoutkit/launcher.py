@@ -90,8 +90,8 @@ def start_launcher():
             )
             launch_config["env"] = "powershell"
 
-        # Exit the mainloop
-        app.quit()
+        # Schedule the exit so that the button's click animation can finish cleanly
+        app.after(200, app.quit)
         
     launch_btn = ctk.CTkButton(app, text="LAUNCH BLACKOUT KIT 🚀", font=ctk.CTkFont(weight="bold"), height=50, command=on_launch)
     launch_btn.pack(fill="x", padx=50, pady=30)
@@ -105,17 +105,11 @@ def start_launcher():
     if not launch_config:
         return True
         
-    # Build the command line
+    # Execute the selected logic
     if launch_config["env"] == "powershell":
-        # For powershell, we run the CLI
-        import blackoutkit.cli as cli
-        import sys
+        import blackoutkit.typer_cli as typer_cli
         
-        # Mock the arguments for cli
-        sys.argv = ["blackout", "connect"]
-        if launch_config["use_tray"]:
-            sys.argv.append("--background")
-            
-        cli.main()
+        # Directly call the connect function
+        typer_cli.connect(pos_engine=None, engine=None, background=launch_config["use_tray"], iran=False)
         
     return True
