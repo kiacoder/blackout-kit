@@ -21,11 +21,7 @@ from . import __version__
 from .theme import console, print_banner, make_table, latency_color, refresh_console_theme
 from . import settings as cfg
 from . import daemon
-from .engines.sni     import SNIEngine
-from .engines.xray    import XRayEngine
-from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
-from .engines.gdpi    import GoodbyeDPIEngine
-from .engines.psiphon import PsiphonEngine
+
 from .proxy_manager   import set_system_proxy, clear_system_proxy, get_proxy_status
 from .scanner.ip_scanner  import generate_cloudflare_ips, scan_ips, save_cache
 from .scanner.proxy_tester import test_direct, test_http_proxy, test_socks5_proxy, test_tcp_port
@@ -37,46 +33,67 @@ from . import tools as net_tools
 from . import doctor as doc
 from . import updater
 from .help_text import get_help
-from .engines.warp      import WARPEngine
-from .engines.tun       import TUNEngine
-from .engines.tor       import TorEngine
-from .engines.mhrv      import MhrvEngine
-from .engines.ikev2     import IKEv2Engine
-from .engines.wireguard import WireGuardEngine
-from .engines.openvpn   import OpenVPNEngine
-from .engines.softether  import SoftEtherEngine
-from .engines.neighbor   import NeighborShareEngine, NeighborConnectEngine
-from .engines.appsscript import AppsScriptEngine
+
 from . import security as sec
 from . import country_profiles as cp
 
 # ──────────────────────────── Engine map ─────────────────────────
 
-ENGINES = {
-    # Core bypass engines
-    "sni":          (SNIEngine, XRayEngine),
-    "xray":         (XRayEngine,),
-    "gdpi":         (GoodbyeDPIEngine,),
-    "psiphon":      (PsiphonEngine,),
-    "warp":         (WARPEngine,),
-    "tun":          (TUNEngine,),
-    "tor":          (TorEngine,),
-    "mhrv":         (MhrvEngine,),
-    # VPN protocol engines (require config in settings)
-    "ikev2":        (IKEv2Engine,),
-    "wireguard":    (WireGuardEngine,),
-    "openvpn":      (OpenVPNEngine,),
-    "softether":    (SoftEtherEngine,),
-    # Domain fronting — no binary needed, pure Python
-    "appsscript":   (AppsScriptEngine,),
-    # QUIC bypass engines
-    "hysteria2":    (Hysteria2Engine,),
-    "tuic":         (TuicEngine,),
-    # Multi-hop stacks
-    "legend":       (TorEngine, SNIEngine, XRayEngine),
-}
+ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "legend"]
 
-ALL_ENGINE_CHOICES = ["auto", *ENGINES.keys()]
+def _get_engine_classes(name: str) -> tuple:
+    if name == "sni":
+        from .engines.sni import SNIEngine
+        from .engines.xray import XRayEngine
+        return (SNIEngine, XRayEngine)
+    elif name == "xray":
+        from .engines.xray import XRayEngine
+        return (XRayEngine,)
+    elif name == "gdpi":
+        from .engines.gdpi import GoodbyeDPIEngine
+        return (GoodbyeDPIEngine,)
+    elif name == "psiphon":
+        from .engines.psiphon import PsiphonEngine
+        return (PsiphonEngine,)
+    elif name == "warp":
+        from .engines.warp import WARPEngine
+        return (WARPEngine,)
+    elif name == "tun":
+        from .engines.tun import TUNEngine
+        return (TUNEngine,)
+    elif name == "tor":
+        from .engines.tor import TorEngine
+        return (TorEngine,)
+    elif name == "mhrv":
+        from .engines.mhrv import MhrvEngine
+        return (MhrvEngine,)
+    elif name == "ikev2":
+        from .engines.ikev2 import IKEv2Engine
+        return (IKEv2Engine,)
+    elif name == "wireguard":
+        from .engines.wireguard import WireGuardEngine
+        return (WireGuardEngine,)
+    elif name == "openvpn":
+        from .engines.openvpn import OpenVPNEngine
+        return (OpenVPNEngine,)
+    elif name == "softether":
+        from .engines.softether import SoftEtherEngine
+        return (SoftEtherEngine,)
+    elif name == "appsscript":
+        from .engines.appsscript import AppsScriptEngine
+        return (AppsScriptEngine,)
+    elif name == "hysteria2":
+        from .engines.singbox_proxy import Hysteria2Engine
+        return (Hysteria2Engine,)
+    elif name == "tuic":
+        from .engines.singbox_proxy import TuicEngine
+        return (TuicEngine,)
+    elif name == "legend":
+        from .engines.tor import TorEngine
+        from .engines.sni import SNIEngine
+        from .engines.xray import XRayEngine
+        return (TorEngine, SNIEngine, XRayEngine)
+    return ()
 VALID_COUNTRY_CODES = tuple(sorted(cp._BY_CODE.keys()))
 EXTRA_ADMIN_ENGINES = {"gdpi", "warp", "tun"}
 AUTO_SCAN_ENGINES = {"sni"}
@@ -177,7 +194,7 @@ def _start_engine_stack(name: str):
                     console.print("[warning]Aborted. Engine cannot start without binaries.[/warning]")
                     return []
 
-    classes = ENGINES.get(name, ())
+    classes = _get_engine_classes(name)
     running = []
 
     import logging
@@ -1324,11 +1341,9 @@ def cmd_shield(args):
     else:
         console.print("[warning]⚠ Could not auto-set DNS. Try running as admin.[/warning]")
     
-    console.print("\n[info]You are now fully shielded from leaks and trackers![/info]")
-
-
 def cmd_neighbor(args):
     """Neighbor internet — share or connect via a nearby Blackout Kit device."""
+    from .engines.neighbor import NeighborConnectEngine, NeighborShareEngine
     subcmd = getattr(args, "neighbor_command", None)
 
     if not subcmd or subcmd == "help":
