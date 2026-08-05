@@ -123,6 +123,44 @@ def killswitch(
     args.action = action
     cmd_killswitch(args)
 
+def _add_to_user_path(directory: str) -> bool:
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Environment", 0, winreg.KEY_READ | winreg.KEY_WRITE) as key:
+            try:
+                current_path, _ = winreg.QueryValueEx(key, "PATH")
+            except OSError:
+                current_path = ""
+            
+            if directory.lower() not in current_path.lower():
+                new_path = current_path
+                if new_path and not new_path.endswith(";"):
+                    new_path += ";"
+                new_path += directory
+                winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
+                return True
+            return False
+    except Exception as e:
+        console.print(f"[error]Failed to update PATH: {e}[/error]")
+        return False
+
+@app.command("add-to-path")
+def add_to_path():
+    """Add Blackout Kit to the system PATH so you can run it anywhere."""
+    import sys
+    from pathlib import Path
+    
+    if getattr(sys, 'frozen', False):
+        target_dir = str(Path(sys.executable).parent.resolve())
+    else:
+        target_dir = str(Path(__file__).parent.parent.resolve())
+        
+    if _add_to_user_path(target_dir):
+        console.print(f"[success]✓ Added {target_dir} to your system PATH![/success]")
+        console.print("[info]You will need to restart your terminal for this to take effect.[/info]")
+    else:
+        console.print(f"[info]Blackout Kit ({target_dir}) is already in your PATH.[/info]")
+
 # ── NETWORK GROUP ──
 network_app = typer.Typer(help="WiFi network switcher + ISP detection", no_args_is_help=True)
 app.add_typer(network_app, name="network")
