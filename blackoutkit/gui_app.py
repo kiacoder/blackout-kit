@@ -283,6 +283,7 @@ class BlackoutGUI(ctk.CTk):
         self.current_state = "DISCONNECTED" # "DISCONNECTED", "CONNECTING", "SECURE"
         self.uptime_seconds = 0
         self._uptime_job = None
+        self._connection_attempt = 0
         
         # Default view
         self.show_home()
@@ -329,21 +330,24 @@ class BlackoutGUI(ctk.CTk):
         
         self.append_log(f"[*] Preparing {self.engine_var.get()} engine...")
         
-        # Simulate connection in a background thread
-        threading.Thread(target=self._mock_connect, daemon=True).start()
+        self._connection_attempt += 1
+        current_attempt = self._connection_attempt
         
-    def _mock_connect(self):
+        # Simulate connection in a background thread
+        threading.Thread(target=self._mock_connect, args=(current_attempt,), daemon=True).start()
+        
+    def _mock_connect(self, attempt: int):
         time.sleep(1.5)
-        # Verify we didn't cancel the connection early
-        if self.current_state != "CONNECTING":
+        # Verify we didn't cancel the connection early or start a new one
+        if self.current_state != "CONNECTING" or self._connection_attempt != attempt:
             return
             
         self.append_log("[+] Proxy tunnel established successfully.")
         # Update UI from thread
-        self.after(0, self._set_connected_state)
+        self.after(0, self._set_connected_state, attempt)
         
-    def _set_connected_state(self):
-        if self.current_state != "CONNECTING":
+    def _set_connected_state(self, attempt: int):
+        if self.current_state != "CONNECTING" or self._connection_attempt != attempt:
             return
         self.current_state = "SECURE"
         self.connect_btn.configure(text="DISCONNECT", fg_color="#ff3366", hover_color="#cc0044")
