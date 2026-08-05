@@ -279,8 +279,10 @@ class BlackoutGUI(ctk.CTk):
         self.log_textbox.insert("0.0", "--- Blackout Kit Ready ---\n")
         self.log_textbox.configure(state="disabled")
 
-        # State
-        self.is_connected = False
+        # State Machine
+        self.current_state = "DISCONNECTED" # "DISCONNECTED", "CONNECTING", "SECURE"
+        self.uptime_seconds = 0
+        self._uptime_job = None
         
         # Default view
         self.show_home()
@@ -310,13 +312,15 @@ class BlackoutGUI(ctk.CTk):
         self.log_textbox.configure(state="disabled")
 
     def toggle_connection(self):
-        if not self.is_connected:
+        if self.current_state == "DISCONNECTED":
             self.connect()
         else:
             self.disconnect()
             
     def connect(self):
-        self.is_connected = True
+        if self.current_state != "DISCONNECTED":
+            return
+        self.current_state = "CONNECTING"
         self.connect_btn.configure(text="CONNECTING...", fg_color="#ff9900", hover_color="#cc7a00")
         self.status_label.configure(text="CONNECTING", text_color="#ff9900")
         self.engine_selector.configure(state="disabled")
@@ -330,25 +334,52 @@ class BlackoutGUI(ctk.CTk):
         
     def _mock_connect(self):
         time.sleep(1.5)
+        # Verify we didn't cancel the connection early
+        if self.current_state != "CONNECTING":
+            return
+            
         self.append_log("[+] Proxy tunnel established successfully.")
-        
-        # Update UI from thread (CustomTkinter is mostly thread-safe for simple configures, but ideally use after())
+        # Update UI from thread
         self.after(0, self._set_connected_state)
         
     def _set_connected_state(self):
+        if self.current_state != "CONNECTING":
+            return
+        self.current_state = "SECURE"
         self.connect_btn.configure(text="DISCONNECT", fg_color="#ff3366", hover_color="#cc0044")
         self.status_label.configure(text="SECURE", text_color="#00cc66")
         self.ip_label.configure(text="104.18.2.19", text_color="#00A8FF")
         self.ping_label.configure(text="42 ms", text_color="#00cc66")
+        self.uptime_label.configure(text_color="#00A8FF")
         self.radar.set_state(True, "#00cc66")
         self.append_log("[✓] You are now secure.")
         
+        # Start uptime timer
+        self.uptime_seconds = 0
+        self._update_uptime()
+        
+    def _update_uptime(self):
+        if self.current_state != "SECURE":
+            return
+        m, s = divmod(self.uptime_seconds, 60)
+        h, m = divmod(m, 60)
+        self.uptime_label.configure(text=f"{h:02d}:{m:02d}:{s:02d}")
+        self.uptime_seconds += 1
+        self._uptime_job = self.after(1000, self._update_uptime)
+        
     def disconnect(self):
-        self.is_connected = False
+        if self.current_state == "DISCONNECTED":
+            return
+        self.current_state = "DISCONNECTED"
+        if self._uptime_job:
+            self.after_cancel(self._uptime_job)
+            self._uptime_job = None
+            
         self.connect_btn.configure(text="CONNECT", fg_color="#00A8FF", hover_color="#008ecc")
         self.status_label.configure(text="DISCONNECTED", text_color="gray40")
         self.ip_label.configure(text="Hidden", text_color="white")
         self.ping_label.configure(text="-- ms", text_color="white")
+        self.uptime_label.configure(text="00:00:00", text_color="white")
         self.engine_selector.configure(state="normal")
         self.radar.set_state(False, "#00A8FF")
         self.append_log("[-] Connection closed. System proxy cleared.")
