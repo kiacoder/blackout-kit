@@ -20,15 +20,6 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-from rich.progress import (
-    BarColumn,
-    DownloadColumn,
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-    TimeRemainingColumn,
-    TransferSpeedColumn,
-)
 
 from . import __version__
 

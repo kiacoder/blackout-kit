@@ -221,7 +221,7 @@ def run_daemon_loop(engine_name: str):
     """
     import os
     import sys
-    global _shutdown_requested, cfg_lock
+    global cfg_lock
     cfg_lock = _threading.Lock()
     try:
         devnull = open(os.devnull, "w")

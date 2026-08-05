@@ -692,7 +692,6 @@ def main():
         console.print("\n[muted]Operation cancelled by user.[/muted]")
         sys.exit(130)
     except Exception as e:
-        import traceback
         console.print(error_panel(
             f"An unexpected fatal error occurred:\n{str(e)}\n\n[dim]Please run 'blackout doctor' to auto-fix common issues.[/dim]",
             title="Fatal Error"

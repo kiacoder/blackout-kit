@@ -204,6 +204,6 @@ def install_console_close_handler():
         _ctrl_handler_ref = HandlerRoutine(ctrl_handler)
 
         ctypes.windll.kernel32.SetConsoleCtrlHandler(_ctrl_handler_ref, True)
-    except Exception as e:
+    except Exception:
         # Silently fail if we can't install the handler
         pass

@@ -4,6 +4,7 @@ Provides UAC auto-elevation so the CLI stays in a normal terminal
 and only the subprocess that actually needs admin gets the UAC prompt.
 """
 import ctypes
+import os
 import subprocess
 import sys
 import time

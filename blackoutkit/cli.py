@@ -277,7 +277,7 @@ def cmd_country(args):
             return
         cfg.set_value("country", code)
         console.print(f"[success]✓ Country pinned to:[/success] [bold]{profile.name}[/bold] ({code})")
-        console.print(f"  [muted]Run [bold]blackout country[/bold] to see the full profile.[/muted]")
+        console.print("  [muted]Run [bold]blackout country[/bold] to see the full profile.[/muted]")
         return
 
     if subcmd == "reset":
@@ -869,7 +869,7 @@ def cmd_config(args):
             console.print(f"[error]{e}[/error]")
 
     elif args.config_command == "import":
-        console.print(f"[info]Importing from subscription URL...[/info]")
+        console.print("[info]Importing from subscription URL...[/info]")
         try:
             added, total = import_and_merge(args.url)
             console.print(f"[success]✓ Imported {added} new configs. Total: {total}[/success]")
@@ -952,7 +952,7 @@ def _settings_list(s: dict):
 
 
 def cmd_tools(args):
-    s = cfg.load()
+
 
     if not hasattr(args, "tools_command") or not args.tools_command:
         console.print(Panel(
@@ -1040,7 +1040,7 @@ def cmd_tools(args):
             mtu = net_tools.detect_mtu(host)
         if mtu:
             console.print(f"[success]Detected MTU: {mtu}[/success]")
-            console.print(f"Optimal is usually 1500. If lower, try: [bold]blackout tools netfix[/bold]")
+            console.print("Optimal is usually 1500. If lower, try: [bold]blackout tools netfix[/bold]")
         else:
             console.print("[warning]MTU detection requires Windows and admin privileges.[/warning]")
 
@@ -1797,7 +1797,6 @@ def cmd_bins(args):
     if not subcmd:
         installed   = dl.check_installed()
         all_bins    = dl.list_available()
-        auto_count  = sum(1 for b in all_bins if b.github_repo)
         inst_count  = sum(1 for k, v in installed.items() if v)
 
         table = make_table(
@@ -2175,8 +2174,7 @@ def cmd_menu_select_engine():
     ]
 
     # Start interactive menu instead of prompt
-    _EXIT = object()
-    
+
     # We will repurpose the _interactive_menu's logic
     import msvcrt
     from rich.live import Live
@@ -2252,7 +2250,7 @@ def cmd_menu_select_engine():
         break
 
 
-import sys
+
 def _interactive_menu():
     """Display an interactive menu navigable with arrow keys when blackout is run with no arguments."""
     menu_items = [
