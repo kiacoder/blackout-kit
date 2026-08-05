@@ -37,9 +37,9 @@ def start_launcher():
     
     opts = [
         ("Blackout Kit PowerShell (CLI)", "powershell"),
-        ("Blackout Kit WSL Ubuntu (Linux)", "wsl"),
-        ("Blackout Kit Windows (Native App)", "native"),
-        ("Blackout Kit WEB App (Dashboard)", "web")
+        ("Blackout Kit WSL Ubuntu (Linux) [In Development]", "wsl"),
+        ("Blackout Kit Windows (Native App) [In Development]", "native"),
+        ("Blackout Kit WEB App (Dashboard) [In Development]", "web")
     ]
     
     for text, val in opts:
@@ -84,6 +84,15 @@ def start_launcher():
         engine = engine_var.get()
         mode = mode_var.get()
         
+        if env != "powershell":
+            # Show a popup for parts still in development
+            import tkinter.messagebox
+            tkinter.messagebox.showinfo(
+                "Coming Soon", 
+                "This interface is currently In Development and will be available in a future release! Starting the standard PowerShell CLI instead."
+            )
+            env = "powershell"
+
         # We destroy the launcher window
         app.destroy()
         
@@ -101,13 +110,6 @@ def start_launcher():
                 sys.argv.append("--background")
                 
             cli.main()
-            
-        elif env == "wsl":
-            print("[stub] Launching WSL Integration...")
-        elif env == "native":
-            print("[stub] Launching Native Windows App...")
-        elif env == "web":
-            print("[stub] Launching Local Web Dashboard...")
 
     launch_btn = ctk.CTkButton(app, text="LAUNCH BLACKOUT KIT 🚀", font=ctk.CTkFont(weight="bold"), height=50, command=on_launch)
     launch_btn.pack(fill="x", padx=50, pady=30)

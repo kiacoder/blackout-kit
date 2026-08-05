@@ -714,12 +714,18 @@ def deadbeef():
 @app.callback(invoke_without_command=True)
 def app_callback(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
-        from . import settings as cfg
-        from .cli import print_banner, _interactive_menu
-        s = cfg.load()
-        if s.get("show_banner", True):
-            print_banner()
-        _interactive_menu()
+        # Try to start the modern GUI Launcher first
+        from .launcher import start_launcher
+        launched = start_launcher()
+        
+        # Fallback to the terminal interactive menu if GUI is missing dependencies
+        if not launched:
+            from . import settings as cfg
+            from .cli import print_banner, _interactive_menu
+            s = cfg.load()
+            if s.get("show_banner", True):
+                print_banner()
+            _interactive_menu()
 
 
 def main():
