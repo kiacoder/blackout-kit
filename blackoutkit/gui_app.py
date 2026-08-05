@@ -6,72 +6,126 @@ class BlackoutGUI(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("Blackout Kit — Native App")
-        self.geometry("900x600")
+        self.title("Blackout Kit — Stealth Mode")
+        self.geometry("1000x700")
         self.resizable(False, False)
         
         # Configure grid layout (1x2)
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
 
-        # Create sidebar frame
-        self.sidebar_frame = ctk.CTkFrame(self, width=200, corner_radius=0, fg_color="#1a1a1a")
+        # ─── SIDEBAR FRAME ───
+        self.sidebar_frame = ctk.CTkFrame(self, width=220, corner_radius=0, fg_color="#121212")
         self.sidebar_frame.grid(row=0, column=0, sticky="nsew")
         self.sidebar_frame.grid_rowconfigure(4, weight=1)
 
-        self.logo_label = ctk.CTkLabel(self.sidebar_frame, text="BLACKOUT", font=ctk.CTkFont(size=24, weight="bold"), text_color="#00A8FF")
-        self.logo_label.grid(row=0, column=0, padx=20, pady=(30, 20))
+        # Brand Logo
+        self.logo_label = ctk.CTkLabel(
+            self.sidebar_frame, 
+            text="BLACKOUT", 
+            font=ctk.CTkFont(family="Inter", size=28, weight="bold"), 
+            text_color="#00A8FF"
+        )
+        self.logo_label.grid(row=0, column=0, padx=20, pady=(40, 40))
 
-        self.btn_home = ctk.CTkButton(self.sidebar_frame, text="Dashboard", fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.show_home)
-        self.btn_home.grid(row=1, column=0, padx=20, pady=10)
-
-        self.btn_settings = ctk.CTkButton(self.sidebar_frame, text="Settings", fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.show_settings)
-        self.btn_settings.grid(row=2, column=0, padx=20, pady=10)
+        # Navigation Buttons
+        btn_font = ctk.CTkFont(family="Inter", size=14, weight="bold")
         
-        self.btn_logs = ctk.CTkButton(self.sidebar_frame, text="Live Logs", fg_color="transparent", text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.show_logs)
-        self.btn_logs.grid(row=3, column=0, padx=20, pady=10)
+        self.btn_home = ctk.CTkButton(self.sidebar_frame, text="🏠 Dashboard", font=btn_font, fg_color="transparent", text_color="gray80", hover_color="#202020", anchor="w", height=40, command=self.show_home)
+        self.btn_home.grid(row=1, column=0, padx=20, pady=5, sticky="ew")
 
-        self.appearance_mode_label = ctk.CTkLabel(self.sidebar_frame, text="Appearance Mode:", anchor="w")
+        self.btn_settings = ctk.CTkButton(self.sidebar_frame, text="⚙️ Settings", font=btn_font, fg_color="transparent", text_color="gray80", hover_color="#202020", anchor="w", height=40, command=self.show_settings)
+        self.btn_settings.grid(row=2, column=0, padx=20, pady=5, sticky="ew")
+        
+        self.btn_logs = ctk.CTkButton(self.sidebar_frame, text="📡 Live Logs", font=btn_font, fg_color="transparent", text_color="gray80", hover_color="#202020", anchor="w", height=40, command=self.show_logs)
+        self.btn_logs.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
+
+        # Theme toggle at bottom
+        self.appearance_mode_label = ctk.CTkLabel(self.sidebar_frame, text="Theme:", font=ctk.CTkFont(family="Inter", size=12), anchor="w", text_color="gray60")
         self.appearance_mode_label.grid(row=5, column=0, padx=20, pady=(10, 0))
-        self.appearance_mode_optionemenu = ctk.CTkOptionMenu(self.sidebar_frame, values=["Dark", "Light", "System"], command=self.change_appearance_mode_event)
-        self.appearance_mode_optionemenu.grid(row=6, column=0, padx=20, pady=(10, 20))
+        self.appearance_mode_optionemenu = ctk.CTkOptionMenu(
+            self.sidebar_frame, 
+            values=["Dark", "Light", "System"],
+            font=ctk.CTkFont(family="Inter", size=12),
+            fg_color="#1f1f1f",
+            button_color="#2a2a2a",
+            button_hover_color="#333333",
+            command=self.change_appearance_mode_event
+        )
+        self.appearance_mode_optionemenu.grid(row=6, column=0, padx=20, pady=(5, 30), sticky="ew")
 
-        # --- HOME FRAME ---
+        # ─── HOME FRAME ───
         self.home_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.home_frame.grid(row=0, column=1, sticky="nsew", padx=40, pady=40)
-        self.home_frame.grid_rowconfigure(3, weight=1)
+        self.home_frame.grid(row=0, column=1, sticky="nsew", padx=20, pady=20)
+        self.home_frame.grid_rowconfigure((0, 4), weight=1)
         self.home_frame.grid_columnconfigure(0, weight=1)
         
-        self.status_label = ctk.CTkLabel(self.home_frame, text="DISCONNECTED", font=ctk.CTkFont(size=36, weight="bold"), text_color="gray")
-        self.status_label.grid(row=0, column=0, pady=(40, 20))
+        # Status Header
+        self.status_label = ctk.CTkLabel(
+            self.home_frame, 
+            text="DISCONNECTED", 
+            font=ctk.CTkFont(family="Inter", size=48, weight="bold"), 
+            text_color="gray40"
+        )
+        self.status_label.grid(row=1, column=0, pady=(0, 30))
         
-        self.ip_label = ctk.CTkLabel(self.home_frame, text="IP: Hidden • Ping: -- ms", font=ctk.CTkFont(size=14))
-        self.ip_label.grid(row=1, column=0, pady=(0, 40))
+        # Info Cards Grid (2 columns)
+        self.cards_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
+        self.cards_frame.grid(row=2, column=0, pady=(0, 50))
+        
+        # Card 1: IP
+        self.ip_card = ctk.CTkFrame(self.cards_frame, fg_color="#181818", corner_radius=15, width=160, height=80)
+        self.ip_card.grid(row=0, column=0, padx=10)
+        self.ip_card.grid_propagate(False)
+        ctk.CTkLabel(self.ip_card, text="IP ADDRESS", font=ctk.CTkFont(size=11, weight="bold"), text_color="gray50").place(relx=0.5, rely=0.3, anchor="center")
+        self.ip_label = ctk.CTkLabel(self.ip_card, text="Hidden", font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
+        self.ip_label.place(relx=0.5, rely=0.65, anchor="center")
+
+        # Card 2: Ping
+        self.ping_card = ctk.CTkFrame(self.cards_frame, fg_color="#181818", corner_radius=15, width=160, height=80)
+        self.ping_card.grid(row=0, column=1, padx=10)
+        self.ping_card.grid_propagate(False)
+        ctk.CTkLabel(self.ping_card, text="PING", font=ctk.CTkFont(size=11, weight="bold"), text_color="gray50").place(relx=0.5, rely=0.3, anchor="center")
+        self.ping_label = ctk.CTkLabel(self.ping_card, text="-- ms", font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
+        self.ping_label.place(relx=0.5, rely=0.65, anchor="center")
+
+        # Connect Button Wrapper (for glow effect)
+        self.btn_wrapper = ctk.CTkFrame(self.home_frame, fg_color="transparent")
+        self.btn_wrapper.grid(row=3, column=0, pady=(0, 40))
 
         self.connect_btn = ctk.CTkButton(
-            self.home_frame, 
+            self.btn_wrapper, 
             text="CONNECT", 
-            font=ctk.CTkFont(size=24, weight="bold"), 
-            height=80, 
-            width=280, 
-            corner_radius=40,
+            font=ctk.CTkFont(family="Inter", size=26, weight="bold"), 
+            height=90, 
+            width=320, 
+            corner_radius=45,
             fg_color="#00A8FF",
             hover_color="#008ecc",
+            text_color="white",
             command=self.toggle_connection
         )
-        self.connect_btn.grid(row=2, column=0, pady=20)
+        self.connect_btn.pack()
         
         # Engine selector
         from .cli import ALL_ENGINE_CHOICES
         self.engine_var = ctk.StringVar(value="auto")
+        
+        selector_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
+        selector_frame.grid(row=4, column=0, sticky="n")
+        
+        ctk.CTkLabel(selector_frame, text="Active Engine:", font=ctk.CTkFont(size=13), text_color="gray50").pack(side="left", padx=(0, 10))
         self.engine_selector = ctk.CTkOptionMenu(
-            self.home_frame, 
+            selector_frame, 
             values=ALL_ENGINE_CHOICES, 
             variable=self.engine_var,
-            width=200,
-            font=ctk.CTkFont(size=14)
+            width=160,
+            fg_color="#1f1f1f",
+            button_color="#2a2a2a",
+            button_hover_color="#333333",
+            font=ctk.CTkFont(family="Inter", size=13, weight="bold")
         )
-        self.engine_selector.grid(row=3, column=0, pady=20, sticky="n")
+        self.engine_selector.pack(side="left")
 
         # --- SETTINGS FRAME ---
         self.settings_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -153,16 +207,18 @@ class BlackoutGUI(ctk.CTk):
         self.after(0, self._set_connected_state)
         
     def _set_connected_state(self):
-        self.connect_btn.configure(text="DISCONNECT", fg_color="#ff3333", hover_color="#cc0000")
+        self.connect_btn.configure(text="DISCONNECT", fg_color="#ff3366", hover_color="#cc0044")
         self.status_label.configure(text="SECURE", text_color="#00cc66")
-        self.ip_label.configure(text="IP: 104.18.2.19 • Ping: 42 ms")
+        self.ip_label.configure(text="104.18.2.19", text_color="#00A8FF")
+        self.ping_label.configure(text="42 ms", text_color="#00cc66")
         self.append_log("[✓] You are now secure.")
         
     def disconnect(self):
         self.is_connected = False
         self.connect_btn.configure(text="CONNECT", fg_color="#00A8FF", hover_color="#008ecc")
-        self.status_label.configure(text="DISCONNECTED", text_color="gray")
-        self.ip_label.configure(text="IP: Hidden • Ping: -- ms")
+        self.status_label.configure(text="DISCONNECTED", text_color="gray40")
+        self.ip_label.configure(text="Hidden", text_color="white")
+        self.ping_label.configure(text="-- ms", text_color="white")
         self.engine_selector.configure(state="normal")
         self.append_log("[-] Connection closed. System proxy cleared.")
 
