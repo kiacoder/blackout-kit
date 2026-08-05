@@ -8,7 +8,7 @@ a = Analysis(
     ['blackout.py'],
     pathex=[],
     binaries=[] + binaries_ctk,
-    datas=[('bins/*.dll', 'bins'), ('bins/icon.png', 'bins')] + datas_ctk,
+    datas=[('bins/*.dll', 'bins'), ('bins/icon.png', 'bins'), ('assets/*', 'assets')] + datas_ctk,
     hiddenimports=['_overlapped', 'asyncio'] + hiddenimports_ctk,
     hookspath=[],
     hooksconfig={},

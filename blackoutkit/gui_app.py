@@ -1,6 +1,16 @@
 import customtkinter as ctk
 import threading
 import time
+import sys
+import os
+from PIL import Image
+
+def get_asset_path(filename):
+    if getattr(sys, 'frozen', False):
+        base_path = sys._MEIPASS
+    else:
+        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base_path, "assets", filename)
 
 class BlackoutGUI(ctk.CTk):
     def __init__(self):
@@ -60,6 +70,22 @@ class BlackoutGUI(ctk.CTk):
         self.home_frame.grid_rowconfigure((0, 4), weight=1)
         self.home_frame.grid_columnconfigure(0, weight=1)
         
+        # Map Image Background (Or Top Header)
+        self.map_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
+        self.map_frame.grid(row=0, column=0, pady=(0, 20))
+        
+        try:
+            map_image = ctk.CTkImage(
+                light_image=Image.open(get_asset_path("world_map.jpg")),
+                dark_image=Image.open(get_asset_path("world_map.jpg")),
+                size=(350, 200)
+            )
+            self.map_label = ctk.CTkLabel(self.map_frame, text="", image=map_image)
+            self.map_label.pack()
+        except Exception:
+            self.map_label = ctk.CTkLabel(self.map_frame, text="[ MAP ASSET MISSING ]", text_color="gray")
+            self.map_label.pack()
+
         # Status Header
         self.status_label = ctk.CTkLabel(
             self.home_frame, 
@@ -67,31 +93,39 @@ class BlackoutGUI(ctk.CTk):
             font=ctk.CTkFont(family="Inter", size=48, weight="bold"), 
             text_color="gray40"
         )
-        self.status_label.grid(row=1, column=0, pady=(0, 30))
+        self.status_label.grid(row=1, column=0, pady=(0, 20))
         
-        # Info Cards Grid (2 columns)
+        # Info Cards Grid (3 columns now)
         self.cards_frame = ctk.CTkFrame(self.home_frame, fg_color="transparent")
-        self.cards_frame.grid(row=2, column=0, pady=(0, 50))
+        self.cards_frame.grid(row=2, column=0, pady=(0, 30))
         
         # Card 1: IP
-        self.ip_card = ctk.CTkFrame(self.cards_frame, fg_color="#181818", corner_radius=15, width=160, height=80)
-        self.ip_card.grid(row=0, column=0, padx=10)
+        self.ip_card = ctk.CTkFrame(self.cards_frame, fg_color="#181818", corner_radius=15, width=140, height=70)
+        self.ip_card.grid(row=0, column=0, padx=8)
         self.ip_card.grid_propagate(False)
-        ctk.CTkLabel(self.ip_card, text="IP ADDRESS", font=ctk.CTkFont(size=11, weight="bold"), text_color="gray50").place(relx=0.5, rely=0.3, anchor="center")
-        self.ip_label = ctk.CTkLabel(self.ip_card, text="Hidden", font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
+        ctk.CTkLabel(self.ip_card, text="IP ADDRESS", font=ctk.CTkFont(size=10, weight="bold"), text_color="gray50").place(relx=0.5, rely=0.3, anchor="center")
+        self.ip_label = ctk.CTkLabel(self.ip_card, text="Hidden", font=ctk.CTkFont(size=14, weight="bold"), text_color="white")
         self.ip_label.place(relx=0.5, rely=0.65, anchor="center")
 
         # Card 2: Ping
-        self.ping_card = ctk.CTkFrame(self.cards_frame, fg_color="#181818", corner_radius=15, width=160, height=80)
-        self.ping_card.grid(row=0, column=1, padx=10)
+        self.ping_card = ctk.CTkFrame(self.cards_frame, fg_color="#181818", corner_radius=15, width=140, height=70)
+        self.ping_card.grid(row=0, column=1, padx=8)
         self.ping_card.grid_propagate(False)
-        ctk.CTkLabel(self.ping_card, text="PING", font=ctk.CTkFont(size=11, weight="bold"), text_color="gray50").place(relx=0.5, rely=0.3, anchor="center")
-        self.ping_label = ctk.CTkLabel(self.ping_card, text="-- ms", font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
+        ctk.CTkLabel(self.ping_card, text="PING", font=ctk.CTkFont(size=10, weight="bold"), text_color="gray50").place(relx=0.5, rely=0.3, anchor="center")
+        self.ping_label = ctk.CTkLabel(self.ping_card, text="-- ms", font=ctk.CTkFont(size=14, weight="bold"), text_color="white")
         self.ping_label.place(relx=0.5, rely=0.65, anchor="center")
+
+        # Card 3: Uptime
+        self.uptime_card = ctk.CTkFrame(self.cards_frame, fg_color="#181818", corner_radius=15, width=140, height=70)
+        self.uptime_card.grid(row=0, column=2, padx=8)
+        self.uptime_card.grid_propagate(False)
+        ctk.CTkLabel(self.uptime_card, text="UPTIME", font=ctk.CTkFont(size=10, weight="bold"), text_color="gray50").place(relx=0.5, rely=0.3, anchor="center")
+        self.uptime_label = ctk.CTkLabel(self.uptime_card, text="00:00:00", font=ctk.CTkFont(size=14, weight="bold"), text_color="white")
+        self.uptime_label.place(relx=0.5, rely=0.65, anchor="center")
 
         # Connect Button Wrapper (for glow effect)
         self.btn_wrapper = ctk.CTkFrame(self.home_frame, fg_color="transparent")
-        self.btn_wrapper.grid(row=3, column=0, pady=(0, 40))
+        self.btn_wrapper.grid(row=3, column=0, pady=(0, 20))
 
         self.connect_btn = ctk.CTkButton(
             self.btn_wrapper, 
