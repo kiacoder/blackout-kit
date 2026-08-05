@@ -481,8 +481,27 @@ def _health_check_target(proxy_info):
 def cmd_start(args):
     engine_name = _resolve_engine_name(args)
     background  = getattr(args, "background", False)
+    iran        = getattr(args, "iran", False)
     proxy_info = None
     health_target = None
+    
+    if iran:
+        console.print(Panel(
+            "[bold red]🔥 TIC 2026 EVASION PROFILE ACTIVATED[/bold red]\n\n"
+            "[muted]Deploying advanced countermeasures for extreme censorship environments.[/muted]\n"
+            "  [success]✓[/success] Forcing Tor network integration\n"
+            "  [success]✓[/success] Scrambling XRay signatures (random TLS ClientHello)\n"
+            "  [success]✓[/success] Fragmenting SNI packets\n"
+            "  [success]✓[/success] Using internal relay routing",
+            border_style="red"
+        ))
+        _save_iran_snapshot()
+        cfg.set_value("security_mode", "legend")
+        cfg.set_value("xray_fingerprint", "random")
+        cfg.set_value("sni_fake_sni", "www.snapp.ir")
+        cfg.set_value("xray_fragment", "10-20,30-40")
+        engine_name = "legend"
+
     s = cfg.load()
 
     import ctypes
