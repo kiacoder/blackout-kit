@@ -58,7 +58,7 @@ require (
 	github.com/noql-net/certpool v0.0.0-20250128174907-b15afbea6eae // indirect
 	github.com/onsi/ginkgo/v2 v2.12.0 // indirect
 	github.com/pion/datachannel v1.5.8 // indirect
-	github.com/pion/dtls/v2 v2.2.16 // indirect
+	github.com/pion/dtls/v2 v2.2.13 // indirect
 	github.com/pion/dtls/v3 v3.1.4 // indirect
 	github.com/pion/ice/v2 v2.3.38 // indirect
 	github.com/pion/interceptor v0.1.29 // indirect
