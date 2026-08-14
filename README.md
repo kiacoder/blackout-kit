@@ -37,6 +37,8 @@
 
 - [Why Blackout Kit](#why-blackout-kit)
 - [Native Desktop App GUI](#native-desktop-app-gui)
+- [Omni AI Agent Controller (MCP Server)](#omni-ai-agent-controller-mcp-server)
+- [Split Tunneling](#split-tunneling)
 - [Supported Countries](#supported-countries)
 - [Engines](#engines)
 - [Installation](#installation)
@@ -49,6 +51,55 @@
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 - [Disclaimer](#disclaimer)
+
+---
+
+## Omni AI Agent Controller (MCP Server)
+
+BlackoutKit includes a native Model Context Protocol (MCP) server that lets AI agents (Antigravity, Claude Desktop, Cursor, Custom Agents) programmatically control the VPN, switch bypass engines, manage split tunneling rules, read live logs, and run network diagnostics:
+
+```json
+{
+  "mcpServers": {
+    "blackout-kit": {
+      "command": "blackout",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Exposed AI Agent Tools:
+* `blackout_connect`: Connect to VPN using a specific engine or smart auto-selection.
+* `blackout_disconnect`: Stop active VPN engine and reset system proxy cleanly.
+* `blackout_emergency`: Trigger emergency protocol cycling through all 16 engines.
+* `blackout_status`: Query live VPN state, active engine, IP address, and latency.
+* `blackout_read_logs`: Retrieve recent daemon logs for AI diagnostic reasoning.
+* `blackout_config`: Query or set current active proxy configuration string.
+* `blackout_settings`: Query or change engine settings dynamically.
+* `blackout_split_tunnel`: Add, remove, or list split tunneling bypass rules.
+* `blackout_net_tools`: Run network ping, DNS lookup, or speed test.
+* `blackout_scan`: Scan local network or target range for open ports.
+* `blackout_doctor`: Run self-diagnostic checks and repair missing components.
+* `blackout_security_mode`: Query or toggle Security Mode / Kill Switch state.
+
+---
+
+## Split Tunneling
+
+BlackoutKit provides flexible split tunneling rules to route specific websites or local subnets directly outside the proxy tunnel:
+
+```bash
+# Add a domain or IP to split tunnel bypass list
+blackout split-tunnel add example.com
+blackout split-tunnel add 192.168.1.*
+
+# List active split tunnel rules
+blackout split-tunnel list
+
+# Remove a domain from split tunneling
+blackout split-tunnel remove example.com
+```
 
 ---
 
