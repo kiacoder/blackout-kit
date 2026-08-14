@@ -169,17 +169,47 @@ def test_run_auto_scan_no_ips(mock_scan, mock_loop, tmp_path):
 
 def test_test_http_get():
     engine = SNIEngine()
-    
-    with patch("socket.create_connection"), \
-         patch("ssl.create_default_context") as mock_ssl:
-        mock_ctx = MagicMock()
-        mock_ssl.return_value = mock_ctx
-        mock_ssock = MagicMock()
-        mock_ctx.wrap_socket.return_value.__enter__.return_value = mock_ssock
-        mock_ssock.recv.return_value = b"HTTP/1.1 200 OK"
-        
+
+    class FakeSocket:
+        def sendall(self, _data):
+            pass
+
+        def recv(self, _size):
+            return b"HTTP/1.1 200 OK"
+
+    class FakeWrappedSocket:
+        def __enter__(self):
+            return FakeSocket()
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakeSSLContext:
+        def __init__(self, _protocol):
+            self.options = 0
+            self.minimum_version = None
+            self.check_hostname = True
+            self.verify_mode = None
+
+        def wrap_socket(self, _sock, server_hostname):
+            assert server_hostname == "google.com"
+            return FakeWrappedSocket()
+
+    fake_ssl = type("FakeSSL", (), {
+        "SSLContext": FakeSSLContext,
+        "PROTOCOL_TLS_CLIENT": 1,
+        "TLSVersion": type("TLSVersion", (), {"TLS1_2": 2}),
+        "OP_NO_SSLv2": 0,
+        "OP_NO_SSLv3": 0,
+        "OP_NO_TLSv1": 0,
+        "OP_NO_TLSv1_1": 0,
+        "CERT_NONE": 0,
+    })
+
+    with patch("socket.create_connection"), patch.dict("sys.modules", {"ssl": fake_ssl}):
         lat = engine._test_http_get("google.com")
-        assert lat is not None
+
+    assert lat is not None
 
 @patch("blackoutkit.core.get_core_dll")
 @patch("blackoutkit.settings.load")
@@ -257,17 +287,47 @@ def test_run_auto_scan_cached_ip(mock_get, mock_gen, mock_scan, mock_loop, tmp_p
 
 def test_test_http_get_no_http():
     engine = SNIEngine()
-    
-    with patch("socket.create_connection"), \
-         patch("ssl.create_default_context") as mock_ssl:
-        mock_ctx = MagicMock()
-        mock_ssl.return_value = mock_ctx
-        mock_ssock = MagicMock()
-        mock_ctx.wrap_socket.return_value.__enter__.return_value = mock_ssock
-        mock_ssock.recv.return_value = b"GARBAGE DATA"
-        
+
+    class FakeSocket:
+        def sendall(self, _data):
+            pass
+
+        def recv(self, _size):
+            return b"GARBAGE DATA"
+
+    class FakeWrappedSocket:
+        def __enter__(self):
+            return FakeSocket()
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakeSSLContext:
+        def __init__(self, _protocol):
+            self.options = 0
+            self.minimum_version = None
+            self.check_hostname = True
+            self.verify_mode = None
+
+        def wrap_socket(self, _sock, server_hostname):
+            assert server_hostname == "google.com"
+            return FakeWrappedSocket()
+
+    fake_ssl = type("FakeSSL", (), {
+        "SSLContext": FakeSSLContext,
+        "PROTOCOL_TLS_CLIENT": 1,
+        "TLSVersion": type("TLSVersion", (), {"TLS1_2": 2}),
+        "OP_NO_SSLv2": 0,
+        "OP_NO_SSLv3": 0,
+        "OP_NO_TLSv1": 0,
+        "OP_NO_TLSv1_1": 0,
+        "CERT_NONE": 0,
+    })
+
+    with patch("socket.create_connection"), patch.dict("sys.modules", {"ssl": fake_ssl}):
         lat = engine._test_http_get("google.com")
-        assert lat is None
+
+    assert lat is None
 
 def test_test_http_get_fail():
     engine = SNIEngine()

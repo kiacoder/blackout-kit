@@ -22,8 +22,14 @@ func StopXrayC() {
 }
 
 //export StartSingBoxC
-func StartSingBoxC(configPath *C.char) int {
-	err := startSingBoxInternal(C.GoString(configPath))
+func StartSingBoxC(configInput *C.char) int {
+	value := C.GoString(configInput)
+	var err error
+	if strings.HasPrefix(strings.TrimSpace(value), "{") {
+		err = startSingBoxConfig([]byte(value))
+	} else {
+		err = startSingBoxInternal(value)
+	}
 	if err != nil {
 		return 1
 	}
@@ -110,5 +116,3 @@ func ScanIPsC(ipsC *C.char, port C.int, concurrency C.int, timeoutMs C.int) *C.c
 	res := scanIPsInternal(ips, int(port), int(concurrency), int(timeoutMs))
 	return C.CString(res)
 }
-
-

@@ -1,15 +1,17 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-datas_ctk, binaries_ctk, hiddenimports_ctk = collect_all('customtkinter')
+datas_ctk, binaries_ctk, hiddenimports_ctk = collect_all("customtkinter")
+datas_typer, binaries_typer, hiddenimports_typer = collect_all("typer")
+hiddenimports_blackout = collect_submodules("blackoutkit")
 
 a = Analysis(
     ['blackout.py'],
     pathex=[],
-    binaries=[] + binaries_ctk,
-    datas=[('bins/*.dll', 'bins'), ('bins/icon.png', 'bins'), ('assets/*', 'assets')] + datas_ctk,
-    hiddenimports=['_overlapped', 'asyncio'] + hiddenimports_ctk,
+    binaries=[] + binaries_ctk + binaries_typer,
+    datas=[("bins/*.dll", "bins"), ("bins/icon.png", "bins"), ("assets/*", "assets"), ("data/*", "data")] + datas_ctk + datas_typer,
+    hiddenimports=["_overlapped", "asyncio"] + hiddenimports_ctk + hiddenimports_typer + hiddenimports_blackout,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

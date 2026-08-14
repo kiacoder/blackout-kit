@@ -4,7 +4,7 @@ Blackout Kit - Entry point.
 Run: python blackout.py <command>
 
 Rare upgrades:
-  - _check_compat(): Python 3.9+, Windows 10+, x64 architecture
+  - _check_compat(): Python 3.10+, Windows 10+, x64 architecture
   - _first_run_hint(): shows quick-start tip on first launch
   - Crash report includes Python version + OS + traceback summary
 """
@@ -34,11 +34,11 @@ def _check_compat() -> list[str]:
     """
     warnings: list[str] = []
 
-    # Python version — require 3.9+ (union type hints, dict merge, etc.)
-    if sys.version_info < (3, 9):
+    # Python version — require 3.10+ (PEP 604 union type hints).
+    if sys.version_info < (3, 10):
         warnings.append(
             f"Python {sys.version_info.major}.{sys.version_info.minor} detected. "
-            "Blackout Kit requires Python 3.9 or newer. "
+            "Blackout Kit requires Python 3.10 or newer. "
             "Download from python.org/downloads"
         )
 
@@ -151,17 +151,13 @@ if __name__ == "__main__":
     # 2. First-run nudge (only if no settings file yet)
     _first_run_hint()
 
-    # 3. Run the UI Launcher or CLI
+    # 3. Run the Typer CLI (its no-argument callback opens the launcher).
     try:
         from blackoutkit.proxy_manager import install_console_close_handler
+        from blackoutkit.typer_cli import main
+
         install_console_close_handler()
-        
-        if len(sys.argv) == 1:
-            from blackoutkit.launcher import start_launcher
-            start_launcher()
-        else:
-            from blackoutkit.cli import main
-            main()
+        main()
     except KeyboardInterrupt:
         try:
             from rich.console import Console

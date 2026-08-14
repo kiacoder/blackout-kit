@@ -17,11 +17,11 @@
 
 **BlackoutKit (`blackout-kit`) — Universal DPI Bypass & Censorship Circumvention Toolkit**
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078d4?style=flat-square&logo=windows)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.1.1-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
@@ -240,7 +240,7 @@ python blackout.py bins download
 
 ### Requirements
 
-- **Python 3.9+**
+- **Python 3.10+**
 - **Windows 10 or 11** (x64)
 - Administrator privileges (for kill switch, Defender exclusion, VPN engines)
 - The packages in `requirements.txt`: `rich`, `httpx`, `psutil`, `cryptography`
@@ -455,7 +455,7 @@ blackout connect xray
 
 ## Settings Reference
 
-Run `blackout settings list` to see all 90+ settings. Key ones:
+Run `blackout settings list` to see all available settings. Key ones:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
@@ -626,12 +626,7 @@ blackout country set IR   ← pin manually
 
 See [ROADMAP.md](ROADMAP.md) for the full version plan.
 
-Highlights coming in **v1.1**:
-- **Hysteria2** — QUIC-based protocol, extremely hard to block
-- **TUIC** — Low-latency QUIC tunnel
-- **TLS Record-Layer Fragmentation** — Fragment at TLS level, not TCP. Overwhelms Iran's DPI hardware.
-- **`blackout connect --iran`** — One-flag profile: ArvanCloud SNI + TLS fragment + Firefox fingerprint
-- **DoH bootstrapping** — Resolve proxy server via DNS-over-HTTPS before connecting
+v1.1 includes Hysteria2 and TUIC support, TLS record-layer fragmentation, the `blackout connect --iran` profile, and DNS-over-HTTPS bootstrapping. See [ROADMAP.md](ROADMAP.md) for the remaining v1.2 work.
 
 ---
 

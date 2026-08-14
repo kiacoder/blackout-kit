@@ -114,15 +114,7 @@ class SingBoxProxyEngine(Engine):
             self.socks_port,
         )
 
-        config = self._generate_config()
-        config_path = self._config_dir / f"singbox_{self.proxy_config.protocol}_config.json"
-        # Write config with restricted user-only permissions (0o600)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-        mode = 0o600
-        fd = os.open(config_path, flags, mode)
-        with open(fd, "w", encoding="utf-8") as f:
-            # codeql[py/cleartext-storage-sensitive-data]
-            f.write(json.dumps(config, indent=2))
+        config_json = json.dumps(self._generate_config(), separators=(",", ":")).encode("utf-8")
 
         from ..core import get_core_dll
         dll = get_core_dll()
@@ -130,8 +122,7 @@ class SingBoxProxyEngine(Engine):
             self._log.error("Core DLL missing! Ensure blackout_core.dll exists.")
             return False
 
-        c_path = str(config_path).encode("utf-8")
-        if dll.StartSingBoxC(c_path) == 0:
+        if dll.StartSingBoxC(config_json) == 0:
             self._dll_stop_func = dll.StopSingBoxC
             if not self.wait_for_port(self.socks_port, timeout=10.0):
                 self._log.error("Singbox proxy started via DLL but SOCKS port %d never opened.", self.socks_port)

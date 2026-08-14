@@ -15,12 +15,7 @@ import (
 var singboxInstance *box.Box
 var singboxCancel context.CancelFunc
 
-func startSingBoxInternal(configPath string) error {
-	configJSON, err := os.ReadFile(configPath)
-	if err != nil {
-		return fmt.Errorf("failed to read config file: %w", err)
-	}
-
+func startSingBoxConfig(configJSON []byte) error {
 	var options option.Options
 	if err := json.Unmarshal(configJSON, &options); err != nil {
 		return fmt.Errorf("failed to parse config JSON: %w", err)
@@ -44,6 +39,14 @@ func startSingBoxInternal(configPath string) error {
 	singboxInstance = instance
 	fmt.Println("Sing-box library started successfully.")
 	return nil
+}
+
+func startSingBoxInternal(configPath string) error {
+	configJSON, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+	return startSingBoxConfig(configJSON)
 }
 
 func stopSingBoxInternal() {

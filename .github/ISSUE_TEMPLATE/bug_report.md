@@ -22,7 +22,7 @@ If applicable, add screenshots or output of `blackout logs` to help explain your
 
 **Environment (please complete the following information):**
  - OS: [e.g. Windows 10, Windows 11]
- - Blackout Kit Version [e.g. v1.1.0]
+ - Blackout Kit Version [e.g. v1.1.1]
  - Engine used [e.g. sni, xray, warp, hysteria2, tuic]
  - Country profile / ISP (optional, but helps with censorship-specific bugs):
  - Installed via: [e.g. standalone exe, source checkout]

@@ -656,7 +656,8 @@ Self-diagnosis and automatic repair.
 Check for new versions and update automatically.
 
 [bold]Usage:[/bold]
-  blackout update                       Check and apply latest update
+  blackout update                       Check for an available update
+  blackout update --apply               Download and apply the available update
   blackout preflight                    Check readiness without connecting
 
 [bold]Update process:[/bold]

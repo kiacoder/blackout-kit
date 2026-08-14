@@ -121,7 +121,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_settings",
-        "description": "Query or change any of the 90+ Blackout Kit settings key-value pairs.",
+        "description": "Query or change Blackout Kit settings key-value pairs.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -405,7 +405,7 @@ def run_mcp_server():
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "blackout-kit-omni-mcp", "version": "1.1.0"}
+                    "serverInfo": {"name": "blackout-kit-omni-mcp", "version": "1.1.1"}
                 }
             })
         elif method == "notifications/initialized":

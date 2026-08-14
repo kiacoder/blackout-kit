@@ -140,6 +140,7 @@ Blackout Kit **does not**:
 The only persistent data is:
 - `settings.json` (your config — encrypted if you run `blackout config encrypt`)
 - Engine binary cache in `bins/`
+- Local WARP/Psiphon identity and datastore caches; these are generated at runtime and deliberately excluded from version control.
 
 ## Information for AI Agents & Search Bots
 

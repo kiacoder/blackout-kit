@@ -56,10 +56,10 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | TCP Sequence Injection (out-of-window decoy) | ✅ Done | Epic | SNI spoofer's core mechanism |
 | uTLS / JA3 fingerprint camouflage | ✅ Done | Rare | `xray_fingerprint = firefox` in PRIVATE mode |
 | Fake SNI (www.hcaptcha.com / auth.vercel.com) | ✅ Done | Rare | DPI sees whitelisted domain |
-| ArvanCloud / Aparat CDN SNI camouflage | 🔜 v1.1 | — | Iran can't block ArvanCloud (their own CDN), spoof SNI to look like arvancloud.ir |
-| **TLS Record-Layer Fragmentation** | 🔜 v1.1 | — | Fragment at TLS layer, NOT TCP — overwhelms Iran's DPI reassembly. XRay `fragment` mode. HIGH PRIORITY |
-| **`blackout connect --iran` profile** | ✅ Done | Rare | One-command Iran profile: ArvanCloud SNI + firefox fingerprint + private mode + existing fragment settings |
-| **DoH bootstrapping at startup** | 🔜 v1.1 | — | Use 1.1.1.1/dns-query BEFORE connecting so DNS poisoning can't intercept server lookup |
+| ArvanCloud CDN SNI camouflage | ✅ Done | Rare | `blackout connect --iran` applies the configured ArvanCloud fake SNI |
+| **TLS Record-Layer Fragmentation** | ✅ Done | Rare | XRay `fragment` mode is generated from `xray_fragment` |
+| **`blackout connect --iran` profile** | ✅ Done | Rare | One-command Iran profile: ArvanCloud SNI + Firefox fingerprint + PRIVATE mode + existing fragment settings |
+| **DoH bootstrapping at startup** | ✅ Done | Rare | Resolves XRay proxy hosts through Cloudflare DoH before connection |
 | Active probing resistance | 🔜 v1.2 | — | Respond correctly to probes so firewall can't fingerprint the server |
 | Iran White List mode survival (NIN) | 🔜 v1.2 | — | Fall back to ArvanCloud/domestic CDN fronting when NIN is active |
 
@@ -76,8 +76,8 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Stability tracking (latency + trend) | ✅ Done | Rare | Per-engine history |
 | Multi-hop (XRay → Tor) | ✅ Done | Rare | LEGEND mode |
 | uTLS fingerprint enforcement | ✅ Done | Rare | Via XRay xray_fingerprint setting |
-| **DoH bootstrapping** | 🔜 v1.1 | — | Must resolve proxy server IP via DoH, not system DNS |
-| **True config encryption (AES-256)** | 🔜 v1.2 | — | Replace XOR obfuscation with real AES-GCM |
+| **DoH bootstrapping** | ✅ Done | Rare | Resolves XRay proxy hosts through Cloudflare DoH before connection |
+| **True config encryption (AES-256)** | ✅ Done | Rare | AES-256-GCM config encryption tied to the local machine |
 | **Triple-hop / Cascaded VPN** | 🔜 v1.2 | — | Chain 3+ proxies |
 | **WebRTC + IPv6 leak protection** | 🔜 v1.2 | — | Windows Firewall rules |
 | **DNS over QUIC (DoQ)** | 🔜 v1.2 | — | Faster than DoH |
@@ -101,11 +101,11 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Hotspot sharing | ✅ Done | Uncommon | Windows Mobile Hotspot toggle |
 | ICS (share VPN over hotspot) | ✅ Done | Uncommon | Internet Connection Sharing |
 | **`blackout fix` shorthand** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
-| **TUN/TAP / Wintun driver reset** | 🔜 v1.1 | — | Force restart virtual adapter when TUN crashes (DPI connection drops can lock it) |
-| **Stale routing table flush** | 🔜 v1.1 | — | `route -f` to clear zombie proxy routes left after crash |
-| **DNS hijack recovery** | 🔜 v1.1 | — | Detect if DNS is still pointing to dead 127.0.0.1, auto-restore |
-| **Real-time fixer checklist** | 🔜 v1.1 | — | Rich live checklist that ticks off each repair step as it runs |
-| **Auto-reconnect with backoff** | 🔜 v1.1 | — | Daemon retries with exponential backoff instead of fixed interval |
+| **TUN/TAP / Wintun driver reset** | 🔜 v1.2 | — | Force restart virtual adapter when TUN crashes (DPI connection drops can lock it) |
+| **Stale routing table flush** | 🔜 v1.2 | — | `route -f` to clear zombie proxy routes left after crash |
+| **DNS hijack recovery** | 🔜 v1.2 | — | Detect if DNS is still pointing to dead 127.0.0.1, auto-restore |
+| **Real-time fixer checklist** | ✅ Done | Rare | `blackout fix` shows a live Rich checklist for each repair step |
+| **Auto-reconnect with backoff** | 🔜 v1.2 | — | Daemon retries with exponential backoff instead of fixed interval |
 | **Certificate store cleanup** | 🔜 v1.2 | — | Remove stale mhrv CA certs after uninstall |
 | **ARP table flush** | 🔜 v1.2 | — | Clear ARP cache if LAN routing breaks |
 
@@ -121,13 +121,13 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Rich terminal output (colors, tables, panels) | ✅ Done | Rare | Already looks good |
 | ASCII banner + spinner animations | ✅ Done | Rare | On startup and long operations |
 | argparse-based commands | ✅ Done | Uncommon | Works but not beginner-friendly |
-| **Typer migration** | 🔜 v1.1 | — | Replace argparse with Typer: type-safe, auto-help, cleaner code |
+| **Typer migration** | ✅ Done | Rare | Typer is the public command entrypoint and delegates to the proven dispatcher |
 | **Interactive dashboard (Zero-Flag mode)** | ✅ Done | Rare | `blackout` with no args opens a keyboard-driven menu for common actions |
-| **`blackout connect` smart command** | 🔜 v1.1 | — | Auto-selects best engine + connects. One word, done. |
+| **`blackout connect` smart command** | ✅ Done | Rare | Auto-selects the country-aware engine and connects. |
 | **`blackout connect --iran`** | ✅ Done | Rare | Forces TIC evasion profile: arvancloud.ir SNI + firefox fingerprint + existing fragment settings |
 | **`blackout fix`** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
-| **Global exception handler** | 🔜 v1.1 | — | No raw Python tracebacks EVER. All errors caught → Rich red Panel → offer auto-fix |
-| **Rich.Prompt interactive menus** | 🔜 v1.1 | — | User can answer questions instead of typing flags |
+| **Global exception handler** | 🔜 v1.2 | — | No raw Python tracebacks EVER. All errors caught → Rich red Panel → offer auto-fix |
+| **Rich.Prompt interactive menus** | 🔜 v1.2 | — | User can answer questions instead of typing flags |
 | **Real-time status panel** | 🔜 v1.2 | — | Live updating: IP, latency, engine, bytes transferred |
 | **Smart-routing dashboard** | 🔜 v1.2 | — | Auto-switch to best available engine |
 | **Dark/Light theme toggle** | 🔜 v1.2 | — | Rich theme switching |
@@ -142,10 +142,10 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 |---------|--------|------|-------|
 | Async IP scanner (100 concurrent) | ✅ Done | Rare | asyncio-based |
 | IP scan cache (12h TTL) | ✅ Done | Rare | Offline-first |
-| **Lazy CLI imports** | 🔜 v1.1 | — | Import engine only when used → startup ~800ms → ~200ms |
-| **KNOWN_GOOD_IPS scan first** | 🔜 v1.1 | — | Try pre-tested IPs before full scan |
-| **Parallel engine startup** | 🔜 v1.1 | — | Start SNI + XRay threads simultaneously |
-| **Binary detection cache** | 🔜 v1.1 | — | Don't re-scan bins/ on every command |
+| **Lazy CLI imports** | 🔜 v1.2 | — | Import engine only when used → startup ~800ms → ~200ms |
+| **KNOWN_GOOD_IPS scan first** | 🔜 v1.2 | — | Try pre-tested IPs before full scan |
+| **Parallel engine startup** | 🔜 v1.2 | — | Start SNI + XRay threads simultaneously |
+| **Binary detection cache** | 🔜 v1.2 | — | Don't re-scan bins/ on every command |
 | **Persistent daemon IPC socket** | 🔜 v1.2 | — | Replace PID file polling with proper socket |
 | **Compressed GAS relay** | 🔜 v1.2 | — | gzip responses → less bandwidth |
 | **Connection pooling in proxy tester** | 🔜 v1.2 | — | Reuse TCP connections |
@@ -170,10 +170,10 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 |---------|--------|------|-------|
 | Stability tracking (latency + loss% + trend) | ✅ Done | Rare | Per-engine, stored in stability.json |
 | Speed test (Cloudflare) | ✅ Done | Uncommon | `blackout tools speedtest` |
-| **Real-time latency graph** | 🔜 v1.1 | — | Live terminal graph during connection |
+| **Real-time latency graph** | 🔜 v1.2 | — | Live terminal graph during connection |
 | **Connection event log** | 🔜 v1.2 | — | Timestamped connect/disconnect history |
 | **Data transferred counter** | 🔜 v1.2 | — | Show total bytes proxied |
-| **Node health auto-check** | 🔜 v1.1 | — | Ping all saved V2Ray configs, sort by speed |
+| **Node health auto-check** | 🔜 v1.2 | — | Ping all saved V2Ray configs, sort by speed |
 
 ---
 
@@ -181,10 +181,9 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 
 | Version | Focus | Key items |
 |---------|-------|-----------|
-| **v1.0** (current) | Core foundation | All engines, security modes, doctor, neighbor, preflight, Apps Script relay |
-| **v1.1** (next) | Iran 2026 hardening + UX | Hysteria2, TUIC, TLS fragment, ArvanCloud SNI, DoH, Typer, interactive menu, `blackout connect/fix`, real fixer checklist |
-| **v1.2** | Advanced privacy + polish | REALITY, ShadowTLS, triple-hop, process split tunnel, Linux, smart routing, real-time dashboard |
-| **v1.3** | Performance + hardening | XTLS, lazy imports, PFS, AES-256 configs, persistent IPC |
+| **v1.1.1** (current) | Release stabilization | Installable package, self-contained executable, CLI parity, native config hardening, and reproducible WARP/Psiphon module |
+| **v1.2** (next) | Advanced privacy + recovery | REALITY, ShadowTLS, process split tunnel, Linux support, network recovery, smart routing, and real-time dashboard |
+| **v1.3** | Performance + hardening | XTLS, lazy imports, PFS, persistent IPC, and remaining performance improvements |
 | **far future** | GUI + Russia + exotic protocols | Tauri, tray, Russia TSPU, ECH, PQC, macOS |
 
 ---

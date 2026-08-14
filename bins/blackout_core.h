@@ -85,7 +85,7 @@ extern "C" {
 
 extern GoInt StartXrayC(char* configPath);
 extern void StopXrayC(void);
-extern GoInt StartSingBoxC(char* configPath);
+extern GoInt StartSingBoxC(char* configInput);
 extern void StopSingBoxC(void);
 extern int StartGDPIC(void);
 extern void StopGDPIC(void);

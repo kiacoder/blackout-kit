@@ -494,7 +494,10 @@ def tools_traceroute(host: str = typer.Argument(None, help="Host to trace")):
     cmd_tools(args)
 
 @tools_app.command("cert-check")
-def tools_cert_check(host: str = typer.Argument(None, help="Host to check")):
+def tools_cert_check(
+    host: str = typer.Argument(None, help="Host to check"),
+    allow: bool = typer.Option(False, "--allow", help="Trust this host in LEGEND mode"),
+):
     """Check TLS certificate for a host[:port]"""
     from rich.prompt import Prompt
     from .cli import cmd_tools
@@ -502,10 +505,12 @@ def tools_cert_check(host: str = typer.Argument(None, help="Host to check")):
         console.print()
         host = Prompt.ask("🔐 Enter host or IP to check TLS certificate")
         console.print()
-    class DummyArgs: pass
+    class DummyArgs:
+        pass
     args = DummyArgs()
     args.tools_command = "cert-check"
     args.host = host
+    args.allow = allow
     cmd_tools(args)
 
 @app.command()
@@ -551,11 +556,16 @@ def disconnect():
     cmd_stop(DummyArgs())
 
 @app.command()
-def emergency():
+def emergency(
+    background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
+):
     """Try all engines until one works"""
     from .cli import cmd_emergency
-    class DummyArgs: pass
-    cmd_emergency(DummyArgs())
+    class DummyArgs:
+        pass
+    args = DummyArgs()
+    args.background = background
+    cmd_emergency(args)
 
 @app.command()
 def status():
@@ -565,11 +575,16 @@ def status():
     cmd_status(DummyArgs())
 
 @app.command()
-def logs():
+def logs(
+    lines: int = typer.Option(50, "--lines", "-n", min=1, help="Number of log lines to show"),
+):
     """View daemon log output"""
     from .cli import cmd_logs
-    class DummyArgs: pass
-    cmd_logs(DummyArgs())
+    class DummyArgs:
+        pass
+    args = DummyArgs()
+    args.lines = lines
+    cmd_logs(args)
 
 @app.command()
 def panic():
@@ -586,48 +601,96 @@ def shield():
     cmd_shield(DummyArgs())
 
 @app.command()
-def update():
+def update(
+    apply: bool = typer.Option(False, "--apply", help="Download and apply the available update"),
+):
     """Update Blackout Kit to latest version"""
     from .cli import cmd_update
-    class DummyArgs: pass
-    cmd_update(DummyArgs())
+    class DummyArgs:
+        pass
+    args = DummyArgs()
+    args.force = apply
+    cmd_update(args)
 
-@app.command()
-
-@app.command(name="manual")
-def manual_help(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran', 'engines', 'configs')")):
-    """Show detailed manual/help for a specific topic"""
+def _show_help(topic):
     from .cli import cmd_help
-    class DummyArgs: pass
+
+    class DummyArgs:
+        pass
+
     args = DummyArgs()
     args.topic = topic
     cmd_help(args)
 
+
+@app.command(name="manual")
+def manual_help(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran', 'engines', 'configs')")):
+    """Show detailed manual/help for a specific topic"""
+    _show_help(topic)
+
+
+@app.command(name="help")
+def help_command(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran', 'engines', 'configs')")):
+    """Show detailed manual/help for a specific topic"""
+    _show_help(topic)
+
 @app.command()
 def doctor(
-    fix_av: bool = typer.Option(False, "--fix-av", help="Add Windows Defender exclusions")
+    fix: bool = typer.Option(False, "--fix", help="Auto-fix every repairable issue"),
+    fix_av: bool = typer.Option(False, "--fix-av", help="Add Windows Defender exclusions"),
 ):
     """Diagnose and fix environment issues"""
     from .cli import cmd_doctor
-    class DummyArgs: pass
+    class DummyArgs:
+        pass
     args = DummyArgs()
+    args.fix = fix
     args.fix_av = fix_av
     cmd_doctor(args)
 
-@app.command()
-def country(
-    iso_code: str = typer.Argument(None, help="2-letter ISO code (IR, CN, RU) or 'auto'")
-):
-    """Set censorship country profile"""
-    from rich.prompt import Prompt
+country_app = typer.Typer(help="View or pin the active censorship country profile", no_args_is_help=False)
+app.add_typer(country_app, name="country")
+
+@country_app.callback(invoke_without_command=True)
+def country_status(ctx: typer.Context):
+    """Show the active country profile."""
+    if ctx.invoked_subcommand is None:
+        from .cli import cmd_country
+        class DummyArgs:
+            pass
+        args = DummyArgs()
+        args.country_command = None
+        cmd_country(args)
+
+@country_app.command("set")
+def country_set(code: str = typer.Argument(..., help="Country code: IR, CN, IQ, GB, US, or EU")):
+    """Pin the active country profile."""
     from .cli import cmd_country
-    if not iso_code:
-        console.print()
-        iso_code = Prompt.ask("🌍 Enter country code (IR, CN, RU, auto)")
-        console.print()
-    class DummyArgs: pass
+    class DummyArgs:
+        pass
     args = DummyArgs()
-    args.iso_code = iso_code
+    args.country_command = "set"
+    args.code = code
+    cmd_country(args)
+
+@country_app.command("reset")
+def country_reset():
+    """Return to ISP-based country auto-detection."""
+    from .cli import cmd_country
+    class DummyArgs:
+        pass
+    args = DummyArgs()
+    args.country_command = "reset"
+    cmd_country(args)
+
+@country_app.command("show", hidden=True)
+def country_show():
+    """Show the active country profile."""
+    from .cli import cmd_country
+    class DummyArgs:
+        pass
+    args = DummyArgs()
+    args.country_command = None
     cmd_country(args)
 
 # ── NEIGHBOR GROUP ──
@@ -716,8 +779,19 @@ def settings_reset():
     cmd_settings(args)
 
 # ── BINS GROUP ──
-bins_app = typer.Typer(help="Download and manage engine binaries", no_args_is_help=True)
+bins_app = typer.Typer(help="Download and manage engine binaries", no_args_is_help=False)
 app.add_typer(bins_app, name="bins")
+
+@bins_app.callback(invoke_without_command=True)
+def bins_status(ctx: typer.Context):
+    """Show installed and missing engine binaries."""
+    if ctx.invoked_subcommand is None:
+        from .cli import cmd_bins
+        class DummyArgs:
+            pass
+        args = DummyArgs()
+        args.bins_command = None
+        cmd_bins(args)
 
 @bins_app.command("download")
 def bins_download(
@@ -731,13 +805,14 @@ def bins_download(
     args.binary = engine
     cmd_bins(args)
 
-@bins_app.command("clean")
-def bins_clean():
-    """Delete all cached binaries to force a fresh download"""
+@bins_app.command("update")
+def bins_update():
+    """Re-download installed binaries to update them."""
     from .cli import cmd_bins
-    class DummyArgs: pass
+    class DummyArgs:
+        pass
     args = DummyArgs()
-    args.bins_command = "clean"
+    args.bins_command = "update"
     cmd_bins(args)
 
 @app.command(name="_daemon_run", hidden=True)

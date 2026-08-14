@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.1.1] - 2026-08-14
+### Fixed
+- Packaged every `blackoutkit` subpackage and Typer runtime dependency so source installs and the standalone executable can start correctly.
+- Restored documented Typer commands and options for diagnostics, logs, binaries, country profiles, emergency background mode, certificate overrides, help, and updates.
+- Passed Hysteria2/TUIC configuration directly into the native sing-box DLL so proxy credentials are not written to a temporary file.
+- Corrected the WARP/Psiphon Go module's invalid Pion DTLS version and stopped tracking generated WARP/Psiphon identity and datastore caches.
+
+### Changed
+- Added CI smoke tests for the Python wheel and frozen executable.
+- Updated the roadmap and command documentation to reflect the actual v1.1 feature set.
+
 ### Added
 - **Typer CLI rewrite:** Modernized the CLI routing using Typer, maintaining backward compatibility with the monolithic `cli.py` legacy dispatcher functions while improving command organization.
 - **Iran TIC 2026 Evasion Flag:** Added `--iran` flag to `blackout connect` which automatically activates a specialized bypass profile (Private mode, Firefox fingerprinting, ArvanCloud SNI spoofing, and TLS record fragmentation).

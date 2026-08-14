@@ -15,12 +15,12 @@ from pathlib import Path
 
 # ─────────────────────────── Package metadata ────────────────────────────────
 
-__version__        = "1.1.0"
+__version__        = "1.1.1"
 __author__         = "Kiacoder & contributors"
 __description__    = "Advanced DPI bypass & censorship circumvention toolkit"
 __license__        = "MIT"
 __url__            = "https://github.com/kiacoder/blackout-kit"
-__python_requires__ = ">=3.9"
+__python_requires__ = ">=3.10"
 
 # ─────────────────────────── Shared path constants ───────────────────────────
 # Import from here instead of recomputing in every module.
