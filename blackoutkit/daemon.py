@@ -101,9 +101,13 @@ def start(engine_name: str) -> int:
         STATE_FILE.unlink(missing_ok=True)
         (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
 
+        ADMIN_REQUIRED_ENGINES = {"gdpi", "warp", "tun"}
+        verb_clause = "-Verb RunAs " if engine_name in ADMIN_REQUIRED_ENGINES else ""
+        
+        args_ps = ", ".join(f"'{a}'" for a in cmd[1:])
         ps_cmd = (
             f"$p = Start-Process -FilePath '{cmd[0]}' "
-            f"-ArgumentList '{' '.join(cmd[1:])}' -WorkingDirectory '{os.getcwd()}' -Verb RunAs -WindowStyle Hidden -PassThru; "
+            f"-ArgumentList @({args_ps}) -WorkingDirectory '{os.getcwd()}' {verb_clause}-WindowStyle Hidden -PassThru; "
             f"if ($p) {{ $p.Id | Out-File -FilePath '{PID_FILE}' -Encoding UTF8; "
             f"'{{\"engine\":\"{engine_name}\",\"pid\":' + $p.Id.ToString() + ',\"started\":\"' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '\"}}' | Out-File -FilePath '{STATE_FILE}' -Encoding UTF8 }}"
         )

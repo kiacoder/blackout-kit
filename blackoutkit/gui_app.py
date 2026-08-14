@@ -95,6 +95,11 @@ class ConnectionMapCanvas(ctk.CTkCanvas):
             pulse_rad = 15 * (1.0 - self.anim_progress)
             self.create_oval(target_x-pulse_rad, target_y-pulse_rad, target_x+pulse_rad, target_y+pulse_rad, outline=self.color, tags="overlay")
             
+            if self._anim_job:
+                try:
+                    self.after_cancel(self._anim_job)
+                except Exception:
+                    pass
             self._anim_job = self.after(50, self.draw_overlay)
 
     def set_state(self, active: bool, color: str, target: str = "eu"):
@@ -103,7 +108,11 @@ class ConnectionMapCanvas(ctk.CTkCanvas):
         self.current_target = target
         self.anim_progress = 0.0
         if self._anim_job:
-            self.after_cancel(self._anim_job)
+            try:
+                self.after_cancel(self._anim_job)
+            except Exception:
+                pass
+            self._anim_job = None
         self.draw_overlay()
 
 class BlackoutGUI(ctk.CTk):
@@ -261,10 +270,13 @@ class BlackoutGUI(ctk.CTk):
         
         ctk.CTkLabel(self.settings_frame, text="Security & Preferences", font=ctk.CTkFont(size=24, weight="bold")).grid(row=0, column=0, pady=(0, 20), sticky="w")
         
-        self.iran_mode_switch = ctk.CTkSwitch(self.settings_frame, text="Enable TIC 2026 Evasion Profile (Iran Mode)")
+        self.iran_mode_var = ctk.BooleanVar(value=False)
+        self.killswitch_var = ctk.BooleanVar(value=False)
+        
+        self.iran_mode_switch = ctk.CTkSwitch(self.settings_frame, text="Enable TIC 2026 Evasion Profile (Iran Mode)", variable=self.iran_mode_var)
         self.iran_mode_switch.grid(row=1, column=0, pady=10, sticky="w")
         
-        self.killswitch_switch = ctk.CTkSwitch(self.settings_frame, text="Network Kill Switch (Block traffic if proxy drops)")
+        self.killswitch_switch = ctk.CTkSwitch(self.settings_frame, text="Network Kill Switch (Block traffic if proxy drops)", variable=self.killswitch_var)
         self.killswitch_switch.grid(row=2, column=0, pady=10, sticky="w")
         
         # --- LOGS FRAME ---
@@ -337,8 +349,18 @@ class BlackoutGUI(ctk.CTk):
         threading.Thread(target=self._real_connect, args=(current_attempt,), daemon=True).start()
         
     def _real_connect(self, attempt: int):
-        from . import daemon
+        from . import daemon, settings as cfg
         engine_name = self.engine_var.get()
+        
+        # Save Killswitch setting
+        try:
+            cfg.set_value("kill_switch", self.killswitch_var.get())
+        except Exception:
+            pass
+            
+        if self.iran_mode_var.get():
+            self.after(0, self.append_log, "[*] Iran Mode (TIC 2026 Evasion) active -> forcing legend profile.")
+            engine_name = "legend"
         
         try:
             # Ensure no orphaned daemon is running
@@ -369,8 +391,27 @@ class BlackoutGUI(ctk.CTk):
         self.current_state = "SECURE"
         self.connect_btn.configure(text="DISCONNECT", fg_color="#ff3366", hover_color="#cc0044")
         self.status_label.configure(text="SECURE", text_color="#00cc66")
-        self.ip_label.configure(text="104.18.2.19", text_color="#00A8FF")
-        self.ping_label.configure(text="42 ms", text_color="#00cc66")
+        
+        from . import settings as cfg
+        from .scanner.proxy_tester import test_tcp_port
+        
+        engine_name = self.engine_var.get()
+        if self.iran_mode_var.get():
+            engine_name = "legend"
+            
+        proxy_info = cfg.get_engine_proxy_details(engine_name, cfg.load())
+        if proxy_info:
+            p_host, p_port = proxy_info
+            if isinstance(p_host, str) and p_host.startswith("socks="):
+                p_host = p_host.split("=", 1)[1]
+            self.ip_label.configure(text=f"{p_host}:{p_port}", text_color="#00A8FF")
+            lat = test_tcp_port(p_host, p_port)
+            ping_str = f"{int(lat)} ms" if lat is not None else "Active"
+            self.ping_label.configure(text=ping_str, text_color="#00cc66")
+        else:
+            self.ip_label.configure(text="Active (TUN)", text_color="#00A8FF")
+            self.ping_label.configure(text="OK", text_color="#00cc66")
+            
         self.uptime_label.configure(text_color="#00A8FF")
         self.radar.set_state(True, "#00cc66")
         self.append_log("[✓] You are now secure.")
@@ -431,9 +472,14 @@ class BlackoutGUI(ctk.CTk):
         self.uptime_label.configure(text="00:00:00", text_color="white")
         self.engine_selector.configure(state="normal")
         self.radar.set_state(False, "#00A8FF")
-        self.append_log("[-] Connection closed. System proxy cleared.")
 
     def on_closing(self):
+        if self.current_state != "DISCONNECTED":
+            try:
+                from . import daemon
+                daemon.stop()
+            except Exception:
+                pass
         # Cancel all pending after tasks before destroying
         try:
             for after_id in self.tk.call('after', 'info'):
