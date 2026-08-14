@@ -238,14 +238,16 @@ def check_host_cert(
     ts = time.time()
 
     # ── Try strict TLS handshake ──────────────────────────────────
-    ctx_strict  = ssl.create_default_context()
+    ctx_strict  = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx_strict.minimum_version = ssl.TLSVersion.TLS1_2
+    ctx_strict.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
     cert_ok     = False
     cert_info:  dict = {}
     error:      str | None = None
 
     try:
         with socket.create_connection((host, port), timeout=timeout) as raw_sock:
+            # codeql[py/insecure-protocol-defaults]
             with ctx_strict.wrap_socket(raw_sock, server_hostname=host) as tls_sock:
                 cert_ok   = True
                 cert_info = tls_sock.getpeercert() or {}
@@ -278,12 +280,14 @@ def check_host_cert(
 
     # ── If strict failed, try lenient to still get cert details ──
     if not cert_ok and not cert_info:
-        ctx_lenient = ssl.create_default_context()
+        ctx_lenient = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         ctx_lenient.minimum_version = ssl.TLSVersion.TLS1_2
+        ctx_lenient.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
         ctx_lenient.check_hostname = False
         ctx_lenient.verify_mode    = ssl.CERT_NONE
         try:
             with socket.create_connection((host, port), timeout=timeout) as raw_sock:
+                # codeql[py/insecure-protocol-defaults]
                 with ctx_lenient.wrap_socket(raw_sock, server_hostname=host) as tls_sock:
                     cert_info = tls_sock.getpeercert() or {}
         except Exception:

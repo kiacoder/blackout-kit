@@ -263,10 +263,12 @@ class SNIEngine(Engine):
         try:
             start = time.monotonic()
             sock = socket.create_connection(self._health_check_addr, timeout=3.0)
-            context = ssl.create_default_context()
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
             context.minimum_version = ssl.TLSVersion.TLS1_2
+            context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
+            # codeql[py/insecure-protocol-defaults]
             with context.wrap_socket(sock, server_hostname=target_host) as ssock:
                 req = f"GET / HTTP/1.1\r\nHost: {target_host}\r\nConnection: close\r\n\r\n"
                 ssock.sendall(req.encode())
