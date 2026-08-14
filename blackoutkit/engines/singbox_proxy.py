@@ -117,11 +117,11 @@ class SingBoxProxyEngine(Engine):
         config = self._generate_config()
         config_path = self._config_dir / f"singbox_{self.proxy_config.protocol}_config.json"
         # Write config with restricted user-only permissions (0o600)
-        # codeql[py/cleartext-storage-sensitive-data]
         flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
         mode = 0o600
         fd = os.open(config_path, flags, mode)
         with open(fd, "w", encoding="utf-8") as f:
+            # codeql[py/cleartext-storage-sensitive-data]
             f.write(json.dumps(config, indent=2))
 
         from ..core import get_core_dll
