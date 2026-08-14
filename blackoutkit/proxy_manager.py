@@ -61,8 +61,8 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
             winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
             proxy_str = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
             winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_str)
-            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ,
-                              "localhost;127.*;10.*;172.16.*;192.168.*;<local>")
+            from . import split_tunnel
+            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, split_tunnel.get_proxy_override_string())
             winreg.CloseKey(key)
             _notify_proxy_change()
             _last_error = ""

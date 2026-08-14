@@ -181,6 +181,40 @@ def gui():
     from .gui_app import run_gui
     run_gui()
 
+@app.command()
+def mcp():
+    """Start the AI Agent MCP (Model Context Protocol) stdio server."""
+    from .mcp_server import run_mcp_server
+    run_mcp_server()
+
+# ── SPLIT TUNNEL GROUP ──
+split_app = typer.Typer(help="Split Tunneling & Direct Proxy Bypass", no_args_is_help=True)
+app.add_typer(split_app, name="split-tunnel")
+
+@split_app.command("list")
+def split_list():
+    """List all direct proxy bypass rules"""
+    from .split_tunnel import load_split_rules
+    rules = load_split_rules()
+    console.print("\n[bold cyan]Direct Bypass Rules (Split Tunnel):[/bold cyan]")
+    for r in rules:
+        console.print(f"  • {r}")
+    console.print()
+
+@split_app.command("add")
+def split_add(target: str = typer.Argument(..., help="Domain, IP, or CIDR to bypass proxy")):
+    """Add a domain or IP to bypass system proxy directly"""
+    from .split_tunnel import add_direct_route
+    if add_direct_route(target):
+        console.print(f"[success]✓ Added '{target}' to split-tunnel direct bypass list![/success]")
+
+@split_app.command("remove")
+def split_remove(target: str = typer.Argument(..., help="Domain, IP, or CIDR to remove")):
+    """Remove a domain or IP from direct proxy bypass list"""
+    from .split_tunnel import remove_direct_route
+    if remove_direct_route(target):
+        console.print(f"[success]✓ Removed '{target}' from split-tunnel direct bypass list![/success]")
+
 # ── NETWORK GROUP ──
 network_app = typer.Typer(help="WiFi network switcher + ISP detection", no_args_is_help=True)
 app.add_typer(network_app, name="network")
