@@ -129,7 +129,8 @@ class NeighborConnectEngine(Engine):
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             sock.settimeout(timeout)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-            sock.bind(("", MCAST_PORT))
+            # Bind to multicast group address specifically to restrict interface exposure
+            sock.bind((MCAST_GROUP, MCAST_PORT))
 
             mreq = struct.pack("4sL", socket.inet_aton(MCAST_GROUP), socket.INADDR_ANY)
             sock.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)

@@ -264,6 +264,7 @@ class SNIEngine(Engine):
             start = time.monotonic()
             sock = socket.create_connection(self._health_check_addr, timeout=3.0)
             context = ssl.create_default_context()
+            context.minimum_version = ssl.TLSVersion.TLS1_2
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE
             with context.wrap_socket(sock, server_hostname=target_host) as ssock:

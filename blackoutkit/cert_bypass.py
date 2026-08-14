@@ -239,6 +239,7 @@ def check_host_cert(
 
     # ── Try strict TLS handshake ──────────────────────────────────
     ctx_strict  = ssl.create_default_context()
+    ctx_strict.minimum_version = ssl.TLSVersion.TLS1_2
     cert_ok     = False
     cert_info:  dict = {}
     error:      str | None = None
@@ -278,6 +279,7 @@ def check_host_cert(
     # ── If strict failed, try lenient to still get cert details ──
     if not cert_ok and not cert_info:
         ctx_lenient = ssl.create_default_context()
+        ctx_lenient.minimum_version = ssl.TLSVersion.TLS1_2
         ctx_lenient.check_hostname = False
         ctx_lenient.verify_mode    = ssl.CERT_NONE
         try:

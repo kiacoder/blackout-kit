@@ -116,7 +116,12 @@ class SingBoxProxyEngine(Engine):
 
         config = self._generate_config()
         config_path = self._config_dir / f"singbox_{self.proxy_config.protocol}_config.json"
-        config_path.write_text(json.dumps(config, indent=2))
+        # Write config with restricted user-only permissions (0o600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        mode = 0o600
+        fd = os.open(config_path, flags, mode)
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(config, indent=2))
 
         from ..core import get_core_dll
         dll = get_core_dll()
