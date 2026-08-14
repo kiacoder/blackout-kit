@@ -15,16 +15,17 @@
                   ╚═╝  ╚═╝╚═╝   ╚═╝
 ```
 
-**DPI Bypass & Censorship Circumvention Toolkit**
+**BlackoutKit (`blackout-kit`) — Universal DPI Bypass & Censorship Circumvention Toolkit**
 
 ![Python](https://img.shields.io/badge/Python-3.9%2B-blue?style=flat-square&logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078d4?style=flat-square&logo=windows)
+![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 ![Version](https://img.shields.io/badge/Version-1.1.0-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
-*A unified command-line toolkit that orchestrates 16 bypass engines, auto-switches on failure, sets your system proxy automatically, and includes a full network diagnostic suite — all in one place.*
+*A unified native GUI and command-line toolkit that orchestrates 16 bypass engines, auto-switches on failure, sets your system proxy automatically, and includes a full network diagnostic suite — all in one place.*
 
 **🇮🇷 Iran · 🇨🇳 China · 🇮🇶 Iraq · 🇬🇧 United Kingdom · 🇺🇸 United States · 🇪🇺 Europe**
 
@@ -35,6 +36,7 @@
 ## Table of Contents
 
 - [Why Blackout Kit](#why-blackout-kit)
+- [Native Desktop App GUI](#native-desktop-app-gui)
 - [Supported Countries](#supported-countries)
 - [Engines](#engines)
 - [Installation](#installation)
@@ -47,6 +49,23 @@
 - [Troubleshooting](#troubleshooting)
 - [Roadmap](#roadmap)
 - [Disclaimer](#disclaimer)
+
+---
+
+## Native Desktop App GUI
+
+BlackoutKit features a modern native Windows Dark GUI built with `CustomTkinter`:
+
+* **⚡ Animated Connection Map:** Programmatic vector canvas rendering live animated connection nodes and arcs.
+* **📡 Real-Time Engine Log Stream:** Live tailing of daemon logs directly inside the dashboard.
+* **🛡️ Security Profiles & Kill Switch:** Direct toggle for TIC 2026 Iran Evasion mode and strict network kill-switch.
+* **⏱️ Live Uptime & Latency Probing:** Real-time TCP latency checks and active session timer.
+
+Launch the GUI anytime with:
+```cmd
+blackout gui
+```
+Or simply double-click `blackout.exe` to launch the interactive workspace selector.
 
 ---
 
