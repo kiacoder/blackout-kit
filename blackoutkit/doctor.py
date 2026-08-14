@@ -212,17 +212,23 @@ def check_bins_present() -> list[CheckResult]:
             size_kb = first.stat().st_size // 1024
             results.append(CheckResult(f"bins: {info.display_name}", True, f"Found ({size_kb} KB)"))
         else:
-            if info.github_repo:
-                fix_hint = "Run: blackout bins download"
+            from .downloader import download_binary
+            if info.github_repo or key in ("tor", "openvpn"):
+                results.append(CheckResult(
+                    f"bins: {info.display_name}", False,
+                    "Missing — Run: blackout bins download",
+                    fixable=True,
+                    fix=lambda k=key: download_binary(k),
+                ))
             else:
                 fix_hint = f"Manual: {info.manual_url}"
                 if info.manual_note:
                     fix_hint += f"  ({info.manual_note})"
-            results.append(CheckResult(
-                f"bins: {info.display_name}", False,
-                f"Missing — {fix_hint}",
-                fixable=False,
-            ))
+                results.append(CheckResult(
+                    f"bins: {info.display_name}", False,
+                    f"Missing — {fix_hint}",
+                    fixable=False,
+                ))
     return results
 
 

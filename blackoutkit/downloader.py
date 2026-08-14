@@ -64,9 +64,9 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         asset_pattern = "goodbyedpi-*.zip",
         asset_exclude = None,
         extract_map   = {
-            "*/x86_64/goodbyedpi.exe":  "goodbyedpi.exe",
-            "*/x86_64/WinDivert.dll":   "WinDivert.dll",
-            "*/x86_64/WinDivert64.sys": "WinDivert64.sys",
+            "*/goodbyedpi.exe":  "goodbyedpi.exe",
+            "*/WinDivert.dll":   "WinDivert.dll",
+            "*/WinDivert64.sys": "WinDivert64.sys",
         },
         output_bins   = ["goodbyedpi.exe", "WinDivert.dll", "WinDivert64.sys"],
         required      = False,
@@ -93,12 +93,40 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         display_name  = "WireGuard (Portable)",
         description   = "WireGuard VPN — high-speed UDP-based tunnel",
         github_repo   = "DrEm-s/wireguard-windows-portable",
-        asset_pattern = None,
+        asset_pattern = "wireguard-*.zip",
         asset_exclude = None,
-        extract_map   = {"wireguard.exe": "wireguard.exe", "wg.exe": "wg.exe"},
+        extract_map   = {"*/wireguard.exe": "wireguard.exe", "*/wg.exe": "wg.exe"},
         output_bins   = ["wireguard.exe", "wg.exe"],
         required      = False,
         manual_url    = "https://github.com/DrEm-s/wireguard-windows-portable/releases",
+        manual_note   = "",
+    ),
+
+    "psiphon": BinInfo(
+        key           = "psiphon",
+        display_name  = "Psiphon Tunnel Core",
+        description   = "Psiphon multi-protocol tunnel core",
+        github_repo   = None,
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {},
+        output_bins   = ["psiphon-tunnel-core.exe"],
+        required      = False,
+        manual_url    = "https://github.com/Psiphon-Inc/psiphon-tunnel-core",
+        manual_note   = "",
+    ),
+
+    "warp": BinInfo(
+        key           = "warp",
+        display_name  = "Cloudflare WARP Plus Engine",
+        description   = "WARP+ / MASQUE tunnel binary",
+        github_repo   = "bepass-org/warp-plus",
+        asset_pattern = "*windows*amd64*.zip",
+        asset_exclude = None,
+        extract_map   = {"*warp-plus.exe": "warp-plus.exe"},
+        output_bins   = ["warp-plus.exe"],
+        required      = False,
+        manual_url    = "https://github.com/bepass-org/warp-plus/releases",
         manual_note   = "",
     ),
 
@@ -386,6 +414,8 @@ def download_binary(
             return _download_tor_binary(progress_callback)
         elif key == "openvpn":
             return _download_openvpn_binary(progress_callback)
+        elif key == "psiphon":
+            return _download_psiphon_binary(progress_callback)
         note = f"  Note: {info.manual_note}" if info.manual_note else ""
         return False, f"Manual download required.\n  Visit: {info.manual_url}{note}"
 
@@ -407,7 +437,9 @@ def download_binary(
     tag    = release.get("tag_name", "unknown")
     assets = release.get("assets", [])
 
-    is_zip_mode = info.asset_pattern is not None
+    asset = _find_asset(assets, info.asset_pattern, info.asset_exclude) if info.asset_pattern else None
+    asset_name = asset.get("name", "") if asset else ""
+    is_zip_mode = asset_name.lower().endswith(".zip") or (info.asset_pattern and info.asset_pattern.lower().endswith(".zip"))
 
     if is_zip_mode:
         asset = _find_asset(assets, info.asset_pattern, info.asset_exclude)
@@ -773,5 +805,44 @@ def _download_openvpn_binary(progress_callback: Callable[[int, int], None] | Non
         if temp_dir and temp_dir.exists():
             try:
                 shutil.rmtree(temp_dir)
+            except Exception:
+                pass
+
+
+def _download_psiphon_binary(progress_callback: Callable[[int, int], None] | None = None) -> tuple[bool, str]:
+    """Helper to download Psiphon console binary directly."""
+    download_url = "https://raw.githubusercontent.com/Psiphon-Inc/psiphon-tunnel-core/master/psiphon-tunnel-core-x86_64.exe"
+    dest_path = BINS_DIR / "psiphon-tunnel-core.exe"
+    BINS_DIR.mkdir(parents=True, exist_ok=True)
+    temp_dest = dest_path.with_suffix(".tmp")
+    try:
+        req = urllib.request.Request(
+            download_url,
+            headers={"User-Agent": f"blackout-kit/{__version__}"},
+        )
+        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+            cl = resp.headers.get("Content-Length")
+            total_size = int(cl) if cl else 0
+            downloaded = 0
+            with open(temp_dest, "wb") as f:
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if progress_callback:
+                        progress_callback(downloaded, total_size or downloaded)
+
+        if dest_path.exists():
+            dest_path.unlink()
+        temp_dest.rename(dest_path)
+        return True, "Installed Psiphon Tunnel Core"
+    except Exception as e:
+        return False, f"Psiphon download failed: {e}"
+    finally:
+        if temp_dest.exists():
+            try:
+                temp_dest.unlink()
             except Exception:
                 pass
