@@ -732,13 +732,24 @@ def cmd_status(args):
 
     active_engine = state.get("engine", "unknown") if state else "unknown"
     started = state.get("started", "-") if state else "-"
+    daemon_status = state.get("status", "connected") if state else "unknown"
 
     # Daemon panel
     if pid:
+        reconnect_info = ""
+        if daemon_status == "reconnecting":
+            reconnect_info = (
+                f"  Status:  [warning]Reconnecting[/warning]"
+                f" ({state.get('last_failure', 'connection lost')})\n"
+                f"  Next try: {state.get('next_retry_delay', '?')}s\n"
+            )
+        elif daemon_status == "failed":
+            reconnect_info = f"  Status:  [error]Reconnect attempts exhausted[/error]\n"
         daemon_info = (
             f"[success]● Running[/success]  (PID {pid})\n"
             f"  Engine:  [bold]{active_engine}[/bold]\n"
             f"  Started: {started}\n"
+            f"{reconnect_info}"
             f"  Log:     [dim]{daemon.LOG_FILE}[/dim]"
         )
     else:
@@ -1206,13 +1217,13 @@ def cmd_tools(args):
 
     elif args.tools_command == "netfix":
         console.print(Panel(
-            "[bold yellow]Running auto-fix. Admin rights recommended.[/bold yellow]\n"
-            "[dim]This will reset Winsock, TCP/IP stack, and DNS cache.[/dim]",
+            "[bold yellow]Running targeted crash recovery. Admin rights may be requested.[/bold yellow]\n"
+            "[dim]Repairs stale Blackout routes, loopback DNS, and unhealthy virtual adapters before resetting Windows networking.[/dim]",
             border_style="yellow",
         ))
-        steps = net_tools.autofix_windows()
-        for step in steps:
-            console.print(f"  {step}")
+        for step in net_tools.run_network_recovery():
+            status = "[success]✓ Done[/success]" if step["ok"] else "[error]✗ Failed[/error]"
+            console.print(f"  {status}  {step['name']} [dim]— {step['detail']}[/dim]")
         console.print("\n[success]Done. Restart may be needed for full effect.[/success]")
 
 
@@ -2069,68 +2080,57 @@ def cmd_connect(args):
 
 
 def cmd_fix(args):
-    """Auto-fix common network issues — live Rich checklist with real-time results."""
+    """Run targeted post-crash network recovery with a live Rich checklist."""
     if sys.platform != "win32":
-        console.print("[yellow]`blackout fix` currently only supports Windows (netsh/ipconfig).[/yellow]")
-        console.print("[dim]Run manually: flush dns, sudo systemctl restart systemd-resolved, etc.[/dim]")
+        console.print("[yellow]`blackout fix` currently only supports Windows recovery tools.[/yellow]")
         return
-    import subprocess as _sp
 
-    def _run(cmd: list[str]) -> bool:
-        try:
-            _sp.run(cmd, capture_output=True, timeout=15, check=False)
-            return True
-        except Exception:
-            return False
+    full_route_reset = getattr(args, "full_route_reset", False)
+    full_stack_reset = getattr(args, "full_stack_reset", False)
+    if full_route_reset or full_stack_reset:
+        warnings = []
+        if full_route_reset:
+            warnings.append("`route -f` removes every IPv4 route before DHCP renewal")
+        if full_stack_reset:
+            warnings.append("Winsock, TCP/IP, autotuning, and DHCP will be reset")
+        console.print(Panel(
+            "[bold red]Emergency network reset enabled.[/bold red]\n"
+            f"[dim]{'; '.join(warnings)}. Use only if targeted recovery did not restore connectivity.[/dim]",
+            border_style="red",
+        ))
 
-    fix_steps = [
-        ("Flush DNS cache",     lambda: net_tools.flush_dns()),
-        ("Reset Winsock",       lambda: _run(["netsh", "winsock", "reset"])),
-        ("Reset TCP/IP stack",  lambda: _run(["netsh", "int", "ip", "reset"])),
-        ("Reset TCP autotuning",lambda: _run(["netsh", "int", "tcp", "set", "global",
-                                              "autotuninglevel=normal"])),
-        ("Release IP address",  lambda: _run(["ipconfig", "/release"])),
-        ("Renew IP address",    lambda: _run(["ipconfig", "/renew"])),
-        ("Clear system proxy",  lambda: (clear_system_proxy(), True)[1]),
-    ]
-
-    results: list[tuple[str, str]] = []   # (step_name, status_markup)
+    results: list[dict] = []
 
     def _make_table():
-        t = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 2))
-        t.add_column("Step", style="white", width=28)
-        t.add_column("Status", width=18)
-        for name, status in results:
-            t.add_row(name, status)
-        for name, _ in fix_steps[len(results):]:
-            t.add_row(f"[dim]{name}[/dim]", "[dim]—[/dim]")
-        return t
+        table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 2))
+        table.add_column("Step", style="white", width=30)
+        table.add_column("Status", width=18)
+        table.add_column("Details", style="dim")
+        for step in results:
+            status = "[green]✓ Done[/green]" if step["ok"] else "[red]✗ Failed[/red]"
+            table.add_row(step["name"], status, step["detail"])
+        return table
 
     console.print()
     console.print(Panel(
-        "[bold yellow]Auto-Fix Network Issues[/bold yellow]\n"
-        "[dim]Resets DNS, Winsock, TCP/IP stack, and clears system proxy.[/dim]\n"
-        "[dim]Run as Administrator for full effect.[/dim]",
+        "[bold yellow]Targeted Network Recovery[/bold yellow]\n"
+        "[dim]Clears stale Blackout routes, restores DHCP DNS only from loopback, and restarts only unhealthy virtual adapters.[/dim]\n"
+        "[dim]Run as Administrator for full effect. Full route reset is opt-in only.[/dim]",
         border_style="yellow",
     ))
     console.print()
 
     with Live(_make_table(), console=console, refresh_per_second=10) as live:
-        for name, fn in fix_steps:
-            results.append((name, "[yellow]Running...[/yellow]"))
-            live.update(_make_table())
-            try:
-                ok = fn()
-                results[-1] = (name, "[green]✓ Done[/green]" if ok else "[red]✗ Failed[/red]")
-            except Exception:
-                results[-1] = (name, "[red]✗ Error[/red]")
-            live.update(_make_table())
-            time.sleep(0.15)
+        results.extend(net_tools.run_network_recovery(
+            full_route_reset=full_route_reset,
+            full_stack_reset=full_stack_reset,
+        ))
+        live.update(_make_table())
 
-    done = sum(1 for _, s in results if "✓" in s)
+    done = sum(1 for step in results if step["ok"])
     console.print()
-    console.print(f"[success]✓ {done}/{len(fix_steps)} steps completed.[/success]")
-    console.print("[muted]A system restart may be needed for some changes to fully take effect.[/muted]")
+    console.print(f"[success]✓ {done}/{len(results)} recovery steps completed.[/success]")
+    console.print("[muted]A system restart may be needed for Winsock or TCP/IP changes to fully take effect.[/muted]")
     console.print()
 
 
@@ -2166,7 +2166,7 @@ def cmd_menu_select_engine():
         ("tuic",       "TUIC QUIC proxy via sing-box"),
         ("legend",     "Legend Mode (Tor + SNI + XRay chained)"),
         ("appsscript", "Google Apps Script HTTP Relay (ultimate fallback)"),
-        ("mhrv",       "mhrv-rs transparent MITM proxy"),
+        ("mhrv",       "Embedded HTTP Google Apps Script relay"),
         ("tor",        "Tor Proxy Only"),
         ("wireguard",  "WireGuard VPN"),
         ("openvpn",    "OpenVPN"),

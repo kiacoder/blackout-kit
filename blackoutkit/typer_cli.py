@@ -25,11 +25,28 @@ def version():
     console.print(f"blackout-kit [bold green]{__version__}[/bold green]")
 
 @app.command()
-def fix():
-    """Auto-fix DNS / Winsock / TCP/IP and clear system proxy"""
+def fix(
+    full_route_reset: bool = typer.Option(
+        False,
+        "--full-route-reset",
+        help="Emergency only: flush every IPv4 route before renewing DHCP",
+    ),
+    full_stack_reset: bool = typer.Option(
+        False,
+        "--full-stack-reset",
+        help="Emergency only: reset Winsock, TCP/IP, autotuning, and DHCP",
+    ),
+):
+    """Repair targeted post-crash Blackout network state."""
     from .cli import cmd_fix
-    class DummyArgs: pass
-    cmd_fix(DummyArgs())
+
+    class DummyArgs:
+        pass
+
+    args = DummyArgs()
+    args.full_route_reset = full_route_reset
+    args.full_stack_reset = full_stack_reset
+    cmd_fix(args)
 
 @app.command()
 def scan(
@@ -408,7 +425,7 @@ def tools_adapters():
 
 @tools_app.command("netfix")
 def tools_netfix():
-    """Auto-fix common network problems (admin)"""
+    """Safely repair post-crash network state (admin may be requested)"""
     from .cli import cmd_tools
     class DummyArgs: pass
     args = DummyArgs()

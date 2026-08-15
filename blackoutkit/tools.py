@@ -2,8 +2,11 @@
 Blackout Kit - Network toolkit & diagnostics.
 DNS flush, speed test, MTU optimizer, adapter info, ping, traceroute, and auto-fix.
 """
+import base64
 import concurrent.futures
 import ctypes
+import ipaddress
+import json
 import logging
 import os
 import socket
@@ -48,26 +51,372 @@ def _run_elevated(cmd: list[str], timeout_ms: int = 30000) -> bool:
 
 
 def _run_elevated_multi(commands: list[list[str]], timeout_ms: int = 60000) -> bool:
-    """
-    Run multiple admin commands in ONE elevated PowerShell session (ONE UAC prompt).
-    """
+    """Run multiple admin commands in one elevated PowerShell session."""
     blocks = []
     for cmd in commands:
         blocks.append(
             f"$p = Start-Process -FilePath '{cmd[0]}' "
             f"-ArgumentList '{subprocess.list2cmdline(cmd[1:])}' "
-            f"-NoNewWindow -Wait -PassThru"
+            f"-NoNewWindow -Wait -PassThru; if ($p.ExitCode -ne 0) {{ exit $p.ExitCode }}"
         )
     ps_script = "& { " + "; ".join(blocks) + " }"
-    handle, pid = elevate.launch_elevated(
+    handle, _ = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_script],
     )
     if handle is None:
         return False
-    ctypes.windll.kernel32.WaitForSingleObject(handle, timeout_ms)
-    ctypes.windll.kernel32.CloseHandle(handle)
-    return True
+    try:
+        wait_result = ctypes.windll.kernel32.WaitForSingleObject(handle, timeout_ms)
+        if wait_result == 0x00000102:
+            return False
+        exit_code = ctypes.c_ulong()
+        return bool(
+            ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+            and exit_code.value == 0
+        )
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+
+def _run_powershell_json(script: str) -> list[dict]:
+    """Run a read-only PowerShell query and normalize its JSON array output."""
+    if sys.platform != "win32":
+        return []
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            encoding="utf-8",
+            errors="ignore",
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        data = json.loads(result.stdout)
+        if isinstance(data, dict):
+            return [data]
+        return [item for item in data if isinstance(item, dict)]
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+        return []
+
+
+def _powershell_encoded(script: str) -> list[str]:
+    """Wrap a script in an encoded PowerShell command to keep adapter names opaque."""
+    encoded = base64.b64encode(script.encode("utf-16le")).decode("ascii")
+    return ["powershell.exe", "-NoProfile", "-EncodedCommand", encoded]
+
+
+_PHYSICAL_ADAPTER_MARKERS = ("ethernet", "wi-fi", "wifi", "wlan")
+_LOOPBACK_DNS_ADDRESSES = {"127.0.0.1", "::1"}
+
+
+def _is_loopback_dns_server(server: str) -> bool:
+    try:
+        return ipaddress.ip_address(server).is_loopback
+    except ValueError:
+        return server in _LOOPBACK_DNS_ADDRESSES
+
+
+def _is_virtual_adapter(adapter: dict) -> bool:
+    """Return whether an adapter has a deterministic Blackout Kit identity."""
+    name = str(adapter.get("Name", "")).lower()
+    alias = str(adapter.get("InterfaceAlias", "")).lower()
+    return name == "blackoutkit-tun" or alias == "blackoutkit-tun"
+
+
+def _is_connected_physical_adapter(adapter: dict) -> bool:
+    if _is_virtual_adapter(adapter):
+        return False
+    status = str(adapter.get("Status", "")).lower()
+    if status != "up":
+        return False
+    identity = " ".join(
+        str(adapter.get(field, ""))
+        for field in ("Name", "InterfaceDescription", "DriverDescription", "InterfaceAlias")
+    ).lower()
+    return "loopback" not in identity and (
+        any(marker in identity for marker in _PHYSICAL_ADAPTER_MARKERS)
+        or bool(adapter.get("HardwareInterface"))
+    )
+
+
+def get_network_recovery_snapshot() -> dict:
+    """Return normalized adapter, DNS, and route state for safe recovery decisions."""
+    adapter_script = r"""
+Get-NetAdapter -IncludeHidden | ForEach-Object {
+    [PSCustomObject]@{
+        Name=$_.Name; InterfaceAlias=$_.InterfaceAlias; InterfaceIndex=$_.ifIndex;
+        Status=$_.Status.ToString(); HardwareInterface=$_.HardwareInterface;
+        InterfaceDescription=$_.InterfaceDescription; DriverDescription=$_.DriverDescription
+    }
+} | ConvertTo-Json -Compress
+"""
+    address_script = r"""
+Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object {
+    [PSCustomObject]@{ InterfaceIndex=$_.InterfaceIndex; Address=$_.IPAddress; PrefixLength=$_.PrefixLength }
+} | ConvertTo-Json -Compress
+"""
+    dns_script = r"""
+Get-DnsClientServerAddress -AddressFamily IPv4 | ForEach-Object {
+    [PSCustomObject]@{ InterfaceIndex=$_.InterfaceIndex; ServerAddresses=@($_.ServerAddresses) }
+} | ConvertTo-Json -Compress
+"""
+    route_script = r"""
+Get-NetRoute -AddressFamily IPv4 | ForEach-Object {
+    [PSCustomObject]@{
+        InterfaceIndex=$_.InterfaceIndex; DestinationPrefix=$_.DestinationPrefix;
+        NextHop=$_.NextHop; RouteMetric=$_.RouteMetric; State=$_.State.ToString()
+    }
+} | ConvertTo-Json -Compress
+"""
+    adapters = _run_powershell_json(adapter_script)
+    addresses_by_index: dict[object, list[str]] = {}
+    for item in _run_powershell_json(address_script):
+        address = item.get("Address")
+        prefix = item.get("PrefixLength")
+        if address is not None and prefix is not None:
+            addresses_by_index.setdefault(item.get("InterfaceIndex"), []).append(f"{address}/{prefix}")
+    dns_by_index = {
+        item.get("InterfaceIndex"): [str(value) for value in item.get("ServerAddresses") or []]
+        for item in _run_powershell_json(dns_script)
+    }
+    routes = _run_powershell_json(route_script)
+    for adapter in adapters:
+        index = adapter.get("InterfaceIndex")
+        adapter["IpAddresses"] = addresses_by_index.get(index, [])
+        adapter["DnsServers"] = dns_by_index.get(index, [])
+    return {"adapters": adapters, "routes": routes}
+
+
+def _has_usable_address(adapter: dict) -> bool:
+    for address in adapter.get("IpAddresses", []):
+        try:
+            ip = ipaddress.ip_interface(address).ip
+            if not ip.is_loopback and not ip.is_unspecified and not ip.is_link_local:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def find_stale_virtual_adapters(snapshot: dict, daemon_running: bool = False) -> list[dict]:
+    """Return virtual adapters that remain unhealthy after the daemon has stopped."""
+    routes_by_index: dict[object, list[dict]] = {}
+    for route in snapshot.get("routes", []):
+        routes_by_index.setdefault(route.get("InterfaceIndex"), []).append(route)
+
+    stale = []
+    for adapter in snapshot.get("adapters", []):
+        if not _is_virtual_adapter(adapter) or str(adapter.get("Status", "")).lower() != "up":
+            continue
+        routes = routes_by_index.get(adapter.get("InterfaceIndex"), [])
+        has_managed_route = any(
+            route.get("DestinationPrefix") in ("0.0.0.0/0", "0.0.0.0/1", "128.0.0.0/1")
+            for route in routes
+        )
+        if not _has_usable_address(adapter) or (not daemon_running and has_managed_route):
+            stale.append(adapter)
+    return stale
+
+
+def find_loopback_dns_adapters(snapshot: dict) -> list[dict]:
+    """Return connected physical adapters that are still configured with loopback DNS."""
+    return [
+        adapter
+        for adapter in snapshot.get("adapters", [])
+        if _is_connected_physical_adapter(adapter)
+        and any(_is_loopback_dns_server(server) for server in adapter.get("DnsServers", []))
+    ]
+
+
+def find_stale_virtual_routes(snapshot: dict, stale_adapters: list[dict]) -> list[dict]:
+    """Return routes owned by stale virtual adapters; never select physical routes."""
+    stale_indexes = {adapter.get("InterfaceIndex") for adapter in stale_adapters}
+    return [
+        route for route in snapshot.get("routes", [])
+        if route.get("InterfaceIndex") in stale_indexes
+        and route.get("DestinationPrefix") not in ("127.0.0.0/8", "224.0.0.0/4")
+    ]
+
+
+def _is_blackout_proxy_server(server: str) -> bool:
+    """Return whether a system proxy address belongs to a Blackout local listener."""
+    normalized = server.strip().lower()
+    if normalized.startswith("socks="):
+        normalized = normalized.split("=", 1)[1]
+    try:
+        host, port_text = normalized.rsplit(":", 1)
+        port = int(port_text)
+    except ValueError:
+        return False
+    host = host.strip("[]")
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        return False
+
+    from . import settings as cfg
+
+    settings = cfg.load()
+    blackout_ports = {
+        settings.get("xray_socks_port", 10808),
+        settings.get("xray_http_port", 10809),
+        settings.get("psiphon_socks_port", 1081),
+        settings.get("gas_proxy_port", 8087),
+        8085,
+        9050,
+        1080,
+    }
+    return port in blackout_ports
+
+
+def clear_stale_blackout_proxy() -> tuple[bool, str]:
+    """Clear only an offline system proxy targeting a Blackout local port."""
+    from .proxy_manager import clear_system_proxy, get_proxy_status
+
+    status = get_proxy_status()
+    if not status.get("enabled"):
+        return True, "No system proxy configured"
+    server = str(status.get("server", ""))
+    if not _is_blackout_proxy_server(server):
+        return True, f"External proxy preserved: {server}"
+    return clear_system_proxy(), f"Removed stale Blackout proxy: {server}"
+
+
+def _script_result(name: str, ok: bool, detail: str) -> dict:
+    return {"name": name, "ok": ok, "detail": detail}
+
+
+def _run_recovery_script(script: str, timeout_ms: int = 60000) -> bool:
+    command = _powershell_encoded(script)
+    if _is_admin():
+        try:
+            return subprocess.run(command, capture_output=True, timeout=timeout_ms // 1000, check=False).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            return False
+    return _run_elevated_multi([command], timeout_ms)
+
+
+def _checked_process_command(executable: str, *arguments: str) -> str:
+    arguments_text = " ".join("'" + argument.replace("'", "''") + "'" for argument in arguments)
+    return (
+        f"& {executable} {arguments_text}; "
+        "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+    )
+
+
+def run_network_recovery(
+    full_route_reset: bool = False,
+    full_stack_reset: bool = False,
+    *,
+    from_daemon: bool = False,
+) -> list[dict]:
+    """Safely repair Blackout-owned network state after a crash or failed reconnect."""
+    if sys.platform != "win32":
+        return [_script_result("Windows recovery", False, "Windows-only")]
+
+    from . import daemon
+
+    if daemon.get_state() is not None and not from_daemon:
+        return [_script_result(
+            "Targeted network recovery",
+            True,
+            "Skipped while Blackout daemon is active; stop it before repairing the network",
+        )]
+
+    if from_daemon:
+        full_route_reset = False
+        full_stack_reset = False
+
+    snapshot = get_network_recovery_snapshot()
+    stale_adapters = find_stale_virtual_adapters(snapshot, daemon_running=not from_daemon)
+    loopback_dns_adapters = find_loopback_dns_adapters(snapshot)
+    stale_routes = find_stale_virtual_routes(snapshot, stale_adapters)
+    if from_daemon:
+        results = [_script_result("Preserve system proxy", True, "Daemon reconnect keeps the current proxy setting")]
+    else:
+        proxy_ok, proxy_detail = clear_stale_blackout_proxy()
+        results = [_script_result("Clear system proxy", proxy_ok, proxy_detail)]
+    script_lines = ["$ErrorActionPreference='Stop'"]
+    batch_steps: list[tuple[str, str]] = []
+
+    if stale_routes:
+        for route in stale_routes:
+            script_lines.append(
+                "Remove-NetRoute -InterfaceIndex {index} -DestinationPrefix '{prefix}' "
+                "-NextHop '{next_hop}' -Confirm:$false -ErrorAction Stop".format(
+                    index=int(route["InterfaceIndex"]),
+                    prefix=str(route["DestinationPrefix"]).replace("'", "''"),
+                    next_hop=str(route.get("NextHop", "0.0.0.0")).replace("'", "''"),
+                )
+            )
+        batch_steps.append(("Remove stale virtual routes", f"{len(stale_routes)} route(s)"))
+    else:
+        results.append(_script_result("Remove stale virtual routes", True, "No stale Blackout routes found"))
+
+    if loopback_dns_adapters:
+        for adapter in loopback_dns_adapters:
+            script_lines.append(
+                "Set-DnsClientServerAddress -InterfaceIndex {index} -ResetServerAddresses -ErrorAction Stop".format(
+                    index=int(adapter["InterfaceIndex"])
+                )
+            )
+        names = ", ".join(str(adapter.get("Name", adapter["InterfaceIndex"])) for adapter in loopback_dns_adapters)
+        batch_steps.append(("Restore DHCP DNS", names))
+    else:
+        results.append(_script_result("Restore DHCP DNS", True, "No loopback DNS on physical adapters"))
+
+    if stale_adapters:
+        for adapter in stale_adapters:
+            name = str(adapter.get("Name", "")).replace("'", "''")
+            script_lines.extend([
+                f"Disable-NetAdapter -Name '{name}' -Confirm:$false -ErrorAction Stop",
+                f"Enable-NetAdapter -Name '{name}' -Confirm:$false -ErrorAction Stop",
+            ])
+        names = ", ".join(str(adapter.get("Name", adapter["InterfaceIndex"])) for adapter in stale_adapters)
+        batch_steps.append(("Restart stale virtual adapters", names))
+    else:
+        results.append(_script_result("Restart stale virtual adapters", True, "No unhealthy virtual adapters found"))
+
+    script_lines.append(_checked_process_command("ipconfig.exe", "/flushdns"))
+    batch_steps.append(("Flush DNS cache", "Cleared resolver cache"))
+
+    if full_route_reset:
+        script_lines.extend([
+            _checked_process_command("route.exe", "-f"),
+            _checked_process_command("ipconfig.exe", "/renew"),
+        ])
+        batch_steps.append(("Full route-table reset", "Explicit emergency reset"))
+
+    if full_stack_reset:
+        for command, label in (
+            (("netsh.exe", "winsock", "reset"), "Reset Winsock"),
+            (("netsh.exe", "int", "ip", "reset"), "Reset TCP/IP stack"),
+            (("netsh.exe", "int", "tcp", "set", "global", "autotuninglevel=normal"), "Reset TCP autotuning"),
+            (("ipconfig.exe", "/release"), "Release IP address"),
+            (("ipconfig.exe", "/renew"), "Renew IP address"),
+        ):
+            script_lines.append(_checked_process_command(*command))
+            batch_steps.append((label, "Applied"))
+    else:
+        results.append(_script_result("Preserve Windows network stack", True, "Targeted recovery skips Winsock, TCP/IP, and DHCP resets"))
+    if from_daemon:
+        results.append(_script_result("Full route-table reset", True, "Daemon recovery never flushes all routes"))
+
+    if not batch_steps:
+        return results
+
+    batch_ok = _run_recovery_script("; ".join(script_lines), timeout_ms=90000)
+    results.extend(
+        _script_result(
+            name,
+            batch_ok,
+            detail if batch_ok else "Command batch failed or UAC denied",
+        )
+        for name, detail in batch_steps
+    )
+    return results
+
 
 # ─────────────────────────── DNS tools ───────────────────────────
 
@@ -589,34 +938,9 @@ foreach ($a in $adapters) {
 
 
 def autofix_windows() -> list[str]:
-    """
-    Run common Windows network repair commands.
-    Returns list of completed steps.
-    Auto-elevates via a single UAC prompt if not admin.
-    """
-    steps = []
-    commands = [
-        (["ipconfig", "/flushdns"],                              "Flush DNS cache"),
-        (["netsh", "winsock", "reset"],                          "Reset Winsock"),
-        (["netsh", "int", "ip", "reset"],                        "Reset TCP/IP stack"),
-        (["netsh", "int", "tcp", "set", "global", "autotuninglevel=normal"], "Reset TCP autotuning"),
-        (["ipconfig", "/release"],                               "Release IP address"),
-        (["ipconfig", "/renew"],                                 "Renew IP address"),
+    """Run the shared, targeted Windows recovery sequence."""
+    return [
+        (f"[success]✓[/success] {step['name']}" if step["ok"]
+         else f"[warning]⚠[/warning] {step['name']} — {step['detail']}")
+        for step in run_network_recovery()
     ]
-
-    if not _is_admin():
-        _log.info("Network fix requires admin — requesting elevation via UAC…")
-        if _run_elevated_multi([c for c, _ in commands]):
-            for _, label in commands:
-                steps.append(f"[success]✓[/success] {label}")
-        else:
-            steps.append("[warning]⚠ UAC denied — cannot apply fixes.[/warning]")
-        return steps
-
-    for cmd, label in commands:
-        try:
-            subprocess.run(cmd, capture_output=True, timeout=15, check=False)
-            steps.append(f"[success]✓[/success] {label}")
-        except Exception as e:
-            steps.append(f"[warning]⚠[/warning] {label} — {e}")
-    return steps

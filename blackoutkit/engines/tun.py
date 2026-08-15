@@ -74,6 +74,7 @@ class TUNEngine(Engine):
                 {
                     "type":               "tun",
                     "tag":                "tun-in",
+                    "interface_name":     "BlackoutKit-TUN",
                     "inet4_address":      "172.19.0.1/30",
                     "inet6_address":      "fdfe:dcba:9876::1/126",
                     "mtu":                9000,

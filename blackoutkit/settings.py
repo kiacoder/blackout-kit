@@ -59,7 +59,9 @@ DEFAULTS = {
     # Emergency mode
     "engine_order":         ["sni", "gdpi", "psiphon"],  # Priority order
     "retry_interval":       30,          # Seconds between connection checks
-    "max_retries":          3,           # Retries per engine before switching
+    "max_retries":          3,           # Retries per engine before giving up
+    "reconnect_initial_delay": 2,        # First retry delay in seconds
+    "reconnect_max_delay":    60,        # Exponential retry delay cap in seconds
 
     # Daemon
     "daemon_log_lines":     200,         # Max lines to keep in daemon log
@@ -154,6 +156,8 @@ _VALIDATORS: dict[str, tuple] = {
     "scan_ip_count":      (int,   lambda v: 1 <= v <= 5000,  "must be 1–5000"),
     "retry_interval":     (int,   lambda v: 5 <= v <= 3600,  "must be 5–3600"),
     "max_retries":        (int,   lambda v: 1 <= v <= 20,    "must be 1–20"),
+    "reconnect_initial_delay": (int, lambda v: 1 <= v <= 600, "must be 1–600"),
+    "reconnect_max_delay":     (int, lambda v: 1 <= v <= 3600, "must be 1–3600"),
     "daemon_log_lines":   (int,   lambda v: 10 <= v <= 10000,"must be 10–10000"),
     "xray_log_level":     (str,   lambda v: v in ("debug","info","warning","error","none"),
                            "must be: debug / info / warning / error / none"),
@@ -319,8 +323,10 @@ def describe(key: str) -> str:
         "scan_timeout":       "Seconds to wait per IP during scan",
         "scan_ip_count":      "Number of Cloudflare IPs to generate per scan",
         "engine_order":       "Engine priority order for emergency mode",
-        "retry_interval":     "Seconds between connection checks in daemon mode",
-        "max_retries":        "Retries per engine before switching to next",
+        "retry_interval":     "Seconds between healthy daemon connection checks",
+        "max_retries":        "Maximum automatic reconnect attempts before the daemon exits",
+        "reconnect_initial_delay": "First automatic reconnect delay in seconds",
+        "reconnect_max_delay": "Maximum automatic reconnect delay in seconds",
         "daemon_log_lines":   "Max log lines kept in the daemon log file",
         "show_banner":        "Show ASCII art banner on startup",
         "show_disclaimer":    "Show the legal disclaimer panel under the banner",

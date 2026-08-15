@@ -130,7 +130,7 @@ Key design decisions:
 
 - **Zero internet required to start** — the Full version ships with all binaries bundled. Unzip and run. No GitHub downloads during a blackout.
 - **One command** — `blackout connect` is all most users need.
-- **Self-healing** — the daemon monitors the connection and auto-restarts failed engines.
+- **Self-healing** — the daemon monitors the connection and auto-restarts failed engines with bounded exponential backoff.
 - **Country-aware** — detects your ISP and automatically recommends the right engine and DNS for your region.
 - **Privacy tiers** — three security modes (SPEED / PRIVATE / LEGEND) let you trade performance for anonymity.
 
@@ -187,7 +187,7 @@ Blackout Kit coordinates **16 bypass engines**. Each serves a different threat m
 | **WireGuard** | WireGuard VPN | Fast, kernel-level, modern UDP VPN | Speed + privacy |
 | **OpenVPN** | OpenVPN | Battle-tested TLS-based VPN, works over TCP:443 | Wide compatibility |
 | **SoftEther** | SSL-VPN | VPN over HTTPS — indistinguishable from web traffic | Extreme filtering |
-| **mhrv** | Rust MITM proxy | HTTP+SOCKS5 proxy with custom obfuscation | Experimental |
+| **mhrv** | HTTP GAS relay | Embedded HTTP relay through Google Apps Script; HTTPS CONNECT is unsupported | Last-resort HTTP-only access |
 | **Google Apps Script** | HTTPS relay | Domain-fronts traffic through script.google.com | Last resort |
 
 GoodbyeDPI currently has two internal backends:
@@ -299,6 +299,11 @@ blackout emergency --background
 blackout stop                      Stop the background daemon
 blackout status                    Show daemon status + connection health
 blackout logs                      View daemon log
+
+# Automatic daemon reconnect policy (defaults: 2s initial delay, 60s cap)
+blackout settings set reconnect_initial_delay 2
+blackout settings set reconnect_max_delay 60
+blackout settings set max_retries 3
 blackout logs --lines 200          Show last 200 lines
 ```
 
@@ -359,7 +364,7 @@ blackout tools mtu [host]              Detect path MTU
 blackout tools traceroute [host]       Traceroute
 blackout tools hotspot                 Toggle Windows Mobile Hotspot
 blackout tools share-vpn               Share VPN over hotspot (ICS)
-blackout tools netfix                  Auto-fix common network problems (Winsock + TCP/IP reset)
+blackout tools netfix                  Targeted post-crash recovery (safe default)
 blackout tools cert-check <host>       Check TLS certificate for a host
 blackout tools cert-check <host> --allow   Manually allow a host in LEGEND mode
 blackout network                       Show IP, ISP, country, and connection status
@@ -372,8 +377,27 @@ blackout network isp                   Detailed ISP info + country censorship co
 blackout doctor                    Run all diagnostic checks
 blackout doctor --fix              Auto-fix everything fixable
 blackout doctor --fix-av           Add bins/ to Windows Defender exclusions
-blackout fix                       Quick network repair (Winsock + DNS + TCP reset)
+blackout fix                       Targeted post-crash network recovery
+blackout fix --full-route-reset    Emergency: flush every IPv4 route, then renew DHCP
+blackout fix --full-stack-reset    Emergency: reset Winsock, TCP/IP, autotuning, and DHCP
 ```
+
+### Post-Crash Network Recovery
+
+Run `blackout fix` **after stopping Blackout Kit** if a crashed TUN, WireGuard, or VPN session leaves Windows offline. Its safe default:
+
+- Removes only routes owned by a detected stale Blackout-compatible virtual adapter.
+- Restores DHCP DNS only on connected physical adapters still pointed at loopback DNS such as `127.0.0.1` or `::1`; custom DNS servers remain unchanged.
+- Restarts only the deterministic `BlackoutKit-TUN` adapter when diagnosed unhealthy; Wi-Fi, Ethernet, WireGuard, and third-party VPN adapters are never cycled.
+- Clears stale Blackout proxy settings and flushes DNS without resetting the Windows network stack.
+
+`blackout tools netfix` runs the same targeted default. If it cannot restore connectivity, use an explicit emergency option: `blackout fix --full-route-reset` runs `route -f` and renews DHCP, removing all IPv4 routes—including unrelated VPN and custom LAN routes; `blackout fix --full-stack-reset` resets Winsock, TCP/IP, autotuning, and the DHCP lease.
+
+### Automatic Daemon Reconnect
+
+When a background engine crashes or its proxy port closes, the daemon attempts an immediate restart. Failed starts remain in `reconnecting` state and retry with capped exponential delays (2s, 4s, 8s… up to the configured maximum) until `max_retries` is exhausted or you run `blackout stop`. A healthy heartbeat resets the retry budget.
+
+After the first failed restart, the daemon may remove only verified stale Blackout routes, loopback DNS, and Blackout-owned virtual adapters before retrying. It preserves the active system proxy and kill switch, and it never runs Winsock/TCP-IP/DHCP resets or `route -f`; those remain manual recovery actions.
 
 ### Settings
 
@@ -606,11 +630,23 @@ To fix this, force your browser to use TCP:
 2. Set **Experimental QUIC protocol** to **Disabled**.
 3. Relaunch your browser.
 
-### DNS not resolving after disconnecting
+### DNS or routing stays broken after a crash
+
+First stop the daemon, then run the targeted recovery:
 
 ```
-blackout tools dns-flush
-blackout tools netfix
+blackout stop
+blackout fix
+```
+
+It restores DHCP DNS only when a connected physical adapter is still using loopback DNS and cycles only the deterministic `BlackoutKit-TUN` adapter. If targeted recovery cannot restore connectivity, choose the applicable explicit emergency repair:
+
+```
+blackout fix --full-route-reset
+```
+
+```bash
+blackout fix --full-stack-reset
 ```
 
 ### Country not detected correctly

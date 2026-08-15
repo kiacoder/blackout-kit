@@ -33,7 +33,7 @@ Items marked ✅ are implemented. Ranks: Common → Uncommon → Rare → Epic �
 | WireGuard (real monitoring) | ✅ Done | Epic | Real sc query thread, no fake sentinel |
 | OpenVPN (startup verified) | ✅ Done | Epic | Reads log for "Initialization Sequence Completed" |
 | SoftEther (real monitoring) | ✅ Done | Epic | vpncmd AccountStatusGet polling |
-| mhrv (Rust MITM proxy) | ✅ Done | Rare | HTTP :8085 / SOCKS :8086 |
+| mhrv (embedded HTTP GAS relay) | ✅ Done | Rare | HTTP :8085; HTTPS CONNECT is intentionally unsupported |
 | Google Apps Script relay | ✅ Done | Rare | Domain-fronts through script.google.com, 20 relay IDs, pure Python |
 | **Hysteria 2** | ✅ Done | Rare | QUIC-based proxy via sing-box, selectable as `hysteria2` |
 | **TUIC** | ✅ Done | Rare | Low-latency QUIC tunnel via sing-box, selectable as `tuic` |
@@ -92,7 +92,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Feature | Status | Rank | Notes |
 |---------|--------|------|-------|
 | Doctor (self-diagnosis + auto-fix) | ✅ Done | Rare | `blackout doctor [--fix]` |
-| Winsock + TCP/IP stack reset | ✅ Done | Rare | `blackout tools netfix` |
+| Winsock + TCP/IP stack reset | ✅ Done | Rare | Explicit `blackout fix --full-stack-reset` emergency option |
 | DNS flush | ✅ Done | Rare | `blackout tools dns-flush` |
 | DNS preset switching | ✅ Done | Rare | Cloudflare / Shecan / Electro / 403 / Begzar |
 | Network adapter list | ✅ Done | Uncommon | `blackout tools adapters` |
@@ -101,12 +101,12 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Hotspot sharing | ✅ Done | Uncommon | Windows Mobile Hotspot toggle |
 | ICS (share VPN over hotspot) | ✅ Done | Uncommon | Internet Connection Sharing |
 | **`blackout fix` shorthand** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
-| **TUN/TAP / Wintun driver reset** | 🔜 v1.2 | — | Force restart virtual adapter when TUN crashes (DPI connection drops can lock it) |
-| **Stale routing table flush** | 🔜 v1.2 | — | `route -f` to clear zombie proxy routes left after crash |
-| **DNS hijack recovery** | 🔜 v1.2 | — | Detect if DNS is still pointing to dead 127.0.0.1, auto-restore |
+| **TUN/TAP / Wintun driver reset** | ✅ Done | Rare | `blackout fix` restarts only its stale deterministic `BlackoutKit-TUN` adapter; physical, WireGuard, and third-party adapters are excluded |
+| **Stale routing table flush** | ✅ Done | Rare | Default removes only stale Blackout virtual-adapter routes; `--full-route-reset` keeps `route -f` explicit |
+| **DNS hijack recovery** | ✅ Done | Rare | Restores DHCP DNS only on connected physical adapters still pointed at loopback DNS |
 | **Real-time fixer checklist** | ✅ Done | Rare | `blackout fix` shows a live Rich checklist for each repair step |
-| **Auto-reconnect with backoff** | 🔜 v1.2 | — | Daemon retries with exponential backoff instead of fixed interval |
-| **Certificate store cleanup** | 🔜 v1.2 | — | Remove stale mhrv CA certs after uninstall |
+| **Auto-reconnect with backoff** | ✅ Done | Rare | Daemon retries with cancellable capped exponential backoff; targeted daemon recovery preserves proxy/routes outside Blackout ownership |
+| **Certificate store cleanup** | N/A | — | mhrv is an HTTP relay and never creates, trusts, or installs a CA certificate |
 | **ARP table flush** | 🔜 v1.2 | — | Clear ARP cache if LAN routing breaks |
 
 ---

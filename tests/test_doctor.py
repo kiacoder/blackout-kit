@@ -192,9 +192,16 @@ def test_check_admin_privileges(mock_admin):
     assert doc.check_admin_privileges().ok is True
 
 @patch("sys.platform", "win32")
-@patch("subprocess.run")
-def test_check_tun_adapter(mock_run):
-    mock_run.return_value = MagicMock(stdout="TAP-Windows")
+@patch("blackoutkit.tools.get_network_recovery_snapshot")
+def test_check_tun_adapter(mock_snapshot):
+    mock_snapshot.return_value = {
+        "adapters": [{
+            "Name": "TAP-Windows", "InterfaceIndex": 10, "Status": "Up",
+            "InterfaceDescription": "TAP-Windows Adapter", "DriverDescription": "TAP",
+            "IpAddresses": ["10.8.0.2/24"], "DnsServers": [],
+        }],
+        "routes": [{"InterfaceIndex": 10, "DestinationPrefix": "10.8.0.0/24", "NextHop": "0.0.0.0"}],
+    }
     assert doc.check_tun_adapter().ok is True
 
 @patch("sys.platform", "win32")

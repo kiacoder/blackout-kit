@@ -1,0 +1,195 @@
+import json
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from blackoutkit import daemon
+
+
+class _FakeXRayEngine:
+    outcomes = []
+
+    def __init__(self):
+        self.name = "XRay"
+        self.pid = None
+        self.running = False
+
+    def start(self):
+        self.running = self.outcomes.pop(0)
+        return self.running
+
+    def stop(self):
+        self.running = False
+
+    def is_running(self):
+        return self.running
+
+
+def _configure_daemon_loop(monkeypatch, tmp_path, outcomes, waits):
+    from blackoutkit.engines import xray
+    from blackoutkit import settings
+    from blackoutkit import tray
+    from blackoutkit.scanner import proxy_tester
+
+    _FakeXRayEngine.outcomes = list(outcomes)
+    monkeypatch.setattr(xray, "XRayEngine", _FakeXRayEngine)
+    monkeypatch.setattr(settings, "load", lambda: {
+        "auto_set_proxy": False,
+        "retry_interval": 1,
+        "max_retries": 2,
+        "reconnect_initial_delay": 2,
+        "reconnect_max_delay": 60,
+        "gdpi_backend": "legacy",
+    })
+    monkeypatch.setattr(tray, "start_tray", lambda *_args: None)
+    monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: None)
+    monkeypatch.setattr(daemon.subprocess, "Popen", MagicMock())
+    monkeypatch.setattr(daemon, "APP_DATA_DIR", tmp_path)
+    monkeypatch.setattr(daemon, "PID_FILE", tmp_path / "daemon.pid")
+    monkeypatch.setattr(daemon, "STATE_FILE", tmp_path / "daemon_state.json")
+    monkeypatch.setattr(daemon, "LOG_FILE", tmp_path / "daemon.log")
+    monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: next(waits))
+
+
+def _run_failed_proxy_reconnect(monkeypatch, tmp_path, outcomes, waits):
+    _configure_daemon_loop(monkeypatch, tmp_path, outcomes, iter(waits))
+    recovery = MagicMock()
+    monkeypatch.setattr("blackoutkit.tools.run_network_recovery", recovery)
+
+    daemon.run_daemon_loop("xray")
+    return recovery, json.loads((tmp_path / "daemon_state.json").read_text(encoding="utf-8"))
+
+
+
+
+def test_reconnect_delay_uses_capped_exponential_backoff():
+    assert daemon._reconnect_delay(1, 2, 60) == 2
+    assert daemon._reconnect_delay(2, 2, 60) == 4
+    assert daemon._reconnect_delay(5, 2, 60) == 32
+    assert daemon._reconnect_delay(8, 2, 60) == 60
+
+
+def test_backoff_wait_stops_when_shutdown_is_requested(monkeypatch):
+    checks = iter([False, True])
+    sleeps = []
+    monkeypatch.setattr(daemon, "_daemon_shutdown_requested", lambda _pid: next(checks))
+    monkeypatch.setattr(daemon.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    assert daemon._wait_for_daemon_delay(10, 4242) is False
+    assert sleeps == [1]
+
+
+def test_daemon_state_uses_daemon_pid_for_dll_backed_engine(tmp_path, monkeypatch):
+    state_file = tmp_path / "daemon_state.json"
+    monkeypatch.setattr(daemon, "APP_DATA_DIR", tmp_path)
+    monkeypatch.setattr(daemon, "STATE_FILE", state_file)
+    cfg = SimpleNamespace(load=lambda: {"gdpi_backend": "native"})
+
+    daemon._write_daemon_state(
+        "gdpi",
+        cfg,
+        4242,
+        restarts=2,
+        status="reconnecting",
+        last_failure="Proxy port closed.",
+        next_retry_delay=4,
+        started="2026-08-15 10:00:00",
+    )
+
+    assert json.loads(state_file.read_text(encoding="utf-8")) == {
+        "engine": "gdpi[native]",
+        "pid": 4242,
+        "started": "2026-08-15 10:00:00",
+        "restarts": 2,
+        "status": "reconnecting",
+        "last_failure": "Proxy port closed.",
+        "next_retry_delay": 4,
+    }
+
+
+def test_state_writer_records_connected_reconnect_without_failure(tmp_path, monkeypatch):
+    state_file = tmp_path / "daemon_state.json"
+    monkeypatch.setattr(daemon, "APP_DATA_DIR", tmp_path)
+    monkeypatch.setattr(daemon, "STATE_FILE", state_file)
+
+    daemon._write_daemon_state(
+        "xray",
+        SimpleNamespace(load=lambda: {}),
+        4242,
+        restarts=0,
+        status="connected",
+        started="2026-08-15 10:00:00",
+    )
+
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    assert state["pid"] == 4242
+    assert state["engine"] == "xray"
+    assert state["status"] == "connected"
+    assert state["last_failure"] is None
+    assert state["next_retry_delay"] is None
+
+
+def test_daemon_retries_after_initial_restart_failure(monkeypatch, tmp_path):
+    recovery, state = _run_failed_proxy_reconnect(
+        monkeypatch,
+        tmp_path,
+        outcomes=[True, False, True],
+        waits=[True, True, False],
+    )
+
+    recovery.assert_called_once_with(from_daemon=True)
+    assert state["status"] == "connected"
+    assert state["restarts"] == 2
+
+
+def test_daemon_exits_only_after_retry_budget_is_exhausted(monkeypatch, tmp_path):
+    recovery, state = _run_failed_proxy_reconnect(
+        monkeypatch,
+        tmp_path,
+        outcomes=[True, False, False],
+        waits=[True, True],
+    )
+
+    recovery.assert_called_once_with(from_daemon=True)
+    assert state["status"] == "failed"
+    assert state["restarts"] == 2
+    assert state["last_failure"] == "Proxy port closed."
+
+
+def test_daemon_recovery_is_not_called_when_restart_succeeds_immediately(monkeypatch, tmp_path):
+    recovery, state = _run_failed_proxy_reconnect(
+        monkeypatch,
+        tmp_path,
+        outcomes=[True, True],
+        waits=[True, False],
+    )
+
+    recovery.assert_not_called()
+    assert state["status"] == "connected"
+    assert state["restarts"] == 1
+
+
+def test_daemon_waits_with_configured_backoff_before_follow_up_attempt(monkeypatch, tmp_path):
+    _configure_daemon_loop(monkeypatch, tmp_path, [True, False, True], iter([True, True, False]))
+    recovery = MagicMock()
+    waits = iter([True, True, False])
+    recorded_delays = []
+    monkeypatch.setattr("blackoutkit.tools.run_network_recovery", recovery)
+    monkeypatch.setattr(
+        daemon,
+        "_wait_for_daemon_delay",
+        lambda delay, _pid: (recorded_delays.append(delay) or next(waits)),
+    )
+
+    daemon.run_daemon_loop("xray")
+
+    recovery.assert_called_once_with(from_daemon=True)
+    assert recorded_delays == [1, 2, 1]
+
+
+def test_reconnect_delay_settings_are_bounded():
+    from blackoutkit import settings
+
+    assert settings.validate("reconnect_initial_delay", 0) == (False, "must be 1–600")
+    assert settings.validate("reconnect_max_delay", 3601) == (False, "must be 1–3600")
+    assert settings.validate("reconnect_initial_delay", 2) == (True, "")
+    assert settings.validate("reconnect_max_delay", 60) == (True, "")

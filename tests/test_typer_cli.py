@@ -25,12 +25,16 @@ def test_documented_options_are_registered():
         ("tools", "cert-check", "--help"): "--allow",
         ("country", "--help"): "set",
         ("bins", "--help"): "update",
+        ("fix", "--help"): "--full-route-reset",
     }
 
     for args, expected in checks.items():
         result = runner.invoke(typer_cli.app, list(args))
         assert result.exit_code == 0, result.output
         assert expected in result.output
+
+    result = runner.invoke(typer_cli.app, ["fix", "--help"])
+    assert "--full-stack-reset" in result.output
 
 
 def test_doctor_forwards_fix_options():
@@ -87,3 +91,21 @@ def test_bins_update_forwards_to_legacy_dispatcher():
         typer_cli.bins_update()
 
     assert cmd_bins.call_args.args[0].bins_command == "update"
+
+
+def test_fix_forwards_explicit_network_reset_flags():
+    with patch("blackoutkit.cli.cmd_fix") as cmd_fix:
+        typer_cli.fix(full_route_reset=True, full_stack_reset=True)
+
+    args = cmd_fix.call_args.args[0]
+    assert args.full_route_reset is True
+    assert args.full_stack_reset is True
+
+
+def test_tools_netfix_uses_shared_default_recovery():
+    with patch("blackoutkit.cli.cmd_tools") as cmd_tools:
+        typer_cli.tools_netfix()
+
+    args = cmd_tools.call_args.args[0]
+    assert args.tools_command == "netfix"
+    assert not hasattr(args, "full_route_reset")

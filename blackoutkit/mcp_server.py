@@ -261,6 +261,10 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                 "daemon_running": bool(pid),
                 "pid": pid,
                 "engine": state.get("engine", "none"),
+                "status": state.get("status", "unknown"),
+                "restarts": state.get("restarts", 0),
+                "last_failure": state.get("last_failure"),
+                "next_retry_delay": state.get("next_retry_delay"),
                 "system_proxy": proxy
             }
             return json.dumps(res, indent=2)

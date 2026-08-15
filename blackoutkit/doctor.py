@@ -744,20 +744,42 @@ def check_ports_in_use() -> CheckResult:
 
 
 def check_tun_adapter() -> CheckResult:
-    """Verifies if a TUN/TAP virtual network adapter is installed."""
+    """Verify virtual adapters and identify post-crash stale adapter state."""
     if sys.platform != "win32":
         return CheckResult("TUN/TAP Adapter", True, "N/A")
-    try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", "Get-NetAdapter -Name '*TAP*', '*TUN*', '*WireGuard*' -ErrorAction SilentlyContinue"],
-            capture_output=True, text=True, errors="ignore"
+
+    from . import tools as net_tools
+
+    snapshot = net_tools.get_network_recovery_snapshot()
+    virtual_markers = ("tap", "tun", "wintun", "wireguard", "sing-box", "singbox")
+    virtual_adapters = [
+        adapter for adapter in snapshot["adapters"]
+        if any(
+            marker in " ".join(
+                str(adapter.get(field, ""))
+                for field in ("Name", "InterfaceAlias", "InterfaceDescription", "DriverDescription")
+            ).lower()
+            for marker in virtual_markers
         )
-        if r.stdout.strip():
-            return CheckResult("TUN/TAP Adapter", True, "OK (Found virtual adapter)")
-    except Exception:
-        pass
-        
-    return CheckResult("TUN/TAP Adapter", False, "No TAP/TUN virtual adapter found. Routing engines (WireGuard/TUN) may fail.", fixable=False)
+    ]
+    if not virtual_adapters:
+        return CheckResult(
+            "TUN/TAP Adapter", False,
+            "No TAP/TUN virtual adapter found. Routing engines (WireGuard/TUN) may fail.",
+            fixable=False,
+        )
+
+    stale = net_tools.find_stale_virtual_adapters(snapshot, daemon_running=False)
+    if not stale:
+        return CheckResult("TUN/TAP Adapter", True, "OK (Found virtual adapter)")
+
+    names = ", ".join(str(adapter.get("Name", "Unknown")) for adapter in stale)
+    return CheckResult(
+        "TUN/TAP Adapter", False,
+        f"Stale Blackout virtual adapter state: {names}",
+        fixable=True,
+        fix=lambda: net_tools.run_network_recovery(),
+    )
 
 
 def check_firewall_exclusion() -> CheckResult:

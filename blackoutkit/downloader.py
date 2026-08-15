@@ -203,7 +203,7 @@ BIN_REGISTRY: dict[str, BinInfo] = {
     "mhrv": BinInfo(
         key           = "mhrv",
         display_name  = "mhrv (in blackout_core.dll)",
-        description   = "mhrv-rs transparent MITM proxy (requires blackout_core.dll)",
+        description   = "Embedded HTTP Google Apps Script relay (requires blackout_core.dll)",
         github_repo   = None,
         asset_pattern = None,
         asset_exclude = None,

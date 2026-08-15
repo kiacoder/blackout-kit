@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **mhrv certificate-store claim:** Corrected documentation that incorrectly described the embedded HTTP relay as an HTTPS MITM engine that installs a CA. mhrv never modifies Windows certificate stores, so certificate cleanup is not applicable.
+- **Daemon restart resilience:** Failed engine restarts now stay alive through a bounded, cancellable exponential-backoff cycle rather than terminating the daemon immediately. Daemon state consistently records the daemon PID, including for DLL-backed engines.
+
+### Added
+- **Daemon-safe targeted reconnect recovery:** After a failed restart, the daemon can repair only verified stale Blackout routes, loopback DNS, and Blackout-owned virtual adapters before retrying. It preserves the active system proxy and kill switch and never runs `route -f`, Winsock, TCP/IP, or DHCP resets.
+- **Reconnect policy settings:** Added `reconnect_initial_delay` and `reconnect_max_delay` to tune capped automatic retry timing.
+- **Targeted post-crash network recovery:** `blackout fix` and `blackout tools netfix` now clear stale Blackout proxy/routes, restore DHCP DNS only from loopback DNS on physical adapters, restart only the deterministic BlackoutKit-TUN adapter, and flush DNS without disturbing unrelated VPNs.
+- **Explicit emergency resets:** `blackout fix --full-route-reset` runs `route -f` only when deliberately requested; `blackout fix --full-stack-reset` separately enables Winsock, TCP/IP, autotuning, and DHCP reset.
+
+### Changed
+- **Virtual adapter diagnostics:** `blackout doctor` distinguishes detected healthy TUN/TAP/Wintun/WireGuard adapters from stale post-crash state.
+
 ## [1.1.1] - 2026-08-14
 ### Fixed
 - Packaged every `blackoutkit` subpackage and Typer runtime dependency so source installs and the standalone executable can start correctly.

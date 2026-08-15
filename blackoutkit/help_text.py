@@ -221,18 +221,29 @@ Smart one-command connect: scan → pick best engine → start in background.
 
 "fix": """
 [bold cyan]blackout fix[/bold cyan]
-Diagnose and auto-repair common issues in one command.
+Safely repair post-crash Windows network state in one command.
 
-[bold]What it checks and fixes (Live Checklist):[/bold]
-  ✓ System proxy not set → sets it
-  ✓ DNS cache stale → flushes it
-  ✓ Winsock corrupted → resets it
-  ✓ Engine not running → restarts it
-  ✓ TCP/IP stack issues → resets stack
-  ✓ Cloudflare IP outdated → rescans
+[bold]Default targeted recovery:[/bold]
+  ✓ Clears stale Blackout system proxy settings
+  ✓ Removes only routes owned by detected stale Blackout virtual adapters
+  ✓ Restores DHCP DNS only when a connected physical adapter still uses loopback DNS
+  ✓ Restarts only the deterministic BlackoutKit-TUN adapter when unhealthy
+  ✓ Flushes DNS without resetting Winsock, TCP/IP, or DHCP
+
+[bold]Safety boundary:[/bold]
+  • Stop Blackout first — recovery skips all mutations while its daemon is active
+  • Healthy custom DNS, Wi-Fi/Ethernet, WireGuard, and third-party VPN adapters are not changed
 
 [bold]Usage:[/bold]
-  blackout fix                          Run all auto-repairs with live status
+  blackout fix                          Run the safe targeted recovery
+  blackout tools netfix                 Same safe recovery flow
+  blackout fix --full-route-reset       Emergency only: runs route -f, then renews DHCP
+  blackout fix --full-stack-reset       Emergency only: resets Winsock, TCP/IP, autotuning, and DHCP
+
+[bold]Warning:[/bold]
+  --full-route-reset deletes every IPv4 route, including unrelated VPN and custom LAN routes.
+  --full-stack-reset can interrupt all active network connections.
+  Use either only after the default targeted repair fails.
 """,
 
 # ── Settings & config ─────────────────────────────────────────────────────────
@@ -353,6 +364,10 @@ All bypass engines in Blackout Kit and when to use each.
   [bold]appsscript[/bold] HTTP relay through Google Apps Script (domain fronting)
              Built-in, no binary needed — Google servers relay your traffic
              Port: HTTP :8087
+
+  [bold]mhrv[/bold]       Embedded HTTP Google Apps Script relay via blackout_core.dll
+             Port: HTTP :8085; HTTPS CONNECT is intentionally unsupported
+             No CA certificate is installed and Windows trust stores are not modified
 
 [bold]Usage:[/bold]
   blackout start --engine <name>
@@ -584,7 +599,13 @@ Full network diagnostic and utility toolkit.
   cert-check <host> --allow  Allow host in LEGEND mode (self-signed bypass)
   hotspot               Toggle Windows Mobile Hotspot on/off
   share-vpn             Share your VPN via ICS (Internet Connection Sharing)
-  netfix                Auto-repair: DNS flush + Winsock reset + TCP/IP reset
+  netfix                Safe post-crash recovery: stale routes, loopback DNS, BlackoutKit-TUN, DNS cache
+
+[bold]Background daemon reconnect:[/bold]
+  Failed engines restart immediately, then retry with capped exponential backoff
+  (default 2s → 4s → 8s, capped at 60s) until max_retries is exhausted.
+  After a failed restart, daemon recovery preserves the active proxy and never
+  uses a full route reset; `blackout fix --full-route-reset` stays manual.
 
 [bold]Cloudflare captcha tips:[/bold]
   If sites show Cloudflare challenges:

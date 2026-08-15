@@ -1,20 +1,12 @@
 """
 Blackout Kit - mhrv engine.
-Wraps mhrv-rs (a Rust MITM transparent proxy).
-Installs its own CA certificate and intercepts HTTPS at the OS level.
-Useful as an alternative bypass layer.
+Runs the embedded native HTTP Google Apps Script relay through blackout_core.dll.
+It does not intercept HTTPS, install a CA certificate, or modify Windows trust stores.
 
-Ports:
-  HTTP   → 8085
-  SOCKS5 → 8086
+Port:
+  HTTP → 8085
 
-Requires: mhrv-rs.exe in bins/
-Download: https://github.com/mhrv-rs (check latest releases)
-
-Rare upgrades:
-  - Logs cert installation result (success vs failure — no longer silent)
-  - wait_for_port() on http_port confirms proxy is accepting connections
-  - Crash-check if port never opens (catches missing dependencies)
+HTTPS CONNECT requests are intentionally unsupported; use SNI or XRay for HTTPS traffic.
 """
 import subprocess
 import time
@@ -31,7 +23,7 @@ _STARTUP_TIMEOUT = 10.0   # seconds to wait for HTTP port to open
 
 class MhrvEngine(Engine):
     name = "mhrv"
-    description = "mhrv-rs transparent MITM proxy — alternative bypass layer"
+    description = "Embedded HTTP Google Apps Script relay — alternative bypass layer"
 
     def __init__(self, http_port: int = 8085, socks_port: int = 8086):
         super().__init__()
