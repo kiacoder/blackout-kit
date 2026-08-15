@@ -31,6 +31,14 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Set up Go 1.26
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26.x'
+        cache-dependency-path: |
+          engine/go.sum
+          engine/warp/go.sum
+
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:

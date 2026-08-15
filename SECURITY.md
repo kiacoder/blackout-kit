@@ -83,8 +83,8 @@ We appreciate reporters who respect this window.
 
 ### Go Module Pinning
 - All dependencies are pinned via `go.sum` in `engine/` and `engine/warp/`
-- Dependabot runs daily and creates PRs for any vulnerable transitive dep
-- We do not use `replace` directives unless absolutely required
+- Dependabot monitors the Go module graphs for vulnerable transitive dependencies
+- Patchable transitive dependencies are pinned at or above their fixed releases and verified in the Windows WARP DLL build
 - Upstream forks (utls, quic-go) are reviewed before updating
 
 ### Release Attestation
@@ -162,11 +162,12 @@ This tool intentionally trades some security for circumvention effectiveness:
   bypass it. Defense in depth recommended.
 - **Plaintext credentials** — IKEv2/SoftEther passwords are stored as plaintext
   in `settings.json`. Encrypt with `blackout config encrypt` or use Legend mode.
-- **Transitive dep vulns** — Dependabot may flag CVEs in transitive Go deps
-  (e.g. `golang.org/x/crypto`, `cloudflare/circl`). These are pinned by upstream
-  forks (Psiphon, xray-core, sing-box) and cannot be independently upgraded. The
-  vulnerable code paths (SSH server, FIDO2) are not exercised by our tunneling
-  engine. We accept this risk and update when upstream does.
+- **Legacy Pion transitives** — Dependabot alerts #28 (`github.com/pion/dtls/v2`)
+  and #60 (`github.com/pion/stun`) remain open because their affected v2/v1 module
+  lines have no patched release. They are required by the upstream
+  `warp-plus → psiphon-tunnel-core` integration. All other patchable WARP graph
+  advisories are pinned at their fixed releases. We monitor the upstream migration
+  to patched Pion major versions and will update as soon as a compatible release exists.
 
 ## Hall of Fame
 

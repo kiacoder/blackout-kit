@@ -8,10 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **WARP dependency graph:** Raised all patchable transitive Go dependencies to their published security fixes, including the critical `golang.org/x/crypto` advisories. The native WARP/Psiphon DLL graph is now verified and compiled in Windows CI.
 - **mhrv certificate-store claim:** Corrected documentation that incorrectly described the embedded HTTP relay as an HTTPS MITM engine that installs a CA. mhrv never modifies Windows certificate stores, so certificate cleanup is not applicable.
 - **Daemon restart resilience:** Failed engine restarts now stay alive through a bounded, cancellable exponential-backoff cycle rather than terminating the daemon immediately. Daemon state consistently records the daemon PID, including for DLL-backed engines.
 
 ### Added
+- **Dependabot residual-risk tracking:** Documented the only two remaining WARP graph advisories—legacy `pion/dtls/v2` and `pion/stun` lines with no upstream patch release—rather than treating them as resolved.
 - **Daemon-safe targeted reconnect recovery:** After a failed restart, the daemon can repair only verified stale Blackout routes, loopback DNS, and Blackout-owned virtual adapters before retrying. It preserves the active system proxy and kill switch and never runs `route -f`, Winsock, TCP/IP, or DHCP resets.
 - **Reconnect policy settings:** Added `reconnect_initial_delay` and `reconnect_max_delay` to tune capped automatic retry timing.
 - **Targeted post-crash network recovery:** `blackout fix` and `blackout tools netfix` now clear stale Blackout proxy/routes, restore DHCP DNS only from loopback DNS on physical adapters, restart only the deterministic BlackoutKit-TUN adapter, and flush DNS without disturbing unrelated VPNs.
