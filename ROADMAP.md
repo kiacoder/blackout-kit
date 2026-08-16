@@ -37,7 +37,7 @@ Items marked ✅ are implemented. Ranks: Common → Uncommon → Rare → Epic �
 | Google Apps Script relay | ✅ Done | Rare | Domain-fronts through script.google.com, 20 relay IDs, pure Python |
 | **Hysteria 2** | ✅ Done | Rare | QUIC-based proxy via sing-box, selectable as `hysteria2` |
 | **TUIC** | ✅ Done | Rare | Low-latency QUIC tunnel via sing-box, selectable as `tuic` |
-| **XRay REALITY protocol** | 🔜 v1.2 | — | Mimics legitimate HTTPS to microsoft.com/etc perfectly. Undetectable. |
+| **XRay client-side VLESS REALITY** | ✅ Done | Rare | Imports standard VLESS REALITY URIs for XRay/TUN; server setup and trust remain the operator's responsibility. |
 | **ShadowTLS** | 🔜 v1.2 | — | Makes traffic look like real TLS to a real server |
 | **ShadowSocks + Obfs4** | 🔜 v1.2 | — | Via sing-box |
 | **XTLS Direct Read/Write** | 🔜 v1.3 | — | Zero-overhead XRay performance mode |
@@ -70,7 +70,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Feature | Status | Rank | Notes |
 |---------|--------|------|-------|
 | Security modes (Speed / Private / LEGEND) | ✅ Done | Rare | `blackout mode speed\|private\|legend` |
-| Kill switch (Windows Firewall) | ✅ Done | Rare | Blocks ALL traffic if proxy drops |
+| Kill switch (Windows Firewall / Linux nftables) | ✅ Done | Rare | Endpoint-scoped Linux rules with iptables fallback |
 | Config obfuscation (XOR + base64) | ✅ Done | Uncommon | Not real encryption — shoulder-surf protection only |
 | Windows Defender exclusion | ✅ Done | Rare | `blackout doctor --fix-av` |
 | Stability tracking (latency + trend) | ✅ Done | Rare | Per-engine history |
@@ -107,7 +107,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | **Real-time fixer checklist** | ✅ Done | Rare | `blackout fix` shows a live Rich checklist for each repair step |
 | **Auto-reconnect with backoff** | ✅ Done | Rare | Daemon retries with cancellable capped exponential backoff; targeted daemon recovery preserves proxy/routes outside Blackout ownership |
 | **Certificate store cleanup** | N/A | — | mhrv is an HTTP relay and never creates, trusts, or installs a CA certificate |
-| **ARP table flush** | 🔜 v1.2 | — | Clear ARP cache if LAN routing breaks |
+| **ARP / neighbor cache flush** | ✅ Done | Rare | Explicit only: `tools arp-flush` or `fix --flush-arp`; never daemon recovery |
 
 ---
 
@@ -126,11 +126,11 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | **`blackout connect` smart command** | ✅ Done | Rare | Auto-selects the country-aware engine and connects. |
 | **`blackout connect --iran`** | ✅ Done | Rare | Forces TIC evasion profile: arvancloud.ir SNI + firefox fingerprint + existing fragment settings |
 | **`blackout fix`** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
-| **Global exception handler** | 🔜 v1.2 | — | No raw Python tracebacks EVER. All errors caught → Rich red Panel → offer auto-fix |
-| **Rich.Prompt interactive menus** | 🔜 v1.2 | — | User can answer questions instead of typing flags |
-| **Real-time status panel** | 🔜 v1.2 | — | Live updating: IP, latency, engine, bytes transferred |
-| **Smart-routing dashboard** | 🔜 v1.2 | — | Auto-switch to best available engine |
-| **Dark/Light theme toggle** | 🔜 v1.2 | — | Rich theme switching |
+| **Global exception handler** | ✅ Done | Rare | Redacted Rich error panel with safe local diagnostic guidance |
+| **Rich.Prompt interactive menus** | ✅ Done | Rare | Prompts only in interactive terminals; explicit CLI arguments remain script-safe |
+| **Real-time status panel** | ✅ Done | Rare | Read-only `blackout status --watch`: daemon, local ports, stability, and reconnect state |
+| **Smart-routing dashboard** | ✅ Done | Rare | `blackout route` ranks local readiness/history; `connect auto` uses its recommendation |
+| **Dark/Light theme toggle** | ✅ Done | Rare | Persistent Blackout Kit Rich palette only; host-terminal and GUI settings stay unchanged |
 | **Tauri desktop app** | 🔜 future | — | Optional GUI wrapper |
 | **Tray integration** | 🔜 future | — | System tray icon + quick connect |
 
@@ -158,7 +158,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 |---------|--------|------|-------|
 | Windows 10/11 | ✅ Done | Epic | Full support |
 | WSL (Ubuntu on Windows) | ✅ Done | Uncommon | Partial (no WinDivert, no Firewall rules) |
-| **Linux native (iptables)** | 🔜 v1.2 | — | Kill switch + TUN routing for Linux |
+| **Linux native (x86_64)** | ✅ Done | Rare | Ubuntu/Debian, Fedora, Arch: XRay+TUN, endpoint-scoped nftables or iptables kill switch |
 | **macOS (pf firewall)** | 🔜 future | — | Kill switch + proxy |
 | **Russia TSPU evasion** | 🔜 far future | — | VLESS + REALITY, avoid TUN interfaces (Russian apps scan for VPN), TSPU hardware jamming workarounds |
 
@@ -182,7 +182,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Version | Focus | Key items |
 |---------|-------|-----------|
 | **v1.1.1** (current) | Release stabilization | Installable package, self-contained executable, CLI parity, native config hardening, and reproducible WARP/Psiphon module |
-| **v1.2** (next) | Advanced privacy + recovery | REALITY, ShadowTLS, process split tunnel, Linux support, network recovery, smart routing, and real-time dashboard |
+| **v1.2** (next) | Advanced privacy + recovery | ShadowTLS, process split tunnel, network recovery, and real-time dashboard |
 | **v1.3** | Performance + hardening | XTLS, lazy imports, PFS, persistent IPC, and remaining performance improvements |
 | **far future** | GUI + Russia + exotic protocols | Tauri, tray, Russia TSPU, ECH, PQC, macOS |
 

@@ -71,6 +71,7 @@ DEFAULTS = {
     "show_disclaimer":      True,        # Show the legal disclaimer under the banner
     "show_first_run":       False,       # Show the "First Run" welcome panel (auto-shown on true first launch)
     "color_theme":          "red",       # red / blue / green / purple
+    "terminal_theme":       "dark",      # dark / light (Blackout Kit Rich palette only)
 
     # Security modes
     "security_mode":        "speed",     # speed / private / legend
@@ -169,6 +170,8 @@ _VALIDATORS: dict[str, tuple] = {
                            "must be: IKEv2 / L2tp / Sstp / Pptp"),
     "color_theme":        (str,   lambda v: v in ("red","blue","green","purple"),
                            "must be: red / blue / green / purple"),
+    "terminal_theme":     (str,   lambda v: v in ("dark", "light"),
+                           "must be: dark / light"),
     "selected_engine":    (str,   lambda v: v in _ENGINE_CHOICES, "must be: auto or one of " + ", ".join(_ENGINE_CHOICES)),
     "engine_order":       (list,  lambda v: len(v) > 0 and all(e in _ENGINE_CHOICES for e in v),
                             "must be a non-empty list of valid engines: " + ", ".join(_ENGINE_CHOICES)),
@@ -331,7 +334,8 @@ def describe(key: str) -> str:
         "show_banner":        "Show ASCII art banner on startup",
         "show_disclaimer":    "Show the legal disclaimer panel under the banner",
         "show_first_run":     "Show the First Run welcome panel on a fresh install",
-        "color_theme":        "Terminal color theme: red/blue/green/purple",
+        "color_theme":        "Terminal accent color: red/blue/green/purple",
+        "terminal_theme":     "Blackout Kit terminal palette: dark/light (does not change your terminal app)",
         "security_mode":      "Active security mode: speed / private / legend",
         "kill_switch":        "Block all internet if proxy drops (Windows Firewall)",
         "ikev2_server":       "IKEv2/L2TP VPN server address",

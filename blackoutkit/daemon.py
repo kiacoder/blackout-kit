@@ -101,9 +101,28 @@ def start(engine_name: str) -> int:
         STATE_FILE.unlink(missing_ok=True)
         (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
 
+        if sys.platform.startswith("linux"):
+            process = subprocess.Popen(
+                cmd,
+                cwd=os.getcwd(),
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            PID_FILE.write_text(str(process.pid), encoding="utf-8")
+            STATE_FILE.write_text(
+                json.dumps({
+                    "engine": engine_name,
+                    "pid": process.pid,
+                    "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+                }),
+                encoding="utf-8",
+            )
+            return process.pid
+
         ADMIN_REQUIRED_ENGINES = {"gdpi", "warp", "tun"}
         verb_clause = "-Verb RunAs " if engine_name in ADMIN_REQUIRED_ENGINES else ""
-        
+
         args_ps = ", ".join(f"'{a}'" for a in cmd[1:])
         ps_cmd = (
             f"$p = Start-Process -FilePath '{cmd[0]}' "
@@ -111,18 +130,18 @@ def start(engine_name: str) -> int:
             f"if ($p) {{ $p.Id | Out-File -FilePath '{PID_FILE}' -Encoding UTF8; "
             f"'{{\"engine\":\"{engine_name}\",\"pid\":' + $p.Id.ToString() + ',\"started\":\"' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '\"}}' | Out-File -FilePath '{STATE_FILE}' -Encoding UTF8 }}"
         )
-        
+
         subprocess.run(
             ["powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", ps_cmd],
-            creationflags=0x08000000
+            creationflags=0x08000000,
         )
-        
+
         # Wait for PID_FILE (give user time to click UAC)
         for _ in range(600):
             if PID_FILE.exists():
                 break
             time.sleep(0.1)
-            
+
         pid = get_pid()
         if pid:
             return pid
@@ -296,19 +315,25 @@ def run_daemon_loop(engine_name: str):
     except Exception:
         pass
 
-    from .engines.sni       import SNIEngine
-    from .engines.xray      import XRayEngine
-    from .engines.gdpi      import GoodbyeDPIEngine
-    from .engines.psiphon   import PsiphonEngine
-    from .engines.warp      import WARPEngine
-    from .engines.tun       import TUNEngine
-    from .engines.tor       import TorEngine
-    from .engines.mhrv      import MhrvEngine
-    from .engines.ikev2     import IKEv2Engine
-    from .engines.wireguard import WireGuardEngine
-    from .engines.openvpn   import OpenVPNEngine
-    from .engines.softether import SoftEtherEngine
+    from .engines.xray import XRayEngine
+    from .engines.tun import TUNEngine
     from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
+
+    if sys.platform == "win32":
+        from .engines.sni import SNIEngine
+        from .engines.gdpi import GoodbyeDPIEngine
+        from .engines.psiphon import PsiphonEngine
+        from .engines.warp import WARPEngine
+        from .engines.tor import TorEngine
+        from .engines.mhrv import MhrvEngine
+        from .engines.ikev2 import IKEv2Engine
+        from .engines.wireguard import WireGuardEngine
+        from .engines.openvpn import OpenVPNEngine
+        from .engines.softether import SoftEtherEngine
+    else:
+        SNIEngine = GoodbyeDPIEngine = PsiphonEngine = WARPEngine = None
+        TorEngine = MhrvEngine = IKEv2Engine = WireGuardEngine = None
+        OpenVPNEngine = SoftEtherEngine = None
     from . import settings as cfg
     from . import security as sec
     from .proxy_manager import set_system_proxy, clear_system_proxy
@@ -327,15 +352,21 @@ def run_daemon_loop(engine_name: str):
     # Also log to stderr so it goes to CRASH_LOG for debugging startup
     log.addHandler(logging.StreamHandler())
 
-    # Spawn the watchdog process to handle forceful termination (End Task)
+    # Spawn the watchdog process to handle forceful termination (End Task).
     try:
         watchdog_script = Path(__file__).parent / "watchdog.py"
+        watchdog_kwargs = {
+            "close_fds": True,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if sys.platform == "win32":
+            watchdog_kwargs["creationflags"] = 0x08000000 | 0x00000008
+        else:
+            watchdog_kwargs["start_new_session"] = True
         subprocess.Popen(
             [sys.executable, str(watchdog_script), str(os.getpid())],
-            creationflags=0x08000000 | 0x00000008, # DETACHED_PROCESS | CREATE_NO_WINDOW
-            close_fds=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            **watchdog_kwargs,
         )
         log.info("Watchdog process spawned for proxy safety.")
     except Exception as e:
@@ -349,7 +380,7 @@ def run_daemon_loop(engine_name: str):
         "gdpi":       lambda: (GoodbyeDPIEngine(),),
         "psiphon":    lambda: (PsiphonEngine(),),
         "warp":       lambda: (WARPEngine(),),
-        "tun":        lambda: (TUNEngine(),),
+        "tun":        lambda: (XRayEngine(), TUNEngine()) if sys.platform.startswith("linux") else (TUNEngine(),),
         "tor":        lambda: (TorEngine(),),
         "mhrv":       lambda: (MhrvEngine(),),
         "ikev2":      lambda: (IKEv2Engine(),),
@@ -360,6 +391,13 @@ def run_daemon_loop(engine_name: str):
         "tuic":       lambda: (TuicEngine(),),
         "legend":     lambda: (TorEngine(), SNIEngine(), XRayEngine()),
     }
+
+    if sys.platform.startswith("linux"):
+        ENGINE_MAP = {
+            name: factory
+            for name, factory in ENGINE_MAP.items()
+            if name in {"xray", "tun", "hysteria2", "tuic"}
+        }
     s = cfg.load()
 
     def try_start_engines(name: str) -> list:
@@ -367,6 +405,15 @@ def run_daemon_loop(engine_name: str):
         if not factory:
             log.warning(f"Unknown engine: {name}")
             return []
+
+        linux_kill_switch = sys.platform.startswith("linux") and s.get("kill_switch", False)
+        if linux_kill_switch and not sec.prepare_linux_kill_switch(name):
+            log.error("Could not resolve a safe Linux kill-switch endpoint for %s.", name)
+            return []
+        if linux_kill_switch and not sec.enable_kill_switch(name):
+            log.error("Linux kill switch could not be enabled for %s; refusing to start the tunnel.", name)
+            return []
+
         engines = list(factory())
         started = []
         for eng in engines:
@@ -385,12 +432,19 @@ def run_daemon_loop(engine_name: str):
                         already_started.stop()
                     except Exception:
                         pass
+                if linux_kill_switch:
+                    sec.disable_kill_switch()
+                    sec.clear_linux_kill_switch_endpoint(name)
                 return []
         return started
 
     active_engine_name = engine_name
     if engine_name == "emergency":
-        order = s.get("engine_order", ["sni", "gdpi", "psiphon"])
+        order = (
+            ["tun", "xray", "hysteria2", "tuic"]
+            if sys.platform.startswith("linux")
+            else s.get("engine_order", ["sni", "gdpi", "psiphon"])
+        )
         active: list = []
         for ename in order:
             active = try_start_engines(ename)
@@ -577,6 +631,7 @@ def run_daemon_loop(engine_name: str):
         if s.get("kill_switch", False):
             try:
                 sec.disable_kill_switch()
+                sec.clear_linux_kill_switch_endpoint()
                 log.info("Kill switch disabled.")
             except Exception:
                 pass

@@ -22,6 +22,8 @@ import json
 import subprocess
 import sys
 import time
+
+from .xray import LINUX_RUNNER_NAMES
 from pathlib import Path
 from .base import Engine
 from .. import settings as cfg
@@ -68,23 +70,26 @@ class TUNEngine(Engine):
 
     def _generate_singbox_config(self) -> dict:
         """Generate sing-box configuration for TUN mode."""
+        tun_inbound = {
+            "type": "tun",
+            "tag": "tun-in",
+            "interface_name": "BlackoutKit-TUN",
+            "inet4_address": "172.19.0.1/30",
+            "inet6_address": "fdfe:dcba:9876::1/126",
+            "mtu": 9000,
+            "auto_route": True,
+            "strict_route": True,
+            "stack": "mixed",
+            "endpoint_independent_nat": False,
+            "sniff": True,
+        }
+        if sys.platform.startswith("linux"):
+            tun_inbound["iproute2_table_index"] = 20220
+            tun_inbound["iproute2_rule_index"] = 32200
+
         return {
             "log": {"level": "warn"},
-            "inbounds": [
-                {
-                    "type":               "tun",
-                    "tag":                "tun-in",
-                    "interface_name":     "BlackoutKit-TUN",
-                    "inet4_address":      "172.19.0.1/30",
-                    "inet6_address":      "fdfe:dcba:9876::1/126",
-                    "mtu":                9000,
-                    "auto_route":         True,
-                    "strict_route":       True,
-                    "stack":              "mixed",
-                    "endpoint_independent_nat": False,
-                    "sniff":              True,
-                }
-            ],
+            "inbounds": [tun_inbound],
             "outbounds": [
                 {
                     "type": "socks",
@@ -97,6 +102,7 @@ class TUNEngine(Engine):
                 {"type": "dns",    "tag": "dns-out"},
             ],
             "route": {
+                "auto_detect_interface": sys.platform.startswith("linux"),
                 "rules": [
                     {"protocol": "dns", "outbound": "dns-out"},
                     {"ip_cidr":  self.bypass_ips, "outbound": "direct"},
@@ -144,7 +150,7 @@ class TUNEngine(Engine):
             len(self.bypass_ips), len(self.bypass_domains),
         )
 
-        # TUN mode requires Administrator (WinTUN kernel driver)
+        # TUN mode needs system networking rights on every supported platform.
         if sys.platform == "win32":
             from ..elevate import is_admin
             if not is_admin():
@@ -155,9 +161,31 @@ class TUNEngine(Engine):
                     return False
                 self._log.error("UAC elevation was denied. TUN mode requires admin rights.")
                 return False
+        elif sys.platform.startswith("linux"):
+            from ..linux_network import is_root
+
+            if not is_root():
+                self._log.error("Linux TUN mode requires root privileges. Run: sudo blackout connect tun")
+                return False
+        else:
+            self._log.error("TUN mode is supported only on Windows and Linux.")
+            return False
 
         config_path = self._write_config()
         self._log.debug("sing-box TUN config written to %s", config_path)
+
+        if sys.platform.startswith("linux"):
+            runner = self.find_binary(LINUX_RUNNER_NAMES)
+            if not runner:
+                self._log.error("Linux TUN requires the managed blackout-engine runner.")
+                return False
+            self._log.info("Launching sing-box TUN through the Linux blackout-engine runner")
+            if not self.start_process(self.binary_command(runner, "sing-box", "--config", str(config_path))):
+                return False
+            if not self.wait_for_process():
+                return False
+            self._log.info("Linux TUN active — all traffic routes via socks5://%s:%d.", self.socks_upstream, self.socks_port)
+            return True
 
         from ..core import get_core_dll
         dll = get_core_dll()
@@ -172,6 +200,5 @@ class TUNEngine(Engine):
             time.sleep(0.5)
             self._log.info("TUN mode active natively — all traffic routed via socks5://%s:%d.", self.socks_upstream, self.socks_port)
             return True
-        else:
-            self._log.error("Native DLL StartSingBoxC failed")
-            return False
+        self._log.error("Native DLL StartSingBoxC failed")
+        return False

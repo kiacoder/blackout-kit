@@ -139,6 +139,53 @@ _KS_REQUIRED_RULES = [
 ]
 
 
+_linux_endpoint_cache: dict[tuple[str, int], list[tuple[str, int]]] = {}
+
+
+def _linux_kill_switch_endpoints(engine_name: str | None = None) -> list[tuple[str, int]]:
+    """Resolve and cache literal endpoint allow rules before Linux firewall changes."""
+    if not sys.platform.startswith("linux"):
+        return []
+    try:
+        from .config.manager import load_configs
+        from . import linux_network
+
+        settings = cfg.load()
+        selected = (engine_name or settings.get("selected_engine", "auto")).lower()
+        supported = {"auto", "xray", "tun", "hysteria2", "tuic"}
+        if selected not in supported:
+            return []
+        protocols = {"hysteria2"} if selected == "hysteria2" else ({"tuic"} if selected == "tuic" else {"vless", "trojan"})
+        for proxy in load_configs():
+            if proxy.protocol not in protocols or not proxy.address or not proxy.port:
+                continue
+            key = (proxy.address, proxy.port)
+            if key in _linux_endpoint_cache:
+                return _linux_endpoint_cache[key]
+            endpoints = linux_network.resolve_proxy_endpoints([key])
+            if endpoints:
+                _linux_endpoint_cache[key] = endpoints
+            return endpoints
+    except Exception as exc:
+        _log.warning("Could not resolve Linux kill-switch endpoint: %s", exc)
+    return []
+
+
+def prepare_linux_kill_switch(engine_name: str) -> bool:
+    """Resolve the endpoint before firewall rules can prevent DNS access."""
+    return bool(_linux_kill_switch_endpoints(engine_name))
+
+
+def linux_cached_endpoint(host: str, port: int) -> str | None:
+    """Return a prevalidated Linux endpoint IP for an exact proxy host and port."""
+    endpoints = _linux_endpoint_cache.get((host, port), [])
+    return endpoints[0][0] if endpoints else None
+
+
+def clear_linux_kill_switch_endpoint(_engine_name: str | None = None) -> None:
+    _linux_endpoint_cache.clear()
+
+
 def _get_proxy_processes() -> list[str]:
     """Return full paths to known proxy binaries in the bins/ folder."""
     candidates = [
@@ -157,12 +204,21 @@ def _get_proxy_processes() -> list[str]:
     return results
 
 
-def enable_kill_switch() -> bool:
+def enable_kill_switch(engine_name: str | None = None) -> bool:
     with _ks_lock:
-        return _enable_kill_switch_impl()
+        return _enable_kill_switch_impl(engine_name)
 
 
-def _enable_kill_switch_impl() -> bool:
+def _enable_kill_switch_impl(engine_name: str | None = None) -> bool:
+    if sys.platform.startswith("linux"):
+        from . import linux_network
+
+        endpoints = _linux_kill_switch_endpoints(engine_name)
+        ok, detail = linux_network.enable_kill_switch(endpoints)
+        if not ok:
+            _log.warning("Linux kill switch was not enabled: %s", detail)
+        return ok
+
     """
     Block all internet traffic unless it goes through our proxy.
     Uses Windows Firewall with per-process allow rules (requires admin).
@@ -245,15 +301,13 @@ Write-Output "OK:kill_switch_enabled"
 
 
 def test_kill_switch() -> tuple[bool, str]:
-    """
-    Verify the kill switch actually blocks non-proxy traffic.
-    Connects to an external host DIRECTLY (not through proxy) and
-    expects the connection to FAIL.
-
-    Returns (passed: bool, details: str).
-    """
+    """Verify that Blackout Kit's kill-switch rules are active."""
+    if sys.platform.startswith("linux"):
+        if not kill_switch_is_active():
+            return False, "Linux kill switch is not active. Enable it with: sudo blackout killswitch on"
+        return True, "Linux kill switch is active in the Blackout Kit-owned firewall table."
     if sys.platform != "win32":
-        return True, "Not on Windows — kill switch is N/A"
+        return True, "Kill switch is unavailable on this platform"
     if not kill_switch_is_active():
         return False, "Kill switch is NOT active. Enable it first: blackout killswitch on"
 
@@ -293,7 +347,14 @@ def disable_kill_switch() -> bool:
 
 
 def _disable_kill_switch_impl() -> bool:
-    """Remove all kill-switch firewall rules (including DoH/DoT blocks + per-process proxy rules)."""
+    """Remove only Blackout Kit-owned kill-switch firewall rules."""
+    if sys.platform.startswith("linux"):
+        from . import linux_network
+
+        ok, detail = linux_network.remove_owned_firewall()
+        if not ok:
+            _log.warning("Linux kill switch cleanup failed: %s", detail)
+        return ok
     if sys.platform != "win32":
         return False
 
@@ -331,10 +392,11 @@ Write-Output "OK"
 
 
 def kill_switch_is_active() -> bool:
-    """
-    Query Windows Firewall to verify ALL required kill-switch rules exist.
-    Required: Block + Allow-Proxy + Allow-DNS + Allow-DHCP.
-    """
+    """Return whether the platform's Blackout Kit kill-switch objects are active."""
+    if sys.platform.startswith("linux"):
+        from . import linux_network
+
+        return linux_network.kill_switch_is_active()
     if sys.platform != "win32":
         return False
 

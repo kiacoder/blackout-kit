@@ -30,14 +30,21 @@ def monitor(daemon_pid: int):
     except Exception:
         pass
 
-    # Also disable kill switch if active — prevents permanent internet block
-    # after a crash/End Task. The daemon normally disables it on clean shutdown,
-    # but on abrupt termination only the watchdog can do this.
+    # Also remove only Blackout Kit-owned firewall rules — prevents permanent
+    # network loss after an abrupt daemon exit.
     try:
         from blackoutkit.security import disable_kill_switch
         disable_kill_switch()
     except Exception:
         pass
+
+    if sys.platform.startswith("linux"):
+        try:
+            from blackoutkit import linux_network
+            linux_network.delete_owned_tunnel()
+            linux_network.flush_dns_cache()
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:

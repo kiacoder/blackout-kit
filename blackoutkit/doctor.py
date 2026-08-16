@@ -157,6 +157,19 @@ def check_bins_present() -> list[CheckResult]:
     results = []
     from .downloader import BIN_REGISTRY, BINS_DIR as _BINS_DIR
 
+    if sys.platform.startswith("linux"):
+        runner = _BINS_DIR / "blackout-engine"
+        if runner.exists() and os.access(runner, os.X_OK):
+            results.append(CheckResult("bins: blackout-engine", True, "Found Linux XRay/sing-box runner"))
+        else:
+            results.append(CheckResult(
+                "bins: blackout-engine",
+                False,
+                "Missing or not executable — install the Linux x86_64 release asset",
+                fixable=False,
+            ))
+        return results
+
     # Check for native DLLs
     core_dll = _BINS_DIR / "blackout_core.dll"
     engine_exe = _BINS_DIR / "blackout-engine.exe"
@@ -253,9 +266,17 @@ def check_windivert() -> CheckResult:
 
 
 def check_network_driver() -> CheckResult:
-    """Check basic network stack health on Windows."""
+    """Check basic platform networking prerequisites."""
+    if sys.platform.startswith("linux"):
+        from . import linux_network
+
+        missing = [name for name in ("ip",) if not linux_network._command_available(name)]
+        if missing:
+            return CheckResult("Linux networking", False, f"Missing required command: {', '.join(missing)}")
+        firewall = "nftables" if linux_network._command_available("nft") else "iptables fallback"
+        return CheckResult("Linux networking", True, f"ip available; firewall backend: {firewall}")
     if sys.platform != "win32":
-        return CheckResult("Network driver", True, "N/A (not Windows)")
+        return CheckResult("Network driver", True, "N/A")
     try:
         result = subprocess.run(
             ["netsh", "winsock", "show", "catalog"],
@@ -559,9 +580,26 @@ def check_process_conflicts() -> CheckResult:
 
 
 def check_firewall_rules() -> CheckResult:
-    """Verifies if the Windows Firewall killswitch rules exist when enabled."""
+    """Verify the Blackout Kit kill-switch state when it is enabled."""
+    if sys.platform.startswith("linux"):
+        from . import linux_network
+
+        enabled = cfg.load().get("kill_switch", False)
+        if not enabled:
+            return CheckResult("Firewall integrity", True, "OK (Linux kill switch disabled)")
+        if not linux_network.is_root():
+            return CheckResult("Firewall integrity", False, "Linux kill switch needs sudo/root privileges")
+        if linux_network.kill_switch_is_active():
+            return CheckResult("Firewall integrity", True, "OK (Blackout Kit-owned Linux firewall rules active)")
+        return CheckResult(
+            "Firewall integrity",
+            False,
+            "Linux kill switch is enabled in settings but its Blackout Kit firewall rules are missing.",
+            fixable=True,
+            fix=lambda: __import__("blackoutkit.security", fromlist=["enable_kill_switch"]).enable_kill_switch(),
+        )
     if sys.platform != "win32":
-        return CheckResult("Firewall integrity", True, "N/A (not Windows)")
+        return CheckResult("Firewall integrity", True, "N/A")
 
     s = cfg.load()
     enabled = s.get("kill_switch", False)
@@ -588,9 +626,22 @@ def check_firewall_rules() -> CheckResult:
 
 
 def check_windows_compat() -> CheckResult:
-    """Verifies that the operating system and architecture are compatible with Blackout Kit."""
+    """Verify the current platform exposes a supported Blackout Kit runtime."""
+    if sys.platform.startswith("linux"):
+        import platform
+        from . import BINS_DIR
+
+        arch = platform.machine().lower()
+        if arch not in {"x86_64", "amd64"}:
+            return CheckResult("OS Compatibility", False, f"Linux architecture {arch} is unsupported; x86_64 is required")
+        runner = BINS_DIR / "blackout-engine"
+        if not runner.exists():
+            return CheckResult("Linux runtime", False, "Missing bins/blackout-engine. Install the Linux x86_64 release asset.")
+        if not os.access(runner, os.X_OK):
+            return CheckResult("Linux runtime", False, "bins/blackout-engine is not executable. Run: chmod +x bins/blackout-engine")
+        return CheckResult("OS Compatibility", True, f"Linux {platform.release()} ({arch}) — XRay/TUN runtime ready")
     if sys.platform != "win32":
-        return CheckResult("OS Compatibility", True, f"Non-Windows ({sys.platform}) — bypass engines may need manual config")
+        return CheckResult("OS Compatibility", True, f"Unsupported platform: {sys.platform}")
     
     import platform
     arch = platform.machine()
@@ -745,6 +796,22 @@ def check_ports_in_use() -> CheckResult:
 
 def check_tun_adapter() -> CheckResult:
     """Verify virtual adapters and identify post-crash stale adapter state."""
+    if sys.platform.startswith("linux"):
+        from . import linux_network
+
+        if not linux_network.is_root():
+            return CheckResult("Linux TUN", False, "Run with sudo before starting system-wide TUN mode")
+        if not linux_network._command_available("ip"):
+            return CheckResult("Linux TUN", False, "Missing required command: ip")
+        if linux_network.tunnel_exists():
+            return CheckResult(
+                "Linux TUN",
+                False,
+                "Stale BlackoutKit-TUN interface found",
+                fixable=True,
+                fix=linux_network.delete_owned_tunnel,
+            )
+        return CheckResult("Linux TUN", True, "Ready (no stale BlackoutKit-TUN interface)")
     if sys.platform != "win32":
         return CheckResult("TUN/TAP Adapter", True, "N/A")
 

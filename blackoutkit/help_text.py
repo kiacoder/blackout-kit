@@ -180,21 +180,57 @@ Automatically try every engine until one successfully connects.
 
 "status": """
 [bold cyan]blackout status[/bold cyan]
-Show what's running and whether the proxy is actually working.
+Show a read-only local snapshot of the daemon and proxy ports.
+
+[bold]Usage:[/bold]
+  blackout status
+  blackout status --watch
+  blackout status --watch --interval 5
 
 [bold]Displays:[/bold]
-  • Daemon PID and active engine name
-  • Windows system proxy status (enabled / what address)
-  • Direct internet connectivity test
-  • HTTP proxy port (10809) — open or closed
-  • SOCKS5 proxy port (10808) — open or closed
-  • End-to-end HTTP proxy latency through the bypass
-  • SOCKS5 proxy latency
+  • Daemon PID, active engine, and reconnect state
+  • System proxy status
+  • Local HTTP/SOCKS port availability
+  • Saved local latency/loss history when available
+  • Security mode and Blackout Kit terminal palette
 
-[bold]Tip:[/bold]
-  Run [bold]blackout status[/bold] after starting — latency shown means it works.
-  If ports show "closed", the engine crashed. Check logs:
-  blackout logs
+[bold]Privacy and safety:[/bold]
+  Status never reconnects, runs repair, changes routing, or probes a remote host.
+  It reads only local daemon/proxy state, local ports, and saved local history.
+""",
+
+"route": """
+[bold cyan]blackout route[/bold cyan]
+Rank locally ready engines without contacting remote nodes.
+
+[bold]Usage:[/bold]
+  blackout route
+
+[bold]Evidence used:[/bold]
+  • Current platform support
+  • Installed local engine binaries
+  • Saved proxy protocols
+  • Country profile and explicit engine preference
+  • Saved local latency/loss history
+
+[bold]Safety:[/bold]
+  This dashboard does not download binaries, probe configs, start engines, or
+  change settings/routes. [bold]blackout connect[/bold] uses the highest ready
+  recommendation when no engine is explicitly supplied.
+""",
+
+"theme": """
+[bold cyan]blackout theme[/bold cyan]
+Set Blackout Kit's Rich terminal palette.
+
+[bold]Usage:[/bold]
+  blackout theme
+  blackout theme dark
+  blackout theme light
+
+[bold]Note:[/bold]
+  This changes only colors printed by Blackout Kit. It does not alter Windows
+  Terminal, PowerShell, Linux terminal settings, or the graphical application.
 """,
 
 "connect": """
@@ -221,24 +257,34 @@ Smart one-command connect: scan → pick best engine → start in background.
 
 "fix": """
 [bold cyan]blackout fix[/bold cyan]
-Safely repair post-crash Windows network state in one command.
+Safely repair post-crash Blackout Kit network state in one command.
 
-[bold]Default targeted recovery:[/bold]
+[bold]Windows targeted recovery:[/bold]
   ✓ Clears stale Blackout system proxy settings
   ✓ Removes only routes owned by detected stale Blackout virtual adapters
   ✓ Restores DHCP DNS only when a connected physical adapter still uses loopback DNS
   ✓ Restarts only the deterministic BlackoutKit-TUN adapter when unhealthy
   ✓ Flushes DNS without resetting Winsock, TCP/IP, or DHCP
 
-[bold]Safety boundary:[/bold]
-  • Stop Blackout first — recovery skips all mutations while its daemon is active
-  • Healthy custom DNS, Wi-Fi/Ethernet, WireGuard, and third-party VPN adapters are not changed
+[bold]Linux targeted recovery:[/bold]
+  ✓ Removes only the `inet blackoutkit` / `BLACKOUTKIT_*` firewall objects
+  ✓ Removes only the deterministic BlackoutKit-TUN interface
+  ✓ Flushes the local DNS cache when a supported cache service is active
+  ✓ Never flushes system routes, changes NetworkManager, rewrites resolver config,
+    or touches third-party VPN interfaces
 
 [bold]Usage:[/bold]
-  blackout fix                          Run the safe targeted recovery
+  blackout fix                          Run safe targeted recovery
   blackout tools netfix                 Same safe recovery flow
-  blackout fix --full-route-reset       Emergency only: runs route -f, then renews DHCP
-  blackout fix --full-stack-reset       Emergency only: resets Winsock, TCP/IP, autotuning, and DHCP
+  blackout fix --flush-arp              Explicitly flush ARP/neighbor cache
+  blackout tools arp-flush              Same explicit ARP/neighbor repair
+  blackout fix --full-route-reset       Windows emergency only: runs route -f, then renews DHCP
+  blackout fix --full-stack-reset       Windows emergency only: resets Winsock, TCP/IP, autotuning, and DHCP
+
+[bold]Safety boundary:[/bold]
+  • Stop Blackout first — recovery skips all mutations while its daemon is active
+  • ARP flushing may briefly interrupt LAN neighbor discovery, so it is never automatic
+  • On Linux, run system recovery with sudo
 
 [bold]Warning:[/bold]
   --full-route-reset deletes every IPv4 route, including unrelated VPN and custom LAN routes.
@@ -300,7 +346,15 @@ Manage V2Ray proxy configurations.
   trojan://password@127.0.0.1:40443?security=tls&sni=www.hcaptcha.com
             &type=ws&path=/ws&host=www.hcaptcha.com
 
-[bold]Free subscription sources:[/bold]
+[bold]VLESS REALITY configs:[/bold]
+  Standard VLESS REALITY URIs work with [bold]blackout connect xray[/bold]
+  and [bold]blackout connect tun[/bold]. REALITY is a VLESS security mode,
+  not a separate engine command. Required fields are security=reality, sni,
+  and pbk/publicKey; supported transports are tcp, ws, and grpc. Import the
+  URI only from a server operator you trust. Config lists show only protocol,
+  transport, and label; they never print credentials or REALITY key material.
+
+  [bold]Free subscription sources:[/bold]
   github.com/barry-far/V2ray-Config
   github.com/Mohammadgb0078/IRV2ray
   t.me/patterniha  (Telegram — SNI-specific configs)
@@ -547,31 +601,27 @@ Three privacy levels — choose based on your threat model.
 
 "killswitch": """
 [bold cyan]Kill Switch[/bold cyan]
-Blocks ALL internet if the proxy goes down.
+Blocks direct internet traffic if the proxy or tunnel goes down.
 
-[bold]Purpose:[/bold]
-  Without a kill switch, if your proxy crashes, your traffic goes
-  out unfiltered — the ISP sees everything. The kill switch prevents this
-  by blocking all outbound traffic except through the proxy ports.
+[bold]Windows:[/bold]
+  Uses Windows Firewall per-process rules for the managed proxy runtime.
+
+[bold]Linux:[/bold]
+  Uses only an owned `inet blackoutkit` nftables table, with iptables/ip6tables
+  fallback. Before enabling, Blackout Kit resolves the configured upstream proxy
+  into literal IP:port rules. It permits loopback, LAN/DHCP, BlackoutKit-TUN, and
+  that exact endpoint; it refuses activation if a safe endpoint cannot be resolved.
 
 [bold]Usage:[/bold]
   blackout killswitch on                Enable kill switch
   blackout killswitch off               Disable kill switch
-  blackout killswitch status            Check if active (queries Windows Firewall)
-
-[bold]What it blocks:[/bold]
-  • All outbound traffic  (except proxy ports 10808, 10809, 40443, 9050)
-  • LAN traffic is allowed (192.168.*, 10.*, 172.16.*)
-  • Port 853 TCP+UDP is blocked  → prevents DoH/DoT DNS leaks
+  blackout killswitch test              Check if active
 
 [bold]Requirements:[/bold]
-  Administrator privileges required.
-
-[bold]Auto-enable in LEGEND mode:[/bold]
-  [bold]blackout mode legend[/bold] enables the kill switch automatically.
+  Administrator privileges on Windows; sudo/root on Linux.
 
 [bold]Warning:[/bold]
-  If you enable kill switch and the proxy is stopped, you lose internet.
+  If you enable the kill switch and stop the proxy, you lose direct internet.
   Run [bold]blackout killswitch off[/bold] to restore direct access.
 """,
 
@@ -599,7 +649,8 @@ Full network diagnostic and utility toolkit.
   cert-check <host> --allow  Allow host in LEGEND mode (self-signed bypass)
   hotspot               Toggle Windows Mobile Hotspot on/off
   share-vpn             Share your VPN via ICS (Internet Connection Sharing)
-  netfix                Safe post-crash recovery: stale routes, loopback DNS, BlackoutKit-TUN, DNS cache
+  netfix                Safe post-crash recovery: Blackout-owned routes/firewall/TUN and DNS cache
+  arp-flush              Explicitly flush local ARP/neighbor cache (may briefly affect LAN discovery)
 
 [bold]Background daemon reconnect:[/bold]
   Failed engines restart immediately, then retry with capped exponential backoff
@@ -803,7 +854,7 @@ Proactively check any server's TLS certificate and apply per-mode policy.
   • Subject + Issuer CN
   • Expiry date and days remaining
   • Self-signed detection (subject == issuer)
-  • Strict TLS validation (same as what xray does in LEGEND mode)
+  • Strict TLS validation for normal TLS configurations in LEGEND mode
   • Per-mode policy: what allowInsecure would be for your current mode
 
 [bold]Per-mode policy:[/bold]
@@ -811,8 +862,13 @@ Proactively check any server's TLS certificate and apply per-mode policy.
   PRIVATE → allowInsecure = True  always — but logs a warning if cert is bad
   LEGEND  → allowInsecure = False when cert is KNOWN bad — hard refuses connection
 
+[bold]REALITY note:[/bold]
+  This command applies only to normal TLS configurations. VLESS REALITY uses
+  XRay's REALITY handshake and configured public key instead, so it does not
+  run a TLS certificate probe or use this certificate policy.
+
 [bold]Auto-detection:[/bold]
-  When xray starts, the cert is probed automatically (3s timeout):
+  For normal TLS configs, xray probes the cert automatically (3s timeout):
     • LEGEND mode: sync probe — blocks start if cert is bad
     • PRIVATE mode: background probe — warns but connects
     • SPEED mode:   no probe — connects immediately
@@ -919,7 +975,7 @@ Blackout Kit natively supports 5 countries with tailored engine + DNS recommenda
 
 _CATEGORIES: dict[str, list[str]] = {
     "Getting Started":  ["quick_start", "faq", "countries", "bins", "network"],
-    "Core Commands":    ["start", "stop", "scan", "connect", "fix", "status", "emergency", "mode"],
+    "Core Commands":    ["start", "stop", "scan", "connect", "fix", "status", "route", "theme", "emergency", "mode"],
     "Configuration":    ["settings", "config"],
     "Engines":          ["engines", "vpn", "warp", "neighbor"],
     "Security":         ["security", "killswitch"],
@@ -936,7 +992,9 @@ _SUMMARIES: dict[str, str] = {
     "scan":          "Find the fastest Cloudflare IP for your location",
     "connect":       "One command: scan + pick best engine + start",
     "fix":           "Auto-diagnose and repair common issues",
-    "status":        "Check what's running and whether the proxy works",
+    "status":        "Read local daemon, proxy-port, and reconnect status (or watch it live)",
+    "route":         "Rank locally ready engines without probing remote nodes",
+    "theme":         "Set Blackout Kit's terminal-only dark/light Rich palette",
     "emergency":     "Try every engine until one connects",
     "settings":      "View and change all configuration settings",
     "config":        "Add, import, and manage V2Ray configs",

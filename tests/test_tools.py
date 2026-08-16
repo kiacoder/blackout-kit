@@ -84,6 +84,53 @@ def test_tun_config_uses_deterministic_blackout_interface_name():
     assert TUNEngine()._generate_singbox_config()["inbounds"][0]["interface_name"] == "BlackoutKit-TUN"
 
 
+def test_default_recovery_never_requests_arp_flush(monkeypatch):
+    monkeypatch.setattr(tools.sys, "platform", "linux")
+    monkeypatch.setattr("blackoutkit.daemon.get_state", lambda: None)
+    recovery = MagicMock(return_value=[])
+    monkeypatch.setattr("blackoutkit.linux_network.run_network_recovery", recovery)
+
+    assert tools.run_network_recovery() == []
+
+    recovery.assert_called_once_with(from_daemon=False)
+
+
+def test_linux_recovery_preserves_live_daemon(monkeypatch):
+    monkeypatch.setattr(tools.sys, "platform", "linux")
+    monkeypatch.setattr("blackoutkit.daemon.get_state", lambda: {"engine": "tun"})
+    recovery = MagicMock()
+    monkeypatch.setattr("blackoutkit.linux_network.run_network_recovery", recovery)
+
+    results = tools.run_network_recovery()
+
+    assert results[0]["ok"] is True
+    assert "Skipped while Blackout daemon is active" in results[0]["detail"]
+    recovery.assert_not_called()
+
+
+def test_explicit_linux_recovery_arp_flush_is_opt_in(monkeypatch):
+    monkeypatch.setattr(tools.sys, "platform", "linux")
+    monkeypatch.setattr("blackoutkit.linux_network.run_network_recovery", lambda **_kwargs: [])
+    arp_flush = MagicMock(return_value=(True, "flushed"))
+    monkeypatch.setattr(tools, "flush_arp_cache", arp_flush)
+
+    results = tools.run_network_recovery(flush_arp=True)
+
+    arp_flush.assert_called_once()
+    assert results == [{"name": "Flush ARP cache", "ok": True, "detail": "flushed"}]
+
+
+def test_daemon_recovery_never_requests_explicit_arp_flush(monkeypatch):
+    monkeypatch.setattr(tools.sys, "platform", "linux")
+    monkeypatch.setattr("blackoutkit.linux_network.run_network_recovery", lambda **_kwargs: [])
+    arp_flush = MagicMock(return_value=(True, "flushed"))
+    monkeypatch.setattr(tools, "flush_arp_cache", arp_flush)
+
+    tools.run_network_recovery(flush_arp=True, from_daemon=True)
+
+    arp_flush.assert_not_called()
+
+
 def test_loopback_dns_selection_excludes_virtual_and_custom_dns():
     snapshot = {
         "adapters": [

@@ -14,6 +14,7 @@ import fnmatch
 import json
 import tempfile
 import threading
+import sys
 import urllib.error
 import urllib.request
 import zipfile
@@ -55,6 +56,20 @@ class BinInfo:
 # ──────────────────────────── Registry ───────────────────────────
 
 BIN_REGISTRY: dict[str, BinInfo] = {
+
+    "linux_engine": BinInfo(
+        key           = "linux_engine",
+        display_name  = "Blackout Engine (Linux x86_64)",
+        description   = "Embedded XRay and sing-box runtime for Linux TUN",
+        github_repo   = "kiacoder/blackout-kit",
+        asset_pattern = "blackout-engine-linux-amd64",
+        asset_exclude = None,
+        extract_map   = {"blackout-engine-linux-amd64": "blackout-engine"},
+        output_bins   = ["blackout-engine"],
+        required      = False,
+        manual_url    = "https://github.com/kiacoder/blackout-kit/releases",
+        manual_note   = "Download the Linux x86_64 engine asset and place it in bins/ as blackout-engine.",
+    ),
 
     "goodbyedpi": BinInfo(
         key           = "goodbyedpi",
@@ -336,20 +351,24 @@ def verify_binary(path: Path) -> tuple[bool, str]:
 
     ext = path.suffix.lower()
 
+    try:
+        raw = path.read_bytes()
+    except (OSError, MemoryError) as exc:
+        return False, f"Verification read error: {exc}"
+
     if ext in (".exe", ".dll", ".sys"):
-        try:
-            raw = path.read_bytes()
-            if not raw.startswith(_PE_MAGIC):
-                return False, "Missing MZ DOS header — not a valid PE executable"
-            # PE signature is at offset 0x3C (pointer to PE header)
-            pe_offset = int.from_bytes(raw[0x3C:0x40], "little")
-            if pe_offset + 4 > len(raw) or raw[pe_offset:pe_offset + 4] != _PE_SIGNATURE:
-                return False, (
-                    f"PE signature not found (offset {pe_offset:#x}) — "
-                    "file is corrupted or not a valid Windows binary"
-                )
-        except (OSError, MemoryError) as e:
-            return False, f"Verification read error: {e}"
+        if not raw.startswith(_PE_MAGIC):
+            return False, "Missing MZ DOS header — not a valid PE executable"
+        # PE signature is at offset 0x3C (pointer to PE header)
+        pe_offset = int.from_bytes(raw[0x3C:0x40], "little")
+        if pe_offset + 4 > len(raw) or raw[pe_offset:pe_offset + 4] != _PE_SIGNATURE:
+            return False, (
+                f"PE signature not found (offset {pe_offset:#x}) — "
+                "file is corrupted or not a valid Windows binary"
+            )
+    elif path.name == "blackout-engine" or path.name.startswith("blackout-engine-linux-"):
+        if not raw.startswith(b"\x7fELF"):
+            return False, "Missing ELF header — not a valid Linux executable"
 
     return True, ""
 
@@ -512,9 +531,11 @@ def download_binary(
                         f"  The zip structure may have changed in {tag}. Report at github.com/kiacoder/blackout-kit/issues"
                     )
 
-                # Verify extracted binaries have valid PE headers
+                # Verify extracted binaries before finalizing them.
                 for out_name in info.output_bins:
                     dest = BINS_DIR / out_name
+                    if out_name == "blackout-engine" and sys.platform.startswith("linux"):
+                        dest.chmod(dest.stat().st_mode | 0o111)
                     ok_verify, msg = verify_binary(dest)
                     if not ok_verify:
                         try:

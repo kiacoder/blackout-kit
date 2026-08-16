@@ -18,7 +18,7 @@
 **BlackoutKit (`blackout-kit`) — Universal DPI Bypass & Censorship Circumvention Toolkit**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)
-![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078d4?style=flat-square&logo=windows)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
 ![Version](https://img.shields.io/badge/Version-1.1.1-orange?style=flat-square)
@@ -43,6 +43,7 @@
 - [Engines](#engines)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [VLESS REALITY](#vless-reality)
 - [All Commands](#all-commands)
 - [Security Modes](#security-modes)
 - [Settings Reference](#settings-reference)
@@ -175,7 +176,7 @@ Blackout Kit coordinates **16 bypass engines**. Each serves a different threat m
 | Engine | Protocol | What It Does | Best For |
 |--------|----------|--------------|----------|
 | **SNI Spoofing** | TCP injection | Injects a fake TLS ClientHello before the real handshake — the DPI sees an allowed domain | Iran, Iraq: ISP-level DPI |
-| **XRay / V2Ray** | VLESS · Trojan · WS+TLS | Encrypted proxy tunnel with TLS fingerprint camouflage | All countries |
+| **XRay / V2Ray** | VLESS · Trojan · TLS / REALITY | Encrypted proxy tunnel with XRay transport support | All countries |
 | **GoodbyeDPI** | TCP fragmentation | Splits TCP packets so the DPI engine can't reassemble the SNI field | UK, light DPI |
 | **Cloudflare WARP** | WireGuard / MASQUE | Tunnels through Cloudflare's network | All countries |
 | **Psiphon** | Multi-protocol VPN | Automatic protocol switching: SSH, meek, obfuscated SSH | Heavy blackouts |
@@ -240,10 +241,49 @@ python blackout.py bins download
 
 ### Requirements
 
-- **Python 3.10+**
-- **Windows 10 or 11** (x64)
-- Administrator privileges (for kill switch, Defender exclusion, VPN engines)
-- The packages in `requirements.txt`: `rich`, `httpx`, `psutil`, `cryptography`
+**Windows**
+- Python 3.10+
+- Windows 10 or 11 (x64)
+- Administrator privileges for the kill switch, Defender exclusion, and VPN engines
+
+**Linux x86_64 — Ubuntu/Debian, Fedora, and Arch**
+- Python 3.10+, `iproute2`, and either `nftables` or both `iptables` and `ip6tables`
+- The Linux `blackout-engine` release asset in `bins/` with execute permission
+- `sudo` for system-wide TUN routing, firewall protection, and targeted cleanup
+- A direct VLESS (including REALITY), Trojan, Hysteria2, or TUIC configuration; the Windows SNI packet-injection fallback and VMess runtime path are not available on Linux
+
+On Linux, the supported system-tunnel path is XRay → sing-box TUN. Windows-only engines and desktop controls remain unavailable there. The packages in `requirements.txt` supply the shared Python CLI.
+
+### Linux Quick Start
+
+```bash
+python3 -m pip install blackout-kit
+mkdir -p bins
+# Download the Linux x86_64 `blackout-engine` asset from the matching release.
+chmod +x bins/blackout-engine
+blackout config add '<your-vless-or-trojan-uri>'
+sudo blackout connect tun --background
+```
+
+Use `sudo blackout doctor` to inspect Linux prerequisites. `sudo blackout stop` removes Blackout Kit's own TUN/firewall state. The Linux kill switch uses only an endpoint-scoped `inet blackoutkit` nftables table, with `iptables`/`ip6tables` fallback; it refuses to enable unless it can validate an upstream proxy endpoint.
+
+To repair a stale crash state, run:
+
+```bash
+sudo blackout fix
+```
+
+This removes only `BlackoutKit-TUN`, Blackout-owned firewall rules, and the dedicated routing table `20220`; it does not reset system routes, NetworkManager, DNS configuration, or third-party VPNs. ARP repair is deliberately separate because it briefly affects local-network discovery:
+
+```bash
+sudo blackout tools arp-flush
+```
+
+or:
+
+```bash
+sudo blackout fix --flush-arp
+```
 
 ---
 
@@ -264,6 +304,22 @@ python blackout.py emergency
 ```
 
 That's it. Blackout Kit handles the rest — sets your system proxy, monitors the connection, and auto-switches if the engine drops.
+
+---
+
+## VLESS REALITY
+
+Blackout Kit supports **client-side VLESS REALITY** through the existing XRay path. Add or import a standard `vless://` URI, then connect with `blackout connect xray`; use `blackout connect tun` when a system-wide tunnel is required. REALITY is a VLESS security mode, not a separate `blackout reality` engine.
+
+A compatible URI needs `security=reality`, `sni`, and `pbk` (or `publicKey`). `sid`/`shortId`, `spx`/`spiderX`, `flow`, `fp`, and `serviceName` are preserved when supplied. TCP, WebSocket, and gRPC transports are supported.
+
+```text
+vless://UUID@server:443?security=reality&sni=server-name&pbk=server-public-key&type=tcp#label
+```
+
+Use a trusted server configuration and key supplied by that server's operator. Blackout Kit does not discover servers, generate server keys, change server-side XRay configuration, or guarantee anonymity or resistance to detection. Lists and tests display only the protocol, transport mode, and optional label, not URI credentials or REALITY key material.
+
+`blackout tools cert-check` applies to normal TLS configurations only. REALITY verification happens inside XRay's REALITY handshake using the configured public key, so Blackout Kit does not run its TLS certificate probe or certificate policy for a REALITY connection.
 
 ---
 
@@ -297,7 +353,13 @@ blackout emergency                 Try all engines in order until one works
 blackout emergency --background
 
 blackout stop                      Stop the background daemon
-blackout status                    Show daemon status + connection health
+blackout status                    Show a read-only local daemon/proxy snapshot
+blackout status --watch            Refresh the local snapshot until Ctrl+C
+blackout status --watch --interval 5
+blackout route                     Rank engines from local readiness and health history
+blackout theme                     Show the active Blackout Kit terminal palette
+blackout theme light               Use Blackout Kit's light Rich palette only
+blackout theme dark                Use Blackout Kit's dark Rich palette only
 blackout logs                      View daemon log
 
 # Automatic daemon reconnect policy (defaults: 2s initial delay, 60s cap)
@@ -399,6 +461,16 @@ When a background engine crashes or its proxy port closes, the daemon attempts a
 
 After the first failed restart, the daemon may remove only verified stale Blackout routes, loopback DNS, and Blackout-owned virtual adapters before retrying. It preserves the active system proxy and kill switch, and it never runs Winsock/TCP-IP/DHCP resets or `route -f`; those remain manual recovery actions.
 
+### Smart Routing, Live Status, and Prompts
+
+`blackout route` is a local readiness dashboard. It ranks engines using the current platform, installed local components, saved proxy protocols, an explicitly pinned country profile when present, explicit preference, and recorded local health history. It does **not** probe remote nodes, download binaries, look up an ISP, or change settings/network routes.
+
+`blackout connect` without an engine opens a small wizard only in an interactive terminal; it can accept the recommendation, select an engine manually, or cancel. Any explicit engine argument or option is authoritative. In pipes, CI, and other non-interactive sessions, commands never wait for a prompt.
+
+`blackout status --watch` (also available as **Live Status** in the zero-flag terminal menu) only reads daemon state, system-proxy state, local proxy ports, and saved local stability history. It never reconnects, runs repair, or sends an external connectivity probe. `blackout theme dark|light` changes the Rich colors printed by Blackout Kit only; it does not modify Windows Terminal, PowerShell, a Linux terminal, or GUI appearance settings.
+
+Unexpected CLI errors display a safe redacted panel with non-destructive next steps. Existing daemon and engine technical details stay in local logs rather than exposing configuration credentials or subscription URLs in the terminal.
+
 ### Settings
 
 ```
@@ -494,6 +566,7 @@ Run `blackout settings list` to see all available settings. Key ones:
 | `auto_set_proxy` | `true` | Auto-configure Windows system proxy |
 | `engine_order` | `[]` | Emergency mode engine order (empty = country profile default) |
 | `country` | `""` | Pinned country code (empty = auto-detect) |
+| `terminal_theme` | `dark` | Blackout Kit Rich palette (`dark` / `light`) only |
 | `kill_switch` | `false` | Block all non-proxy traffic |
 | `wg_config_file` | `""` | Path to WireGuard .conf file |
 | `openvpn_config` | `""` | Path to .ovpn file |

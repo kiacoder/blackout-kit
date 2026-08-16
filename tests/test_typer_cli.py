@@ -12,8 +12,58 @@ def test_documented_commands_are_registered():
     result = runner.invoke(typer_cli.app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("help", "country", "bins", "doctor", "emergency", "logs", "update"):
+    for command in ("help", "country", "bins", "doctor", "emergency", "logs", "update", "route", "theme"):
         assert command in result.output
+
+
+def test_status_watch_options_are_registered():
+    result = runner.invoke(typer_cli.app, ["status", "--help"])
+
+    assert result.exit_code == 0
+    assert "--watch" in result.output
+    assert "--interval" in result.output
+
+
+def test_theme_forwards_palette():
+    with patch("blackoutkit.cli.cmd_theme") as cmd_theme:
+        typer_cli.theme("light")
+
+    assert cmd_theme.call_args.args[0].palette == "light"
+
+
+def test_status_forwards_watch_settings():
+    with patch("blackoutkit.cli.cmd_status") as cmd_status:
+        typer_cli.status(watch=True, interval=3.0)
+
+    args = cmd_status.call_args.args[0]
+    assert args.watch is True
+    assert args.interval == 3.0
+
+
+def test_noninteractive_connect_preserves_missing_engine_for_smart_resolution(monkeypatch):
+    monkeypatch.setattr(typer_cli, "is_interactive", lambda: False)
+    with patch("blackoutkit.cli.cmd_connect") as cmd_connect:
+        typer_cli.connect(pos_engine=None, engine=None, background=False, iran=False)
+
+    args = cmd_connect.call_args.args[0]
+    assert args.pos_engine is None
+    assert args.engine is None
+
+
+def test_noninteractive_config_add_does_not_prompt(monkeypatch):
+    monkeypatch.setattr(typer_cli, "ask_text", lambda *_args, **_kwargs: None)
+    with patch("blackoutkit.cli.cmd_config") as cmd_config:
+        typer_cli.cfg_add(None)
+
+    cmd_config.assert_not_called()
+
+
+def test_noninteractive_hotspot_does_not_prompt(monkeypatch):
+    monkeypatch.setattr(typer_cli, "ask_choice", lambda *_args, **_kwargs: None)
+    with patch("blackoutkit.cli.cmd_tools") as cmd_tools:
+        typer_cli.tools_hotspot(None)
+
+    cmd_tools.assert_not_called()
 
 
 def test_documented_options_are_registered():
@@ -35,6 +85,10 @@ def test_documented_options_are_registered():
 
     result = runner.invoke(typer_cli.app, ["fix", "--help"])
     assert "--full-stack-reset" in result.output
+    assert "--flush-arp" in result.output
+
+    result = runner.invoke(typer_cli.app, ["tools", "--help"])
+    assert "arp-flush" in result.output
 
 
 def test_doctor_forwards_fix_options():
@@ -95,11 +149,19 @@ def test_bins_update_forwards_to_legacy_dispatcher():
 
 def test_fix_forwards_explicit_network_reset_flags():
     with patch("blackoutkit.cli.cmd_fix") as cmd_fix:
-        typer_cli.fix(full_route_reset=True, full_stack_reset=True)
+        typer_cli.fix(full_route_reset=True, full_stack_reset=True, flush_arp=True)
 
     args = cmd_fix.call_args.args[0]
     assert args.full_route_reset is True
     assert args.full_stack_reset is True
+    assert args.flush_arp is True
+
+
+def test_tools_arp_flush_forwards_to_legacy_dispatcher():
+    with patch("blackoutkit.cli.cmd_tools") as cmd_tools:
+        typer_cli.tools_arp_flush()
+
+    assert cmd_tools.call_args.args[0].tools_command == "arp-flush"
 
 
 def test_tools_netfix_uses_shared_default_recovery():

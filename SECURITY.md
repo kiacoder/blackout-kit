@@ -158,8 +158,19 @@ This tool intentionally trades some security for circumvention effectiveness:
   to bypass DPI. Use LEGEND mode for strict cert validation.
 - **Config encryption** is per-machine, not portable — prevents at-rest
   discovery but not offline brute-force.
-- **Kill switch** uses Windows Firewall — a kernel-level adversary can
-  bypass it. Defense in depth recommended.
+- **Kill switch** uses Windows Firewall on Windows and a Blackout Kit-owned
+  nftables table (or iptables/ip6tables fallback) on Linux. A kernel-level
+  adversary can bypass either. On Linux it permits only validated upstream
+  endpoint IPs, loopback, LAN/DHCP, and `BlackoutKit-TUN`; it refuses to enable
+  if it cannot resolve a safe endpoint allowlist.
+- **Linux system networking** requires `sudo` and supports XRay, TUN,
+  Hysteria2, and TUIC on x86_64. Cleanup removes only `inet blackoutkit`,
+  `BLACKOUTKIT_*`, the dedicated routing table `20220`, and the deterministic
+  `BlackoutKit-TUN` interface; it never flushes system routes or manages
+  third-party VPN interfaces.
+- **ARP repair is explicit** — `blackout tools arp-flush` and
+  `blackout fix --flush-arp` can briefly interrupt LAN neighbor discovery, so
+  default recovery and daemon reconnects never run it.
 - **Plaintext credentials** — IKEv2/SoftEther passwords are stored as plaintext
   in `settings.json`. Encrypt with `blackout config encrypt` or use Legend mode.
 - **Legacy Pion transitives** — Dependabot alerts #28 (`github.com/pion/dtls/v2`)

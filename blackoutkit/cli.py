@@ -18,7 +18,7 @@ from rich.live import Live
 from rich import box
 
 from . import __version__
-from .theme import console, print_banner, make_table, latency_color, refresh_console_theme
+from .theme import console, print_banner, make_table, latency_color, refresh_console_theme, is_interactive, ask_choice, confirm
 from . import settings as cfg
 from . import daemon
 
@@ -42,6 +42,10 @@ from . import country_profiles as cp
 ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "legend"]
 
 def _get_engine_classes(name: str) -> tuple:
+    if sys.platform.startswith("linux") and name == "tun":
+        from .engines.xray import XRayEngine
+        from .engines.tun import TUNEngine
+        return (XRayEngine, TUNEngine)
     if name == "sni":
         from .engines.sni import SNIEngine
         from .engines.xray import XRayEngine
@@ -116,6 +120,48 @@ AUTO_DOWNLOAD_DEPENDENCIES = {
     "appsscript": [],
 }
 
+_LINUX_SUPPORTED_ENGINES = frozenset({"xray", "tun", "hysteria2", "tuic"})
+
+
+def _platform_engine_error(name: str) -> str | None:
+    if not sys.platform.startswith("linux"):
+        return None
+    if name in _LINUX_SUPPORTED_ENGINES:
+        return None
+    return (
+        f"{name} is currently Windows-only. Linux currently supports XRay, "
+        "TUN, Hysteria2, and TUIC through the managed blackout-engine runner."
+    )
+
+
+def _linux_default_engine(name: str) -> str:
+    if sys.platform.startswith("linux") and name in {"auto", "sni", "gdpi", "psiphon", "warp", "legend"}:
+        return "tun"
+    return name
+
+
+def _linux_dependencies(name: str) -> list[str]:
+    if sys.platform.startswith("linux") and name in {"xray", "tun", "hysteria2", "tuic"}:
+        return ["linux_engine"]
+    return AUTO_DOWNLOAD_DEPENDENCIES.get(name, [])
+
+
+def _linux_runner_available() -> bool:
+    from . import BINS_DIR
+
+    return (BINS_DIR / "blackout-engine").is_file()
+
+
+def _linux_missing_dependencies(name: str) -> list[str]:
+    if _linux_dependencies(name) == ["linux_engine"] and not _linux_runner_available():
+        return ["linux_engine"]
+    return []
+
+
+def _linux_dependency_hint() -> str:
+    return "Install the Linux x86_64 Blackout Kit release asset so bins/blackout-engine is available."
+
+
 # Snapshot of settings before --iran changes were applied.
 # Restored by cmd_start() cleanup so the Iran profile doesn't persist permanently.
 _pre_iran_snapshot: dict | None = None
@@ -147,8 +193,18 @@ def _start_engine_stack(name: str):
     """Instantiate and start all engines in a stack. Returns running list."""
     from . import downloader as dl
 
-    deps = AUTO_DOWNLOAD_DEPENDENCIES.get(name, [])
-    if deps:
+    platform_error = _platform_engine_error(name)
+    if platform_error:
+        console.print(f"[error]{platform_error}[/error]")
+        return []
+
+    missing_linux = _linux_missing_dependencies(name)
+    if missing_linux:
+        console.print(f"[error]✗ {_linux_dependency_hint()}[/error]")
+        return []
+
+    deps = _linux_dependencies(name)
+    if deps and not sys.platform.startswith("linux"):
         installed = dl.check_installed()
         missing = [k for k in deps if not installed.get(k, False)]
         if missing:
@@ -451,13 +507,13 @@ def cmd_test(args):
 
     table = make_table(
         "Config List",
-        [("#", "dim"), ("Proto", "cyan"), ("SNI Domain", "yellow"),
+        [("#", "dim"), ("Proto", "cyan"), ("Transport", "yellow"),
          ("Type", ""), ("Name", "white")],
         [],
     )
     for i, c in enumerate(configs, 1):
         ctype = "[success]SNI spoofer[/success]" if c.is_sni_compatible() else "[muted]direct[/muted]"
-        table.add_row(str(i), c.protocol, c.sni or "-", ctype, c.name or "-")
+        table.add_row(str(i), c.protocol, c.transport_label(), ctype, c.name or "-")
 
     console.print(table)
 
@@ -479,7 +535,11 @@ def _health_check_target(proxy_info):
 
 
 def cmd_start(args):
-    engine_name = _resolve_engine_name(args)
+    engine_name = _linux_default_engine(_resolve_engine_name(args))
+    platform_error = _platform_engine_error(engine_name)
+    if platform_error:
+        console.print(f"[error]{platform_error}[/error]")
+        return
     background  = getattr(args, "background", False)
     iran        = getattr(args, "iran", False)
     proxy_info = None
@@ -567,9 +627,22 @@ def cmd_start(args):
             return
 
     # Normal foreground mode (admin or no elevation needed)
+    kill_switch_enabled = False
+    if sys.platform.startswith("linux") and s.get("kill_switch", False):
+        if not sec.prepare_linux_kill_switch(engine_name):
+            console.print("[error]Could not resolve a safe Linux kill-switch endpoint; refusing to start.[/error]")
+            return
+        if not sec.enable_kill_switch(engine_name):
+            console.print("[error]Linux kill switch could not be enabled; refusing to start the system tunnel.[/error]")
+            return
+        kill_switch_enabled = True
+
     engines = _start_engine_stack(engine_name)
 
     if not engines:
+        if kill_switch_enabled:
+            sec.disable_kill_switch()
+            sec.clear_linux_kill_switch_endpoint(engine_name)
         console.print("[error]No engines could start. Make sure binaries are in bins/.[/error]")
         return
 
@@ -612,6 +685,9 @@ def cmd_start(args):
             eng.stop()
         if s.get("auto_set_proxy"):
             clear_system_proxy()
+        if kill_switch_enabled:
+            sec.disable_kill_switch()
+            sec.clear_linux_kill_switch_endpoint(engine_name)
         _restore_iran_snapshot()
         console.print("[success]Stopped. System proxy cleared.[/success]")
 
@@ -658,7 +734,9 @@ def cmd_emergency(args):
     s             = cfg.load()
     em_profile    = _get_active_profile()
     default_order = em_profile.engine_order if em_profile else ["sni", "gdpi", "psiphon"]
-    order         = s.get("engine_order") or default_order
+    order = s.get("engine_order") or default_order
+    if sys.platform.startswith("linux"):
+        order = ["tun", "xray", "hysteria2", "tuic"]
     active        = []
     health_target = None
     proxy_info = None
@@ -722,53 +800,14 @@ def cmd_emergency(args):
         console.print("[success]Stopped.[/success]")
 
 
-def cmd_status(args):
-    s      = cfg.load()
-    pid    = daemon.get_pid()
-    state  = daemon.get_state()
-    proxy  = get_proxy_status()
-
-    console.print()
-
+def _status_snapshot() -> dict:
+    """Collect only local daemon, proxy, port, and stability state."""
+    settings = cfg.load()
+    pid = daemon.get_pid()
+    state = daemon.get_state()
+    proxy = get_proxy_status()
     active_engine = state.get("engine", "unknown") if state else "unknown"
-    started = state.get("started", "-") if state else "-"
-    daemon_status = state.get("status", "connected") if state else "unknown"
-
-    # Daemon panel
-    if pid:
-        reconnect_info = ""
-        if daemon_status == "reconnecting":
-            reconnect_info = (
-                f"  Status:  [warning]Reconnecting[/warning]"
-                f" ({state.get('last_failure', 'connection lost')})\n"
-                f"  Next try: {state.get('next_retry_delay', '?')}s\n"
-            )
-        elif daemon_status == "failed":
-            reconnect_info = f"  Status:  [error]Reconnect attempts exhausted[/error]\n"
-        daemon_info = (
-            f"[success]● Running[/success]  (PID {pid})\n"
-            f"  Engine:  [bold]{active_engine}[/bold]\n"
-            f"  Started: {started}\n"
-            f"{reconnect_info}"
-            f"  Log:     [dim]{daemon.LOG_FILE}[/dim]"
-        )
-    else:
-        daemon_info = "[muted]○ Not running[/muted]"
-
-    console.print(Panel(daemon_info, title="[bold]Daemon[/bold]", border_style="cyan", width=60))
-
-    # System proxy panel
-    if proxy["enabled"]:
-        proxy_info = f"[success]● Active[/success]  →  {proxy['server']}"
-    else:
-        proxy_info = "[muted]○ Off[/muted]"
-    console.print(Panel(proxy_info, title="[bold]System Proxy[/bold]", border_style="cyan", width=60))
-
-    # Connectivity
-    console.print("\n[muted]Running connectivity checks...[/muted]")
-    report = {"direct": test_direct()[0]}
-
-    proxy_target = cfg.get_engine_proxy_details(active_engine, s) if pid else None
+    proxy_target = cfg.get_engine_proxy_details(active_engine, settings) if pid else None
     http_port = None
     socks_port = None
     if proxy_target:
@@ -778,60 +817,139 @@ def cmd_status(args):
         else:
             http_port = port
             if active_engine in ("sni", "xray", "legend"):
-                socks_port = s.get("xray_socks_port", 10808)
+                socks_port = settings.get("xray_socks_port", 10808)
+    return {
+        "settings": settings,
+        "pid": pid,
+        "state": state,
+        "proxy": proxy,
+        "active_engine": active_engine,
+        "http_port": http_port,
+        "socks_port": socks_port,
+        "http_open": test_tcp_port("127.0.0.1", http_port) is not None if http_port else None,
+        "socks_open": test_tcp_port("127.0.0.1", socks_port) is not None if socks_port else None,
+        "stability": sec.get_stability_score(active_engine) if state else None,
+    }
 
-    report["http_proxy_port_open"] = test_tcp_port("127.0.0.1", http_port) is not None if http_port else False
-    report["socks_proxy_port_open"] = test_tcp_port("127.0.0.1", socks_port) is not None if socks_port else False
-    report["http_proxy_latency"] = test_http_proxy(proxy_port=http_port) if http_port else None
-    report["socks_proxy_latency"] = test_socks5_proxy(proxy_port=socks_port) if socks_port else None
 
-    table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
-    table.add_column(style="dim", width=22)
+def _status_panel(snapshot: dict) -> Panel:
+    state = snapshot["state"]
+    pid = snapshot["pid"]
+    if not pid:
+        daemon_info = "[muted]○ Not running[/muted]"
+    else:
+        status = state.get("status", "connected") if state else "unknown"
+        status_info = "[success]● Connected[/success]" if status == "connected" else f"[warning]● {status.title()}[/warning]"
+        if status == "failed":
+            status_info = "[error]● Reconnect attempts exhausted[/error]"
+        retry = ""
+        if status == "reconnecting":
+            retry = f"\n  [muted]Next retry:[/muted] {state.get('next_retry_delay', '?')}s"
+        daemon_info = (
+            f"{status_info}  (PID {pid})\n"
+            f"  [muted]Engine:[/muted]  [bold]{snapshot['active_engine']}[/bold]\n"
+            f"  [muted]Started:[/muted] {state.get('started', '-')}"
+            f"{retry}"
+        )
+    stability = snapshot["stability"]
+    stability_info = "[muted]No local health history[/muted]"
+    if stability and stability.get("avg_ms") is not None:
+        stability_info = (
+            f"avg {stability['avg_ms']:.0f}ms · loss {stability['loss_pct']:.0f}% · "
+            f"{stability['trend']}"
+        )
+    proxy = snapshot["proxy"]
+    proxy_info = f"[success]● Active[/success]  {proxy['server']}" if proxy["enabled"] else "[muted]○ Off[/muted]"
+    table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
+    table.add_column(style="muted", width=18)
     table.add_column()
+    table.add_row("Daemon", daemon_info)
+    table.add_row("System proxy", proxy_info)
+    table.add_row("HTTP local port", "[success]Open[/success]" if snapshot["http_open"] else "[muted]n/a[/muted]" if snapshot["http_open"] is None else "[error]Closed[/error]")
+    table.add_row("SOCKS local port", "[success]Open[/success]" if snapshot["socks_open"] else "[muted]n/a[/muted]" if snapshot["socks_open"] is None else "[error]Closed[/error]")
+    table.add_row("Local stability", stability_info)
+    table.add_row("Security mode", snapshot["settings"].get("security_mode", "speed").upper())
+    table.add_row("Terminal palette", snapshot["settings"].get("terminal_theme", "dark").upper())
+    return Panel(table, title="[heading]Blackout Kit Status[/heading]", border_style="panel.border")
 
-    def ck(ok):
-        return "[success]✓ Yes[/success]" if ok else "[error]✗ No[/error]"
 
-    def lat(ms):
-        return latency_color(ms) if ms is not None else "[error]✗ unreachable[/error]"
+def cmd_status(args):
+    """Show a read-only local status snapshot, optionally refreshing it live."""
+    watch = getattr(args, "watch", False)
+    interval = getattr(args, "interval", 2.0)
+    if not watch:
+        console.print(_status_panel(_status_snapshot()))
+        return
+    try:
+        with Live(_status_panel(_status_snapshot()), console=console, refresh_per_second=4) as live:
+            while True:
+                time.sleep(interval)
+                live.update(_status_panel(_status_snapshot()))
+    except KeyboardInterrupt:
+        console.print("\n[muted]Status watch stopped.[/muted]")
 
-    http_label = f"HTTP proxy port{f' ({http_port})' if http_port else ''}"
-    socks_label = f"SOCKS proxy port{f' ({socks_port})' if socks_port else ''}"
-    inactive_label = "[dim]n/a (daemon off)[/dim]" if not pid else "[dim]n/a[/dim]"
-    table.add_row("Direct internet",       ck(report["direct"]))
-    table.add_row(http_label,               ck(report["http_proxy_port_open"]) if http_port else inactive_label)
-    table.add_row(socks_label,              ck(report["socks_proxy_port_open"]) if socks_port else inactive_label)
-    table.add_row("HTTP proxy latency",    lat(report["http_proxy_latency"]) if http_port else inactive_label)
-    table.add_row("SOCKS5 proxy latency",  lat(report["socks_proxy_latency"]) if socks_port else inactive_label)
 
-    console.print(Panel(table, title="[bold]Connectivity[/bold]", border_style="cyan"))
+def _local_country_profile(settings: dict):
+    code = settings.get("country", "")
+    return cp.get_profile(code) if code else None
 
-    # Security mode + stability panel
-    mode    = sec.get_current_mode()
-    ks_on   = s.get("kill_switch", False)
-    ks_disp = "[red]● ON[/red]" if ks_on else "[muted]○ off[/muted]"
 
-    # Stability stats for the active engine (if known)
-    stability_text = ""
-    if state:
-        eng_name = state.get("engine", "")
-        score    = sec.get_stability_score(eng_name)
-        if score["avg_ms"] is not None:
-            stability_text = (
-                f"\n  [muted]Stability:[/muted]  "
-                f"avg {score['avg_ms']:.0f}ms  "
-                f"loss {score['loss_pct']:.0f}%  "
-                f"trend [{score['trend']}]"
-            )
+def _routing_candidates():
+    from . import downloader
+    from .config.manager import load_configs
+    from .routing import recommend_routes
 
-    console.print(Panel(
-        f"  [muted]Security mode:[/muted]  [bold]{mode.upper()}[/bold]\n"
-        f"  [muted]Kill switch:[/muted]    {ks_disp}"
-        f"{stability_text}\n\n"
-        f"  [dim]Change mode: [bold]blackout mode speed|private|legend[/bold][/dim]",
-        title="[bold]Security[/bold]", border_style="cyan",
-    ))
-    console.print()
+    settings = cfg.load()
+    profile = _local_country_profile(settings)
+    return recommend_routes(
+        settings,
+        country_profile=profile,
+        installed=downloader.check_installed(),
+        protocols={config.protocol for config in load_configs()},
+        stability_scores=sec.all_stability_scores(),
+    )
+
+
+def cmd_route(args):
+    """Display local engine recommendations without probing remote nodes."""
+    candidates = _routing_candidates()
+    if not candidates:
+        console.print(Panel("[warning]No engine is supported on this platform.[/warning]", title="Smart Routing", border_style="yellow"))
+        return None
+    table = Table(box=box.ROUNDED, header_style="table.header")
+    table.add_column("Engine", style="engine")
+    table.add_column("Ready")
+    table.add_column("Local evidence", style="muted")
+    table.add_column("Blockers", style="warning")
+    for candidate in candidates:
+        table.add_row(
+            candidate.engine,
+            "[success]Ready[/success]" if candidate.ready else "[error]Blocked[/error]",
+            candidate.evidence,
+            ", ".join(candidate.blockers) or "—",
+        )
+    recommended = next((candidate for candidate in candidates if candidate.ready), candidates[0])
+    console.print(Panel(table, title=f"[heading]Smart Routing · recommends {recommended.engine}[/heading]", border_style="panel.border"))
+    console.print("[muted]Recommendations use local settings, a pinned country profile when set, installed components, and saved health history only. They do not probe nodes or change connectivity.[/muted]")
+    return recommended
+
+
+def _recommended_engine_name() -> str:
+    candidates = _routing_candidates()
+    candidate = next((candidate for candidate in candidates if candidate.ready), None)
+    return candidate.engine if candidate else "xray"
+
+
+def cmd_theme(args):
+    """Show or set Blackout Kit's terminal-only Rich palette."""
+    palette = getattr(args, "palette", None)
+    if not palette:
+        palette = cfg.load().get("terminal_theme", "dark")
+        console.print(f"[info]Terminal palette:[/info] [bold]{palette}[/bold] (Blackout Kit only)")
+        return
+    cfg.set_value("terminal_theme", palette)
+    refresh_console_theme()
+    console.print(f"[success]✓ Terminal palette set to {palette}.[/success] This does not change your terminal application.")
 
 
 def cmd_logs(args):
@@ -856,19 +974,20 @@ def cmd_config(args):
             return
         table = make_table(
             f"Saved Configs  ({len(configs)})",
-            [("#", "dim"), ("Protocol", "cyan"), ("SNI Domain", "yellow"),
+            [("#", "dim"), ("Protocol", "cyan"), ("Transport", "yellow"),
              ("Compatible", ""), ("Name", "white")],
             [],
         )
         for i, c in enumerate(configs, 1):
             compat = "[success]✓ SNI[/success]" if c.is_sni_compatible() else "[dim]direct[/dim]"
-            table.add_row(str(i), c.protocol, c.sni or "-", compat, c.name or "-")
+            table.add_row(str(i), c.protocol, c.transport_label(), compat, c.name or "-")
         console.print(table)
 
     elif args.config_command == "add":
         try:
             c = add_config(args.uri)
-            console.print(f"[success]✓ Added:[/success] {c.protocol}://{c.address}:{c.port}  [{c.name}]")
+            name = f" [{c.name}]" if c.name else ""
+            console.print(f"[success]✓ Added:[/success] {c.protocol.upper()} · {c.transport_label()}{name}")
         except ValueError as e:
             console.print(f"[error]{e}[/error]")
 
@@ -976,7 +1095,8 @@ def cmd_tools(args):
             "  [cyan]adapters[/cyan]                 — List network adapters\n"
             "  [cyan]traceroute <host>[/cyan]        — Traceroute\n"
             "  [cyan]cert-check <host[:port]>[/cyan] — TLS certificate check\n"
-            "  [cyan]netfix[/cyan]                   — Auto-fix common network problems\n",
+            "  [cyan]netfix[/cyan]                   — Targeted Blackout network recovery\n"
+            "  [cyan]arp-flush[/cyan]                — Explicitly flush local ARP/neighbor cache\n",
             title="[bold]Network Toolkit[/bold]", border_style="cyan",
         ))
         return
@@ -1215,6 +1335,14 @@ def cmd_tools(args):
         result = net_tools.enable_ics()
         console.print(result)
 
+    elif args.tools_command == "arp-flush":
+        console.print("[yellow]Flushing the local ARP/neighbor cache may briefly interrupt LAN discovery...[/yellow]")
+        ok, detail = net_tools.flush_arp_cache()
+        if ok:
+            console.print(f"[success]✓ {detail}[/success]")
+        else:
+            console.print(f"[error]✗ {detail}[/error]")
+
     elif args.tools_command == "netfix":
         console.print(Panel(
             "[bold yellow]Running targeted crash recovery. Admin rights may be requested.[/bold yellow]\n"
@@ -1287,7 +1415,8 @@ def cmd_killswitch(args):
         return
 
     if action == "on":
-        console.print("[info]Enabling kill switch (Windows Firewall)...[/info]")
+        firewall_name = "nftables/iptables" if sys.platform.startswith("linux") else "Windows Firewall"
+        console.print(f"[info]Enabling kill switch ({firewall_name})...[/info]")
         ok = sec.enable_kill_switch()
         if ok:
             cfg.set_value("kill_switch", True)
@@ -1969,25 +2098,30 @@ def cmd_easteregg(args):
 
 
 def cmd_connect(args):
-    """Smart connect — auto-preps and starts the best available engine."""
+    """Smart connect — auto-preps and starts the best locally-ready engine."""
     s = cfg.load()
-    pref = s.get("selected_engine", "auto")
-    if pref != "auto":
-        resolved_default = pref
-    else:
-        connect_profile = _get_active_profile()
-        if connect_profile and connect_profile.engine_order:
-            resolved_default = connect_profile.engine_order[0]
-        else:
-            resolved_default = "sni"
+    requested_engine = getattr(args, "pos_engine", None) or getattr(args, "engine", None)
+    recommended = _recommended_engine_name()
+    engine_name = recommended if requested_engine in (None, "auto") else requested_engine
 
-    # Read positional engine first, fallback to --engine, then to resolved_default
-    engine_name = getattr(args, "pos_engine", None) or getattr(args, "engine", None)
-    if engine_name == "auto" or not engine_name:
-        engine_name = resolved_default
-
-    background  = getattr(args, "background", False)
-    iran_mode   = getattr(args, "iran", False)
+    background = getattr(args, "background", False)
+    iran_mode = getattr(args, "iran", False)
+    if requested_engine is None and is_interactive() and not background:
+        choice = ask_choice(
+            f"Recommended engine: {recommended}. Continue or choose manually?",
+            ["recommended", "manual", "cancel"],
+            default="recommended",
+        )
+        if choice == "cancel":
+            console.print("[muted]Connection cancelled.[/muted]")
+            return
+        if choice == "manual":
+            cmd_route(args)
+            choices = [candidate.engine for candidate in _routing_candidates()]
+            engine_name = ask_choice("Choose an engine", choices, default=recommended)
+            if not engine_name:
+                console.print("[muted]Connection cancelled.[/muted]")
+                return
 
     # Apply Iran bypass profile if requested
     if iran_mode:
@@ -2051,8 +2185,8 @@ def cmd_connect(args):
                 "  Suggested engine: [bold]blackout connect --engine xray[/bold]"
             )
 
-    # If SNI engine and no saved Cloudflare IP, do a quick 10-IP scan first
-    if engine_name in ("sni", "auto") and not s.get("sni_connect_ip"):
+    # If SNI engine and no saved Cloudflare IP, do a quick 10-IP scan first.
+    if not sys.platform.startswith("linux") and engine_name in ("sni", "auto") and not s.get("sni_connect_ip"):
         console.print("[yellow]No saved Cloudflare IP — running quick scan (10 IPs)...[/yellow]")
         ips = generate_cloudflare_ips(10)
         with Progress(
@@ -2073,21 +2207,31 @@ def cmd_connect(args):
     # Delegate to cmd_start with resolved engine
     class _FakeArgs:
         pass
-    fake         = _FakeArgs()
-    fake.engine  = engine_name if engine_name != "auto" else "sni"
+    fake = _FakeArgs()
+    fake.engine = engine_name if engine_name != "auto" else "sni"
     fake.background = background
+    fake.iran = False
     cmd_start(fake)
 
 
 def cmd_fix(args):
     """Run targeted post-crash network recovery with a live Rich checklist."""
-    if sys.platform != "win32":
-        console.print("[yellow]`blackout fix` currently only supports Windows recovery tools.[/yellow]")
-        return
-
     full_route_reset = getattr(args, "full_route_reset", False)
     full_stack_reset = getattr(args, "full_stack_reset", False)
-    if full_route_reset or full_stack_reset:
+    flush_arp = getattr(args, "flush_arp", False)
+    if not (sys.platform == "win32" or sys.platform.startswith("linux")):
+        console.print("[yellow]`blackout fix` is supported only on Windows and Linux.[/yellow]")
+        return
+
+    if sys.platform.startswith("linux") and (full_route_reset or full_stack_reset):
+        console.print("[yellow]Full route and stack resets are Windows-only. Linux recovery remains targeted.[/yellow]")
+        full_route_reset = False
+        full_stack_reset = False
+
+    if flush_arp:
+        console.print("[yellow]ARP flushing is explicit and may briefly interrupt local-network discovery.[/yellow]")
+
+    if sys.platform == "win32" and (full_route_reset or full_stack_reset):
         warnings = []
         if full_route_reset:
             warnings.append("`route -f` removes every IPv4 route before DHCP renewal")
@@ -2112,10 +2256,15 @@ def cmd_fix(args):
         return table
 
     console.print()
-    console.print(Panel(
-        "[bold yellow]Targeted Network Recovery[/bold yellow]\n"
+    recovery_details = (
+        "[dim]Removes only Blackout Kit-owned firewall objects and the deterministic BlackoutKit-TUN interface; it never resets system networking.[/dim]\n"
+        "[dim]Run with sudo. Full route and stack reset options are Windows-only.[/dim]"
+        if sys.platform.startswith("linux") else
         "[dim]Clears stale Blackout routes, restores DHCP DNS only from loopback, and restarts only unhealthy virtual adapters.[/dim]\n"
-        "[dim]Run as Administrator for full effect. Full route reset is opt-in only.[/dim]",
+        "[dim]Run as Administrator for full effect. Full route reset is opt-in only.[/dim]"
+    )
+    console.print(Panel(
+        "[bold yellow]Targeted Network Recovery[/bold yellow]\n" + recovery_details,
         border_style="yellow",
     ))
     console.print()
@@ -2124,6 +2273,7 @@ def cmd_fix(args):
         results.extend(net_tools.run_network_recovery(
             full_route_reset=full_route_reset,
             full_stack_reset=full_stack_reset,
+            flush_arp=flush_arp,
         ))
         live.update(_make_table())
 
@@ -2174,11 +2324,6 @@ def cmd_menu_select_engine():
     ]
 
     # Start interactive menu instead of prompt
-
-    # We will repurpose the _interactive_menu's logic
-    import msvcrt
-    from rich.live import Live
-
     selected_idx = 0
 
     def generate_menu(idx):
@@ -2259,6 +2404,9 @@ def _interactive_menu():
         ("🔌 Engine",     "Select manual bypass engine (sni/psiphon/warp...)", "3"),
         ("🌍 Country",    "Show or set country profile (IR/CN/…)", "4"),
         ("📊 Status",    "Check daemon + connection health", "5"),
+        ("📡 Live Status", "Watch local connection state", "W"),
+        ("🧭 Routing",   "Rank local engine readiness", "R"),
+        ("🎨 Theme",     "Set Blackout Kit terminal palette", "T"),
         ("🔍 Scan",      "Scan Cloudflare IPs + SNI domains", "6"),
         ("🏥 Doctor",    "Self-diagnose and auto-repair", "7"),
         ("🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP", "8"),
@@ -2273,7 +2421,13 @@ def _interactive_menu():
         "2": lambda: cmd_emergency(_make_fake_args(background=False)),
         "3": cmd_menu_select_engine,
         "4": lambda: cmd_country(_make_fake_args(country_command=None)),
-        "5": lambda: cmd_status(_make_fake_args()),
+        "5": lambda: cmd_status(_make_fake_args(watch=False, interval=2.0)),
+        "W": lambda: cmd_status(_make_fake_args(watch=True, interval=2.0)),
+        "w": lambda: cmd_status(_make_fake_args(watch=True, interval=2.0)),
+        "R": lambda: cmd_route(_make_fake_args()),
+        "r": lambda: cmd_route(_make_fake_args()),
+        "T": lambda: cmd_theme(_make_fake_args(palette=ask_choice("Choose terminal palette", ["dark", "light"], default=cfg.load().get("terminal_theme", "dark")))),
+        "t": lambda: cmd_theme(_make_fake_args(palette=ask_choice("Choose terminal palette", ["dark", "light"], default=cfg.load().get("terminal_theme", "dark")))),
         "6": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
         "7": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
         "8": lambda: cmd_fix(_make_fake_args()),
@@ -2311,7 +2465,6 @@ def _interactive_menu():
         return
 
     import msvcrt
-    from rich.live import Live
 
     while True:
         with Live(generate_menu(selected_idx), console=console, auto_refresh=False, transient=True) as live:
@@ -2349,7 +2502,7 @@ def _interactive_menu():
             
             # Don't pause if the user just started the engine (foreground), 
             # because they already hit Ctrl+C to stop it.
-            if action_key not in ("1", "2"):
+            if action_key not in ("1", "2", "W"):
                 console.print("[dim]Press any key to return to menu...[/dim]")
                 msvcrt.getch()
                 console.print()

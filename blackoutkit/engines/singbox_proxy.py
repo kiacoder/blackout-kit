@@ -3,8 +3,10 @@ Blackout Kit - SingBox Proxy Engine (Hysteria2 & TUIC).
 Uses sing-box library inside blackout_core.dll.
 """
 import json
+import sys
 
 from .base import Engine
+from .xray import LINUX_RUNNER_NAMES
 from .. import settings as cfg
 
 
@@ -45,10 +47,15 @@ class SingBoxProxyEngine(Engine):
 
     def _generate_config(self) -> dict:
         pc = self.proxy_config
+        server = pc.address
+        if sys.platform.startswith("linux"):
+            from .. import security as sec
+
+            server = sec.linux_cached_endpoint(pc.address, pc.port) or pc.address
         outbound = {
             "type": pc.protocol,
             "tag": "proxy",
-            "server": pc.address,
+            "server": server,
             "server_port": pc.port,
             "tls": {
                 "enabled": True,
@@ -115,6 +122,22 @@ class SingBoxProxyEngine(Engine):
         )
 
         config_json = json.dumps(self._generate_config(), separators=(",", ":")).encode("utf-8")
+
+        if sys.platform.startswith("linux"):
+            runner = self.find_binary(LINUX_RUNNER_NAMES)
+            if not runner:
+                self._log.error("Linux sing-box proxy requires the managed blackout-engine runner.")
+                return False
+            config_path = self._config_dir / "singbox_proxy_config.json"
+            config_path.write_bytes(config_json)
+            if not self.start_process(self.binary_command(runner, "sing-box", "--config", str(config_path))):
+                return False
+            if not self.wait_for_port(self.socks_port, timeout=10.0):
+                self._log.error("Sing-box runner did not open SOCKS port %d.", self.socks_port)
+                self.stop()
+                return False
+            self._log.info("%s ready via Linux runner  socks5://127.0.0.1:%d", self.proxy_config.protocol.upper(), self.socks_port)
+            return True
 
         from ..core import get_core_dll
         dll = get_core_dll()

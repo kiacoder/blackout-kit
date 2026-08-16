@@ -13,7 +13,7 @@ from contextlib import contextmanager
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.prompt import Confirm
+from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
@@ -38,22 +38,49 @@ _THEME_ACCENTS = {
 }
 
 
-def build_theme(theme_name: str | None = None) -> Theme:
-    name = (theme_name or _cfg.load().get("color_theme", "red")).lower()
+def build_theme(theme_name: str | None = None, terminal_theme: str | None = None) -> Theme:
+    settings = _cfg.load()
+    name = (theme_name or settings.get("color_theme", "red")).lower()
+    palette = (terminal_theme or settings.get("terminal_theme", "dark")).lower()
     accent = _THEME_ACCENTS.get(name, _THEME_ACCENTS["red"])
+    foreground = "black" if palette == "light" else "white"
+    muted = "dim black" if palette == "light" else "dim white"
     return Theme({
         "info":         f"bold {accent}",
         "success":      "bold green",
         "warning":      "bold yellow",
         "error":        "bold red",
         "engine":       f"bold {accent}",
-        "muted":        "dim white",
+        "muted":        muted,
         "accent":       f"bold {accent}",
-        "heading":      "bold white",
-        "panel.title":  "bold white",
+        "heading":      f"bold {foreground}",
+        "panel.title":  f"bold {foreground}",
         "panel.border": accent,
         "table.header": f"bold {accent}",
     })
+
+
+def is_interactive() -> bool:
+    """Return whether prompts can safely read from an interactive terminal."""
+    return bool(sys.stdin and sys.stdin.isatty() and sys.stdout and sys.stdout.isatty() and not os.environ.get("CI"))
+
+
+def ask_choice(prompt: str, choices: list[str], default: str | None = None) -> str | None:
+    if not is_interactive():
+        return default
+    return Prompt.ask(prompt, choices=choices, default=default, console=console)
+
+
+def ask_text(prompt: str, default: str | None = None) -> str | None:
+    if not is_interactive():
+        return default
+    return Prompt.ask(prompt, default=default, console=console)
+
+
+def ask_int(prompt: str, default: int | None = None) -> int | None:
+    if not is_interactive():
+        return default
+    return IntPrompt.ask(prompt, default=default, console=console)
 
 
 console = Console(theme=build_theme(), no_color=_no_color)
@@ -160,6 +187,26 @@ def error_panel(message: str, title: str = "Error") -> Panel:
     )
 
 
+def friendly_error_panel(exc: BaseException) -> Panel:
+    """Render a safe, actionable failure panel without exposing sensitive details."""
+    if isinstance(exc, PermissionError):
+        message = "Blackout Kit needs additional permissions for that action. Re-run the command with the required administrator or sudo access."
+    elif isinstance(exc, FileNotFoundError):
+        message = "A required local file or engine binary is missing. Check installed components with `blackout bins`."
+    elif isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+        message = "A local or network operation could not complete. Check your connection, then run `blackout doctor` for safe diagnostics."
+    else:
+        message = "Blackout Kit could not complete that action. Local diagnostic logs may contain technical details."
+    return error_panel(
+        f"{message}\n\n[muted]Safe next steps: blackout doctor · blackout bins · blackout status[/muted]",
+        title="Blackout Kit Error",
+    )
+
+
+def print_friendly_error(exc: BaseException) -> None:
+    console.print(friendly_error_panel(exc))
+
+
 def success_panel(message: str, title: str = "Success") -> Panel:
     """Return a green success panel — use with console.print()."""
     return Panel(
@@ -181,12 +228,8 @@ def warning_panel(message: str, title: str = "Warning") -> Panel:
 
 
 def confirm(question: str, default: bool = False) -> bool:
-    """
-    Prompt the user for yes/no confirmation.
-    Falls back to the default value when running non-interactively (CI/pipe).
-    """
-    if _no_color:
-        # Non-interactive: return default silently
+    """Prompt for confirmation only when stdin and stdout are interactive."""
+    if not is_interactive():
         return default
     return Confirm.ask(f"[bold]{question}[/bold]", default=default, console=console)
 

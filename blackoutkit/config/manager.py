@@ -27,6 +27,12 @@ class ProxyConfig:
     alpn:      str  = ""        # TLS ALPN
     fp:        str  = "chrome"  # TLS fingerprint
     transport: str  = "ws"      # ws / tcp / grpc
+    security:  str  = "tls"     # tls / reality / none
+    public_key: str = ""        # REALITY server public key
+    short_id:  str  = ""        # REALITY short ID
+    spider_x:  str  = ""        # REALITY spider path
+    flow:      str  = ""        # VLESS flow (e.g. xtls-rprx-vision)
+    service_name: str = ""      # gRPC service name
     insecure:  bool = True      # allowInsecure
     name:      str  = ""        # Config label (#fragment)
     raw_uri:   str  = ""        # Original URI string
@@ -37,6 +43,23 @@ class ProxyConfig:
 
     def display_name(self) -> str:
         return self.name or f"{self.protocol}://{self.address}:{self.port}"
+
+    def is_reality(self) -> bool:
+        return self.protocol == "vless" and self.security.lower() == "reality"
+
+    def reality_validation_error(self) -> str | None:
+        if not self.is_reality():
+            return None
+        if not self.public_key:
+            return "REALITY config is missing the server public key (pbk)."
+        if not self.sni:
+            return "REALITY config is missing the server name (sni)."
+        if self.transport not in {"tcp", "ws", "grpc"}:
+            return f"REALITY transport '{self.transport}' is unsupported; use tcp, ws, or grpc."
+        return None
+
+    def transport_label(self) -> str:
+        return "REALITY" if self.is_reality() else self.transport.upper()
 
 
 # ─────────────────────────── Parsing ────────────────────────────
@@ -119,10 +142,16 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
         path      = q("path", "/"),
         alpn      = q("alpn"),
         fp        = q("fp", "chrome"),
-        transport = q("type", "ws"),
+        transport = q("type", "ws").lower(),
+        security  = q("security", "tls").lower(),
+        public_key = q("pbk") or q("publicKey"),
+        short_id   = q("sid") or q("shortId"),
+        spider_x   = q("spx") or q("spiderX"),
+        flow       = q("flow"),
+        service_name = q("serviceName"),
         insecure  = insecure,
         name      = name,
-        raw_uri   = f"{proto}://{rest}#{name}",
+        raw_uri   = uri,
     )
 
 

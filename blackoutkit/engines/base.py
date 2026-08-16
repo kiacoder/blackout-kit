@@ -140,22 +140,54 @@ class Engine(ABC):
 
     # ──────────────────────────── Helpers ────────────────────────
 
-    def find_binary(self, names: list[str]) -> Path | None:
-        """
-        Search bins/ folder for the first matching binary name.
-        Logs a warning with a download hint if none are found.
-        """
+    def find_binary(self, names: list[str], system_names: list[str] | None = None) -> Path | None:
+        """Return a managed binary, or an explicitly permitted system binary on Linux."""
         for name in names:
             path = BINS_DIR / name
-            if path.exists():
-                self._log.debug("Binary found: %s", path)
+            if path.exists() and path.is_file():
+                self._log.debug("Managed binary found: %s", path)
                 return path
+
+        if sys.platform.startswith("linux"):
+            for name in system_names or []:
+                found = shutil.which(name)
+                if found:
+                    path = Path(found)
+                    self._log.debug("System binary found: %s", path)
+                    return path
+
         self._log.warning(
-            "Binary not found in bins/ — tried: %s  "
-            "Run 'blackout bins download' to auto-install.",
+            "Binary not found in bins/ — tried: %s. Run 'blackout bins download' to install it.",
             names,
         )
         return None
+
+    def start_process(self, command: list[str]) -> bool:
+        """Start a managed engine process without inheriting terminal output pipes."""
+        try:
+            self._process = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=sys.platform != "win32",
+            )
+            return True
+        except OSError as exc:
+            self._log.error("Could not start engine process: %s", exc)
+            return False
+
+    def wait_for_process(self, timeout: float = 0.5) -> bool:
+        """Return whether a newly spawned process remained alive through its startup window."""
+        time.sleep(timeout)
+        if self._process is not None and self._process.poll() is None:
+            return True
+        code = self._process.returncode if self._process is not None else None
+        self._log.error("Engine process exited during startup (returncode=%s).", code)
+        return False
+
+    def binary_command(self, binary: Path, *arguments: str) -> list[str]:
+        """Build a platform-safe executable command."""
+        return [str(binary), *arguments]
 
     def check_port_free(self, port: int, host: str = "127.0.0.1") -> bool:
         """

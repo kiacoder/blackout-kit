@@ -42,12 +42,27 @@ def test_is_mode_enforced_mismatch():
 
 # === KILL SWITCH ===
 @patch("sys.platform", "linux")
-def test_kill_switch_linux():
-    assert sec.enable_kill_switch() is False
-    assert sec.disable_kill_switch() is False
+@patch("blackoutkit.linux_network.kill_switch_is_active", return_value=True)
+@patch("blackoutkit.linux_network.remove_owned_firewall", return_value=(True, "removed"))
+@patch("blackoutkit.linux_network.enable_kill_switch", return_value=(True, "enabled"))
+@patch("blackoutkit.security._linux_kill_switch_endpoints", return_value=[("1.1.1.1", 443)])
+def test_kill_switch_linux(mock_endpoints, mock_enable, mock_remove, mock_active):
+    assert sec.enable_kill_switch() is True
+    mock_enable.assert_called_once_with([("1.1.1.1", 443)])
+    assert sec.disable_kill_switch() is True
+    mock_remove.assert_called_once()
     ok, details = sec.test_kill_switch()
     assert ok is True
-    assert sec.kill_switch_is_active() is False
+    assert "Linux kill switch is active" in details
+    assert sec.kill_switch_is_active() is True
+
+
+@patch("sys.platform", "linux")
+@patch("blackoutkit.linux_network.enable_kill_switch", return_value=(False, "No validated proxy endpoint IP and port are available"))
+@patch("blackoutkit.security._linux_kill_switch_endpoints", return_value=[])
+def test_linux_kill_switch_refuses_missing_endpoint_allowlist(mock_endpoints, mock_enable):
+    assert sec.enable_kill_switch() is False
+    mock_enable.assert_called_once_with([])
 
 @patch("sys.platform", "win32")
 @patch("subprocess.run")

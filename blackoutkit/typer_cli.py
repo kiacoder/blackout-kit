@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 
 from . import __version__
-from .theme import console, error_panel
+from .theme import ask_choice, ask_int, ask_text, console, is_interactive, print_friendly_error
 
 app = typer.Typer(
     name="blackout",
@@ -36,6 +36,11 @@ def fix(
         "--full-stack-reset",
         help="Emergency only: reset Winsock, TCP/IP, autotuning, and DHCP",
     ),
+    flush_arp: bool = typer.Option(
+        False,
+        "--flush-arp",
+        help="Explicitly flush the local ARP/neighbor cache",
+    ),
 ):
     """Repair targeted post-crash Blackout network state."""
     from .cli import cmd_fix
@@ -46,6 +51,7 @@ def fix(
     args = DummyArgs()
     args.full_route_reset = full_route_reset
     args.full_stack_reset = full_stack_reset
+    args.flush_arp = flush_arp
     cmd_fix(args)
 
 @app.command()
@@ -66,94 +72,143 @@ def scan(
     
     cmd_scan(args)
 
-def _ask_engine(prompt_text: str = "⚡ Type an engine to connect") -> str:
+def _ask_engine(prompt_text: str = "Choose an engine") -> str | None:
     from rich.columns import Columns
     from rich.panel import Panel
     from rich.align import Align
-    from rich.prompt import Prompt
     from .cli import ALL_ENGINE_CHOICES
-    
-    console.print()
-    engine_panels = [Panel(f"[bold cyan]{e}[/bold cyan]", border_style="dim blue", expand=True) for e in ALL_ENGINE_CHOICES]
+
+    if not is_interactive():
+        return None
+    engine_panels = [Panel(f"[engine]{engine}[/engine]", border_style="panel.border", expand=True) for engine in ALL_ENGINE_CHOICES]
     console.print(Panel(
         Align.center(Columns(engine_panels, align="center", expand=True, equal=True)),
-        title="[bold yellow]⚡ AVAILABLE ENGINES[/bold yellow]",
-        border_style="cyan",
-        padding=(1, 2)
+        title="[heading]Available engines[/heading]",
+        border_style="panel.border",
+        padding=(1, 2),
     ))
-    console.print()
-    ans = Prompt.ask(prompt_text, choices=ALL_ENGINE_CHOICES, show_choices=False, default="auto")
-    console.print()
-    return ans
+    return ask_choice(prompt_text, ALL_ENGINE_CHOICES, default="auto")
+
+
+def _forward_status(watch: bool, interval: float) -> None:
+    from .cli import cmd_status
+
+    class DummyArgs:
+        pass
+
+    args = DummyArgs()
+    args.watch = watch
+    args.interval = interval
+    cmd_status(args)
+
+
+@app.command()
+def route():
+    """Show local, read-only engine recommendations."""
+    from .cli import cmd_route
+
+    class DummyArgs:
+        pass
+
+    cmd_route(DummyArgs())
+
+
+@app.command()
+def theme(
+    palette: str = typer.Argument(None, help="dark | light (omit to show/select)"),
+):
+    """Show or set Blackout Kit's terminal-only palette."""
+    from .cli import cmd_theme
+
+    if palette is None and is_interactive():
+        from . import settings as cfg
+        palette = ask_choice(
+            "Choose terminal palette",
+            ["dark", "light"],
+            default=cfg.load().get("terminal_theme", "dark"),
+        )
+    if palette is not None and palette not in ("dark", "light"):
+        raise typer.BadParameter("must be dark or light")
+
+    class DummyArgs:
+        pass
+
+    args = DummyArgs()
+    args.palette = palette
+    cmd_theme(args)
+
+
+@app.command()
+def status(
+    watch: bool = typer.Option(False, "--watch", "-w", help="Refresh local status until Ctrl+C"),
+    interval: float = typer.Option(2.0, "--interval", min=0.5, max=60.0, help="Refresh interval in seconds"),
+):
+    """Show daemon status and local connection health."""
+    _forward_status(watch, interval)
+
 
 @app.command()
 def connect(
-    pos_engine: str = typer.Argument(None, help="Engine to use (e.g. sni, gdpi, psiphon, auto)"),
+    pos_engine: str = typer.Argument(None, help="Engine to use (e.g. sni, psiphon, auto)"),
     engine: str = typer.Option(None, "--engine", help="Engine to use"),
     background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
-    iran: bool = typer.Option(False, "--iran", help="🔥 TIC 2026 evasion profile")
+    iran: bool = typer.Option(False, "--iran", help="TIC 2026 evasion profile"),
 ):
-    """Smart connect — auto-preps and starts the best engine"""
-    from rich.prompt import Prompt
-    from .cli import ALL_ENGINE_CHOICES
-    
-    # Interactive mode if engine is missing
-    final_engine = pos_engine or engine
-    if not final_engine:
-        final_engine = _ask_engine("⚡ Type an engine to connect")
-        
+    """Smart connect — uses a recommendation when no engine is specified."""
     from .cli import cmd_connect
-    class DummyArgs: pass
+
+    class DummyArgs:
+        pass
+
     args = DummyArgs()
-    args.pos_engine = final_engine
-    args.engine = None
+    args.pos_engine = pos_engine
+    args.engine = engine
     args.background = background
     args.iran = iran
-    
     cmd_connect(args)
+
 
 @app.command()
 def mode(
-    mode_name: str = typer.Argument(None, help="speed | private | legend (omit to interactively select)")
+    mode_name: str = typer.Argument(None, help="speed | private | legend (omit to interactively select)"),
 ):
-    """View or set security mode"""
-    from rich.prompt import Prompt
+    """View or set security mode."""
     from .cli import cmd_mode
-    
+
     if not mode_name:
-        console.print()
-        mode_name = Prompt.ask(
-            "🛡️ Select a security mode",
-            choices=["speed", "private", "legend"]
-        )
-        console.print()
-        
-    class DummyArgs: pass
+        mode_name = ask_choice("Select a security mode", ["speed", "private", "legend"])
+        if mode_name is None:
+            return
+
+    class DummyArgs:
+        pass
+
     args = DummyArgs()
     args.mode_name = mode_name
     cmd_mode(args)
 
+
 @app.command()
 def killswitch(
-    action: str = typer.Argument(None, help="on | off | test (omit to interactively select)")
+    action: str = typer.Argument(None, help="on | off | test (omit to interactively select)"),
 ):
-    """Enable/disable kill switch (blocks net if proxy drops)"""
-    from rich.prompt import Prompt
+    """Enable, disable, or test the kill switch."""
     from .cli import cmd_killswitch
-    
+
     if not action:
-        console.print()
-        action = Prompt.ask(
-            "☠️ Select killswitch action",
-            choices=["on", "off", "test"]
-        )
-        console.print()
-        
-    class DummyArgs: pass
+        action = ask_choice("Select kill-switch action", ["on", "off", "test"])
+        if action is None:
+            return
+
+    class DummyArgs:
+        pass
+
     args = DummyArgs()
     args.action = action
     cmd_killswitch(args)
 
+
+# Existing command implementations continue below.
 def _add_to_user_path(directory: str) -> bool:
     import winreg
     try:
@@ -267,15 +322,12 @@ def net_auto():
 def net_switch(
     ssid: str = typer.Argument(None, help="SSID of the network to switch to")
 ):
-    """Switch to a specific WiFi network"""
-    from rich.prompt import Prompt
+    """Switch to a specific WiFi network."""
     from .cli import cmd_network
-    
+
+    ssid = ssid or ask_text("Enter the SSID of the network to switch to")
     if not ssid:
-        console.print()
-        ssid = Prompt.ask("📶 Enter the SSID of the network to switch to")
-        console.print()
-        
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.network_command = "switch"
@@ -297,15 +349,12 @@ def cfg_list():
 
 @config_app.command("add")
 def cfg_add(uri: str = typer.Argument(None, help="V2Ray URI to add (vmess://, vless://, etc)")):
-    """Add a V2Ray URI"""
-    from rich.prompt import Prompt
+    """Add a V2Ray URI."""
     from .cli import cmd_config
-    
+
+    uri = uri or ask_text("Enter the V2Ray URI")
     if not uri:
-        console.print()
-        uri = Prompt.ask("🔗 Enter the V2Ray URI (vless://... or trojan://...)")
-        console.print()
-        
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.config_command = "add"
@@ -314,15 +363,12 @@ def cfg_add(uri: str = typer.Argument(None, help="V2Ray URI to add (vmess://, vl
 
 @config_app.command("import")
 def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import")):
-    """Import from subscription URL"""
-    from rich.prompt import Prompt
+    """Import from subscription URL."""
     from .cli import cmd_config
-    
+
+    url = url or ask_text("Enter the subscription URL")
     if not url:
-        console.print()
-        url = Prompt.ask("🌐 Enter the subscription URL to import from")
-        console.print()
-        
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.config_command = "import"
@@ -331,15 +377,12 @@ def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import"
 
 @config_app.command("remove")
 def cfg_remove(num: int = typer.Argument(None, help="Config number to remove")):
-    """Remove a config by number"""
-    from rich.prompt import IntPrompt
+    """Remove a config by number."""
     from .cli import cmd_config
-    
+
+    num = num if num is not None else ask_int("Enter the config number to remove")
     if num is None:
-        console.print()
-        num = IntPrompt.ask("🗑️  Enter the config number to remove (see \'config list\')")
-        console.print()
-        
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.config_command = "remove"
@@ -391,13 +434,12 @@ def tools_dns_set(
     ip: str = typer.Argument(None, help="DNS IP (e.g. 1.1.1.1)"),
     adapter: str = typer.Option(None, "--adapter", "-a", help="Specific adapter name")
 ):
-    """Set system DNS server"""
-    from rich.prompt import Prompt
+    """Set system DNS server."""
     from .cli import cmd_tools
+
+    ip = ip or ask_text("Enter the DNS IP to set")
     if not ip:
-        console.print()
-        ip = Prompt.ask("🖥️  Enter the DNS IP to set (e.g. 1.1.1.1)")
-        console.print()
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.tools_command = "dns-set"
@@ -432,17 +474,26 @@ def tools_netfix():
     args.tools_command = "netfix"
     cmd_tools(args)
 
+
+@tools_app.command("arp-flush")
+def tools_arp_flush():
+    """Explicitly flush the local ARP/neighbor cache"""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "arp-flush"
+    cmd_tools(args)
+
 @tools_app.command("hotspot")
 def tools_hotspot(
     action: str = typer.Argument(None, help="on | off")
 ):
-    """Start/stop Windows Mobile Hotspot"""
-    from rich.prompt import Prompt
+    """Start or stop Windows Mobile Hotspot."""
     from .cli import cmd_tools
+
+    action = action or ask_choice("Select hotspot action", ["on", "off"])
     if not action:
-        console.print()
-        action = Prompt.ask("📡 Select hotspot action", choices=["on", "off"])
-        console.print()
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.tools_command = "hotspot"
@@ -453,13 +504,12 @@ def tools_hotspot(
 def tools_share_vpn(
     action: str = typer.Argument(None, help="on | off")
 ):
-    """Share VPN connection via hotspot (ICS)"""
-    from rich.prompt import Prompt
+    """Share VPN connection via hotspot (ICS)."""
     from .cli import cmd_tools
+
+    action = action or ask_choice("Select ICS VPN sharing action", ["on", "off"])
     if not action:
-        console.print()
-        action = Prompt.ask("🌐 Select ICS VPN sharing action", choices=["on", "off"])
-        console.print()
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.tools_command = "share-vpn"
@@ -468,13 +518,12 @@ def tools_share_vpn(
 
 @tools_app.command("ping")
 def tools_ping(host: str = typer.Argument(None, help="Host to ping")):
-    """TCP ping test"""
-    from rich.prompt import Prompt
+    """TCP ping test."""
     from .cli import cmd_tools
+
+    host = host or ask_text("Enter host or IP to ping")
     if not host:
-        console.print()
-        host = Prompt.ask("🏓 Enter host or IP to ping")
-        console.print()
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.tools_command = "ping"
@@ -497,13 +546,12 @@ def tools_mtu(
 
 @tools_app.command("traceroute")
 def tools_traceroute(host: str = typer.Argument(None, help="Host to trace")):
-    """Traceroute to a host"""
-    from rich.prompt import Prompt
+    """Traceroute to a host."""
     from .cli import cmd_tools
+
+    host = host or ask_text("Enter host or IP to trace")
     if not host:
-        console.print()
-        host = Prompt.ask("🗺️  Enter host or IP to trace")
-        console.print()
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.tools_command = "traceroute"
@@ -515,13 +563,12 @@ def tools_cert_check(
     host: str = typer.Argument(None, help="Host to check"),
     allow: bool = typer.Option(False, "--allow", help="Trust this host in LEGEND mode"),
 ):
-    """Check TLS certificate for a host[:port]"""
-    from rich.prompt import Prompt
+    """Check TLS certificate for a host[:port]."""
     from .cli import cmd_tools
+
+    host = host or ask_text("Enter host or IP to check TLS certificate")
     if not host:
-        console.print()
-        host = Prompt.ask("🔐 Enter host or IP to check TLS certificate")
-        console.print()
+        return
     class DummyArgs:
         pass
     args = DummyArgs()
@@ -542,14 +589,14 @@ def start(
     pos_engine: str = typer.Argument(None, help="Engine to use"),
     engine: str = typer.Option(None, "--engine", help="Engine to use"),
     background: bool = typer.Option(False, "--background", "-d", help="Run as daemon"),
-    iran: bool = typer.Option(False, "--iran", help="TIC 2026 profile")
+    iran: bool = typer.Option(False, "--iran", help="TIC 2026 profile"),
 ):
-    """Start bypass engine"""
-    from rich.prompt import Prompt
-    from .cli import ALL_ENGINE_CHOICES, cmd_start
-    final_engine = pos_engine or engine
+    """Start a selected bypass engine."""
+    from .cli import cmd_start
+
+    final_engine = pos_engine or engine or _ask_engine("Choose an engine to start")
     if not final_engine:
-        final_engine = _ask_engine("⚡ Type an engine to start")
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.pos_engine = final_engine
@@ -584,12 +631,6 @@ def emergency(
     args.background = background
     cmd_emergency(args)
 
-@app.command()
-def status():
-    """Show daemon status and connection health"""
-    from .cli import cmd_status
-    class DummyArgs: pass
-    cmd_status(DummyArgs())
 
 @app.command()
 def logs(
@@ -725,15 +766,14 @@ def neighbor_discover():
 
 @neighbor_app.command("connect")
 def neighbor_connect(
-    ip: str = typer.Argument(None, help="Neighbor IP address (e.g., 192.168.1.5)")
+    ip: str = typer.Argument(None, help="Neighbor IP address (e.g. 192.168.1.5)")
 ):
-    """Use a neighbor's proxy"""
-    from rich.prompt import Prompt
+    """Use a neighbor's proxy."""
     from .cli import cmd_neighbor
+
+    ip = ip or ask_text("Enter neighbor IP to connect to")
     if not ip:
-        console.print()
-        ip = Prompt.ask("🤝 Enter neighbor IP to connect to")
-        console.print()
+        return
     class DummyArgs: pass
     args = DummyArgs()
     args.neighbor_command = "connect"
@@ -879,11 +919,8 @@ def main():
     except KeyboardInterrupt:
         console.print("\n[muted]Operation cancelled by user.[/muted]")
         sys.exit(130)
-    except Exception as e:
-        console.print(error_panel(
-            f"An unexpected fatal error occurred:\n{str(e)}\n\n[dim]Please run 'blackout doctor' to auto-fix common issues.[/dim]",
-            title="Fatal Error"
-        ))
+    except Exception as exc:
+        print_friendly_error(exc)
         sys.exit(1)
 
 if __name__ == "__main__":

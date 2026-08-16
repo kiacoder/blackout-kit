@@ -1,7 +1,7 @@
 """
 Blackout Kit - XRay/V2Ray core engine.
 Manages the xray.exe process with dynamic config generation.
-Supports Trojan and VLESS protocols over WebSocket+TLS.
+Supports Trojan and VLESS protocols over TLS and REALITY transports.
 Works alongside the SNI engine (outbound → 127.0.0.1:40443).
 
 Legendary upgrade:
@@ -14,6 +14,7 @@ Legendary upgrade:
 """
 import json
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from .base import Engine, BINS_DIR
@@ -26,6 +27,7 @@ XRAY_BIN_NAMES = [
     "xray-windows-64.exe",
     "xray-core.exe",
 ]
+LINUX_RUNNER_NAMES = ["blackout-engine"]
 
 
 class XRayEngine(Engine):
@@ -43,6 +45,17 @@ class XRayEngine(Engine):
                     if c.protocol in ("vless", "trojan", "vmess"):
                         self.proxy_config = c
                         break
+            except Exception:
+                pass
+        if sys.platform.startswith("linux") and self.proxy_config and self.proxy_config.protocol == "vmess":
+            self._log.warning("Linux XRay currently supports VLESS and Trojan configs; skipping VMess.")
+            self.proxy_config = None
+            try:
+                from ..config.manager import load_configs
+                self.proxy_config = next(
+                    (c for c in load_configs() if c.protocol in ("vless", "trojan")),
+                    None,
+                )
             except Exception:
                 pass
         self.socks_port   = socks_port or s["xray_socks_port"]
@@ -213,54 +226,91 @@ class XRayEngine(Engine):
         return config
 
     def _build_outbound(self, c) -> dict:
-        s    = cfg.load()
-        mode = _sec.get_current_mode()
-        allow_insecure, _warn = _cb.should_allow_insecure(c.address, c.port, mode)
-        
+        s = cfg.load()
+        is_reality = c.is_reality()
+        validation_error = c.reality_validation_error()
+        if validation_error:
+            raise ValueError(validation_error)
+
         target_ip = c.address
-        from ..tools import resolve_doh
-        resolved = resolve_doh(c.address)
-        if resolved and resolved != c.address:
-            target_ip = resolved
-            self._log.debug("DoH Bootstrap: resolved %s -> %s", c.address, target_ip)
-        elif not resolved:
-            self._log.warning("DoH Bootstrap failed to resolve %s", c.address)
+        if sys.platform.startswith("linux"):
+            cached = _sec.linux_cached_endpoint(c.address, c.port)
+            if cached:
+                target_ip = cached
 
-        stream = {
-            "network":  "ws",
-            "security": "tls",
-            "tlsSettings": {
-                "serverName":    c.sni,
-                "fingerprint":   s["xray_fingerprint"],
-                "allowInsecure": allow_insecure,
-            },
-            "wsSettings": {
-                "path":    c.path or "/",
+        if target_ip == c.address:
+            from ..tools import resolve_doh
+            resolved = resolve_doh(c.address)
+            if resolved and resolved != c.address:
+                target_ip = resolved
+                self._log.debug("DoH Bootstrap: resolved %s -> %s", c.address, target_ip)
+            elif not resolved:
+                self._log.warning("DoH Bootstrap failed to resolve %s", c.address)
+        elif target_ip != c.address:
+            self._log.debug("Using prevalidated Linux endpoint for configured proxy host")
+
+        stream = {"network": c.transport}
+        if c.transport == "ws":
+            stream["wsSettings"] = {
+                "path": c.path or "/",
                 "headers": {"Host": c.host or c.sni},
-            },
-        }
+            }
+        elif c.transport == "grpc":
+            stream["grpcSettings"] = {"serviceName": c.service_name}
 
-
+        if is_reality:
+            stream["security"] = "reality"
+            stream["realitySettings"] = {
+                "show": False,
+                "fingerprint": c.fp or s["xray_fingerprint"],
+                "serverName": c.sni,
+                "publicKey": c.public_key,
+                "shortId": c.short_id,
+                "spiderX": c.spider_x,
+            }
+        else:
+            mode = _sec.get_current_mode()
+            allow_insecure, _warn = _cb.should_allow_insecure(c.address, c.port, mode)
+            stream["security"] = "tls"
+            stream["tlsSettings"] = {
+                "serverName": c.sni,
+                "fingerprint": c.fp or s["xray_fingerprint"],
+                "allowInsecure": allow_insecure,
+            }
 
         if c.protocol == "trojan":
             return {
-                "tag":      "proxy",
+                "tag": "proxy",
                 "protocol": "trojan",
                 "settings": {"servers": [{"address": target_ip, "port": c.port, "password": c.password}]},
                 "streamSettings": stream,
                 "mux": {"enabled": s["xray_mux_enabled"]},
             }
         if c.protocol == "vless":
+            user = {"id": c.uuid, "encryption": "none"}
+            if c.flow:
+                user["flow"] = c.flow
             return {
-                "tag":      "proxy",
+                "tag": "proxy",
                 "protocol": "vless",
-                "settings": {"vnext": [{"address": target_ip, "port": c.port,
-                                         "users": [{"id": c.uuid, "encryption": "none"}]}]},
+                "settings": {"vnext": [{"address": target_ip, "port": c.port, "users": [user]}]},
                 "streamSettings": stream,
                 "mux": {"enabled": s["xray_mux_enabled"]},
             }
         self._log.warning("Protocol '%s' is unsupported, falling back to trojan", c.protocol)
         return self._default_outbound()
+
+    def _is_reality_config(self) -> bool:
+        return bool(self.proxy_config and self.proxy_config.is_reality())
+
+    def _validate_proxy_config(self) -> bool:
+        if not self.proxy_config:
+            return True
+        validation_error = self.proxy_config.reality_validation_error()
+        if validation_error:
+            self._log.error("%s", validation_error)
+            return False
+        return True
 
     def _default_outbound(self) -> dict:
         """Use the built-in Trojan config from the SNI-Spoofer package."""
@@ -287,9 +337,16 @@ class XRayEngine(Engine):
         if not self.check_port_free(self.socks_port) or not self.check_port_free(self.http_port):
             return False
 
+        if not self._validate_proxy_config():
+            return False
+
         # ── Per-mode cert policy (before config generation) ───────
         mode = _sec.get_current_mode()
-        if self.proxy_config and self.proxy_config.address not in _cb.LOCAL_ADDRS:
+        if (
+            self.proxy_config
+            and not self._is_reality_config()
+            and self.proxy_config.address not in _cb.LOCAL_ADDRS
+        ):
             host = self.proxy_config.address
             port = self.proxy_config.port
 
@@ -325,9 +382,37 @@ class XRayEngine(Engine):
 
             # SPEED: no probe, allowInsecure=True always — zero overhead
 
-        config      = self.generate_config()
+        if sys.platform.startswith("linux") and (
+            not self.proxy_config
+            or self.proxy_config.address in {"127.0.0.1", "0.0.0.0", "localhost", "::1"}
+        ):
+            self._log.error(
+                "Linux XRay requires a direct VLESS, Trojan, or VMess configuration; "
+                "the Windows SNI fallback is unavailable on Linux."
+            )
+            return False
+
+        config = self.generate_config()
         config_path = self._config_dir / "xray_config.json"
         config_path.write_text(json.dumps(config, indent=2))
+
+        if sys.platform.startswith("linux"):
+            runner = self.find_binary(LINUX_RUNNER_NAMES)
+            if not runner:
+                self._log.error(
+                    "Linux XRay requires the managed blackout-engine runner. "
+                    "Install the Linux release asset or build it from engine/."
+                )
+                return False
+            self._log.info("Launching XRay through the Linux blackout-engine runner")
+            if not self.start_process(self.binary_command(runner, "xray", "--config", str(config_path))):
+                return False
+            if not self.wait_for_port(self.http_port, timeout=10.0):
+                self._log.error("XRay runner did not open HTTP port %d within 10s.", self.http_port)
+                self.stop()
+                return False
+            self._log.info("XRay ready via Linux runner socks=%d http=%d.", self.socks_port, self.http_port)
+            return True
 
         from ..core import get_core_dll
         dll = get_core_dll()
@@ -339,21 +424,21 @@ class XRayEngine(Engine):
         c_path = str(config_path).encode("utf-8")
         if dll.StartXrayC(c_path) == 0:
             self._dll_stop_func = dll.StopXrayC
-            
+
             if not self.wait_for_port(self.http_port, timeout=10.0):
                 self._log.error("XRay started natively via DLL but HTTP port %d never opened within 10s.", self.http_port)
                 self.stop()
                 return False
 
-            self._start_cert_monitor(mode)
+            if not self._is_reality_config():
+                self._start_cert_monitor(mode)
             self._log.info(
                 "XRay ready natively socks=%d  http=%d.",
                 self.socks_port, self.http_port,
             )
             return True
-        else:
-            self._log.error("Native DLL StartXrayC failed")
-            return False
+        self._log.error("Native DLL StartXrayC failed")
+        return False
 
     def _start_cert_monitor(self, mode: str) -> None:
         """

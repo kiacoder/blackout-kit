@@ -308,12 +308,31 @@ def _checked_process_command(executable: str, *arguments: str) -> str:
 def run_network_recovery(
     full_route_reset: bool = False,
     full_stack_reset: bool = False,
+    flush_arp: bool = False,
     *,
     from_daemon: bool = False,
 ) -> list[dict]:
     """Safely repair Blackout-owned network state after a crash or failed reconnect."""
+    if sys.platform.startswith("linux"):
+        from . import daemon, linux_network
+
+        if daemon.get_state() is not None and not from_daemon:
+            return [_script_result(
+                "Targeted Linux recovery",
+                True,
+                "Skipped while Blackout daemon is active; stop it before repairing the network",
+            )]
+        results = linux_network.run_network_recovery(from_daemon=from_daemon)
+        if flush_arp and not from_daemon:
+            ok, detail = flush_arp_cache()
+            results.append(_script_result("Flush ARP cache", ok, detail))
+        return results
+
     if sys.platform != "win32":
-        return [_script_result("Windows recovery", False, "Windows-only")]
+        return [_script_result("Network recovery", False, "Unsupported platform")]
+
+    if from_daemon:
+        flush_arp = False
 
     from . import daemon
 
@@ -403,19 +422,45 @@ def run_network_recovery(
     if from_daemon:
         results.append(_script_result("Full route-table reset", True, "Daemon recovery never flushes all routes"))
 
-    if not batch_steps:
-        return results
-
-    batch_ok = _run_recovery_script("; ".join(script_lines), timeout_ms=90000)
-    results.extend(
-        _script_result(
-            name,
-            batch_ok,
-            detail if batch_ok else "Command batch failed or UAC denied",
+    if batch_steps:
+        batch_ok = _run_recovery_script("; ".join(script_lines), timeout_ms=90000)
+        results.extend(
+            _script_result(
+                name,
+                batch_ok,
+                detail if batch_ok else "Command batch failed or UAC denied",
+            )
+            for name, detail in batch_steps
         )
-        for name, detail in batch_steps
-    )
+
+    if flush_arp:
+        arp_ok, arp_detail = flush_arp_cache()
+        results.append(_script_result("Flush ARP cache", arp_ok, arp_detail))
     return results
+
+
+def flush_arp_cache() -> tuple[bool, str]:
+    """Explicitly flush the local IPv4 ARP/neighbor cache."""
+    if sys.platform.startswith("linux"):
+        from . import linux_network
+
+        return linux_network.flush_neighbor_cache()
+    if sys.platform != "win32":
+        return False, "Unsupported platform"
+    if not _is_admin():
+        return False, "Run this command as Administrator"
+    try:
+        result = subprocess.run(
+            ["arp.exe", "-d", "*"],
+            capture_output=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False, "Could not run arp.exe"
+    if result.returncode == 0:
+        return True, "Flushed IPv4 ARP cache"
+    return False, "Could not flush the IPv4 ARP cache"
 
 
 # ─────────────────────────── DNS tools ───────────────────────────
