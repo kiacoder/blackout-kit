@@ -15,7 +15,7 @@
                   ╚═╝  ╚═╝╚═╝   ╚═╝
 ```
 
-**BlackoutKit (`blackout-kit`) — Universal DPI Bypass & Censorship Circumvention Toolkit**
+**BlackoutKit (`blackout-kit`) — Local Censorship-Circumvention Toolkit**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
@@ -25,7 +25,7 @@
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
-*A unified native GUI and command-line toolkit that orchestrates 16 bypass engines, auto-switches on failure, sets your system proxy automatically, and includes a full network diagnostic suite — all in one place.*
+*A Windows GUI and cross-platform command-line toolkit for locally available bypass engines, proxy configuration, and targeted network diagnostics. Windows provides the broad engine set; Linux supports XRay, XRay → sing-box TUN, Hysteria2, and TUIC through the managed runner.*
 
 **🇮🇷 Iran · 🇨🇳 China · 🇮🇶 Iraq · 🇬🇧 United Kingdom · 🇺🇸 United States · 🇪🇺 Europe**
 
@@ -57,7 +57,7 @@
 
 ## Omni AI Agent Controller (MCP Server)
 
-BlackoutKit includes a native Model Context Protocol (MCP) server that lets AI agents (Antigravity, Claude Desktop, Cursor, Custom Agents) programmatically control the VPN, switch bypass engines, manage split tunneling rules, read live logs, and run network diagnostics:
+BlackoutKit includes a Model Context Protocol (MCP) server for AI clients with a limited collection of local operations. Its connect, disconnect, configuration, Windows system-proxy bypass, log, and diagnostic tools can change local networking or saved state; review requests before granting an agent permission to invoke them:
 
 ```json
 {
@@ -70,35 +70,36 @@ BlackoutKit includes a native Model Context Protocol (MCP) server that lets AI a
 }
 ```
 
-### Exposed AI Agent Tools:
-* `blackout_connect`: Connect to VPN using a specific engine or smart auto-selection.
-* `blackout_disconnect`: Stop active VPN engine and reset system proxy cleanly.
-* `blackout_emergency`: Trigger emergency protocol cycling through all 16 engines.
-* `blackout_status`: Query live VPN state, active engine, IP address, and latency.
-* `blackout_read_logs`: Retrieve recent daemon logs for AI diagnostic reasoning.
-* `blackout_config`: Query or set current active proxy configuration string.
-* `blackout_settings`: Query or change engine settings dynamically.
-* `blackout_split_tunnel`: Add, remove, or list split tunneling bypass rules.
-* `blackout_net_tools`: Run network ping, DNS lookup, or speed test.
-* `blackout_scan`: Scan local network or target range for open ports.
-* `blackout_doctor`: Run self-diagnostic checks and repair missing components.
-* `blackout_security_mode`: Query or toggle Security Mode / Kill Switch state.
+### Exposed AI Agent Tools
+
+* `blackout_connect`: Start an explicitly selected engine. The MCP server passes `auto` through to the daemon rather than resolving the interactive CLI recommendation, so agents should select a supported engine explicitly.
+* `blackout_disconnect`: Stop the managed daemon. The legacy MCP dispatch does not invoke the terminal command's system-proxy cleanup, so it leaves proxy cleanup to the user or terminal CLI.
+* `blackout_emergency`: Start the configured local candidate sequence (Linux uses its supported subset).
+* `blackout_status`: Read daemon state and the current system-proxy state; it does not report public IP or remote latency.
+* `blackout_read_logs`: Read recent local daemon logs.
+* `blackout_config`: List, add, import, or remove saved proxy URIs.
+* `blackout_settings`: Read or change saved settings. Its legacy value handling differs from the terminal CLI, so use the terminal CLI for booleans, lists, and full settings reset.
+* `blackout_split_tunnel`: Maintain locally stored Windows `ProxyOverride` bypass patterns; it is not network-level routing.
+* `blackout_net_tools`: Exposes the working legacy subset: DNS benchmark, DNS flush, and direct DNS-server setting. For targeted recovery, hotspot, or ping, use the terminal CLI rather than this MCP tool.
+* `blackout_scan`: Run the built-in Cloudflare IP reachability scan; it does not scan a local network or arbitrary ports.
+* `blackout_doctor`: Run diagnostics. The MCP implementation currently does not forward its `fix` option.
+* `blackout_security_mode`: Read or set the local SPEED/PRIVATE/LEGEND preset; it does not toggle the kill switch.
 
 ---
 
 ## Split Tunneling
 
-BlackoutKit provides flexible split tunneling rules to route specific websites or local subnets directly outside the proxy tunnel:
+BlackoutKit can maintain **Windows system-proxy bypass** rules for domains and IP patterns. These entries are stored locally and applied to Windows `ProxyOverride`; matching traffic bypasses the system proxy directly.
+
+They are not per-process routing rules, Linux TUN routes, or a general network-layer split-tunneling system.
 
 ```bash
-# Add a domain or IP to split tunnel bypass list
+# Add a domain or IP pattern to the Windows proxy-bypass list
 blackout split-tunnel add example.com
 blackout split-tunnel add 192.168.1.*
 
-# List active split tunnel rules
+# List or remove locally saved bypass rules
 blackout split-tunnel list
-
-# Remove a domain from split tunneling
 blackout split-tunnel remove example.com
 ```
 
@@ -125,41 +126,40 @@ Or simply double-click `blackout.exe` to launch the interactive workspace select
 
 Most bypass tools are single-purpose: one protocol, one config, one point of failure.
 
-**Blackout Kit is different.** It is a *coordinator* — it manages multiple bypass engines simultaneously, auto-switches to the next one when the current one fails, monitors connection health, and recovers automatically. When Iran's TIC flips to whitelist mode during unrest, Blackout Kit's emergency mode tries every engine until something gets through.
+**Blackout Kit is different.** It coordinates local bypass engines, monitors managed processes, and provides targeted recovery for Blackout Kit-owned network state. Windows exposes the full engine set; Linux supports the managed XRay, XRay → sing-box TUN, Hysteria2, and TUIC paths.
 
 Key design decisions:
 
-- **Zero internet required to start** — the Full version ships with all binaries bundled. Unzip and run. No GitHub downloads during a blackout.
-- **One command** — `blackout connect` is all most users need.
-- **Self-healing** — the daemon monitors the connection and auto-restarts failed engines with bounded exponential backoff.
-- **Country-aware** — detects your ISP and automatically recommends the right engine and DNS for your region.
-- **Privacy tiers** — three security modes (SPEED / PRIVATE / LEGEND) let you trade performance for anonymity.
+- **Offline-capable release assets** — release packages can include the required runtime assets; source installs still need dependencies and any missing runtime binaries.
+- **One command** — `blackout connect` uses a local readiness recommendation when no engine is specified.
+- **Bounded recovery** — the daemon retries failed starts with capped backoff and repairs only verified Blackout Kit-owned state.
+- **Country-aware guidance** — when a country is pinned, its local profile informs recommendations; otherwise country-aware commands may query ISP information when network access is available.
+- **Security settings** — SPEED, PRIVATE, and LEGEND apply documented XRay/GDPI settings. They do not guarantee anonymity, bypass success, or resistance to traffic correlation.
 
 ---
 
-## Privacy First (Zero Logs)
+## Local Data and Privacy Boundaries
 
-Blackout Kit is built on absolute privacy and transparency:
+Blackout Kit does not include an analytics or telemetry service. It stores operational state locally, including settings, saved configuration URIs, daemon logs, stability history, and optional certificate or proxy-bypass records. Treat those local files as sensitive because a proxy URI can contain credentials.
 
-- **Zero Telemetry:** The tool does not phone home, track usage, or report analytics to any server.
-- **Zero Remote Logging:** All operational logs (like connection statuses and engine errors) are stored strictly locally on your own machine in the `~/.blackout-kit/` folder.
-- **Local Evasion:** Engines like GoodbyeDPI and SNI Spoofing manipulate packets *locally* on your PC. Your traffic goes straight to the destination website without ever passing through a middleman server.
-- **Fully Open Source:** The entire codebase is open for you (or any AI) to verify.
+Some commands intentionally make network requests: subscription imports, updates, IP/SNI scans, DNS resolution, certificate checks, speed tests, and unpinned ISP/country lookup. The selected proxy or VPN server also observes traffic routed through it; Blackout Kit does not operate those upstream servers.
+
+Several engines manipulate or tunnel traffic locally, but that does not establish anonymity, prevent endpoint logging, or guarantee censorship circumvention. Review the source and [security policy](SECURITY.md) before using the tool in a high-risk environment.
 
 ---
 
 ## Supported Countries
 
-| Country | Censorship Level | Best Engine | Notes |
-|---------|-----------------|-------------|-------|
-| 🇮🇷 Iran | **HIGH** | SNI → WARP → Psiphon | TIC uses hardware DPI. Pure TCP fragmentation is no longer enough; SNI sequence injection remains the core bypass. |
-| 🇨🇳 China | **EXTREME** | XRay → Psiphon → WARP → TUN | Great Firewall blocks IPs + SNI simultaneously. XRay is the main manual and auto-selected path. |
-| 🇮🇶 Iraq | **MEDIUM** | SNI → WARP → GoodbyeDPI | ISP-level DPI similar to Iran. SNI spoofing is usually the best first option. |
-| 🇬🇧 United Kingdom | **LOW** | GoodbyeDPI → WARP | Ofcom ISP content filtering and light DPI are easy to bypass. |
-| 🇺🇸 United States | **MINIMAL** | WARP → Psiphon | ISP throttling and geo-restrictions only. No deep inspection. |
-| 🇪🇺 Europe | **LOW** | GoodbyeDPI → WARP → WireGuard | Privacy-focused profile with ad-blocking DNS defaults for common ISP filtering cases. |
+| Country profile | Censorship level | Local candidate order | Notes |
+|-----------------|-----------------|-----------------------|-------|
+| 🇮🇷 Iran | **HIGH** | SNI → WARP → Psiphon → GDPI | Local profile guidance for changing filtering conditions. |
+| 🇨🇳 China | **EXTREME** | XRay → Psiphon → WARP → TUN | Local profile guidance; use a compatible upstream configuration. |
+| 🇮🇶 Iraq | **MEDIUM** | SNI → WARP → GDPI → Psiphon | Local profile guidance for ISP-level filtering. |
+| 🇬🇧 United Kingdom | **LOW** | GDPI → WARP → Psiphon | Local profile guidance for configured engines. |
+| 🇺🇸 United States | **MINIMAL** | WARP → Psiphon | Local profile guidance, not a privacy assessment. |
+| 🇪🇺 Europe | **LOW** | GDPI → WARP → WireGuard → Psiphon | Local profile guidance; WireGuard needs a supplied configuration. |
 
-Auto-detection: Blackout Kit reads your ISP info at startup and silently selects the optimal engine order and DNS for your country. You can also pin a country manually:
+Country guidance: when a command needs an unpinned profile, Blackout Kit may look up ISP information and use the matching profile as one local recommendation input. It does not establish that an engine or remote proxy will work. You can pin a country manually:
 
 ```
 blackout country set IR
@@ -171,25 +171,25 @@ blackout country reset   ← back to auto-detect
 
 ## Engines
 
-Blackout Kit coordinates **16 bypass engines**. Each serves a different threat model.
+Windows exposes the broad engine set below. Linux x86_64 supports only XRay, the XRay → sing-box TUN stack, Hysteria2, and TUIC through the managed `blackout-engine` runner.
 
 | Engine | Protocol | What It Does | Best For |
 |--------|----------|--------------|----------|
-| **SNI Spoofing** | TCP injection | Injects a fake TLS ClientHello before the real handshake — the DPI sees an allowed domain | Iran, Iraq: ISP-level DPI |
-| **XRay / V2Ray** | VLESS · Trojan · TLS / REALITY | Encrypted proxy tunnel with XRay transport support | All countries |
-| **GoodbyeDPI** | TCP fragmentation | Splits TCP packets so the DPI engine can't reassemble the SNI field | UK, light DPI |
-| **Cloudflare WARP** | WireGuard / MASQUE | Tunnels through Cloudflare's network | All countries |
-| **Psiphon** | Multi-protocol VPN | Automatic protocol switching: SSH, meek, obfuscated SSH | Heavy blackouts |
-| **Hysteria2** | QUIC proxy | High-performance QUIC proxy through sing-box | QUIC-friendly networks |
-| **TUIC** | QUIC proxy | Low-latency QUIC tunnel through sing-box | Low-latency censorship bypass |
-| **Tor** | Onion routing | 3-hop anonymized routing | Max privacy |
-| **TUN (sing-box)** | System-level tunnel | Routes ALL app traffic — not just proxy-aware apps | Stubborn apps |
-| **IKEv2 / L2TP** | Windows native VPN | No extra binary — uses Windows built-in RAS | Corporate networks |
-| **WireGuard** | WireGuard VPN | Fast, kernel-level, modern UDP VPN | Speed + privacy |
-| **OpenVPN** | OpenVPN | Battle-tested TLS-based VPN, works over TCP:443 | Wide compatibility |
-| **SoftEther** | SSL-VPN | VPN over HTTPS — indistinguishable from web traffic | Extreme filtering |
-| **mhrv** | HTTP GAS relay | Embedded HTTP relay through Google Apps Script; HTTPS CONNECT is unsupported | Last-resort HTTP-only access |
-| **Google Apps Script** | HTTPS relay | Domain-fronts traffic through script.google.com | Last resort |
+| **SNI Spoofing** | TCP injection | Windows local SNI component used with XRay; results depend on the network and upstream configuration | Some DPI environments |
+| **XRay / V2Ray** | VLESS · Trojan · TLS / REALITY | Local XRay proxy using a saved supported configuration | Configured proxy use |
+| **GoodbyeDPI** | TCP handling | Windows-only legacy or experimental native TCP handling | Some light-DPI environments |
+| **Cloudflare WARP** | WARP client | Windows runtime path using its configured WARP client | Networks where that upstream is reachable |
+| **Psiphon** | Multi-protocol client | Windows runtime path using Psiphon Tunnel Core | Fallback where locally available |
+| **Hysteria2** | QUIC proxy | sing-box proxy from a saved Hysteria2 configuration | QUIC-capable configurations |
+| **TUIC** | QUIC proxy | sing-box proxy from a saved TUIC configuration | QUIC-capable configurations |
+| **Tor** | Onion-routing client | Local SOCKS proxy using a separately supplied Tor runtime | Cases needing a Tor-compatible client |
+| **TUN** | System-level tunnel | Windows uses sing-box; Linux starts XRay upstream of sing-box through `blackout-engine` | Proxy-unaware applications |
+| **IKEv2 / L2TP** | Windows native VPN | Windows RAS connection using saved settings | Windows VPN use |
+| **WireGuard** | WireGuard VPN | Windows client using a supplied `.conf` file | Windows WireGuard use |
+| **OpenVPN** | OpenVPN | Windows client using a supplied `.ovpn` file | Windows OpenVPN use |
+| **SoftEther** | SoftEther VPN | Windows SoftEther client using saved settings | Windows SoftEther use |
+| **mhrv** | HTTP GAS relay | Embedded HTTP relay; HTTPS CONNECT is unsupported | Last-resort HTTP-only access |
+| **Google Apps Script** | HTTP relay | HTTP relay through configured Apps Script deployments; HTTPS CONNECT is unsupported | Last-resort HTTP-only access |
 
 GoodbyeDPI currently has two internal backends:
 - **legacy** — the stable default built around `goodbyedpi.exe`, modesets, connectivity probing, and elevation fallback
@@ -197,9 +197,9 @@ GoodbyeDPI currently has two internal backends:
 
 For product safety, the legacy backend remains the default until the native path reaches parity.
 
-**Note for Iran:** GDPI is still weaker than SNI/XRay against modern TIC-style DPI. Keep SNI/XRay as the primary recommendation for Iran.
+**Note for Iran:** The Iran country profile supplies a local candidate order, but filtering behavior changes by network and time. Test the supported local engines with the user's own upstream configuration rather than treating a profile order as proof of effectiveness.
 
-**Note for UK/light DPI:** GDPI remains a strong first option, and the legacy backend stays the production default until the native path is field-proven.
+**Note for UK/light DPI:** The legacy GDPI backend remains the product default; its effectiveness depends on the network and should be tested against the user's own conditions.
 
 **Runtime note:** if the legacy backend is unstable on a specific Windows machine, you can switch locally to the experimental backend:
 ```bash
@@ -252,7 +252,7 @@ python blackout.py bins download
 - `sudo` for system-wide TUN routing, firewall protection, and targeted cleanup
 - A direct VLESS (including REALITY), Trojan, Hysteria2, or TUIC configuration; the Windows SNI packet-injection fallback and VMess runtime path are not available on Linux
 
-On Linux, the supported system-tunnel path is XRay → sing-box TUN. Windows-only engines and desktop controls remain unavailable there. The packages in `requirements.txt` supply the shared Python CLI.
+On Linux, `blackout connect xray` uses the managed XRay runner; `blackout connect tun` starts XRay first, then sing-box TUN through the same runner. Hysteria2 and TUIC are also supported. SNI spoofing, GoodbyeDPI, Windows VPN engines, the desktop GUI, and Windows proxy-bypass rules are unavailable there. The packages in `requirements.txt` supply the shared Python CLI.
 
 ### Linux Quick Start
 
@@ -296,14 +296,14 @@ python blackout.py
 :: 2. Let the doctor check everything first
 python blackout.py doctor
 
-:: 3. Connect (auto-picks the best engine for your country)
+:: 3. Connect (uses a local readiness recommendation unless you specify an engine)
 python blackout.py connect
 
-:: 4. If that fails, try all engines one by one
+:: 4. If that fails, try locally supported candidates in sequence
 python blackout.py emergency
 ```
 
-That's it. Blackout Kit handles the rest — sets your system proxy, monitors the connection, and auto-switches if the engine drops.
+The selected engine may expose a local proxy or manage its own routes. In daemon mode, Blackout Kit monitors its managed engine and retries failed starts up to the configured limit; this does not prove upstream reachability or guarantee a successful failover.
 
 ---
 
@@ -328,7 +328,7 @@ Use a trusted server configuration and key supplied by that server's operator. B
 ### Connection
 
 ```
-blackout connect                   Auto-select best engine and connect
+blackout connect                   Use a local readiness recommendation and connect
 blackout connect sni               Connect with a specific engine
 blackout connect xray
 blackout connect warp
@@ -349,7 +349,7 @@ blackout connect --background      Run in background (daemon mode)
 blackout connect sni --background
 blackout connect --iran            Apply Iran TIC 2026 evasion profile
 
-blackout emergency                 Try all engines in order until one works
+blackout emergency                 Try locally supported candidates in configured order
 blackout emergency --background
 
 blackout stop                      Stop the background daemon
@@ -382,7 +382,7 @@ blackout scan --count 300          Scan 300 IPs (default: 100)
 
 ```
 blackout config list               List saved V2Ray/proxy configs
-blackout config add <uri>          Add a vless:// or trojan:// URI
+blackout config add <uri>          Add a vless://, trojan://, vmess://, hysteria2://, or tuic:// URI
 blackout config import <url>       Import from a subscription URL
 blackout config remove <n>         Remove config by number
 ```
@@ -408,9 +408,13 @@ blackout country reset             Remove pin — return to auto-detect
 
 ```
 blackout mode                      Show current security mode
-blackout mode speed                Max speed, no overhead (default)
-blackout mode private              Random TLS fingerprint + DoH DNS
-blackout mode legend               Full privacy: multi-hop, kill switch, encrypted configs
+blackout mode speed                Compatibility-focused local XRay/GDPI settings (default)
+blackout mode private              Random XRay fingerprint and MUX settings
+blackout mode legend               Adds strict handling for known-bad normal TLS certificates
+
+# Kill switch and config encryption remain explicit opt-in actions
+blackout killswitch on
+blackout config encrypt
 ```
 
 ### Network Tools
@@ -425,10 +429,10 @@ blackout tools adapters                List network adapters
 blackout tools mtu [host]              Detect path MTU
 blackout tools traceroute [host]       Traceroute
 blackout tools hotspot                 Toggle Windows Mobile Hotspot
-blackout tools share-vpn               Share VPN over hotspot (ICS)
+blackout tools share-vpn               Show manual Windows ICS guidance for a detected adapter
 blackout tools netfix                  Targeted post-crash recovery (safe default)
-blackout tools cert-check <host>       Check TLS certificate for a host
-blackout tools cert-check <host> --allow   Manually allow a host in LEGEND mode
+blackout tools cert-check <host>       Check a normal TLS certificate for a host
+blackout tools cert-check <host> --allow   Manually allow a normal TLS host in LEGEND mode
 blackout network                       Show IP, ISP, country, and connection status
 blackout network isp                   Detailed ISP info + country censorship context
 ```
@@ -440,8 +444,9 @@ blackout doctor                    Run all diagnostic checks
 blackout doctor --fix              Auto-fix everything fixable
 blackout doctor --fix-av           Add bins/ to Windows Defender exclusions
 blackout fix                       Targeted post-crash network recovery
-blackout fix --full-route-reset    Emergency: flush every IPv4 route, then renew DHCP
-blackout fix --full-stack-reset    Emergency: reset Winsock, TCP/IP, autotuning, and DHCP
+blackout fix --full-route-reset    Windows emergency only: flush every IPv4 route, then renew DHCP
+blackout fix --full-stack-reset    Windows emergency only: reset Winsock, TCP/IP, autotuning, and DHCP
+blackout fix --flush-arp           Explicit ARP/neighbor-cache flush (Windows or Linux)
 ```
 
 ### Post-Crash Network Recovery
@@ -503,47 +508,46 @@ blackout help quick_start          5-minute getting started guide
 Blackout Kit has three security tiers. Switch with `blackout mode <name>`.
 
 ### SPEED (default)
-> Just get through. Maximum compatibility, zero overhead.
+> Prioritizes compatibility and low local overhead.
 
-- TLS fingerprint: Chrome
-- Logging: none
-- MUX: disabled
-- Cert checking: silent bypass (`allowInsecure=True` always)
-- Kill switch: off
+- XRay fingerprint: Chrome
+- XRay logging: none
+- XRay MUX: disabled
+- Normal TLS policy: `allowInsecure=True`
+- Kill switch: unchanged; enable it explicitly when appropriate
 
-Best for: daily use, streaming, browsing.
+Best for: ordinary connectivity where the upstream server is already trusted. This mode does not provide anonymity or validate normal TLS certificates.
 
 ---
 
 ### PRIVATE
-> Harder to fingerprint. Slightly slower.
+> Applies a randomized XRay fingerprint and enables XRay MUX.
 
-- TLS fingerprint: random (rotates per session)
-- Logging: none
-- MUX: enabled
-- Cert checking: warns if server cert is invalid, but still connects
-- Background cert probing after connect
+- XRay fingerprint: random
+- XRay logging: none
+- XRay MUX: enabled
+- Normal TLS policy: `allowInsecure=True`; the client may record a certificate warning after startup
+- Kill switch: unchanged; enable it explicitly when appropriate
 
-Best for: users who want to avoid traffic analysis without sacrificing reliability.
+Best for: users who want these local XRay settings. It does not prevent traffic analysis, identify a trusted server, or guarantee privacy.
 
 ---
 
 ### LEGEND
-> Near-untraceable. Multi-hop. Hard fail on bad certs.
+> Applies the same randomized XRay fingerprint and MUX settings, then uses strict handling for known-bad normal TLS certificates when XRay starts.
 
-- TLS fingerprint: random
-- MUX: enabled
-- Routing: SNI → XRay → Tor (3-hop)
-- Cert checking: **refuses to connect** if certificate is known-bad (unless manually allowed)
-- Kill switch: auto-enabled
-- Config encryption: AES-256-GCM tied to machine hardware ID
+- XRay fingerprint: random
+- XRay MUX: enabled
+- Normal TLS policy: refuses a known-bad certificate unless it was explicitly allowed
+- Kill switch: unchanged; enable it explicitly when appropriate
+- Config encryption: available through `blackout config encrypt`; it is not enabled automatically
 
-Best for: journalists, activists, high-risk users. Slow but maximally private.
+This mode does not guarantee anonymity, untraceability, traffic-analysis resistance, or an upstream Tor path. For REALITY configurations, XRay validates the configured public key during its REALITY handshake and does not use `cert-check`.
 
 ```
 blackout mode legend
-blackout tools cert-check myvpnserver.com          ← check cert first
-blackout tools cert-check myvpnserver.com --allow  ← if self-signed, manually trust it
+blackout tools cert-check myvpnserver.com          ← optional normal-TLS check
+blackout tools cert-check myvpnserver.com --allow  ← explicitly allow a trusted normal-TLS host
 blackout connect xray
 ```
 
@@ -561,52 +565,32 @@ Run `blackout settings list` to see all available settings. Key ones:
 | `xray_fingerprint` | `chrome` | TLS fingerprint (chrome/firefox/random) |
 | `xray_mux_enabled` | `false` | Enable connection multiplexing |
 | `sni_listen_port` | `40443` | SNI spoofer listen port |
-| `sni_connect_ip` | `""` | Best Cloudflare IP (set after scanning) |
-| `sni_fake_sni` | `www.hcaptcha.com` | Fake SNI domain to inject |
-| `auto_set_proxy` | `true` | Auto-configure Windows system proxy |
-| `engine_order` | `[]` | Emergency mode engine order (empty = country profile default) |
-| `country` | `""` | Pinned country code (empty = auto-detect) |
+| `sni_connect_ip` | `104.19.229.21` | Windows SNI engine target IP; scanning measures TCP reachability only |
+| `sni_fake_sni` | `www.hcaptcha.com` | Windows SNI component's configured fake-SNI value |
+| `auto_set_proxy` | `true` | Apply a system proxy for engines that expose one |
+| `engine_order` | `sni, gdpi, psiphon` | Windows emergency-mode candidate order |
+| `country` | `""` | Pinned country code (empty = ISP lookup when a country-aware command needs one) |
 | `terminal_theme` | `dark` | Blackout Kit Rich palette (`dark` / `light`) only |
-| `kill_switch` | `false` | Block all non-proxy traffic |
-| `wg_config_file` | `""` | Path to WireGuard .conf file |
-| `openvpn_config` | `""` | Path to .ovpn file |
-| `ikev2_server` | `""` | IKEv2 VPN server address |
+| `kill_switch` | `false` | Persist whether Blackout Kit should attempt its platform kill switch on a compatible start |
+| `wg_config_file` | `""` | Path to WireGuard `.conf` file |
+| `openvpn_config` | `""` | Path to OpenVPN `.ovpn` file |
+| `ikev2_server` | `""` | Windows built-in VPN server address |
 | `softether_host` | `""` | SoftEther server hostname |
-| `psiphon_egress_country` | `""` | Psiphon exit country code |
+| `psiphon_country` | `DE` | Requested Psiphon exit-country setting |
 
 ---
 
 ## How It Works
 
-### SNI Spoofing & TCP Fragmentation (Iran/Iraq)
+### SNI Spoofing and Fragmentation (Windows)
 
-Iran's TIC uses hardware DPI at the internet gateway. It reads the **SNI field** in the TLS ClientHello to identify which site you're connecting to.
+The Windows SNI engine combines a local SNI-spoofing component with XRay. XRay exposes local SOCKS/HTTP ports and sends the configured proxy stream to the local SNI component on port `40443`; the SNI component applies its own packet-handling strategy before the upstream connection.
 
-Blackout Kit defeats this with **TCP Fragmentation**:
-
-```
-[Your App]
-    │
-    ▼
-[XRay — SOCKS5 :10808]
-    │  Trojan/VLESS over TLS
-    ▼
-[SNI Spoofer — :40443]
-    │
-    ├─── Shredded ClientHello ──► [Cloudflare IP :443]
-    │    (Fragmented into 10-byte chunks)
-    │
-    └─── Real TLS Handshake ► [Cloudflare IP :443]
-         SNI = "your-actual-server.com"    DPI: cannot reassemble SNI
-```
-
-The TLS ClientHello is intercepted and shredded into tiny 10-byte TCP segments before being sent. Because Go's TCP stack sends them instantly without artificial lag, the connection is lightning fast. The hardware DPI cannot reassemble the fragmented packets in real-time and lets the traffic pass, while the destination server perfectly reconstructs the TLS handshake.
+Some networks inspect TLS metadata such as SNI, and the effectiveness of any packet strategy depends on the ISP, destination, current filtering rules, and selected configuration. The Linux runtime does not provide this Windows-only SNI path. Use `blackout route`, `blackout status`, and local logs to inspect the local setup rather than treating a specific technique as a guarantee of connectivity or anonymity.
 
 ### GoodbyeDPI (UK / Light DPI)
 
-Fragments TCP packets at the IP layer so the DPI engine receives split packets and cannot reconstruct the SNI field for inspection. Works against simple stateless DPI that doesn't reassemble packets.
-
-> Note: Does NOT work against Iran's TIC (2025+). Their hardware does full TCP reassembly before SNI inspection.
+Applies Windows TCP packet handling through the selected GoodbyeDPI backend. Its results depend on the network and filtering equipment; it is not available on Linux and should not be treated as a guaranteed bypass method.
 
 ### Emergency Mode
 
@@ -619,7 +603,7 @@ When a normal `connect` fails, `emergency` tries engines in order:
 4. psiphon  ← CONNECTED ✓
 ```
 
-The order defaults to your country's recommended profile but can be overridden:
+The configured order is used when present; otherwise the active country profile supplies the foreground fallback order. It can be overridden:
 
 ```
 blackout settings set engine_order xray,warp,psiphon,tor
@@ -637,7 +621,7 @@ blackout settings set engine_order xray,warp,psiphon,tor
 | **Who it's for** | End users, general public | Developers, contributors |
 | **GitHub Release asset** | `blackout.exe` | `Source code.zip` |
 
-**Always share the `blackout.exe` version with people who need it RIGHT NOW.** The Source version is for developers and people who install it before a crisis.
+Choose the packaged executable or source installation based on the user's platform, release provenance, and available dependencies. The source version is intended for contributors and people who can provision dependencies before connectivity is disrupted.
 
 ---
 
@@ -669,7 +653,7 @@ Requires the app to be run as Administrator for the first time.
 
 ### LEGEND mode refuses to connect ("cert verification FAILED")
 
-The server's TLS certificate failed strict validation. You have two options:
+A normal TLS configuration has a known-bad certificate and LEGEND mode refused it. This does not apply to VLESS REALITY, which uses its configured public key in XRay's REALITY handshake. For a normal TLS configuration, you have two options:
 
 ```
 :: Option 1 — Check what's wrong
@@ -712,7 +696,7 @@ blackout stop
 blackout fix
 ```
 
-It restores DHCP DNS only when a connected physical adapter is still using loopback DNS and cycles only the deterministic `BlackoutKit-TUN` adapter. If targeted recovery cannot restore connectivity, choose the applicable explicit emergency repair:
+On Windows, it restores DHCP DNS only when a connected physical adapter is still using loopback DNS and cycles only the deterministic `BlackoutKit-TUN` adapter. On Linux, it removes only Blackout Kit-owned firewall/TUN/routing state and flushes a supported local DNS cache. If Windows targeted recovery cannot restore connectivity, choose the applicable explicit emergency repair:
 
 ```
 blackout fix --full-route-reset
@@ -735,7 +719,7 @@ blackout country set IR   ← pin manually
 
 See [ROADMAP.md](ROADMAP.md) for the full version plan.
 
-v1.1 includes Hysteria2 and TUIC support, TLS record-layer fragmentation, the `blackout connect --iran` profile, and DNS-over-HTTPS bootstrapping. See [ROADMAP.md](ROADMAP.md) for the remaining v1.2 work.
+The current release line includes Linux x86_64 XRay/TUN support, local routing/status/theme UX, targeted recovery, and client-side VLESS REALITY handling. See [ROADMAP.md](ROADMAP.md) for planned work and supported-platform boundaries.
 
 ---
 

@@ -18,36 +18,38 @@ TOPICS: dict[str, str] = {
 "quick_start": """
 [bold cyan]Quick Start — 5 steps to get online[/bold cyan]
 
-[bold]Step 1 — Put binaries in bins/[/bold]
-  At minimum you need TWO files in the [bold]bins/[/bold] folder:
-    sni-spoofing.exe    (from t.me/patterniha or the project GitHub)
-    xray.exe            (from github.com/XTLS/Xray-core/releases)
+[bold]Step 1 — Verify local runtime prerequisites[/bold]
+  Windows uses the binary requirements for the engine you choose. The SNI path
+  needs sni-spoofing.exe and XRay; other engines have their own requirements.
 
-  Optional but recommended:
-    goodbyedpi.exe      (github.com/ValdikSS/goodbyedpi/releases)
-    warp-plus.exe       (github.com/hiddify/warp-plus/releases)
+  Linux x86_64 supports XRay, XRay → sing-box TUN, Hysteria2, and TUIC through
+  the managed [bold]blackout-engine[/bold] runner in bins/. The Windows SNI,
+  GoodbyeDPI, VPN, and desktop-GUI paths are unavailable on Linux.
 
-[bold]Step 1b — Verify your country profile[/bold]
+[bold]Step 1b — Review or pin a country profile[/bold]
   blackout country
-  Auto-detects your country and shows the best engine for your location.
-  For China: blackout country set CN  (manual pin recommended)
+  A profile can inform local recommendations; an unpinned lookup uses network
+  access and does not confirm that an engine or upstream proxy will work.
+  Pin explicitly when needed: blackout country set CN
 
 [bold]Step 2 — Add a V2Ray config[/bold]
-  blackout config add "vless://...@127.0.0.1:40443?..."
+  blackout config add "vless://..."
   OR import a subscription:
-  blackout config import https://your-subscription-url
+  blackout config import <subscription-url>
 
-[bold]Step 3 — Run a scan[/bold]
-  blackout scan
-  This finds the fastest Cloudflare IP for your location.
+[bold]Step 3 — Inspect local readiness[/bold]
+  blackout route
+  This shows locally supported engine candidates without probing saved nodes.
 
 [bold]Step 4 — Start in background[/bold]
-  blackout start -d
-  Your Windows system proxy is set automatically.
+  blackout connect --background
+  Engines with an HTTP proxy can set the Windows system proxy when auto_set_proxy
+  is enabled; network-level engines use their own routing path.
 
-[bold]Step 5 — Verify it works[/bold]
+[bold]Step 5 — Verify local state[/bold]
   blackout status
-  You should see HTTP/SOCKS ports open and latency shown.
+  Check the daemon state and any local HTTP/SOCKS ports. Open local ports do not
+  by themselves prove upstream reachability.
 
 [dim]Need free configs? See: blackout help config[/dim]
 [dim]Something broken? Run: blackout doctor[/dim]
@@ -57,16 +59,17 @@ TOPICS: dict[str, str] = {
 [bold cyan]Frequently Asked Questions[/bold cyan]
 
 [bold]Q: The proxy stops working after a few hours. Why?[/bold]
-  The censorship infrastructure changes IP blocks frequently.
-  Run [bold]blackout scan[/bold] then [bold]blackout stop && blackout start -d[/bold]
-  Or use daemon mode: [bold]blackout emergency -d[/bold]
-  The daemon automatically switches engines if one fails.
+  Network conditions, upstream servers, or local runtime state may have changed.
+  Check [bold]blackout status[/bold] and [bold]blackout logs[/bold], then inspect
+  [bold]blackout route[/bold] for locally ready alternatives. Use daemon mode or
+  [bold]blackout emergency -d[/bold] only after reviewing the selected engines.
+  A restart does not guarantee that an upstream service will become reachable.
 
 [bold]Q: Cloudflare CAPTCHA keeps showing. How do I fix it?[/bold]
-  1. Make sure xray_fingerprint = chrome  (default)
-  2. Run [bold]blackout scan[/bold] to get a fresh Cloudflare IP
-  3. Try: [bold]blackout start --engine warp[/bold]
-     WARP gives you a "clean" Cloudflare IP with no captchas.
+  CAPTCHA behavior is decided by the destination service and cannot be guaranteed
+  by a local setting. Check the selected engine and upstream service, try the
+  default XRay fingerprint, or choose another locally ready engine with
+  [bold]blackout route[/bold].
 
 [bold]Q: Can I share the proxy with my phone?[/bold]
   Option A — USB tethering/hotspot:
@@ -87,32 +90,32 @@ TOPICS: dict[str, str] = {
   Blackout Kit is a tool — what you do with it is your responsibility.
 
 [bold]Q: Will this make me anonymous?[/bold]
-  Standard mode (SPEED) is NOT anonymous — it just bypasses censorship.
-  For anonymity use: [bold]blackout mode legend[/bold]
-  That enables Tor multi-hop routing. It is SLOW.
-  See: [bold]blackout help security[/bold]
+  No mode guarantees anonymity. The modes configure local XRay and legacy GDPI
+  settings; your device, destination, network, and upstream server remain part
+  of the threat model. See: [bold]blackout help security[/bold]
 """,
 
 # ── Core commands ─────────────────────────────────────────────────────────────
 
 "start": """
 [bold cyan]blackout start[/bold cyan]
-Start a bypass engine and set Windows system proxy automatically.
+Start a supported engine and configure a system proxy when that engine exposes one.
 
 [bold]Usage:[/bold]
-  blackout start                        Auto-select best engine (sni by default)
-  blackout start --engine sni           SNI + XRay stack (most effective)
-  blackout start --engine gdpi          GoodbyeDPI only (no proxy port needed)
-  blackout start --engine psiphon       Psiphon VPN (heaviest blackouts)
-  blackout start --engine warp          Cloudflare WARP (clean IPs, no captchas)
-  blackout start --engine tor           Tor onion network (max anonymity)
+  blackout start                        Start the default engine path
+  blackout start --engine sni           Windows SNI + XRay stack
+  blackout start --engine gdpi          Windows GoodbyeDPI path
+  blackout start --engine psiphon       Psiphon VPN path
+  blackout start --engine warp          Cloudflare WARP path
+  blackout start --engine tor           Tor proxy path
   blackout start -d                     Run in background — survives terminal close
 
 [bold]What happens:[/bold]
-  1. SNI engine starts on port 40443 (intercepts and fakes TLS headers)
-  2. XRay core starts on SOCKS :10808 / HTTP :10809
-  3. Windows system proxy is automatically set to 127.0.0.1:10809
-  4. Your browser and most apps now go through the bypass
+  The selected engine controls its own startup sequence. The Windows SNI stack
+  starts its local SNI component and XRay; XRay exposes SOCKS/HTTP ports when
+  configured. Linux supports only XRay, TUN, Hysteria2, and TUIC through the
+  managed runner. A Windows system proxy is set only when auto_set_proxy is
+  enabled and the selected engine provides an HTTP proxy.
 
 [bold]Tips:[/bold]
   • Use [bold]-d[/bold] so the proxy stays up if you close the terminal
@@ -129,35 +132,39 @@ Stop all running engines and clear the Windows system proxy.
   blackout stop
 
 [bold]What happens:[/bold]
-  1. Daemon process (and all child engines) are terminated
-  2. Windows system proxy is cleared (direct connection restored)
-  3. Kill switch is disabled if it was active
+  1. The managed daemon and its child engines are stopped
+  2. If a daemon was running and auto_set_proxy is enabled, the system proxy is cleared
+  3. If the saved kill-switch setting is enabled, Blackout Kit attempts to remove
+     its own platform firewall rules
 
 [bold]Note:[/bold]
-  If the daemon is not responding, kill it manually:
-    taskkill /F /IM python.exe
-  Then run: blackout stop  (to clear the proxy even without the daemon)
+  If no daemon is running, this command reports that state and does not clear an
+  independently configured system proxy. Use targeted recovery only after a crash:
+    blackout fix
+  On Linux, run commands that modify TUN/firewall state with sudo.
 """,
 
 "scan": """
 [bold cyan]blackout scan[/bold cyan]
-Find the best Cloudflare IP and working fake SNI domains.
+Measure local TCP reachability for generated Cloudflare IPs and resolve configured
+fake-SNI domains. Results are local observations, not proof that a bypass path
+will work.
 
 [bold]Usage:[/bold]
   blackout scan                         Scan both IPs and SNI domains
   blackout scan --ips                   Only scan Cloudflare IPs
-  blackout scan --sni                   Only test fake SNI domain resolution
+  blackout scan --sni                   Only resolve fake-SNI domains
   blackout scan --count 200             Scan 200 IPs (default: 100)
 
 [bold]What it does:[/bold]
-  • Generates IPs from all official Cloudflare CIDR ranges
-  • Tests TCP connectivity to port 443 on all IPs in parallel
-  • Ranks results by latency (lower = faster)
-  • Tests which fake SNI domains resolve correctly
+  • Generates candidates from Cloudflare CIDR ranges
+  • Tests TCP connectivity to port 443 in parallel
+  • Ranks responding candidates by local latency
+  • Resolves configured fake-SNI domains through the current DNS path
 
 [bold]After scanning:[/bold]
-  Apply the best IP:  blackout settings set sni_connect_ip <ip>
-  Then restart:       blackout stop && blackout start -d
+  You may set a responding IP:  blackout settings set sni_connect_ip <ip>
+  Then test your supported local engine and upstream configuration.
 """,
 
 "emergency": """
@@ -169,13 +176,17 @@ Automatically try every engine until one successfully connects.
   blackout emergency -d                 Background mode (recommended)
 
 [bold]Engine order:[/bold]
-  sni → gdpi → psiphon  (configurable via settings engine_order)
+  Uses the configured engine order when set; otherwise it uses the active
+  country profile. Linux tries only its supported engine subset.
   Change order: blackout settings set engine_order sni,psiphon,gdpi
 
 [bold]When to use:[/bold]
-  • You cannot access the internet at all
-  • Your normal engine stopped working mid-session
-  • You just woke up and found out there is a blackout
+  • A managed engine stopped working
+  • You want to try locally supported alternatives
+
+[bold]Limit:[/bold]
+  Emergency mode starts candidates in sequence; it cannot confirm that an
+  upstream proxy, VPN server, or filtering environment will work.
 """,
 
 "status": """
@@ -235,24 +246,27 @@ Set Blackout Kit's Rich terminal palette.
 
 "connect": """
 [bold cyan]blackout connect[/bold cyan]
-Smart one-command connect: scan → pick best engine → start in background.
+Connect using an explicit engine or the highest locally ready recommendation.
 
 [bold]Usage:[/bold]
-  blackout connect                      Full auto (scan + start best engine)
-  blackout connect --engine warp        Skip scan, use specific engine
-  blackout connect --iran               🔥 TIC 2026 evasion: ArvanCloud SNI + Firefox
-                                        fingerprint + PRIVATE mode + TLS fragment
+  blackout connect                      Use local readiness recommendation
+  blackout connect --engine warp        Use a specific supported engine
+  blackout connect --iran               Apply the Iran profile's local settings
   blackout connect -d                   Run in background
 
 [bold]What it does:[/bold]
-  1. Runs a Cloudflare IP scan (unless --engine is specified)
-  2. Applies the fastest IP to settings
-  3. Starts the best available engine in background mode
-  4. Sets system proxy automatically
-  5. Shows status when done
+  1. Ranks engines from local platform support, installed components, saved
+     config protocols, any pinned country profile, settings, and local history
+  2. Lets interactive terminals accept or replace the recommendation
+  3. Starts the selected engine stack and sets a system proxy when that engine
+     exposes one
+  4. Runs a small Cloudflare scan only for the Windows SNI path when no saved
+     Cloudflare IP exists
 
-[bold]Tip:[/bold]
-  This is the command to use every morning. It handles everything.
+[bold]Limits:[/bold]
+  Recommendations do not probe saved proxy nodes or guarantee connectivity.
+  On Linux, only XRay, TUN, Hysteria2, and TUIC are supported through the
+  managed blackout-engine runner.
 """,
 
 "fix": """
@@ -305,18 +319,19 @@ Customize every aspect of Blackout Kit.
   blackout settings reset               Reset everything to defaults
 
 [bold]Key settings:[/bold]
-  sni_connect_ip      Cloudflare IP to route through (run scan to find best)
-  sni_fake_sni        Domain DPI sees — must be a whitelisted domain
-  xray_fingerprint    TLS fingerprint: chrome / firefox / safari / random
-                      [yellow]chrome gives fewest Cloudflare captchas[/yellow]
-  auto_set_proxy      true = system proxy is set automatically
-  engine_order        sni,gdpi,psiphon — emergency mode priority
-  psiphon_country     Exit country for Psiphon (DE/US/CA/NL...)
-  gdpi_backend        legacy = stable default, native = experimental Go/WinDivert path
-                      Example: blackout settings set gdpi_backend native
-  gdpi_flags          -9 = maximum bypass, -5 = balanced, -1 = minimal (legacy backend only)
-  gdpi_always_test_all  true = test every modeset before picking one (legacy backend only)
-  kill_switch         true = block ALL internet if proxy drops (safe mode)
+  sni_connect_ip      Windows SNI target IP; scan can measure TCP reachability
+  sni_fake_sni        Windows SNI component's configured fake-SNI value
+  xray_fingerprint    XRay fingerprint: chrome / firefox / safari / random
+  auto_set_proxy      Apply a system proxy only for engines that expose one
+  engine_order        Emergency-mode priority on Windows
+  psiphon_country     Requested Psiphon exit-country setting
+  gdpi_backend        legacy = stable default; native = experimental Go/WinDivert
+  gdpi_flags          Legacy-GDPI modeset flags only
+  gdpi_always_test_all  Test every legacy-GDPI modeset before selecting one
+  kill_switch         Allow compatible starts to attempt the platform kill switch
+  xray_doh_dns        Route XRay DNS through configured DoH servers when enabled
+  xray_split_tunnel   XRay routing rules for LAN and `.ir` traffic; separate from
+                      Windows system-proxy bypass patterns
 
 [bold]Environment overrides (advanced):[/bold]
   Every setting can be overridden without editing settings.json:
@@ -330,7 +345,7 @@ Manage V2Ray proxy configurations.
 
 [bold]Usage:[/bold]
   blackout config list                  List all saved configs
-  blackout config add <uri>             Add a vless:// or trojan:// URI
+  blackout config add <uri>             Add a supported proxy URI
   blackout config import <url>          Import from subscription URL
   blackout config remove <n>            Remove config #n
   blackout config encrypt               Encrypt configs.txt with AES-256-GCM
@@ -338,10 +353,13 @@ Manage V2Ray proxy configurations.
 
 [bold]Testing configs:[/bold]
   Analyze your configs: [bold]blackout test[/bold]
-  Shows which configs are SNI-compatible and their basic details.
+  Shows local protocol, transport/security mode, SNI compatibility, and label.
+  It does not probe saved endpoints and does not print URI credentials or
+  REALITY key material.
 
 [bold]SNI-compatible configs:[/bold]
-  Configs must use address 127.0.0.1:40443 to route through the SNI engine.
+  Configs must use address 127.0.0.1:40443 to route through the Windows SNI
+  engine. Linux requires a direct supported proxy configuration.
   Example:
   trojan://password@127.0.0.1:40443?security=tls&sni=www.hcaptcha.com
             &type=ws&path=/ws&host=www.hcaptcha.com
@@ -362,41 +380,70 @@ Manage V2Ray proxy configurations.
 [bold]Config encryption:[/bold]
   Your configs contain server credentials.
   Encrypt them: [bold]blackout config encrypt[/bold]
-  The file is locked with AES-256-GCM tied to this machine.
+  The file is encrypted with AES-256-GCM using a key derived from this machine.
+  Keep a secure backup before moving configs to another device.
+""",
+
+"split_tunnel": """
+[bold cyan]blackout split-tunnel[/bold cyan]
+Manage Windows system-proxy bypass entries.
+
+[bold]Usage:[/bold]
+  blackout split-tunnel list
+  blackout split-tunnel add example.com
+  blackout split-tunnel add 192.168.1.*
+  blackout split-tunnel remove example.com
+
+[bold]What it changes:[/bold]
+  • Saves direct-bypass patterns locally in split_tunnel.json
+  • Applies them to the Windows ProxyOverride setting
+  • Matching destinations bypass the Windows system proxy directly
+
+[bold]Limits:[/bold]
+  • This is not per-process routing or a general network-layer route table
+  • It does not configure Linux TUN routing or firewall bypass rules
+  • It affects proxy-aware traffic that uses the Windows system proxy
 """,
 
 # ── Engines ───────────────────────────────────────────────────────────────────
 
 "engines": """
 [bold cyan]Engine Reference[/bold cyan]
-All bypass engines in Blackout Kit and when to use each.
+Windows exposes the full engine set. Linux x86_64 supports only XRay, the
+XRay → sing-box TUN stack, Hysteria2, and TUIC through blackout-engine.
+Availability and results depend on local prerequisites, the chosen server, and
+network conditions; no engine guarantees censorship circumvention or anonymity.
 
 [bold]DPI Bypass Engines (no VPN):[/bold]
-  [bold]sni[/bold]        SNI packet injection — most effective for Cloudflare-fronted servers
-             Requires: sni-spoofing.exe + xray.exe + a config
+  [bold]sni[/bold]        Windows SNI-spoofing + XRay stack
+             Requires: sni-spoofing.exe + XRay + a compatible local config
              Port: 40443 (listen) → HTTP :10809 / SOCKS :10808
-             Best for: normal day-to-day use
+             Availability: Windows only; effectiveness depends on the network
 
-  [bold]gdpi[/bold]       GoodbyeDPI TCP fragmentation — stable default backend
+  [bold]gdpi[/bold]       Windows GoodbyeDPI TCP-handling path
              Requires: goodbyedpi.exe + WinDivert.dll + Administrator
-             Best for: sites that don't need a proxy (Telegram, etc.)
+             Suitable only where its network behavior is effective; it is not a
+             proxy or VPN and does not cover every protocol.
              Backend: [bold]legacy[/bold] by default; [bold]native[/bold] Go/WinDivert backend is experimental
 
 [bold]VPN / Tunnel Engines:[/bold]
-  [bold]psiphon[/bold]    Multi-protocol VPN — works even during heavy blackouts
+  [bold]psiphon[/bold]    Multi-protocol client using Psiphon Tunnel Core
              Requires: psiphon-tunnel-core-x86_64.exe
              Port: HTTP :8081 / SOCKS :1081
-             Best for: last-resort when SNI fails, slow bootstrap
+             Use when its local runtime and upstream service are available; bootstrap
+             time and reachability vary by network.
 
-  [bold]warp[/bold]       Cloudflare WARP — clean residential IP, very few captchas
+  [bold]warp[/bold]       Cloudflare WARP client path
              Requires: warp-plus.exe
              Port: SOCKS :1080
-             Best for: CAPTCHA issues, partial blackouts
+             Results, exit characteristics, and destination CAPTCHA behavior vary
+             by the upstream service and network.
 
-  [bold]tor[/bold]        Tor onion network — maximum anonymity
+  [bold]tor[/bold]        Local SOCKS proxy using a supplied Tor runtime
              Requires: tor.exe (Expert Bundle)
              Port: SOCKS :9050
-             Best for: high-privacy needs, slow
+             Use only with an appropriate Tor threat model; Blackout Kit itself
+             does not establish anonymity or prevent traffic correlation
 
   [bold]wireguard[/bold]  Modern UDP-based VPN (your own server)
              Requires: wireguard.exe + .conf file
@@ -406,7 +453,7 @@ All bypass engines in Blackout Kit and when to use each.
              Requires: openvpn.exe + .ovpn config file
              Set: blackout settings set openvpn_config C:/path/vpn.ovpn
 
-  [bold]softether[/bold]  SSL-VPN (looks like HTTPS on port 443)
+  [bold]softether[/bold]  Windows SoftEther VPN client
              Requires: vpnclient.exe + vpncmd.exe
              Set: softether_host / softether_hub / softether_username
 
@@ -415,8 +462,9 @@ All bypass engines in Blackout Kit and when to use each.
              No internet needed — peer discovery via UDP multicast
              See: blackout help neighbor
 
-  [bold]appsscript[/bold] HTTP relay through Google Apps Script (domain fronting)
-             Built-in, no binary needed — Google servers relay your traffic
+  [bold]appsscript[/bold] HTTP relay through Google Apps Script
+             Built-in, no binary needed — routes eligible HTTP traffic through
+             the configured Apps Script relay; it is not a general HTTPS tunnel
              Port: HTTP :8087
 
   [bold]mhrv[/bold]       Embedded HTTP Google Apps Script relay via blackout_core.dll
@@ -481,21 +529,24 @@ Analyze and verify your saved V2Ray configurations.
 [bold]What it checks:[/bold]
   • [bold]Protocol:[/bold] Trojan, VLESS, etc.
   • [bold]SNI Compatibility:[/bold] Does the config point to 127.0.0.1:40443?
-  • [bold]Address/Port:[/bold] Valid server coordinates
-  • [bold]Name:[/bold] User-friendly name from the URI remark
+  • [bold]Transport/Security:[/bold] Local transport mode, including REALITY
+  • [bold]SNI Compatibility:[/bold] Whether it targets the Windows SNI listener
+  • [bold]Name:[/bold] User-friendly URI remark
 
-[dim]Coming soon: Real-time latency testing for every saved config.[/dim]
+[bold]Privacy:[/bold]
+  The command is local-only: it does not probe endpoints and does not display
+  URI credentials, endpoints, or REALITY key material.
 """,
 
 "mode": """
 [bold cyan]blackout mode[/bold cyan]
-Switch between pre-configured security and performance profiles.
+Switch between local XRay and legacy GoodbyeDPI setting profiles.
 
 [bold]Usage:[/bold]
   blackout mode                         Show current mode and descriptions
-  blackout mode speed                   Max speed, minimal overhead
-  blackout mode private                 Random fingerprint + DoH
-  blackout mode legend                  Multi-hop + timing obfuscation
+  blackout mode speed                   Compatibility-focused XRay settings
+  blackout mode private                 Random XRay fingerprint + MUX
+  blackout mode legend                  Strict known-bad normal-TLS handling
 
 [bold]Detailed info:[/bold]
   See: [bold]blackout help security[/bold]
@@ -529,7 +580,7 @@ For users who have their own VPN server.
   2. Save your .conf file anywhere (e.g. C:/VPN/wg0.conf)
   3. Run:  blackout settings set wg_config_file "C:/VPN/wg0.conf"
   4. Run:  blackout start --engine wireguard
-  WireGuard installs as a Windows service and routes all traffic.
+  WireGuard uses the supplied configuration through the Windows client; routing behavior is defined by that configuration.
 
 [bold]OpenVPN:[/bold]
   1. Install OpenVPN from openvpn.net
@@ -560,31 +611,35 @@ For users who have their own VPN server.
 
 "security": """
 [bold cyan]Security Modes[/bold cyan]
-Three privacy levels — choose based on your threat model.
+Three local configuration presets for XRay and legacy GoodbyeDPI settings.
+They do not guarantee privacy, anonymity, connectivity, or resistance to
+traffic analysis.
 
 [bold]SPEED (default)[/bold]
-  Goal: bypass censorship as fast as possible
-  • Chrome TLS fingerprint (most compatible)
-  • No mux overhead
-  • No logging
+  • Chrome XRay fingerprint
+  • XRay MUX disabled
+  • Normal TLS streams use allowInsecure=True
   Run: [bold]blackout mode speed[/bold]
 
 [bold]PRIVATE[/bold]
-  Goal: harder to fingerprint your traffic
-  • Random TLS fingerprint (chrome/firefox/safari rotates)
-  • Mux enabled (multiple requests share one connection)
-  • Slightly slower
+  • Random XRay fingerprint
+  • XRay MUX enabled
+  • Normal TLS streams use allowInsecure=True; certificate issues may be
+    recorded after startup
   Run: [bold]blackout mode private[/bold]
 
-[bold]LEGEND 🔥[/bold]
-  Goal: near-untraceable
-  • Random fingerprint + mux
-  • SNI → XRay → Tor multi-hop (3 layers!)
-  • Randomized packet timing
-  • Config encryption enabled automatically
-  • Kill switch enabled automatically
-  • Very slow — expect 3-10× slower than SPEED
+[bold]LEGEND[/bold]
+  • Random XRay fingerprint + MUX
+  • Known-bad normal TLS certificates are refused unless explicitly allowed
+  • Kill switch and config encryption remain separate opt-in commands
   Run: [bold]blackout mode legend[/bold]
+
+[bold]REALITY note:[/bold]
+  VLESS REALITY validates its configured public key inside XRay's REALITY
+  handshake. It does not use the normal TLS certificate policy or cert-check.
+  Import REALITY URIs only from a trusted operator; this client-side support does
+  not create server keys, validate the operator, guarantee anonymity, or prevent
+  detection.
 
 [bold]Check current mode:[/bold]
   blackout mode
@@ -593,10 +648,6 @@ Three privacy levels — choose based on your threat model.
   Security modes still tune [bold]gdpi_flags[/bold], which only affect the
   [bold]legacy[/bold] GDPI backend. The [bold]native[/bold] experimental backend
   ignores those flags for now.
-
-[bold]Note:[/bold]
-  SPEED and PRIVATE still bypass censorship well.
-  LEGEND adds anonymity on top — use it only if you need it.
 """,
 
 "killswitch": """
@@ -608,9 +659,11 @@ Blocks direct internet traffic if the proxy or tunnel goes down.
 
 [bold]Linux:[/bold]
   Uses only an owned `inet blackoutkit` nftables table, with iptables/ip6tables
-  fallback. Before enabling, Blackout Kit resolves the configured upstream proxy
-  into literal IP:port rules. It permits loopback, LAN/DHCP, BlackoutKit-TUN, and
-  that exact endpoint; it refuses activation if a safe endpoint cannot be resolved.
+  fallback. Before enabling, Blackout Kit resolves a compatible configured upstream
+  proxy into literal IP:port rules. It permits loopback, LAN/DHCP, BlackoutKit-TUN,
+  and that exact endpoint; it refuses activation if it cannot resolve a safe
+  endpoint. This is endpoint-scoped firewall control, not a guarantee against all
+  leaks or privileged local adversaries.
 
 [bold]Usage:[/bold]
   blackout killswitch on                Enable kill switch
@@ -645,12 +698,12 @@ Full network diagnostic and utility toolkit.
   adapters              List all network adapters and their IPs
   mtu [host]            Detect path MTU (fixes slow HTTPS on some networks)
   traceroute [host]     Show network hops to destination
-  cert-check <host>     Check TLS certificate validity + per-mode policy
-  cert-check <host> --allow  Allow host in LEGEND mode (self-signed bypass)
+  cert-check <host>     Check a normal TLS certificate and current mode policy
+  cert-check <host> --allow  Explicitly allow a normal-TLS host in LEGEND mode
   hotspot               Toggle Windows Mobile Hotspot on/off
-  share-vpn             Share your VPN via ICS (Internet Connection Sharing)
-  netfix                Safe post-crash recovery: Blackout-owned routes/firewall/TUN and DNS cache
-  arp-flush              Explicitly flush local ARP/neighbor cache (may briefly affect LAN discovery)
+  share-vpn             Inspect an eligible Windows adapter and show manual ICS steps
+  netfix                Targeted post-crash recovery for Blackout-owned state
+  arp-flush             Explicitly flush local ARP/neighbor cache (may briefly affect LAN discovery)
 
 [bold]Background daemon reconnect:[/bold]
   Failed engines restart immediately, then retry with capped exponential backoff
@@ -820,24 +873,16 @@ Uses Cloudflare WARP protocol — gives you a clean Cloudflare IP.
   Or add the folder to your PATH.
 
 [bold]Country-Specific Fixes:[/bold]
-  [bold]Iran:[/bold]   SNI engine works best. Use Shecan/Electro DNS.
-            blackout tools dns-set shecan
-            blackout start --engine sni
+  [bold]Country profiles:[/bold]  Pin a profile to influence local engine and DNS
+  recommendations. Profiles do not establish that an engine or proxy will work.
 
-  [bold]China:[/bold]  SNI does NOT work against GFW. Use Xray with a proper config.
+            blackout country set IR
             blackout country set CN
-            blackout tools dns-set alibaba
-            blackout start --engine xray
+            blackout route
 
-  [bold]Iraq:[/bold]   Similar to Iran. SNI + WARP both effective.
-            blackout start --engine sni
-            If SNI fails: blackout start --engine warp
-
-  [bold]UK:[/bold]     GoodbyeDPI bypasses Ofcom ISP content filters.
-            blackout start --engine gdpi
-
-  [bold]USA:[/bold]    Usually just WARP for privacy/throttling bypass.
-            blackout start --engine warp
+  Windows includes SNI, GoodbyeDPI, and VPN engine options. Linux supports only
+  XRay, TUN, Hysteria2, and TUIC through blackout-engine. Review local readiness
+  with [bold]blackout route[/bold] before choosing an engine.
 """,
 
 
@@ -858,9 +903,9 @@ Proactively check any server's TLS certificate and apply per-mode policy.
   • Per-mode policy: what allowInsecure would be for your current mode
 
 [bold]Per-mode policy:[/bold]
-  SPEED   → allowInsecure = True  always — silent, zero friction
-  PRIVATE → allowInsecure = True  always — but logs a warning if cert is bad
-  LEGEND  → allowInsecure = False when cert is KNOWN bad — hard refuses connection
+  SPEED   → allowInsecure = True for normal TLS streams
+  PRIVATE → allowInsecure = True; a certificate issue may be recorded after start
+  LEGEND  → rejects a known-bad normal TLS certificate unless explicitly allowed
 
 [bold]REALITY note:[/bold]
   This command applies only to normal TLS configurations. VLESS REALITY uses
@@ -868,7 +913,7 @@ Proactively check any server's TLS certificate and apply per-mode policy.
   run a TLS certificate probe or use this certificate policy.
 
 [bold]Auto-detection:[/bold]
-  For normal TLS configs, xray probes the cert automatically (3s timeout):
+  For normal TLS configs, XRay uses the policy below when it starts:
     • LEGEND mode: sync probe — blocks start if cert is bad
     • PRIVATE mode: background probe — warns but connects
     • SPEED mode:   no probe — connects immediately
@@ -923,15 +968,18 @@ No manual steps, no copy-pasting — one command installs everything.
 
 "countries": """
 [bold cyan]Country Profiles — Multi-Country Support[/bold cyan]
-Blackout Kit natively supports 5 countries with tailored engine + DNS recommendations.
+Blackout Kit includes country profiles that inform local engine and DNS recommendations.
 
 [bold]Country Reference:[/bold]
-  Country          Level    Best Engine   DNS
-  Iran (IR)        HIGH     sni           Shecan / Electro / 403online
-  China (CN)       EXTREME  xray          Alibaba / Tencent / 114 DNS
-  Iraq (IQ)        MEDIUM   sni           Cloudflare / Google
-  UK   (GB)        LOW      gdpi          Cloudflare / Google
-  USA  (US)        MINIMAL  warp          Cloudflare / Quad9
+  Country          Level    Local first candidate   DNS
+  Iran (IR)        HIGH     sni                     Shecan / Electro / 403online
+  China (CN)       EXTREME  xray                    Alibaba / Tencent / 114 DNS
+  Iraq (IQ)        MEDIUM   sni                     Cloudflare / Google
+  UK   (GB)        LOW      gdpi                    Cloudflare / Google
+  USA  (US)        MINIMAL  warp                    Cloudflare / Quad9
+
+  These are local profile inputs, not remote availability tests or a guarantee
+  that an upstream server will work.
 
 [bold]Usage:[/bold]
   blackout country                      Show active profile & detection
@@ -950,22 +998,15 @@ Blackout Kit natively supports 5 countries with tailored engine + DNS recommenda
   blackout country set IQ        Set to Iraq
   blackout country reset         Back to auto-detect
 
-[bold]Verify your bypass works:[/bold]
-  blackout country            See test URLs for your country
-  blackout network isp        Full ISP + country context panel
+[bold]Review local state:[/bold]
+  blackout country            Show the active profile and its test URLs
+  blackout network isp        Show ISP and country context when the lookup works
+  blackout route              Rank locally ready engines without probing nodes
 
-[bold]China notes (EXTREME censorship):[/bold]
-  The Great Firewall blocks by IP, SNI, and deep packet inspection.
-  • SNI spoofing does NOT bypass the GFW
-  • Use xray engine with a non-Chinese server config
-  • Use Alibaba DNS (223.5.5.5) inside China for reliable resolution
-  • Psiphon and WARP work as fallbacks but can be slow
-
-[bold]Iran notes (HIGH censorship):[/bold]
-  ISP-level DPI — SNI spoofing is very effective.
-  • Shecan / Electro DNS resolve filtered domains
-  • WARP is a good backup when SNI is blocked
-  • Emergency mode: sni → warp → psiphon → gdpi
+[bold]Important:[/bold]
+  Country profiles are guidance, not connectivity tests. Filtering behavior,
+  DNS availability, upstream server reachability, and engine support vary by
+  platform and network. Pin a profile only when it reflects your own context.
 """,
 
 }
@@ -976,7 +1017,7 @@ Blackout Kit natively supports 5 countries with tailored engine + DNS recommenda
 _CATEGORIES: dict[str, list[str]] = {
     "Getting Started":  ["quick_start", "faq", "countries", "bins", "network"],
     "Core Commands":    ["start", "stop", "scan", "connect", "fix", "status", "route", "theme", "emergency", "mode"],
-    "Configuration":    ["settings", "config"],
+    "Configuration":    ["settings", "config", "split_tunnel"],
     "Engines":          ["engines", "vpn", "warp", "neighbor"],
     "Security":         ["security", "killswitch"],
     "Maintenance":      ["tools", "cert", "doctor", "update", "preflight", "logs"],
@@ -989,8 +1030,8 @@ _SUMMARIES: dict[str, str] = {
     "faq":           "Answers to the most common questions",
     "start":         "Start a bypass engine and set the system proxy",
     "stop":          "Stop all engines and clear the system proxy",
-    "scan":          "Find the fastest Cloudflare IP for your location",
-    "connect":       "One command: scan + pick best engine + start",
+    "scan":          "Probe Cloudflare IPs and fake-SNI domains for the Windows SNI path",
+    "connect":       "Connect with an explicit engine or local recommendation",
     "fix":           "Auto-diagnose and repair common issues",
     "status":        "Read local daemon, proxy-port, and reconnect status (or watch it live)",
     "route":         "Rank locally ready engines without probing remote nodes",
@@ -998,6 +1039,7 @@ _SUMMARIES: dict[str, str] = {
     "emergency":     "Try every engine until one connects",
     "settings":      "View and change all configuration settings",
     "config":        "Add, import, and manage V2Ray configs",
+    "split_tunnel":  "Manage Windows system-proxy bypass patterns",
     "engines":       "All bypass engines explained — which to use when",
     "vpn":           "Set up WireGuard / OpenVPN / SoftEther / IKEv2",
     "warp":          "Cloudflare WARP — clean IP, fewer captchas",

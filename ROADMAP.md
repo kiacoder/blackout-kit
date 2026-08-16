@@ -1,6 +1,6 @@
 # Blackout Kit — Full Roadmap & TODO
 
-Items marked ✅ are implemented. Ranks: Common → Uncommon → Rare → Epic → Legendary → Myth
+Items marked ✅ are implemented. Ranks follow the project scale: Common → Uncommon → Rare → Unique → Epic → Heroic → Legendary → Myth.
 
 ---
 
@@ -9,39 +9,44 @@ Items marked ✅ are implemented. Ranks: Common → Uncommon → Rare → Epic �
 | Feature | Status | Rank | Notes |
 |---------|--------|------|-------|
 | 10-Agent Autonomous Audit | ✅ Done | Epic | Full codebase review |
-| Fix Zip Slip Path Traversal | ✅ Done | Critical | `updater.py` |
-| Fix Subprocess Deadlocks | ✅ Done | High | `DEVNULL` instead of `PIPE` |
-| Localization-Independent Parsing | ✅ Done | High | `psutil` & `PowerShell` in `tools.py` |
-| Graceful Go Engine Shutdowns | ✅ Done | High | Prevents routing/DNS corruption |
-| Concurrent Cache Safety | ✅ Done | Med | Atomic `replace()` |
-| Windows UAC Awareness | ✅ Done | Med | Admin checks in network tools |
+| Fix Zip Slip Path Traversal | ✅ Done | Heroic | `updater.py` |
+| Fix Subprocess Deadlocks | ✅ Done | Epic | `DEVNULL` instead of `PIPE` |
+| Localization-Independent Parsing | ✅ Done | Epic | `psutil` & `PowerShell` in `tools.py` |
+| Graceful Go Engine Shutdowns | ✅ Done | Epic | Prevents routing/DNS corruption |
+| Concurrent Cache Safety | ✅ Done | Rare | Atomic `replace()` |
+| Windows UAC Awareness | ✅ Done | Rare | Admin checks in network tools |
 
 ---
 
 ## 🛡️ BYPASS ENGINES
 
+Windows exposes the full engine catalog below. Linux x86_64 supports only XRay,
+XRay → sing-box TUN, Hysteria2, and TUIC through the managed `blackout-engine`
+runner; availability still depends on local prerequisites and a compatible saved
+configuration.
+
 | Feature | Status | Rank | Notes |
 |---------|--------|------|-------|
-| SNI Spoofing (TCP Sequence Injection) | ✅ Done | Epic | patterniha's engine — core bypass for Iran 2026 |
-| XRay-core (Trojan + VLESS over TLS) | ✅ Done | Epic | Dynamic config generation |
-| GoodbyeDPI (TCP fragmentation) | ✅ Done | Rare | Legacy backend is the stable default; native Go backend is experimental |
-| Psiphon multi-protocol | ✅ Done | Rare | Germany exit node |
-| Cloudflare WARP | ✅ Done | Rare | warp-plus, reduces captchas |
-| Tor / Onion routing | ✅ Done | Rare | SOCKS5 :9050 |
-| TUN mode (sing-box) | ✅ Done | Rare | Tunnels ALL apps, not just proxy-aware ones |
+| SNI Spoofing (TCP Sequence Injection) | ✅ Done | Epic | Windows-local SNI component; network effectiveness varies |
+| XRay-core (Trojan + VLESS, TLS and REALITY) | ✅ Done | Epic | Dynamic transport-aware config generation; REALITY is client-side only |
+| GoodbyeDPI (Windows TCP handling) | ✅ Done | Rare | Legacy backend is the stable default; native Go/WinDivert backend is experimental |
+| Psiphon multi-protocol | ✅ Done | Rare | Windows Psiphon Tunnel Core path with configured country preference |
+| Cloudflare WARP | ✅ Done | Rare | Windows WARP client path using warp-plus |
+| Tor / Onion routing | ✅ Done | Rare | Local SOCKS5 listener on :9050 when the supplied Tor runtime starts |
+| TUN mode | ✅ Done | Rare | Windows runs sing-box; Linux uses XRay → sing-box through the managed runner |
 | IKEv2 / L2TP / SSTP / PPTP | ✅ Done | Rare | Windows built-in VPN, no extra binary |
 | WireGuard (real monitoring) | ✅ Done | Epic | Real sc query thread, no fake sentinel |
 | OpenVPN (startup verified) | ✅ Done | Epic | Reads log for "Initialization Sequence Completed" |
 | SoftEther (real monitoring) | ✅ Done | Epic | vpncmd AccountStatusGet polling |
 | mhrv (embedded HTTP GAS relay) | ✅ Done | Rare | HTTP :8085; HTTPS CONNECT is intentionally unsupported |
-| Google Apps Script relay | ✅ Done | Rare | Domain-fronts through script.google.com, 20 relay IDs, pure Python |
-| **Hysteria 2** | ✅ Done | Rare | QUIC-based proxy via sing-box, selectable as `hysteria2` |
-| **TUIC** | ✅ Done | Rare | Low-latency QUIC tunnel via sing-box, selectable as `tuic` |
-| **XRay client-side VLESS REALITY** | ✅ Done | Rare | Imports standard VLESS REALITY URIs for XRay/TUN; server setup and trust remain the operator's responsibility. |
-| **ShadowTLS** | 🔜 v1.2 | — | Makes traffic look like real TLS to a real server |
-| **ShadowSocks + Obfs4** | 🔜 v1.2 | — | Via sing-box |
-| **XTLS Direct Read/Write** | 🔜 v1.3 | — | Zero-overhead XRay performance mode |
-| **ECH (Encrypted Client Hello)** | 🔜 future | — | Hides SNI completely at TLS layer — experimental |
+| Google Apps Script relay | ✅ Done | Rare | HTTP relay through configured Google Apps Script endpoints; HTTPS CONNECT is unsupported |
+| **Hysteria 2** | ✅ Done | Rare | QUIC proxy through sing-box from a compatible saved configuration, selectable as `hysteria2` |
+| **TUIC** | ✅ Done | Rare | QUIC proxy through sing-box from a compatible saved configuration, selectable as `tuic` |
+| **XRay client-side VLESS REALITY** | ✅ Done | Rare | Imports standard VLESS REALITY URIs for XRay/TUN; it does not provide server setup, anonymity, or a detection-resistance guarantee. |
+| **ShadowTLS** | 🔜 v1.2 | — | Evaluate a verified ShadowTLS configuration path |
+| **ShadowSocks + Obfs4** | 🔜 v1.2 | — | Evaluate sing-box support and interoperability |
+| **XTLS Direct Read/Write** | 🔜 v1.3 | — | Evaluate XRay performance-mode support and safety boundaries |
+| **ECH (Encrypted Client Hello)** | 🔜 future | — | Research experimental client support and network compatibility |
 
 ---
 
@@ -54,14 +59,13 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Feature | Status | Rank | Notes |
 |---------|--------|------|-------|
 | TCP Sequence Injection (out-of-window decoy) | ✅ Done | Epic | SNI spoofer's core mechanism |
-| uTLS / JA3 fingerprint camouflage | ✅ Done | Rare | `xray_fingerprint = firefox` in PRIVATE mode |
-| Fake SNI (www.hcaptcha.com / auth.vercel.com) | ✅ Done | Rare | DPI sees whitelisted domain |
-| ArvanCloud CDN SNI camouflage | ✅ Done | Rare | `blackout connect --iran` applies the configured ArvanCloud fake SNI |
+| XRay fingerprint setting | ✅ Done | Rare | PRIVATE applies a random XRay fingerprint; it does not guarantee camouflage or bypass |
+| Configurable fake SNI | ✅ Done | Rare | Windows SNI stack supports a configured local fake-SNI value; network effectiveness varies |
+| `blackout connect --iran` profile | ✅ Done | Rare | Applies documented local XRay/SNI settings while respecting an existing custom fake SNI |
 | **TLS Record-Layer Fragmentation** | ✅ Done | Rare | XRay `fragment` mode is generated from `xray_fragment` |
-| **`blackout connect --iran` profile** | ✅ Done | Rare | One-command Iran profile: ArvanCloud SNI + Firefox fingerprint + PRIVATE mode + existing fragment settings |
 | **DoH bootstrapping at startup** | ✅ Done | Rare | Resolves XRay proxy hosts through Cloudflare DoH before connection |
-| Active probing resistance | 🔜 v1.2 | — | Respond correctly to probes so firewall can't fingerprint the server |
-| Iran White List mode survival (NIN) | 🔜 v1.2 | — | Fall back to ArvanCloud/domestic CDN fronting when NIN is active |
+| Active probing resistance | 🔜 v1.2 | — | Research verified server-side approaches; no client-only guarantee |
+| Iran White List mode survival (NIN) | 🔜 v1.2 | — | Research network-specific fallback options; availability cannot be assumed |
 
 ---
 
@@ -71,19 +75,19 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 |---------|--------|------|-------|
 | Security modes (Speed / Private / LEGEND) | ✅ Done | Rare | `blackout mode speed\|private\|legend` |
 | Kill switch (Windows Firewall / Linux nftables) | ✅ Done | Rare | Endpoint-scoped Linux rules with iptables fallback |
-| Config obfuscation (XOR + base64) | ✅ Done | Uncommon | Not real encryption — shoulder-surf protection only |
+| Config encryption (AES-256-GCM) | ✅ Done | Rare | Machine-derived local encryption; not portable and not a replacement for device security |
 | Windows Defender exclusion | ✅ Done | Rare | `blackout doctor --fix-av` |
 | Stability tracking (latency + trend) | ✅ Done | Rare | Per-engine history |
-| Multi-hop (XRay → Tor) | ✅ Done | Rare | LEGEND mode |
-| uTLS fingerprint enforcement | ✅ Done | Rare | Via XRay xray_fingerprint setting |
-| **DoH bootstrapping** | ✅ Done | Rare | Resolves XRay proxy hosts through Cloudflare DoH before connection |
-| **True config encryption (AES-256)** | ✅ Done | Rare | AES-256-GCM config encryption tied to the local machine |
+| Multi-hop (XRay → Tor) | 🔜 v1.2 | — | Requires an explicit verified chain implementation before being documented as available |
+| XRay fingerprint setting | ✅ Done | Rare | Configures the XRay fingerprint; it does not guarantee anti-fingerprinting results |
+| **DoH bootstrapping** | ✅ Done | Rare | Resolves configured XRay proxy hosts through DoH before connection when required |
+| **Config encryption** | ✅ Done | Rare | AES-256-GCM encryption with a machine-derived key; not portable |
 | **Triple-hop / Cascaded VPN** | 🔜 v1.2 | — | Chain 3+ proxies |
 | **WebRTC + IPv6 leak protection** | 🔜 v1.2 | — | Windows Firewall rules |
 | **DNS over QUIC (DoQ)** | 🔜 v1.2 | — | Faster than DoH |
 | **Process-level split tunneling** | 🔜 v1.2 | — | Route per-app via WFP driver |
-| **PFS enforcement** | 🔜 v1.3 | — | Already in TLS 1.3, but force-require it |
-| **Post-Quantum Cryptography (PQC)** | 🔜 future | — | Kyber (experimental in XRay) |
+| **PFS policy review** | 🔜 v1.3 | — | Document protocol-specific forward-secrecy properties and configuration limits |
+| **Post-Quantum Cryptography (PQC)** | 🔜 future | — | Research upstream support and compatibility before exposing a setting |
 
 ---
 
@@ -99,7 +103,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | MTU detection | ✅ Done | Uncommon | `blackout tools mtu` |
 | Ping + traceroute | ✅ Done | Uncommon | TCP-based |
 | Hotspot sharing | ✅ Done | Uncommon | Windows Mobile Hotspot toggle |
-| ICS (share VPN over hotspot) | ✅ Done | Uncommon | Internet Connection Sharing |
+| ICS guidance (share VPN over hotspot) | ✅ Done | Uncommon | Detects an eligible Windows adapter and prints manual ICS steps; it does not configure ICS |
 | **`blackout fix` shorthand** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
 | **TUN/TAP / Wintun driver reset** | ✅ Done | Rare | `blackout fix` restarts only its stale deterministic `BlackoutKit-TUN` adapter; physical, WireGuard, and third-party adapters are excluded |
 | **Stale routing table flush** | ✅ Done | Rare | Default removes only stale Blackout virtual-adapter routes; `--full-route-reset` keeps `route -f` explicit |
@@ -123,8 +127,8 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | argparse-based commands | ✅ Done | Uncommon | Works but not beginner-friendly |
 | **Typer migration** | ✅ Done | Rare | Typer is the public command entrypoint and delegates to the proven dispatcher |
 | **Interactive dashboard (Zero-Flag mode)** | ✅ Done | Rare | `blackout` with no args opens a keyboard-driven menu for common actions |
-| **`blackout connect` smart command** | ✅ Done | Rare | Auto-selects the country-aware engine and connects. |
-| **`blackout connect --iran`** | ✅ Done | Rare | Forces TIC evasion profile: arvancloud.ir SNI + firefox fingerprint + existing fragment settings |
+| **`blackout connect` smart command** | ✅ Done | Rare | Uses the highest locally ready recommendation unless an engine is explicit |
+| **`blackout connect --iran`** | ✅ Done | Rare | Applies documented local profile settings; it does not guarantee bypass success |
 | **`blackout fix`** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
 | **Global exception handler** | ✅ Done | Rare | Redacted Rich error panel with safe local diagnostic guidance |
 | **Rich.Prompt interactive menus** | ✅ Done | Rare | Prompts only in interactive terminals; explicit CLI arguments remain script-safe |
@@ -156,11 +160,11 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 
 | Feature | Status | Rank | Notes |
 |---------|--------|------|-------|
-| Windows 10/11 | ✅ Done | Epic | Full support |
-| WSL (Ubuntu on Windows) | ✅ Done | Uncommon | Partial (no WinDivert, no Firewall rules) |
-| **Linux native (x86_64)** | ✅ Done | Rare | Ubuntu/Debian, Fedora, Arch: XRay+TUN, endpoint-scoped nftables or iptables kill switch |
+| Windows 10/11 | ✅ Done | Epic | Broad engine catalog; individual engines retain their own runtime and privilege prerequisites |
+| WSL (Ubuntu on Windows) | ✅ Done | Uncommon | Linux runtime subset where WSL supports required TUN/firewall commands; no WinDivert or Windows Firewall integration |
+| **Linux native (x86_64)** | ✅ Done | Rare | Ubuntu/Debian, Fedora, Arch: XRay, XRay → sing-box TUN, Hysteria2, and TUIC through blackout-engine; endpoint-scoped nftables/iptables kill switch |
 | **macOS (pf firewall)** | 🔜 future | — | Kill switch + proxy |
-| **Russia TSPU evasion** | 🔜 far future | — | VLESS + REALITY, avoid TUN interfaces (Russian apps scan for VPN), TSPU hardware jamming workarounds |
+| **Russia TSPU research** | 🔜 far future | — | Assess regional constraints and supported upstream configurations before promising a bypass path |
 
 ---
 
@@ -181,9 +185,9 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 
 | Version | Focus | Key items |
 |---------|-------|-----------|
-| **v1.1.1** (current) | Release stabilization | Installable package, self-contained executable, CLI parity, native config hardening, and reproducible WARP/Psiphon module |
-| **v1.2** (next) | Advanced privacy + recovery | ShadowTLS, process split tunnel, network recovery, and real-time dashboard |
-| **v1.3** | Performance + hardening | XTLS, lazy imports, PFS, persistent IPC, and remaining performance improvements |
+| **v1.1.1** (current) | Release stabilization | Installable package, standalone executable, CLI parity, Linux x86_64 managed runner, local route/status/theme UX, targeted recovery, and client-side VLESS REALITY |
+| **v1.2** (next) | Advanced transport + monitoring | ShadowTLS, process-level split tunneling, and real-time monitoring work |
+| **v1.3** | Performance + hardening | XTLS, lazy imports, persistent IPC, and remaining performance improvements |
 | **far future** | GUI + Russia + exotic protocols | Tauri, tray, Russia TSPU, ECH, PQC, macOS |
 
 ---

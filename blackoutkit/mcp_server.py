@@ -1,8 +1,8 @@
 """
 Blackout Kit - Omni Model Context Protocol (MCP) Stdio Server for AI Agents.
 
-Gives AI agents (Antigravity, Claude Code, Cursor, Windsurf, Claude Desktop, etc.)
-100% full autonomous control over all Blackout Kit capabilities via stdio JSON-RPC 2.0 tools.
+Exposes a documented subset of Blackout Kit operations to compatible AI clients
+through stdio JSON-RPC 2.0 tools.
 
 Features exposed to AI Agents:
   - blackout_connect (engine, iran)
@@ -13,10 +13,14 @@ Features exposed to AI Agents:
   - blackout_config (action, uri, url, index)
   - blackout_settings (action, key, value)
   - blackout_split_tunnel (action, target)
-  - blackout_net_tools (tool, arg, adapter)
-  - blackout_scan (ips, sni, count)
-  - blackout_doctor (fix, fix_av)
+  - blackout_net_tools (tool, arg)
+  - blackout_scan (count)
+  - blackout_doctor ()
   - blackout_security_mode (mode)
+
+Scope note: tool calls can start/stop local engines, import remote subscriptions,
+or modify local proxy/network settings. The MCP server exposes only the subset
+implemented below; descriptions must not imply unimplemented network operations.
 """
 import sys
 import json
@@ -37,18 +41,18 @@ def send_response(response: dict):
 TOOLS_MANIFEST = [
     {
         "name": "blackout_connect",
-        "description": "Start Blackout Kit proxy bypass engine (auto, sni, xray, gdpi, psiphon, warp, tor, legend, etc.). Supports --iran mode.",
+        "description": "Start a Blackout Kit engine. `auto` uses the daemon's configured startup path; supported engines depend on the platform, installed runtime, and saved configuration.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "engine": {
                     "type": "string",
-                    "description": "Engine choice: auto, sni, xray, gdpi, psiphon, warp, tun, tor, mhrv, ikev2, wireguard, openvpn, softether, hysteria2, tuic, legend",
+                    "description": "Engine choice: auto, sni, xray, gdpi, psiphon, warp, tun, tor, mhrv, ikev2, wireguard, openvpn, softether, hysteria2, tuic, legend. Linux supports only xray, tun, hysteria2, and tuic.",
                     "default": "auto"
                 },
                 "iran": {
                     "type": "boolean",
-                    "description": "Enable TIC 2026 Evasion Profile for Iran",
+                    "description": "Enable the MCP server's LEGEND-engine Iran profile behavior",
                     "default": False
                 }
             }
@@ -56,7 +60,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_disconnect",
-        "description": "Stop active Blackout Kit proxy daemon and clear Windows system proxy.",
+        "description": "Stop the active Blackout Kit daemon. This legacy MCP call bypasses the terminal command's system-proxy cleanup and does not reset external proxy settings.",
         "inputSchema": {
             "type": "object",
             "properties": {}
@@ -64,7 +68,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_emergency",
-        "description": "Trigger emergency mode to sequentially test and connect to all engines until one succeeds.",
+        "description": "Start emergency mode, which tries the configured local engine candidates in sequence; Linux uses its supported subset.",
         "inputSchema": {
             "type": "object",
             "properties": {}
@@ -72,7 +76,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_status",
-        "description": "Get active daemon status, PID, active engine, system proxy state, and connection health.",
+        "description": "Get local daemon state, PID, active engine, saved reconnect state, and current system-proxy state. It does not test remote reachability or report public IP.",
         "inputSchema": {
             "type": "object",
             "properties": {}
@@ -121,7 +125,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_settings",
-        "description": "Query or change Blackout Kit settings key-value pairs.",
+        "description": "Read or write saved Blackout Kit settings. The legacy setter forwards raw strings without the terminal CLI's type coercion, and its reset action is not implemented; use the terminal CLI for booleans, lists, and full reset.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -144,7 +148,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_split_tunnel",
-        "description": "Manage split-tunneling direct routes (bypassing proxy for specific IPs or domains).",
+        "description": "Manage saved Windows system-proxy bypass patterns. On Windows they update ProxyOverride; they are not per-process or network-layer routes, and on Linux they remain local saved data.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -163,13 +167,13 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_net_tools",
-        "description": "Run network diagnostic and repair utilities (dns-bench, dns-flush, dns-set, netfix, hotspot, share-vpn, ping).",
+        "description": "Run legacy network-tool dispatch. dns-bench, dns-flush, and dns-set are the operational MCP subset; netfix, hotspot, and ping remain schema entries but do not map to the current tool APIs. Use the terminal CLI for them.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "tool": {
                     "type": "string",
-                    "enum": ["dns-bench", "dns-flush", "dns-set", "netfix", "hotspot", "share-vpn", "ping", "adapters", "mtu"],
+                    "enum": ["dns-bench", "dns-flush", "dns-set", "netfix", "hotspot", "ping"],
                     "description": "Diagnostic tool to execute"
                 },
                 "arg": {
@@ -182,7 +186,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_scan",
-        "description": "Scan Cloudflare clean IPs and test fake SNI domains for reachability.",
+        "description": "Generate Cloudflare IP candidates and measure TCP reachability. This MCP tool does not scan a local network, arbitrary ports, or fake-SNI domains.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -196,21 +200,16 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_doctor",
-        "description": "Run environment and binary diagnostic checks.",
+        "description": "Run environment and binary diagnostic checks. The MCP implementation is read-only and does not forward the fix parameter.",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "fix": {
-                    "type": "boolean",
-                    "description": "Auto-fix fixable issues",
-                    "default": False
-                }
             }
         }
     },
     {
         "name": "blackout_security_mode",
-        "description": "Get or set active security mode tier (speed, private, legend).",
+        "description": "Get or write the saved security_mode label. This legacy MCP call does not apply the terminal command's full mode preset, enable a kill switch, encrypt configurations, create multi-hop routing, or guarantee privacy.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -242,8 +241,8 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
         elif tool_name == "blackout_disconnect":
             from . import daemon
             if daemon.stop():
-                return "✓ Blackout Kit daemon stopped. System proxy cleared."
-            return "✓ No active daemon was running. System proxy verified clear."
+                return "✓ Blackout Kit daemon stopped; its configured system proxy cleanup ran."
+            return "✓ No active Blackout Kit daemon was running; external proxy settings were left unchanged."
 
         elif tool_name == "blackout_emergency":
             from . import daemon

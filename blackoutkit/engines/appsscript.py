@@ -1,38 +1,30 @@
 """
-Blackout Kit - Google Apps Script HTTP Relay engine.
+Blackout Kit - Google Apps Script HTTP relay engine.
 
-Uses Google's own servers as an HTTP relay (domain fronting through Google).
+The engine exposes a local HTTP proxy. It forwards eligible HTTP requests to a
+configured Google Apps Script deployment, which performs the remote fetch and
+returns the response. It is not a general VPN, encrypted tunnel, or HTTPS
+CONNECT proxy.
 
-HOW IT WORKS:
-  Your traffic:  Client → [HTTP to localhost:8087] → Local relay server
-                       → [HTTPS to script.google.com] → GAS script
-                       → GAS fetches target URL → returns response
+FLOW:
+  Client → localhost HTTP proxy → HTTPS to script.google.com → GAS deployment
+         → remote HTTP request → response
 
-WHY IT WORKS IN IRAN:
-  - The ISP sees traffic to script.google.com (Google = allowed ✓)
-  - The actual content (target URL + response) is hidden inside the HTTPS tunnel
-  - Iran cannot block script.google.com without breaking ALL of Google
-
-WHAT IT BYPASSES:
-  ✓ IP blocking (your IP connects to Google, not the blocked server)
-  ✓ DNS poisoning (you never DNS-resolve the blocked domain locally)
-  ✓ SNI filtering (the TLS SNI is "script.google.com", not the target)
-  ✗ NOT suitable for real-time or WebSocket connections
-  ✗ HTTP/HTTPS browsing only (no V2Ray/XRay tunneling)
-
-WHEN TO USE:
-  Use this as a fallback when all other engines fail.
-  It's slower than SNI/GoodbyeDPI but works even if all VPN ports are blocked.
+LIMITS:
+  - The Apps Script deployment and the destination participate in the request.
+  - Filtering results depend on the network, deployment availability, and target.
+  - HTTPS CONNECT, WebSockets, and real-time traffic are unsupported.
+  - The local client must be configured to use the HTTP proxy on port 8087.
 
 GAS RELAY IDs:
-  Add deployment IDs to data/gas_ids.txt (one per line).
-  The engine rotates through them automatically.
-  Get community IDs from: https://github.com/kiacoder/blackout-kit
+  Add deployment IDs to data/gas_ids.txt (one per line). The engine rotates
+  through available IDs. Treat third-party deployment IDs as untrusted services
+  until you have independently verified their operator and code.
 
 REQUIREMENTS:
   - No binary needed — pure Python
-  - Internet access (to reach script.google.com)
-  - GAS deployment IDs in data/gas_ids.txt
+  - Network access to the configured Apps Script deployment
+  - GAS deployment IDs in data/gas_ids.txt or the built-in list
 
 PORTS:
   HTTP proxy: 8087 (configurable via gas_proxy_port setting)

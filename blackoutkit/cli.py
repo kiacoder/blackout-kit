@@ -727,7 +727,7 @@ def cmd_emergency(args):
     # ── Foreground emergency ──
     console.print(Panel(
         "[bold red]🚨 EMERGENCY MODE[/bold red]\n"
-        "Trying all engines until one works.",
+        "Trying locally supported engine candidates in sequence.",
         border_style="red",
     ))
 
@@ -2165,8 +2165,8 @@ def cmd_connect(args):
         console.print(success_panel(
             "[bold]Iran Bypass Profile Active[/bold]\n\n" +
             "\n".join(f"  • {c}" for c in profile_changes) +
-            "\n\n[dim]ArvanCloud SNI makes traffic look like domestic CDN — "
-            "Iran's DPI can't block it without breaking their own infrastructure.[/dim]",
+            "\n\n[dim]This profile applies local XRay/SNI settings. Its effectiveness "
+            "depends on the network, upstream configuration, and current filtering rules.[/dim]",
             title="Iran 2026 — TIC Evasion",
         ))
 
@@ -2400,7 +2400,7 @@ def _interactive_menu():
     """Display an interactive menu navigable with arrow keys when blackout is run with no arguments."""
     menu_items = [
         ("🚀 Connect",   "Start bypass — smart/preferred engine", "1"),
-        ("⚡ Emergency",  "Try all engines until one works", "2"),
+        ("⚡ Emergency",  "Try locally supported candidates", "2"),
         ("🔌 Engine",     "Select manual bypass engine (sni/psiphon/warp...)", "3"),
         ("🌍 Country",    "Show or set country profile (IR/CN/…)", "4"),
         ("📊 Status",    "Check daemon + connection health", "5"),

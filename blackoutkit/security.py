@@ -1,12 +1,12 @@
 """
 Blackout Kit - Security module.
 
-Three layers (user chooses):
-  SPEED   (default) — zero extra overhead. Just connect, fast. No logging.
-  PRIVATE — random TLS fingerprint, DoH DNS, no system proxy footprint.
-  LEGEND  — 🔥 The legendary mode. Multi-hop onion routing, encrypted
-             configs, randomized timing, full traffic obfuscation.
-             Default: OFF. Enable only if you want max privacy.
+Three user-selectable local configuration presets:
+  SPEED   (default) — compatibility-focused XRay settings.
+  PRIVATE — random XRay fingerprint and XRay MUX.
+  LEGEND  — 🔥 The legendary mode. Applies strict handling for known-bad
+             normal TLS certificates in addition to its XRay settings.
+             It does not guarantee anonymity, traffic obfuscation, or multi-hop routing.
 
 Also handles:
   - Config file obfuscation (protect server credentials at rest)
@@ -59,9 +59,9 @@ MODES = {
         "xray_mux_enabled":  True,
         "gdpi_flags":        "-9",
         "description": (
-            "🔥 LEGENDARY MODE — Multi-hop routing (SNI→XRay→Tor), "
-            "randomized packet timing, encrypted config storage, "
-            "kill-switch enabled. SLOW but near-untraceable."
+            "🔥 LEGENDARY MODE — random XRay fingerprint and MUX with "
+            "strict handling for known-bad normal TLS certificates. "
+            "Kill switch and config encryption remain separate opt-in features."
         ),
     },
 }

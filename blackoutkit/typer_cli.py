@@ -623,7 +623,7 @@ def disconnect():
 def emergency(
     background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
 ):
-    """Try all engines until one works"""
+    """Try locally supported engine candidates in sequence."""
     from .cli import cmd_emergency
     class DummyArgs:
         pass

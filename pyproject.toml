@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "blackout-kit"
 version = "1.1.1"
-description = "Advanced DPI bypass & censorship circumvention toolkit"
+description = "Local censorship-circumvention toolkit for Windows and Linux"
 readme = "README.md"
 authors = [
     { name = "Kiacoder" }
