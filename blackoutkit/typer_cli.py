@@ -41,6 +41,9 @@ def fix(
         "--flush-arp",
         help="Explicitly flush the local ARP/neighbor cache",
     ),
+    preview: bool = typer.Option(False, "--preview", help="Show Blackout-owned recovery actions without changing anything"),
+    history: bool = typer.Option(False, "--history", help="Show redacted local recovery audit history"),
+    history_lines: int = typer.Option(20, "--history-lines", min=1, max=100, help="Audit records to show with --history"),
 ):
     """Repair targeted post-crash Blackout network state."""
     from .cli import cmd_fix
@@ -52,6 +55,9 @@ def fix(
     args.full_route_reset = full_route_reset
     args.full_stack_reset = full_stack_reset
     args.flush_arp = flush_arp
+    args.preview = preview
+    args.history = history
+    args.history_lines = history_lines
     cmd_fix(args)
 
 @app.command()
@@ -145,6 +151,22 @@ def status(
 ):
     """Show daemon status and local connection health."""
     _forward_status(watch, interval)
+
+
+@app.command()
+def ready(
+    engine: str = typer.Argument("auto", help="Engine to validate locally (or auto)"),
+):
+    """Check local engine readiness without changing anything."""
+    from .cli import cmd_ready
+
+    class DummyArgs:
+        pass
+
+    args = DummyArgs()
+    args.engine = engine
+    if not cmd_ready(args):
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -466,12 +488,15 @@ def tools_adapters():
     cmd_tools(args)
 
 @tools_app.command("netfix")
-def tools_netfix():
+def tools_netfix(
+    preview: bool = typer.Option(False, "--preview", help="Show Blackout-owned recovery actions without changing anything"),
+):
     """Safely repair post-crash network state (admin may be requested)"""
     from .cli import cmd_tools
     class DummyArgs: pass
     args = DummyArgs()
     args.tools_command = "netfix"
+    args.preview = preview
     cmd_tools(args)
 
 
