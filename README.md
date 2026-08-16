@@ -414,7 +414,8 @@ blackout mode legend               Adds strict handling for known-bad normal TLS
 
 # Kill switch and config encryption remain explicit opt-in actions
 blackout killswitch on
-blackout config encrypt
+blackout config encrypt                 Encrypt proxy URIs and supported VPN secrets at rest
+blackout ready [engine]                 Local-only readiness check before connecting
 ```
 
 ### Network Tools
@@ -447,6 +448,9 @@ blackout fix                       Targeted post-crash network recovery
 blackout fix --full-route-reset    Windows emergency only: flush every IPv4 route, then renew DHCP
 blackout fix --full-stack-reset    Windows emergency only: reset Winsock, TCP/IP, autotuning, and DHCP
 blackout fix --flush-arp           Explicit ARP/neighbor-cache flush (Windows or Linux)
+blackout fix --preview             Show only Blackout-owned recovery actions (no changes)
+blackout fix --history             Read bounded, redacted local recovery history
+blackout tools netfix --preview    Preview the same targeted recovery without changes
 ```
 
 ### Post-Crash Network Recovery
@@ -458,7 +462,27 @@ Run `blackout fix` **after stopping Blackout Kit** if a crashed TUN, WireGuard, 
 - Restarts only the deterministic `BlackoutKit-TUN` adapter when diagnosed unhealthy; Wi-Fi, Ethernet, WireGuard, and third-party VPN adapters are never cycled.
 - Clears stale Blackout proxy settings and flushes DNS without resetting the Windows network stack.
 
+`blackout fix --preview` and `blackout tools netfix --preview` show the exact currently detected Blackout-owned actions without changing routes, DNS, adapters, proxy settings, firewall state, or the audit log. Normal recovery records only final action names/outcomes in a bounded local audit history, with URI credentials and secret-like values redacted; inspect it with `blackout fix --history`.
+
 `blackout tools netfix` runs the same targeted default. If it cannot restore connectivity, use an explicit emergency option: `blackout fix --full-route-reset` runs `route -f` and renews DHCP, removing all IPv4 routes—including unrelated VPN and custom LAN routes; `blackout fix --full-stack-reset` resets Winsock, TCP/IP, autotuning, and the DHCP lease.
+
+### Local Connection Readiness
+
+`blackout ready [engine]` validates the selected engine before connection startup. Every `connect`, `start`, background daemon start, and MCP connection request uses the same gate before it writes settings, scans, downloads, starts an engine, enables the kill switch, or repairs networking. The check reads local settings, encrypted-storage health, runtime files, saved configuration structure, process state, and loopback ports only. It does not resolve an upstream host, probe remote reachability, establish a tunnel, elevate privileges, or guarantee a successful connection.
+
+On Linux, `ready tun` additionally checks `sudo`, `ip`, `/dev/net/tun`, and the managed `blackout-engine` runner. If the kill switch is configured, endpoint allowlist resolution remains a separate start-time safety check because readiness intentionally does not contact remote DNS.
+
+### Encrypted Local Vault
+
+`blackout config encrypt` stores saved proxy URIs plus IKEv2/L2TP password/PSK and SoftEther password in machine-bound AES-256-GCM vault records. Once active, `settings.json` no longer contains those secret fields and saved proxy configuration changes remain encrypted without recreating `configs.txt`.
+
+`blackout config decrypt` is an explicit same-machine recovery operation. It restores plaintext config and secret files so they can be recovered or moved manually; run `blackout config encrypt` again afterward. The vault is not portable and does not protect a device that is already compromised.
+
+```bash
+blackout config encrypt
+blackout ready xray
+blackout connect xray
+```
 
 ### Automatic Daemon Reconnect
 

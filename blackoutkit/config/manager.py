@@ -10,7 +10,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import DATA_DIR
+from .. import DATA_DIR, vault
 CONFIGS_FILE = DATA_DIR / "configs.txt"
 
 
@@ -177,27 +177,34 @@ def _parse_vmess(uri: str) -> ProxyConfig:
 
 # ─────────────────────────── Load / Save ────────────────────────
 
-def load_configs(path: Path | None = None) -> list[ProxyConfig]:
-    p = path or CONFIGS_FILE
-    if not p.exists():
-        return []
+def _parse_config_text(text: str) -> list[ProxyConfig]:
     configs = []
-    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in text.splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
-            c = parse_v2ray_uri(line)
-            if c:
-                configs.append(c)
+            config = parse_v2ray_uri(line)
+            if config:
+                configs.append(config)
     return configs
 
 
+def load_configs(path: Path | None = None) -> list[ProxyConfig]:
+    p = path or CONFIGS_FILE
+    if path is None and CONFIGS_FILE == vault.CONFIGS_FILE and vault.config_vault_active():
+        return _parse_config_text(vault.read_config_bytes().decode("utf-8", errors="strict"))
+    if not p.exists():
+        return []
+    return _parse_config_text(p.read_text(encoding="utf-8", errors="replace"))
+
+
 def save_configs(configs: list[ProxyConfig], path: Path | None = None):
+    text = "\n".join(config.raw_uri for config in configs if config.raw_uri)
+    if path is None and CONFIGS_FILE == vault.CONFIGS_FILE and vault.config_vault_active():
+        vault.write_config_bytes(text.encode("utf-8"))
+        return
     p = path or CONFIGS_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(
-        "\n".join(c.raw_uri for c in configs if c.raw_uri),
-        encoding="utf-8",
-    )
+    p.write_text(text, encoding="utf-8")
 
 
 def add_config(uri: str) -> ProxyConfig:

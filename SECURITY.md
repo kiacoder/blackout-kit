@@ -131,13 +131,14 @@ A successful local build demonstrates that the selected source and toolchain com
 Blackout Kit does not include a first-party analytics or telemetry service. It does make network requests when you invoke features that need them, including updates, subscription imports, scans, DNS resolution, certificate checks, speed tests, and unpinned ISP/country lookup.
 
 Persistent local data can include:
-- Settings and saved proxy configuration URIs; use `blackout config encrypt` for encrypted-at-rest config storage.
-- Daemon logs, local stability history, certificate records created by TLS checks, and Windows system-proxy bypass rules.
+- Settings and saved proxy configuration URIs. `blackout config encrypt` stores saved URIs plus IKEv2 password/PSK and SoftEther passwords in machine-bound AES-256-GCM vault records; active vault data is read only in memory.
+- Daemon logs, local stability history, certificate records created by TLS checks, redacted recovery audit history, and Windows system-proxy bypass rules.
 - Engine binaries and local WARP/Psiphon identity or datastore caches generated at runtime.
 
-Routine terminal and MCP settings views mask the stored IKEv2 password/PSK and
-SoftEther password. Those values remain plaintext in `settings.json`; masking is
-an output safeguard, not encryption at rest.
+Routine terminal and MCP settings views mask IKEv2 and SoftEther credentials.
+When the vault is active, `settings.json` does not contain those secret fields.
+`blackout config decrypt` is an explicit same-machine recovery operation that
+restores plaintext files; re-encrypt when recovery is complete.
 
 Protect this data as sensitive. A proxy URI can contain server credentials, and an upstream proxy/VPN operator can observe traffic routed through that server.
 
@@ -158,9 +159,17 @@ This tool intentionally trades some security for circumvention effectiveness:
 - **VLESS REALITY trust** — import REALITY URIs only from a trusted server
   operator. Blackout Kit does not discover servers, generate server keys, or
   validate the operator beyond XRay's configured handshake.
-- **Config encryption** uses a machine-derived AES-256-GCM key. It protects
-  local encrypted-at-rest config storage but is not portable and does not
-  protect an already-compromised device.
+- **Config and credential encryption** uses machine-derived AES-256-GCM records
+  with authenticated record labels. It protects supported proxy URIs, IKEv2/L2TP
+  passwords/PSKs, and SoftEther passwords at rest but is not portable and does
+  not protect an already-compromised device. `blackout config decrypt` deliberately
+  restores plaintext for same-machine recovery and should be followed by re-encryption.
+- **Local readiness checks** validate only local settings, files, process state,
+  and loopback ports. They never establish a tunnel, resolve an upstream endpoint,
+  probe remote reachability, or guarantee that an engine will connect.
+- **Recovery audit history** is local-only and bounded. It records executed
+  Blackout-owned recovery actions and redacts URI credentials and secret-like values;
+  it is diagnostic data, not a forensic or tamper-proof log.
 - **Kill switch** is supported only on Linux using a Blackout Kit-owned
   nftables table (or iptables/ip6tables fallback). A kernel-level adversary can
   bypass it. It permits only validated upstream endpoint IPs, loopback,

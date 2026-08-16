@@ -7,10 +7,15 @@ Features:
   - validate_all() for startup sanity check
 """
 import json
+import logging
 import os
 import sys
 import tempfile
 from pathlib import Path
+
+from . import vault
+
+_log = logging.getLogger(__name__)
 
 APP_DATA_DIR  = Path.home() / ".blackout-kit"
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
@@ -91,6 +96,7 @@ DEFAULTS = {
     # Security modes
     "security_mode":        "speed",     # speed / private / legend
     "kill_switch":          False,       # Enable the verified Linux endpoint-scoped firewall kill switch
+    "secrets_vault_enabled": False,      # Keep supported VPN secrets encrypted at rest
 
     # IKEv2 / Windows built-in VPN
     "ikev2_server":         "",
@@ -223,33 +229,38 @@ def _apply_env_overrides(settings: dict) -> dict:
 
 # ──────────────────────────── Public API ─────────────────────────
 
-def load() -> dict:
-    """Load settings with defaults merged and env overrides applied."""
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+def _load_plain_settings() -> dict:
     if not SETTINGS_FILE.exists():
-        return _apply_env_overrides(dict(DEFAULTS))
+        return dict(DEFAULTS)
     try:
-        saved  = json.loads(SETTINGS_FILE.read_text())
+        saved = json.loads(SETTINGS_FILE.read_text())
         merged = dict(DEFAULTS)
         merged.update(saved)
-        return _apply_env_overrides(merged)
+        return merged
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).warning(
-            "Settings file '%s' is corrupted (%s). Falling back to defaults.",
-            SETTINGS_FILE, exc,
-        )
-        return _apply_env_overrides(dict(DEFAULTS))
+        _log.warning("Settings file '%s' is corrupted (%s). Falling back to defaults.", SETTINGS_FILE, exc)
+        return dict(DEFAULTS)
 
 
-def save(settings: dict):
-    """Persist settings to disk using an atomic write (temp → rename)."""
+def load() -> dict:
+    """Load settings and overlay vault-backed credentials only in memory."""
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    merged = _load_plain_settings()
+    if merged.get("secrets_vault_enabled", False):
+        try:
+            merged.update(vault.read_secrets())
+        except vault.VaultError as exc:
+            _log.warning("Encrypted settings secrets are unavailable: %s", exc)
+    return _apply_env_overrides(merged)
+
+
+def _write_plain_settings(settings: dict) -> None:
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     data = json.dumps(settings, indent=2).encode()
     fd, tmp = tempfile.mkstemp(dir=APP_DATA_DIR, prefix=".tmp_settings_")
     try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
         os.replace(tmp, SETTINGS_FILE)
     except Exception:
         try:
@@ -257,6 +268,44 @@ def save(settings: dict):
         except OSError:
             pass
         raise
+
+
+def save(settings: dict):
+    """Persist settings atomically while preserving activated secret vault storage."""
+    stored = dict(settings)
+    if stored.get("secrets_vault_enabled", False):
+        vault.read_secrets()
+        vault.write_secrets(stored)
+        for key in SENSITIVE_KEYS:
+            stored.pop(key, None)
+    _write_plain_settings(stored)
+
+
+def vault_health() -> tuple[bool, str]:
+    """Return whether activated encrypted settings storage can be read locally."""
+    status = vault.settings_vault_status(_load_plain_settings().get("secrets_vault_enabled", False))
+    return bool(status["healthy"]), str(status["detail"])
+
+
+def activate_secret_vault() -> None:
+    """Encrypt current sensitive settings before removing them from settings.json."""
+    current = load()
+    vault.write_secrets(current)
+    stored = _load_plain_settings()
+    stored["secrets_vault_enabled"] = True
+    for key in SENSITIVE_KEYS:
+        stored.pop(key, None)
+    _write_plain_settings(stored)
+
+
+def deactivate_secret_vault() -> None:
+    """Explicitly restore encrypted credentials to plaintext settings.json."""
+    secrets = vault.read_secrets()
+    current = _load_plain_settings()
+    current.update(secrets)
+    current["secrets_vault_enabled"] = False
+    _write_plain_settings(current)
+    vault.ENC_SECRETS_FILE.unlink(missing_ok=True)
 
 
 def get(key: str, default=None):
@@ -401,6 +450,7 @@ def describe(key: str) -> str:
         "terminal_theme":     "Blackout Kit terminal palette: dark/light (does not change your terminal app)",
         "security_mode":      "Active security mode: speed / private / legend",
         "kill_switch":        "Enable Linux endpoint-scoped firewall protection; unavailable on Windows",
+        "secrets_vault_enabled": "Keep supported IKEv2/L2TP and SoftEther secrets encrypted at rest",
         "ikev2_server":       "IKEv2/L2TP VPN server address",
         "ikev2_username":     "IKEv2/L2TP VPN username",
         "ikev2_password":     "IKEv2/L2TP VPN password",

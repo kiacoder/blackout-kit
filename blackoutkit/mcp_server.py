@@ -80,6 +80,20 @@ def send_response(response: dict):
 
 TOOLS_MANIFEST = [
     {
+        "name": "blackout_ready",
+        "description": "Run a local-only readiness check for an explicitly selected engine. It reads local settings, files, daemon state, and loopback ports; it does not start engines, resolve hosts, probe networks, download runtimes, or change system state.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "engine": {
+                    "type": "string",
+                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "legend"]
+                }
+            },
+            "required": ["engine"]
+        }
+    },
+    {
         "name": "blackout_connect",
         "description": "Start an explicitly selected Blackout Kit engine. Supported engines depend on the platform, installed runtime, and saved configuration.",
         "inputSchema": {
@@ -208,7 +222,7 @@ TOOLS_MANIFEST = [
             "properties": {
                 "tool": {
                     "type": "string",
-                    "enum": ["dns-bench", "dns-flush", "dns-set", "netfix", "hotspot", "ping"],
+                    "enum": ["dns-bench", "dns-flush", "dns-set", "netfix", "netfix-preview", "netfix-history", "hotspot", "ping"],
                     "description": "Diagnostic tool to execute"
                 },
                 "arg": {
@@ -261,12 +275,28 @@ TOOLS_MANIFEST = [
 def handle_tool_call(tool_name: str, args: dict) -> str:
     """Execute tool calls and return JSON or formatted string results for AI agents."""
     try:
+        if tool_name == "blackout_ready":
+            engine = args.get("engine")
+            if not engine or engine not in _MCP_ENGINES:
+                return "Error: an explicit supported engine is required"
+            from . import readiness
+            checks = readiness.as_dicts(engine)
+            return json.dumps({
+                "engine": engine,
+                "ready": all(item["ok"] or not item["blocking"] for item in checks),
+                "checks": checks,
+            }, indent=2)
+
         if tool_name == "blackout_connect":
             engine = args.get("engine")
             if not engine:
                 return "Error: an explicit supported engine is required"
             if engine not in _MCP_ENGINES:
                 return f"Error: unsupported engine '{engine}'"
+            from . import readiness
+            checks = readiness.evaluate(engine)
+            if not all(item.ok or not item.blocking for item in checks):
+                return json.dumps({"engine": engine, "ready": False, "checks": [item.__dict__ for item in checks]}, indent=2)
             if args.get("iran"):
                 return "Error: MCP connect does not support the Iran profile"
             from . import daemon
@@ -274,6 +304,7 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
             if pid:
                 return f"✓ Blackout Kit daemon started using engine '{engine}' (PID {pid})."
             return "✗ Failed to start daemon."
+
 
         elif tool_name == "blackout_disconnect":
             from . import daemon, proxy_manager, security
@@ -413,7 +444,12 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
             if tool == "dns-flush":
                 return "✓ DNS cache flushed." if net_tools.flush_dns() else "✗ DNS cache flush failed"
             elif tool == "netfix":
-                return json.dumps(net_tools.run_network_recovery(), indent=2)
+                return json.dumps(net_tools.run_network_recovery(audit_source="mcp"), indent=2)
+            elif tool == "netfix-preview":
+                return json.dumps(net_tools.plan_network_recovery(), indent=2)
+            elif tool == "netfix-history":
+                from . import recovery_audit
+                return json.dumps(recovery_audit.history(), indent=2)
             elif tool == "dns-bench":
                 return json.dumps(net_tools.benchmark_dns(), indent=2)
             elif tool == "dns-set":

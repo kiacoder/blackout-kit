@@ -4,6 +4,7 @@ All user-facing commands live here.
 """
 import argparse
 import asyncio
+import json
 import sys
 import time
 from pathlib import Path
@@ -542,6 +543,8 @@ def cmd_start(args):
         return
     background  = getattr(args, "background", False)
     iran        = getattr(args, "iran", False)
+    if not _ensure_ready("legend" if iran else engine_name):
+        return
     proxy_info = None
     health_target = None
     
@@ -1008,21 +1011,26 @@ def cmd_config(args):
 
     elif args.config_command == "encrypt":
         if sec.configs_are_obfuscated():
-            console.print("[warning]Configs are already encrypted (configs.enc exists).[/warning]")
+            console.print("[warning]Encrypted local vault storage is already active.[/warning]")
             return
-        sec.obfuscate_configs()
-        console.print("[success]✓ Configs encrypted → configs.enc[/success]")
-        console.print("[muted]Original configs.txt has been securely wiped.[/muted]")
-        console.print("[muted]To restore: [bold]blackout config decrypt[/bold][/muted]")
+        try:
+            sec.obfuscate_configs()
+        except Exception:
+            console.print("[error]Encryption failed. Plaintext files were preserved.[/error]")
+            return
+        console.print("[success]✓ Proxy configs and supported VPN secrets are encrypted at rest.[/success]")
+        console.print("[muted]Plaintext proxy configs and password/PSK settings were removed only after encrypted records were written.[/muted]")
+        console.print("[muted]Use [bold]blackout config decrypt[/bold] only for same-machine recovery; it restores plaintext files.[/muted]")
 
     elif args.config_command == "decrypt":
         if not sec.configs_are_obfuscated():
-            console.print("[warning]No encrypted configs found (configs.enc missing).[/warning]")
+            console.print("[warning]No encrypted local vault data was found.[/warning]")
             return
         if sec.deobfuscate_configs():
-            console.print("[success]✓ Configs decrypted → configs.txt[/success]")
+            console.print("[success]✓ Encrypted proxy configs and supported VPN secrets restored to plaintext files.[/success]")
+            console.print("[warning]Run blackout config encrypt again when recovery is complete to protect them at rest.[/warning]")
         else:
-            console.print("[error]Decryption failed. File may be corrupted or from a different machine.[/error]")
+            console.print("[error]Decryption failed. Encrypted files were preserved; they may be corrupted or from a different machine.[/error]")
 
 
 def cmd_settings(args):
@@ -1335,12 +1343,18 @@ def cmd_tools(args):
             console.print(f"[error]✗ {detail}[/error]")
 
     elif args.tools_command == "netfix":
+        preview = getattr(args, "preview", False)
+        plan = net_tools.plan_network_recovery()
+        console.print(_recovery_table(plan, preview=True))
+        if preview:
+            console.print("[muted]Preview only: no system state or audit log was changed.[/muted]")
+            return
         console.print(Panel(
             "[bold yellow]Running targeted crash recovery. Admin rights may be requested.[/bold yellow]\n"
-            "[dim]Repairs stale Blackout routes, loopback DNS, and unhealthy virtual adapters before resetting Windows networking.[/dim]",
+            "[dim]Repairs only Blackout-owned routes, loopback DNS, and unhealthy BlackoutKit-TUN state.[/dim]",
             border_style="yellow",
         ))
-        for step in net_tools.run_network_recovery():
+        for step in net_tools.run_network_recovery(audit_source="tools"):
             status = "[success]✓ Done[/success]" if step["ok"] else "[error]✗ Failed[/error]"
             console.print(f"  {status}  {step['name']} [dim]— {step['detail']}[/dim]")
         console.print("\n[success]Done. Restart may be needed for full effect.[/success]")
@@ -2094,6 +2108,40 @@ def cmd_easteregg(args):
     ))
 
 
+def _render_ready_checks(engine_name: str, checks: list) -> None:
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 2))
+    table.add_column("Check", style="white")
+    table.add_column("Status", width=14)
+    table.add_column("Details", style="dim")
+    for check in checks:
+        status = "[green]Ready[/green]" if check.ok else ("[yellow]Warning[/yellow]" if not check.blocking else "[red]Blocked[/red]")
+        table.add_row(check.name, status, check.detail)
+    console.print(Panel(table, title=f"[heading]Local Readiness · {engine_name}[/heading]", border_style="panel.border"))
+    console.print("[muted]This check reads local settings, files, process state, and loopback ports only. It does not start engines, probe remote hosts, download files, or change networking.[/muted]")
+
+
+def cmd_ready(args):
+    """Show strict local readiness for a selected engine."""
+    from . import readiness
+
+    requested = getattr(args, "engine", None) or getattr(args, "pos_engine", None) or "auto"
+    engine_name = _recommended_engine_name() if requested == "auto" else requested
+    checks = readiness.evaluate(engine_name)
+    _render_ready_checks(engine_name, checks)
+    return all(check.ok or not check.blocking for check in checks)
+
+
+def _ensure_ready(engine_name: str) -> bool:
+    from . import readiness
+
+    checks = readiness.evaluate(engine_name)
+    if all(check.ok or not check.blocking for check in checks):
+        return True
+    _render_ready_checks(engine_name, checks)
+    console.print("[error]Connection was not started because local readiness checks found blockers.[/error]")
+    return False
+
+
 def cmd_connect(args):
     """Smart connect — auto-preps and starts the best locally-ready engine."""
     s = cfg.load()
@@ -2119,6 +2167,9 @@ def cmd_connect(args):
             if not engine_name:
                 console.print("[muted]Connection cancelled.[/muted]")
                 return
+
+    if not _ensure_ready(engine_name):
+        return
 
     # Apply Iran bypass profile if requested
     if iran_mode:
@@ -2211,11 +2262,30 @@ def cmd_connect(args):
     cmd_start(fake)
 
 
+def _recovery_table(steps: list[dict], *, preview: bool = False):
+    table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 2))
+    table.add_column("Step", style="white", width=30)
+    table.add_column("Status", width=18)
+    table.add_column("Details", style="dim")
+    for step in steps:
+        status = "[cyan]Planned[/cyan]" if preview else ("[green]✓ Done[/green]" if step["ok"] else "[red]✗ Failed[/red]")
+        table.add_row(step["name"], status, step["detail"])
+    return table
+
+
 def cmd_fix(args):
     """Run targeted post-crash network recovery with a live Rich checklist."""
     full_route_reset = getattr(args, "full_route_reset", False)
     full_stack_reset = getattr(args, "full_stack_reset", False)
     flush_arp = getattr(args, "flush_arp", False)
+    preview = getattr(args, "preview", False)
+    history = getattr(args, "history", False)
+    history_lines = getattr(args, "history_lines", 20)
+    if history:
+        from . import recovery_audit
+        records = recovery_audit.history(history_lines)
+        console.print(Panel(json.dumps(records, indent=2), title="[heading]Recovery Audit History[/heading]", border_style="panel.border"))
+        return
     if not (sys.platform == "win32" or sys.platform.startswith("linux")):
         console.print("[yellow]`blackout fix` is supported only on Windows and Linux.[/yellow]")
         return
@@ -2240,17 +2310,20 @@ def cmd_fix(args):
             border_style="red",
         ))
 
+    plan = net_tools.plan_network_recovery(
+        full_route_reset=full_route_reset,
+        full_stack_reset=full_stack_reset,
+        flush_arp=flush_arp,
+    )
+    console.print(_recovery_table(plan, preview=True))
+    if preview:
+        console.print("[muted]Preview only: no system proxy, route, DNS, adapter, firewall, or audit-log change was made.[/muted]")
+        return
+
     results: list[dict] = []
 
     def _make_table():
-        table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 2))
-        table.add_column("Step", style="white", width=30)
-        table.add_column("Status", width=18)
-        table.add_column("Details", style="dim")
-        for step in results:
-            status = "[green]✓ Done[/green]" if step["ok"] else "[red]✗ Failed[/red]"
-            table.add_row(step["name"], status, step["detail"])
-        return table
+        return _recovery_table(results)
 
     console.print()
     recovery_details = (
@@ -2271,6 +2344,7 @@ def cmd_fix(args):
             full_route_reset=full_route_reset,
             full_stack_reset=full_stack_reset,
             flush_arp=flush_arp,
+            audit_source="cli",
         ))
         live.update(_make_table())
 

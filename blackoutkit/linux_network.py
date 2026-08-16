@@ -352,6 +352,25 @@ def flush_dns_cache() -> tuple[bool, str]:
     return True, "No supported local DNS cache service was active"
 
 
+def plan_network_recovery(*, flush_arp: bool = False, from_daemon: bool = False) -> list[dict]:
+    """Describe recovery of Blackout-owned Linux state without mutating it."""
+    if not is_linux():
+        return [_result("Linux recovery", False, "Linux-only")]
+    prefix = "Daemon targeted recovery" if from_daemon else "Targeted Linux recovery"
+    if not is_root():
+        return [_result(prefix, False, "Run with sudo to repair Blackout-owned network state")]
+    firewall_detail = "Would remove inet blackoutkit and BLACKOUTKIT_* firewall objects" if (_nft_table_exists() or _command_available("iptables")) else "No Blackout-owned firewall objects detected"
+    tunnel_detail = "Would remove BlackoutKit-TUN and route table 20220/rule 32200" if tunnel_exists() else "No stale BlackoutKit-TUN interface found"
+    plan = [
+        _result(f"{prefix}: remove firewall", True, firewall_detail),
+        _result(f"{prefix}: remove TUN", True, tunnel_detail),
+        _result("Flush DNS cache", True, "Would flush a supported local DNS cache"),
+    ]
+    if flush_arp:
+        plan.append(_result("Flush ARP cache", True, "Would explicitly flush the IPv4 ARP/neighbor cache"))
+    return plan
+
+
 def run_network_recovery(*, from_daemon: bool = False) -> list[dict]:
     if not is_linux():
         return [_result("Linux recovery", False, "Linux-only")]

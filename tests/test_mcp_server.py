@@ -5,6 +5,17 @@ from unittest.mock import patch
 from blackoutkit import mcp_server as mcp
 
 
+def test_ready_returns_local_structured_checks():
+    with patch("blackoutkit.readiness.as_dicts", return_value=[{"name": "Local", "ok": True, "blocking": True, "detail": "ok"}]):
+        result = mcp.handle_tool_call("blackout_ready", {"engine": "xray"})
+
+    assert json.loads(result) == {
+        "engine": "xray",
+        "ready": True,
+        "checks": [{"name": "Local", "ok": True, "blocking": True, "detail": "ok"}],
+    }
+
+
 def test_connect_requires_explicit_engine():
     result = mcp.handle_tool_call("blackout_connect", {})
 
@@ -181,10 +192,29 @@ def test_config_import_reports_added_and_total_counts():
 
 def test_network_recovery_returns_actual_steps():
     steps = [{"name": "Clear proxy", "ok": True, "detail": "done"}]
-    with patch("blackoutkit.tools.run_network_recovery", return_value=steps):
+    with patch("blackoutkit.tools.run_network_recovery", return_value=steps) as recovery:
         result = mcp.handle_tool_call("blackout_net_tools", {"tool": "netfix"})
 
+    recovery.assert_called_once_with(audit_source="mcp")
     assert json.loads(result) == steps
+
+
+def test_network_recovery_preview_is_read_only():
+    steps = [{"name": "Clear proxy", "ok": True, "detail": "would clear"}]
+    with patch("blackoutkit.tools.plan_network_recovery", return_value=steps) as preview, \
+         patch("blackoutkit.tools.run_network_recovery") as recovery:
+        result = mcp.handle_tool_call("blackout_net_tools", {"tool": "netfix-preview"})
+
+    preview.assert_called_once_with()
+    recovery.assert_not_called()
+    assert json.loads(result) == steps
+
+
+def test_network_recovery_history_is_read_only():
+    with patch("blackoutkit.recovery_audit.history", return_value=[{"source": "cli"}]):
+        result = mcp.handle_tool_call("blackout_net_tools", {"tool": "netfix-history"})
+
+    assert json.loads(result) == [{"source": "cli"}]
 
 
 def test_network_ping_uses_existing_ping_helper():

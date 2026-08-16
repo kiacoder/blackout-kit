@@ -9,14 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **MCP operational parity:** Replaced stale MCP dispatches with the supported daemon, settings, security-mode, recovery, hotspot, and ping helpers; explicit connection requests now avoid unsupported auto/profile behavior and report daemon start rather than a verified tunnel.
+- **Credential storage:** `blackout config encrypt` now protects supported IKEv2/L2TP and SoftEther credentials alongside proxy URIs instead of leaving them in plaintext settings.
+- **Encrypted config usability:** Encrypted saved proxy configurations now load and update in memory without silently recreating `configs.txt` during normal operation.
+- **Connection startup safety:** All CLI, daemon, and MCP engine starts now use the same local readiness gate before mutating settings, scanning, downloading, starting engines, enabling the kill switch, or repairing networking.
+
+### Added
+- **Authenticated local vault:** Added machine-bound AES-256-GCM vault records with authenticated labels for saved proxy URIs and supported VPN secrets, plus explicit same-machine plaintext recovery through `blackout config decrypt`.
+- **Local readiness check:** Added `blackout ready [engine]` and `blackout_ready` MCP diagnostics for strictly local engine validation without remote probes, DNS resolution, downloads, elevation, or connection changes.
+- **Recovery preview and audit:** Added `blackout fix --preview`, `blackout fix --history`, `blackout tools netfix --preview`, and MCP preview/history options. Executed recoveries now keep bounded, redacted local action history; previews never mutate state or create an audit entry.
+
 - **Sensitive routine output:** Masked stored IKEv2 and SoftEther credentials in terminal and MCP settings reads, and stopped echoing proxy URI credentials after MCP config import/add operations.
 - **Kill-switch ownership:** Windows now refuses to install a broad outbound allow rule when no managed proxy executable can be allowlisted.
 - **Documentation accuracy:** Aligned public and in-app documentation with the shipped Linux engine subset, local-only routing recommendations, Windows proxy-bypass scope, targeted recovery boundaries, VLESS REALITY trust model, security-mode behavior, and the MCP server's actual tool dispatch scope.
 - **WARP dependency graph:** Raised all patchable transitive Go dependencies to their published security fixes, including the critical `golang.org/x/crypto` advisories. The native WARP/Psiphon DLL graph is now verified and compiled in Windows CI.
 - **mhrv certificate-store claim:** Corrected documentation that incorrectly described the embedded HTTP relay as an HTTPS MITM engine that installs a CA. mhrv never modifies Windows certificate stores, so certificate cleanup is not applicable.
 - **Daemon restart resilience:** Failed engine restarts now stay alive through a bounded, cancellable exponential-backoff cycle rather than terminating the daemon immediately. Daemon state consistently records the daemon PID, including for DLL-backed engines.
-
-### Added
 - **Client-side VLESS REALITY:** Added parsing and exact round-trip storage for standard VLESS REALITY URIs, including public-key aliases, short IDs, spider paths, flow, gRPC service names, and TCP/WebSocket/gRPC transport settings. XRay/TUN now generate REALITY outbounds without TLS certificate probes or TLS-only policy fields; CLI lists remain redacted.
 - **Safe terminal UX bundle:** Added redacted friendly failure panels, interactive-only Rich prompts, `blackout status --watch`, local-only `blackout route` recommendations, and a persistent `blackout theme dark|light` Rich palette. These views never probe remote nodes, start engines, download components, repair networking, or change the host terminal/GUI theme.
 - **Linux x86_64 TUN runtime:** Added the supported Linux XRay → sing-box system-tunnel path for Ubuntu/Debian, Fedora, and Arch. It uses the managed `blackout-engine` runner, requires `sudo`, routes DNS through the tunnel, and keeps Linux firewall and route-table state under Blackout Kit-owned names.

@@ -565,6 +565,7 @@ Ensure you are ready for an impending internet blackout.
 
 [bold]Usage:[/bold]
   blackout preflight
+  blackout ready [engine]          Local-only validation before connection startup
 
 [bold]Tip:[/bold]
   Run this command while you still have internet access. If it fails,
@@ -704,6 +705,7 @@ Full network diagnostic and utility toolkit.
   hotspot               Toggle Windows Mobile Hotspot on/off
   share-vpn             Inspect an eligible Windows adapter and show manual ICS steps
   netfix                Targeted post-crash recovery for Blackout-owned state
+  netfix --preview      Show Blackout-owned recovery actions without changing anything
   arp-flush             Explicitly flush local ARP/neighbor cache (may briefly affect LAN discovery)
 
 [bold]Background daemon reconnect:[/bold]
@@ -784,7 +786,10 @@ Check for new versions and update automatically.
 [bold]Usage:[/bold]
   blackout update                       Check for an available update
   blackout update --apply               Download and apply the available update
-  blackout preflight                    Check readiness without connecting
+  blackout preflight                    Check offline preparedness without connecting
+  blackout ready [engine]               Check local engine readiness without changing state
+  blackout fix --preview                Preview Blackout-owned recovery actions without changes
+  blackout fix --history                Read redacted local recovery action history
 
 [bold]Update process:[/bold]
   1. Queries GitHub releases API for newest version

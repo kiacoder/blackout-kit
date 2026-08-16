@@ -392,70 +392,49 @@ def _atomic_write_bytes(path: Path, data: bytes) -> None:
 
 
 def obfuscate_configs():
-    """
-    Encrypt configs.txt with AES-256-GCM, save to configs.enc.
-    Then securely wipe configs.txt.
-    Falls back to XOR if the cryptography library is not installed.
-    """
-    if not CONFIGS_FILE.exists():
-        return
-    raw = CONFIGS_FILE.read_bytes()
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    """Encrypt proxy URIs and supported VPN secrets using authenticated storage."""
+    from . import vault
 
-    try:
-        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-        key    = _derive_aes_key(_get_machine_id())
-        aesgcm = AESGCM(key)
-        nonce  = os.urandom(12)                         # 96-bit random nonce
-        ct      = aesgcm.encrypt(nonce, raw, None)       # includes 16-byte GCM tag
-        payload = _AES_HEADER + base64.b64encode(nonce + ct)
-        _atomic_write_bytes(ENC_CONFIGS, payload)
-    except ImportError:
-        # cryptography not installed — fall back to XOR
-        key   = _get_machine_key()
-        xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw))
-        _atomic_write_bytes(ENC_CONFIGS, base64.b64encode(xored))
-
-    # Securely wipe plaintext before deleting
-    CONFIGS_FILE.write_bytes(b"\x00" * len(raw))
-    CONFIGS_FILE.unlink()
+    raw_configs = CONFIGS_FILE.read_bytes() if CONFIGS_FILE.exists() else None
+    if raw_configs is not None:
+        vault.write_config_bytes(raw_configs, encrypted_path=ENC_CONFIGS)
+    cfg.activate_secret_vault()
+    if raw_configs is not None:
+        vault.secure_remove_plaintext(CONFIGS_FILE)
 
 
 def deobfuscate_configs() -> bool:
-    """
-    Decrypt configs.enc → configs.txt.
-    Auto-detects AES-256-GCM (new) vs XOR (legacy) format.
-    Returns True on success.
-    """
-    if not ENC_CONFIGS.exists():
-        return False
+    """Explicitly restore encrypted proxy URIs and credentials to plaintext files."""
+    from . import vault
+
     try:
-        raw_file = ENC_CONFIGS.read_bytes()
-
-        if raw_file.startswith(_AES_HEADER):
-            # ── AES-256-GCM format ──
-            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-            blob   = base64.b64decode(raw_file[len(_AES_HEADER):])
-            nonce  = blob[:12]
-            ct     = blob[12:]
-            key    = _derive_aes_key(_get_machine_id())
-            aesgcm = AESGCM(key)
-            plain  = aesgcm.decrypt(nonce, ct, None)
-        else:
-            # ── Legacy XOR format ──
-            xored = base64.b64decode(raw_file)
-            key   = _get_machine_key()
-            plain = bytes(b ^ key[i % len(key)] for i, b in enumerate(xored))
-
-        CONFIGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        CONFIGS_FILE.write_bytes(plain)
-        return True
-    except Exception:
+        plaintext_configs = vault.read_config_bytes(ENC_CONFIGS) if ENC_CONFIGS.exists() else None
+        had_secrets = vault.ENC_SECRETS_FILE.exists()
+        if had_secrets:
+            vault.read_secrets()
+        if plaintext_configs is not None:
+            vault.atomic_write(CONFIGS_FILE, plaintext_configs)
+        if had_secrets:
+            cfg.deactivate_secret_vault()
+        if plaintext_configs is not None:
+            ENC_CONFIGS.unlink(missing_ok=True)
+        return plaintext_configs is not None or had_secrets
+    except vault.VaultError:
         return False
 
 
 def configs_are_obfuscated() -> bool:
-    return ENC_CONFIGS.exists() and not CONFIGS_FILE.exists()
+    """Return whether saved proxy configurations are encrypted at rest."""
+    from . import vault
+
+    return vault.config_vault_active(ENC_CONFIGS)
+
+
+def vault_is_active() -> bool:
+    """Return whether either proxy config or supported secret vault data is active."""
+    from . import vault
+
+    return vault.config_vault_active(ENC_CONFIGS) or vault.secrets_vault_active()
 
 
 # ─────────────────────────── AV exclusion ────────────────────────

@@ -405,6 +405,12 @@ def run_daemon_loop(engine_name: str):
         if not factory:
             log.warning(f"Unknown engine: {name}")
             return []
+        from . import readiness
+        checks = readiness.evaluate(name, allow_active_daemon=True)
+        blockers = [check.detail for check in checks if check.blocking and not check.ok]
+        if blockers:
+            log.warning("Local readiness blocked %s: %s", name, "; ".join(blockers))
+            return []
 
         linux_kill_switch = sys.platform.startswith("linux") and s.get("kill_switch", False)
         if linux_kill_switch and not sec.prepare_linux_kill_switch(name):

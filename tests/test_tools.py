@@ -192,7 +192,7 @@ def test_external_system_proxy_is_preserved(mock_clear_proxy, mock_status):
     ok, detail = tools.clear_stale_blackout_proxy()
 
     assert ok is True
-    assert detail == "External proxy preserved: proxy.example:8080"
+    assert detail == "External proxy preserved"
     mock_clear_proxy.assert_not_called()
 
 
@@ -202,7 +202,7 @@ def test_stale_blackout_proxy_is_cleared(mock_clear_proxy, mock_status):
     ok, detail = tools.clear_stale_blackout_proxy()
 
     assert ok is True
-    assert detail == "Removed stale Blackout proxy: 127.0.0.1:10809"
+    assert detail == "Removed stale Blackout proxy"
     mock_clear_proxy.assert_called_once()
 
 

@@ -279,12 +279,67 @@ def clear_stale_blackout_proxy() -> tuple[bool, str]:
         return True, "No system proxy configured"
     server = str(status.get("server", ""))
     if not _is_blackout_proxy_server(server):
-        return True, f"External proxy preserved: {server}"
-    return clear_system_proxy(), f"Removed stale Blackout proxy: {server}"
+        return True, "External proxy preserved"
+    return clear_system_proxy(), "Removed stale Blackout proxy"
 
 
 def _script_result(name: str, ok: bool, detail: str) -> dict:
     return {"name": name, "ok": ok, "detail": detail}
+
+
+def plan_network_recovery(
+    full_route_reset: bool = False,
+    full_stack_reset: bool = False,
+    flush_arp: bool = False,
+    *,
+    from_daemon: bool = False,
+) -> list[dict]:
+    """Describe owned recovery actions without changing system state."""
+    if sys.platform.startswith("linux"):
+        from . import daemon, linux_network
+
+        if daemon.get_state() is not None and not from_daemon:
+            return [_script_result("Targeted Linux recovery", True, "Would skip while Blackout daemon is active")]
+        return linux_network.plan_network_recovery(flush_arp=flush_arp and not from_daemon, from_daemon=from_daemon)
+    if sys.platform != "win32":
+        return [_script_result("Network recovery", False, "Unsupported platform")]
+
+    from . import daemon
+
+    if daemon.get_state() is not None and not from_daemon:
+        return [_script_result("Targeted network recovery", True, "Would skip while Blackout daemon is active")]
+    snapshot = get_network_recovery_snapshot()
+    stale_adapters = find_stale_virtual_adapters(snapshot, daemon_running=not from_daemon)
+    loopback_dns_adapters = find_loopback_dns_adapters(snapshot)
+    stale_routes = find_stale_virtual_routes(snapshot, stale_adapters)
+    plan = []
+    if from_daemon:
+        plan.append(_script_result("Preserve system proxy", True, "Daemon recovery keeps the current proxy setting"))
+    else:
+        from .proxy_manager import get_proxy_status
+
+        proxy = get_proxy_status()
+        if proxy.get("enabled") and _is_blackout_proxy_server(str(proxy.get("server", ""))):
+            plan.append(_script_result("Clear system proxy", True, "Would remove stale Blackout local proxy"))
+        elif proxy.get("enabled"):
+            plan.append(_script_result("Preserve external proxy", True, "External proxy is not Blackout-managed"))
+        else:
+            plan.append(_script_result("Clear system proxy", True, "No system proxy configured"))
+    plan.append(_script_result("Remove stale virtual routes", True, f"Would remove {len(stale_routes)} Blackout-owned route(s)" if stale_routes else "No stale Blackout routes found"))
+    plan.append(_script_result("Restore DHCP DNS", True, f"Would restore DHCP DNS on {len(loopback_dns_adapters)} physical adapter(s)" if loopback_dns_adapters else "No loopback DNS on physical adapters"))
+    plan.append(_script_result("Restart stale virtual adapters", True, f"Would restart {len(stale_adapters)} BlackoutKit-TUN adapter(s)" if stale_adapters else "No unhealthy BlackoutKit-TUN adapter found"))
+    plan.append(_script_result("Flush DNS cache", True, "Would clear the local resolver cache"))
+    if full_route_reset and not from_daemon:
+        plan.append(_script_result("Full route-table reset", True, "Would run explicit emergency route reset"))
+    elif from_daemon:
+        plan.append(_script_result("Full route-table reset", True, "Daemon recovery never flushes all routes"))
+    if full_stack_reset and not from_daemon:
+        plan.append(_script_result("Full Windows network-stack reset", True, "Would run explicit Winsock, TCP/IP, autotuning, and DHCP resets"))
+    else:
+        plan.append(_script_result("Preserve Windows network stack", True, "Targeted recovery skips Winsock, TCP/IP, and DHCP resets"))
+    if flush_arp and not from_daemon:
+        plan.append(_script_result("Flush ARP cache", True, "Would explicitly flush the local ARP cache"))
+    return plan
 
 
 def _run_recovery_script(script: str, timeout_ms: int = 60000) -> bool:
@@ -311,6 +366,7 @@ def run_network_recovery(
     flush_arp: bool = False,
     *,
     from_daemon: bool = False,
+    audit_source: str = "cli",
 ) -> list[dict]:
     """Safely repair Blackout-owned network state after a crash or failed reconnect."""
     if sys.platform.startswith("linux"):
@@ -326,6 +382,12 @@ def run_network_recovery(
         if flush_arp and not from_daemon:
             ok, detail = flush_arp_cache()
             results.append(_script_result("Flush ARP cache", ok, detail))
+        from . import recovery_audit
+        recovery_audit.record(
+            source="daemon" if from_daemon else audit_source,
+            flags={"full_route_reset": False, "full_stack_reset": False, "flush_arp": flush_arp},
+            results=results,
+        )
         return results
 
     if sys.platform != "win32":
@@ -436,6 +498,16 @@ def run_network_recovery(
     if flush_arp:
         arp_ok, arp_detail = flush_arp_cache()
         results.append(_script_result("Flush ARP cache", arp_ok, arp_detail))
+    from . import recovery_audit
+    recovery_audit.record(
+        source="daemon" if from_daemon else audit_source,
+        flags={
+            "full_route_reset": full_route_reset,
+            "full_stack_reset": full_stack_reset,
+            "flush_arp": flush_arp,
+        },
+        results=results,
+    )
     return results
 
 
