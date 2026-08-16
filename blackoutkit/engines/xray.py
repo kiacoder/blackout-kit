@@ -387,8 +387,8 @@ class XRayEngine(Engine):
             or self.proxy_config.address in {"127.0.0.1", "0.0.0.0", "localhost", "::1"}
         ):
             self._log.error(
-                "Linux XRay requires a direct VLESS, Trojan, or VMess configuration; "
-                "the Windows SNI fallback is unavailable on Linux."
+                "Linux XRay requires a direct VLESS or Trojan configuration; "
+                "the Windows SNI fallback and VMess runtime path are unavailable on Linux."
             )
             return False
 

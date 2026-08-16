@@ -8,11 +8,26 @@ Features:
 """
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 
 APP_DATA_DIR  = Path.home() / ".blackout-kit"
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
+
+SENSITIVE_KEYS = frozenset({
+    "ikev2_password",
+    "ikev2_psk",
+    "softether_password",
+})
+
+
+def display_value(key: str, value):
+    """Return a safe representation for settings shown in routine output."""
+    if key in SENSITIVE_KEYS and value:
+        return "[hidden]"
+    return value
+
 
 DEFAULTS = {
     # Network ports
@@ -75,7 +90,7 @@ DEFAULTS = {
 
     # Security modes
     "security_mode":        "speed",     # speed / private / legend
-    "kill_switch":          False,       # Block ALL traffic if proxy drops (Windows only)
+    "kill_switch":          False,       # Enable the verified Linux endpoint-scoped firewall kill switch
 
     # IKEv2 / Windows built-in VPN
     "ikev2_server":         "",
@@ -252,6 +267,52 @@ def get(key: str, default=None):
     return val
 
 
+def coerce_value(key: str, value):
+    """Convert CLI and MCP input to the type declared by the setting default."""
+    if key not in DEFAULTS:
+        raise ValueError(f"Unknown setting: '{key}'. Run 'blackout settings list' to see all.")
+
+    default = DEFAULTS[key]
+    if isinstance(default, bool):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in ("1", "true", "yes", "on"):
+                return True
+            if normalized in ("0", "false", "no", "off"):
+                return False
+        raise ValueError(f"Invalid value for '{key}': must be true or false")
+
+    if isinstance(default, int):
+        if isinstance(value, bool):
+            raise ValueError(f"Invalid value for '{key}': must be an int")
+        try:
+            return int(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid value for '{key}': must be an int") from exc
+
+    if isinstance(default, float):
+        try:
+            return float(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"Invalid value for '{key}': must be a float") from exc
+
+    if isinstance(default, list):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            return [item.strip() for item in value.split(",") if item.strip()]
+        raise ValueError(f"Invalid value for '{key}': must be a comma-separated list")
+
+    if isinstance(default, str):
+        if isinstance(value, str):
+            return value
+        raise ValueError(f"Invalid value for '{key}': must be a string")
+
+    return value
+
+
 def validate(key: str, value) -> tuple[bool, str]:
     """
     Validate a single setting value.
@@ -259,14 +320,15 @@ def validate(key: str, value) -> tuple[bool, str]:
     """
     if key not in DEFAULTS:
         return False, f"Unknown setting '{key}'"
+    try:
+        typed = coerce_value(key, value)
+    except ValueError as exc:
+        return False, str(exc).split(": ", 1)[-1]
+
     rule = _VALIDATORS.get(key)
     if rule is None:
-        return True, ""   # No specific rule — accept any value
-    expected_type, check_fn, error_msg = rule
-    try:
-        typed = expected_type(value)
-    except (ValueError, TypeError):
-        return False, f"must be a {expected_type.__name__}"
+        return True, ""
+    _expected_type, check_fn, error_msg = rule
     if not check_fn(typed):
         return False, error_msg
     return True, ""
@@ -290,13 +352,14 @@ def validate_all(settings: dict | None = None) -> list[tuple[str, str]]:
 
 def set_value(key: str, value):
     """Update one setting with validation, then save."""
-    if key not in DEFAULTS:
-        raise ValueError(f"Unknown setting: '{key}'. Run 'blackout settings list' to see all.")
-    ok, msg = validate(key, value)
+    typed_value = coerce_value(key, value)
+    if key == "kill_switch" and typed_value and not sys.platform.startswith("linux"):
+        raise ValueError("The kill switch is available only on Linux")
+    ok, msg = validate(key, typed_value)
     if not ok:
         raise ValueError(f"Invalid value for '{key}': {msg}")
     settings = load()
-    settings[key] = value
+    settings[key] = typed_value
     save(settings)
 
 
@@ -337,7 +400,7 @@ def describe(key: str) -> str:
         "color_theme":        "Terminal accent color: red/blue/green/purple",
         "terminal_theme":     "Blackout Kit terminal palette: dark/light (does not change your terminal app)",
         "security_mode":      "Active security mode: speed / private / legend",
-        "kill_switch":        "Block all internet if proxy drops (Windows Firewall)",
+        "kill_switch":        "Enable Linux endpoint-scoped firewall protection; unavailable on Windows",
         "ikev2_server":       "IKEv2/L2TP VPN server address",
         "ikev2_username":     "IKEv2/L2TP VPN username",
         "ikev2_password":     "IKEv2/L2TP VPN password",

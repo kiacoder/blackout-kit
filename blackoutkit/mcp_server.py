@@ -5,7 +5,7 @@ Exposes a documented subset of Blackout Kit operations to compatible AI clients
 through stdio JSON-RPC 2.0 tools.
 
 Features exposed to AI Agents:
-  - blackout_connect (engine, iran)
+  - blackout_connect (engine)
   - blackout_disconnect ()
   - blackout_emergency ()
   - blackout_status ()
@@ -22,10 +22,50 @@ Scope note: tool calls can start/stop local engines, import remote subscriptions
 or modify local proxy/network settings. The MCP server exposes only the subset
 implemented below; descriptions must not imply unimplemented network operations.
 """
-import sys
 import json
-import os
-from pathlib import Path
+import sys
+
+from . import settings as cfg
+
+
+_MCP_ENGINES = frozenset({
+    "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
+    "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
+    "tuic", "legend",
+})
+
+
+def _is_blackout_proxy(proxy: dict) -> bool:
+    """Return whether a proxy status entry targets a Blackout local listener."""
+    if not proxy.get("enabled"):
+        return False
+    server = str(proxy.get("server", "")).lower()
+    host, separator, port_text = server.rpartition(":")
+    if not separator:
+        return False
+    host = host.removeprefix("socks=")
+    for scheme in ("http://", "https://", "socks5://"):
+        host = host.removeprefix(scheme)
+    host = host.strip("[]")
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        return False
+    try:
+        port = int(port_text)
+    except ValueError:
+        return False
+    settings = cfg.load()
+    return port in {
+        settings.get("xray_socks_port", 10808),
+        settings.get("xray_http_port", 10809),
+        settings.get("psiphon_socks_port", 1081),
+        settings.get("gas_proxy_port", 8087),
+        8085,
+        9050,
+        1080,
+    }
+
+
+# Redirect stdout to stderr for any internal imports/logs to preserve stdio JSON-RPC protocol hygiene!
 
 # Redirect stdout to stderr for any internal imports/logs to preserve stdio JSON-RPC protocol hygiene!
 real_stdout = sys.stdout
@@ -41,26 +81,21 @@ def send_response(response: dict):
 TOOLS_MANIFEST = [
     {
         "name": "blackout_connect",
-        "description": "Start a Blackout Kit engine. `auto` uses the daemon's configured startup path; supported engines depend on the platform, installed runtime, and saved configuration.",
+        "description": "Start an explicitly selected Blackout Kit engine. Supported engines depend on the platform, installed runtime, and saved configuration.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "engine": {
                     "type": "string",
-                    "description": "Engine choice: auto, sni, xray, gdpi, psiphon, warp, tun, tor, mhrv, ikev2, wireguard, openvpn, softether, hysteria2, tuic, legend. Linux supports only xray, tun, hysteria2, and tuic.",
-                    "default": "auto"
-                },
-                "iran": {
-                    "type": "boolean",
-                    "description": "Enable the MCP server's LEGEND-engine Iran profile behavior",
-                    "default": False
+                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "legend"],
+                    "description": "Explicit engine choice. Linux supports only xray, tun, hysteria2, and tuic."
                 }
             }
         }
     },
     {
         "name": "blackout_disconnect",
-        "description": "Stop the active Blackout Kit daemon. This legacy MCP call bypasses the terminal command's system-proxy cleanup and does not reset external proxy settings.",
+        "description": "Stop the active Blackout Kit daemon and clean only Blackout-managed local proxy and kill-switch state.",
         "inputSchema": {
             "type": "object",
             "properties": {}
@@ -125,7 +160,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_settings",
-        "description": "Read or write saved Blackout Kit settings. The legacy setter forwards raw strings without the terminal CLI's type coercion, and its reset action is not implemented; use the terminal CLI for booleans, lists, and full reset.",
+        "description": "Read, change, or reset saved Blackout Kit settings using the same typed validation as the terminal CLI.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -167,7 +202,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_net_tools",
-        "description": "Run legacy network-tool dispatch. dns-bench, dns-flush, and dns-set are the operational MCP subset; netfix, hotspot, and ping remain schema entries but do not map to the current tool APIs. Use the terminal CLI for them.",
+        "description": "Run supported network diagnostics and targeted recovery. Some operations can modify DNS, hotspot, or Blackout-owned network state.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -209,7 +244,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_security_mode",
-        "description": "Get or write the saved security_mode label. This legacy MCP call does not apply the terminal command's full mode preset, enable a kill switch, encrypt configurations, create multi-hop routing, or guarantee privacy.",
+        "description": "Get or apply the SPEED, PRIVATE, or LEGEND local configuration preset. It does not enable a kill switch, encrypt configurations, create multi-hop routing, or guarantee privacy.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -227,22 +262,42 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
     """Execute tool calls and return JSON or formatted string results for AI agents."""
     try:
         if tool_name == "blackout_connect":
-            engine = args.get("engine", "auto")
-            iran = args.get("iran", False)
-            from . import daemon, settings as cfg
-            if iran:
-                cfg.set_value("security_mode", "legend")
-                engine = "legend"
+            engine = args.get("engine")
+            if not engine:
+                return "Error: an explicit supported engine is required"
+            if engine not in _MCP_ENGINES:
+                return f"Error: unsupported engine '{engine}'"
+            if args.get("iran"):
+                return "Error: MCP connect does not support the Iran profile"
+            from . import daemon
             pid = daemon.start(engine)
             if pid:
-                return f"✓ Blackout Kit connected successfully using engine '{engine}' (PID {pid}). System proxy set."
+                return f"✓ Blackout Kit daemon started using engine '{engine}' (PID {pid})."
             return "✗ Failed to start daemon."
 
         elif tool_name == "blackout_disconnect":
-            from . import daemon
-            if daemon.stop():
-                return "✓ Blackout Kit daemon stopped; its configured system proxy cleanup ran."
-            return "✓ No active Blackout Kit daemon was running; external proxy settings were left unchanged."
+            from . import daemon, proxy_manager, security
+            stopped = daemon.stop()
+            if not stopped:
+                return "✓ No active Blackout Kit daemon was running; external proxy settings were left unchanged."
+
+            settings = cfg.load()
+            details = ["✓ Blackout Kit daemon stopped"]
+            proxy = proxy_manager.get_proxy_status()
+            if settings.get("auto_set_proxy") and _is_blackout_proxy(proxy):
+                if proxy_manager.clear_system_proxy():
+                    details.append("Blackout-managed proxy cleared")
+                else:
+                    details.append("Blackout-managed proxy cleanup failed")
+            elif proxy.get("enabled"):
+                details.append("external proxy preserved")
+
+            if settings.get("kill_switch"):
+                if security.disable_kill_switch():
+                    details.append("kill switch disabled")
+                else:
+                    details.append("kill switch cleanup failed")
+            return "; ".join(details) + "."
 
         elif tool_name == "blackout_emergency":
             from . import daemon
@@ -278,41 +333,61 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
             from .config import manager as cfg_mgr
             if action == "list":
                 cfgs = cfg_mgr.load_configs()
-                items = [{"index": i+1, "protocol": c.protocol, "sni": c.sni, "name": c.name} for i, c in enumerate(cfgs)]
+                items = [
+                    {
+                        "index": i + 1,
+                        "protocol": config.protocol,
+                        "transport": config.transport_label(),
+                        "name": config.name,
+                    }
+                    for i, config in enumerate(cfgs)
+                ]
                 return json.dumps({"count": len(cfgs), "configs": items}, indent=2)
             elif action == "add":
                 uri = args.get("uri")
-                if not uri: return "Error: 'uri' parameter required"
-                cfg_mgr.add_config(uri)
-                return f"✓ Added V2Ray config: {uri[:30]}..."
+                if not uri:
+                    return "Error: 'uri' parameter required"
+                proxy = cfg_mgr.add_config(uri)
+                label = proxy.name or "unnamed"
+                return f"✓ Added {proxy.protocol.upper()} config: {label}"
             elif action == "import":
                 url = args.get("url")
-                if not url: return "Error: 'url' parameter required"
-                added = cfg_mgr.import_and_merge(url)
-                return f"✓ Imported {added} configs from subscription."
+                if not url:
+                    return "Error: 'url' parameter required"
+                added, total = cfg_mgr.import_and_merge(url)
+                return f"✓ Imported {added} configs. Total saved: {total}."
             elif action == "remove":
                 idx = args.get("index")
                 if not idx: return "Error: 'index' parameter required"
                 cfg_mgr.remove_config(idx - 1)
                 return f"✓ Removed config #{idx}."
+            return f"Error: unknown config action '{action}'"
 
         elif tool_name == "blackout_settings":
             action = args.get("action")
             key = args.get("key")
             val = args.get("value")
-            from . import settings as cfg
             if action == "list":
-                return json.dumps(cfg.load(), indent=2)
+                settings = cfg.load()
+                safe_settings = {
+                    setting_key: cfg.display_value(setting_key, value)
+                    for setting_key, value in settings.items()
+                }
+                return json.dumps(safe_settings, indent=2)
             elif action == "get":
-                if not key: return "Error: 'key' parameter required"
-                return json.dumps({key: cfg.get(key)})
+                if not key:
+                    return "Error: 'key' parameter required"
+                return json.dumps({key: cfg.display_value(key, cfg.get(key))})
             elif action == "set":
-                if not key or val is None: return "Error: 'key' and 'value' required"
-                cfg.set_value(key, val)
-                return f"✓ Setting '{key}' updated to '{val}'."
+                if not key or val is None:
+                    return "Error: 'key' and 'value' required"
+                typed_value = cfg.coerce_value(key, val)
+                cfg.set_value(key, typed_value)
+                return f"✓ Setting '{key}' updated."
             elif action == "reset":
-                cfg.reset_all()
+                cfg.reset()
                 return "✓ All settings reset to defaults."
+            return f"Error: unknown settings action '{action}'"
 
         elif tool_name == "blackout_split_tunnel":
             action = args.get("action")
@@ -329,33 +404,32 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                 if not target: return "Error: target is required"
                 split_tunnel.remove_direct_route(target)
                 return f"✓ Removed '{target}' from split-tunnel direct bypass list."
+            return f"Error: unknown split-tunnel action '{action}'"
 
         elif tool_name == "blackout_net_tools":
             tool = args.get("tool")
             arg = args.get("arg", "")
             from . import tools as net_tools
             if tool == "dns-flush":
-                net_tools.flush_dns()
-                return "✓ DNS cache flushed."
+                return "✓ DNS cache flushed." if net_tools.flush_dns() else "✗ DNS cache flush failed"
             elif tool == "netfix":
-                net_tools.fix_network()
-                return "✓ Network repair executed."
+                return json.dumps(net_tools.run_network_recovery(), indent=2)
             elif tool == "dns-bench":
-                res = net_tools.benchmark_dns()
-                return json.dumps(res, indent=2)
+                return json.dumps(net_tools.benchmark_dns(), indent=2)
             elif tool == "dns-set":
-                if not arg: return "Error: 'arg' (DNS IP) required"
-                net_tools.set_dns(arg)
-                return f"✓ DNS server set to {arg}."
+                if not arg:
+                    return "Error: 'arg' (DNS IP) required"
+                if net_tools.set_dns(arg):
+                    return f"✓ DNS server set to {arg}."
+                return f"✗ Could not set DNS server to {arg}."
             elif tool == "hotspot":
-                action_str = arg if arg in ("on", "off") else "on"
-                net_tools.toggle_hotspot(action_str)
-                return f"✓ Mobile hotspot set to {action_str}."
+                return net_tools.toggle_hotspot()
             elif tool == "ping":
                 host = arg or "8.8.8.8"
-                ms = net_tools.tcp_ping(host)
-                return f"Ping to {host}: {ms:.1f}ms" if ms else f"Ping to {host}: Unreachable"
-            return f"Tool '{tool}' executed."
+                samples = net_tools.ping(host, 1)
+                latency = samples[0] if samples else None
+                return f"Ping to {host}: {latency:.1f}ms" if latency is not None else f"Ping to {host}: Unreachable"
+            return f"Error: unknown network tool '{tool}'"
 
         elif tool_name == "blackout_scan":
             count = args.get("count", 50)
@@ -373,10 +447,10 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
 
         elif tool_name == "blackout_security_mode":
             mode = args.get("mode")
-            from . import settings as cfg, security
+            from . import security
             if mode:
-                cfg.set_value("security_mode", mode)
-                return f"✓ Security mode updated to: {mode}"
+                security.apply_mode(mode)
+                return f"✓ Security mode applied: {mode}"
             return f"Current Security Mode: {security.get_current_mode()}"
 
         return f"Unknown tool: {tool_name}"

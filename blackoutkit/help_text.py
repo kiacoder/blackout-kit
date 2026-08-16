@@ -652,12 +652,9 @@ traffic analysis.
 
 "killswitch": """
 [bold cyan]Kill Switch[/bold cyan]
-Blocks direct internet traffic if the proxy or tunnel goes down.
+Blocks non-allowlisted traffic if the managed proxy or tunnel goes down.
 
-[bold]Windows:[/bold]
-  Uses Windows Firewall per-process rules for the managed proxy runtime.
-
-[bold]Linux:[/bold]
+[bold]Linux only:[/bold]
   Uses only an owned `inet blackoutkit` nftables table, with iptables/ip6tables
   fallback. Before enabling, Blackout Kit resolves a compatible configured upstream
   proxy into literal IP:port rules. It permits loopback, LAN/DHCP, BlackoutKit-TUN,
@@ -665,17 +662,21 @@ Blocks direct internet traffic if the proxy or tunnel goes down.
   endpoint. This is endpoint-scoped firewall control, not a guarantee against all
   leaks or privileged local adversaries.
 
+[bold]Windows:[/bold]
+  Unavailable. Blackout Kit removes its legacy Windows Firewall rules because a
+  Windows Firewall block rule overrides the required per-process allow rules.
+
 [bold]Usage:[/bold]
-  blackout killswitch on                Enable kill switch
-  blackout killswitch off               Disable kill switch
-  blackout killswitch test              Check if active
+  sudo blackout killswitch on           Enable Linux kill switch
+  sudo blackout killswitch off          Disable Linux kill switch
+  sudo blackout killswitch test         Check Linux state
 
 [bold]Requirements:[/bold]
-  Administrator privileges on Windows; sudo/root on Linux.
+  sudo/root and a validated upstream endpoint allowlist on Linux.
 
 [bold]Warning:[/bold]
-  If you enable the kill switch and stop the proxy, you lose direct internet.
-  Run [bold]blackout killswitch off[/bold] to restore direct access.
+  If you enable the Linux kill switch and stop the proxy, direct internet stays
+  blocked until you run [bold]sudo blackout killswitch off[/bold].
 """,
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
@@ -1045,7 +1046,7 @@ _SUMMARIES: dict[str, str] = {
     "warp":          "Cloudflare WARP — clean IP, fewer captchas",
     "neighbor":      "Share or borrow internet from a nearby device",
     "security":      "Speed / Private / Legend security modes",
-    "killswitch":    "Block all traffic if the proxy drops",
+    "killswitch":    "Linux endpoint-scoped firewall protection",
     "tools":         "Ping, DNS benchmark, speedtest, MTU, netfix...",
     "doctor":        "Self-diagnosis and automatic repair",
     "update":        "Update Blackout Kit + preflight readiness check",

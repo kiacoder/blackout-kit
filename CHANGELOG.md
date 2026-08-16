@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **MCP operational parity:** Replaced stale MCP dispatches with the supported daemon, settings, security-mode, recovery, hotspot, and ping helpers; explicit connection requests now avoid unsupported auto/profile behavior and report daemon start rather than a verified tunnel.
+- **Sensitive routine output:** Masked stored IKEv2 and SoftEther credentials in terminal and MCP settings reads, and stopped echoing proxy URI credentials after MCP config import/add operations.
+- **Kill-switch ownership:** Windows now refuses to install a broad outbound allow rule when no managed proxy executable can be allowlisted.
 - **Documentation accuracy:** Aligned public and in-app documentation with the shipped Linux engine subset, local-only routing recommendations, Windows proxy-bypass scope, targeted recovery boundaries, VLESS REALITY trust model, security-mode behavior, and the MCP server's actual tool dispatch scope.
 - **WARP dependency graph:** Raised all patchable transitive Go dependencies to their published security fixes, including the critical `golang.org/x/crypto` advisories. The native WARP/Psiphon DLL graph is now verified and compiled in Windows CI.
 - **mhrv certificate-store claim:** Corrected documentation that incorrectly described the embedded HTTP relay as an HTTPS MITM engine that installs a CA. mhrv never modifies Windows certificate stores, so certificate cleanup is not applicable.

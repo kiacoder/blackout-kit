@@ -1040,28 +1040,19 @@ def cmd_settings(args):
         if args.key not in cfg.DEFAULTS:
             console.print(f"[error]Unknown key: {args.key}[/error]")
             return
-        console.print(f"  [bold]{args.key}[/bold] = [cyan]{s[args.key]}[/cyan]")
+        value = cfg.display_value(args.key, s[args.key])
+        console.print(f"  [bold]{args.key}[/bold] = [cyan]{value}[/cyan]")
         console.print(f"  [muted]{cfg.describe(args.key)}[/muted]")
 
     elif args.settings_command == "set":
         try:
-            # Try to cast to the same type as the default
-            default_val = cfg.DEFAULTS[args.key]
-            if isinstance(default_val, bool):
-                value = args.value.lower() in ("1", "true", "yes", "on")
-            elif isinstance(default_val, int):
-                value = int(args.value)
-            elif isinstance(default_val, float):
-                value = float(args.value)
-            elif isinstance(default_val, list):
-                value = [v.strip() for v in args.value.split(",")]
-            else:
-                value = args.value
+            value = cfg.coerce_value(args.key, args.value)
             cfg.set_value(args.key, value)
             if args.key == "color_theme":
                 refresh_console_theme()
-            console.print(f"[success]✓ {args.key} = {value}[/success]")
-        except (KeyError, ValueError) as e:
+            display = cfg.display_value(args.key, value)
+            console.print(f"[success]✓ {args.key} = {display}[/success]")
+        except ValueError as e:
             console.print(f"[error]{e}[/error]")
 
     elif args.settings_command == "reset":
@@ -1076,7 +1067,7 @@ def _settings_list(s: dict):
         [],
     )
     for key, default in cfg.DEFAULTS.items():
-        val = str(s.get(key, default))
+        val = str(cfg.display_value(key, s.get(key, default)))
         table.add_row(key, val, cfg.describe(key))
     console.print(table)
 
@@ -1398,7 +1389,7 @@ def cmd_mode(args):
 
 
 def cmd_killswitch(args):
-    """Enable or disable the Windows Firewall kill switch."""
+    """Manage the verified Linux endpoint-scoped kill switch."""
     action = getattr(args, "action", None)
 
     if not action:
@@ -1407,22 +1398,27 @@ def cmd_killswitch(args):
         status = "[success]● ENABLED[/success]" if enabled else "[muted]○ Disabled[/muted]"
         console.print(Panel(
             f"Kill Switch: {status}\n\n"
-            "[dim]When ON: if the proxy drops, ALL internet is blocked (no leaks).[/dim]\n"
-            "[dim]When OFF: if the proxy drops, traffic falls back to direct (may be censored).[/dim]\n\n"
+            "[dim]Available only on Linux with a validated upstream endpoint allowlist.[/dim]\n"
+            "[dim]Windows legacy rules are removed because Windows Firewall cannot safely combine its block and per-process allow rules.[/dim]\n\n"
             "[muted]Commands: [bold]blackout killswitch on[/bold]  /  [bold]blackout killswitch off[/bold][/muted]",
             title="[bold]Kill Switch[/bold]", border_style="red",
         ))
         return
 
     if action == "on":
-        firewall_name = "nftables/iptables" if sys.platform.startswith("linux") else "Windows Firewall"
-        console.print(f"[info]Enabling kill switch ({firewall_name})...[/info]")
+        if not sys.platform.startswith("linux"):
+            console.print(
+                "[error]Kill switch is unavailable on Windows: legacy rules were removed because "
+                "Windows Firewall block rules override per-process allow rules.[/error]"
+            )
+            return
+        console.print("[info]Enabling kill switch (nftables/iptables)...[/info]")
         ok = sec.enable_kill_switch()
         if ok:
             cfg.set_value("kill_switch", True)
-            console.print("[success]✓ Kill switch ENABLED.[/success]  All traffic blocked unless proxy is up.")
+            console.print("[success]✓ Kill switch ENABLED.[/success]  All non-allowlisted traffic is blocked.")
         else:
-            console.print("[error]Failed — run as administrator.[/error]")
+            console.print("[error]Failed — requires sudo and a validated upstream endpoint allowlist.[/error]")
 
     elif action == "off":
         console.print("[info]Disabling kill switch...[/info]")
@@ -1480,19 +1476,20 @@ def cmd_panic(args):
 
 
 def cmd_shield(args):
-    """Activates Mullvad-style Adblock DNS and strict kill switch."""
+    """Apply DNS blocking and Linux-only firewall protection when available."""
     console.print("[bold cyan]🛡️  SHIELD MODE ACTIVATED[/bold cyan]")
-    
-    # Enable Kill switch
-    console.print("[dim]→ Enforcing strict kill switch...[/dim]")
-    from . import security as sec
-    ok = sec.enable_kill_switch()
-    if ok:
-        cfg.set_value("kill_switch", True)
-        console.print("[success]✓ Strict Kill Switch enforced.[/success]")
+
+    if sys.platform.startswith("linux"):
+        console.print("[dim]→ Enabling endpoint-scoped Linux kill switch...[/dim]")
+        ok = sec.enable_kill_switch()
+        if ok:
+            cfg.set_value("kill_switch", True)
+            console.print("[success]✓ Linux kill switch enabled.[/success]")
+        else:
+            console.print("[warning]Linux kill switch was not enabled; it requires sudo and a validated upstream endpoint.[/warning]")
     else:
-        console.print("[error]✗ Failed to enforce Kill Switch. Run as admin![/error]")
-    
+        console.print("[dim]→ Kill switch unavailable on Windows; legacy firewall rules remain removed.[/dim]")
+
     # Set DNS to AdGuard/Mullvad
     console.print("[dim]→ Setting system DNS to Ad-blocking servers (AdGuard)...[/dim]")
     from .tools import set_dns

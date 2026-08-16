@@ -74,7 +74,7 @@ Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP be
 | Feature | Status | Rank | Notes |
 |---------|--------|------|-------|
 | Security modes (Speed / Private / LEGEND) | ✅ Done | Rare | `blackout mode speed\|private\|legend` |
-| Kill switch (Windows Firewall / Linux nftables) | ✅ Done | Rare | Endpoint-scoped Linux rules with iptables fallback |
+| Kill switch (Linux nftables / iptables) | ✅ Done | Rare | Endpoint-scoped Linux rules with iptables fallback; unavailable on Windows |
 | Config encryption (AES-256-GCM) | ✅ Done | Rare | Machine-derived local encryption; not portable and not a replacement for device security |
 | Windows Defender exclusion | ✅ Done | Rare | `blackout doctor --fix-av` |
 | Stability tracking (latency + trend) | ✅ Done | Rare | Per-engine history |

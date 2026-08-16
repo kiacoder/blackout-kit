@@ -66,12 +66,52 @@ def test_linux_kill_switch_refuses_missing_endpoint_allowlist(mock_endpoints, mo
 
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
-@patch("blackoutkit.security._get_proxy_processes")
-def test_enable_kill_switch_win32(mock_get_proxies, mock_run):
-    mock_get_proxies.return_value = ["C:\\test\\xray.exe"]
-    mock_run.return_value = MagicMock(stdout="OK:kill_switch_enabled", stderr="")
-    with patch("blackoutkit.security.kill_switch_is_active", return_value=True):
-        assert sec.enable_kill_switch() is True
+def test_enable_kill_switch_win32_cleans_legacy_rules(mock_run):
+    mock_run.return_value = MagicMock(stdout="OK")
+
+    assert sec.enable_kill_switch() is False
+    assert mock_run.call_count == 1
+    assert "BlackoutKit-KillSwitch-Block" in mock_run.call_args.args[0][3]
+
+
+@patch("sys.platform", "win32")
+def test_kill_switch_is_unavailable_on_windows():
+    assert sec.kill_switch_is_active() is False
+
+
+@patch("sys.platform", "win32")
+def test_test_kill_switch_reports_windows_unavailability():
+    passed, message = sec.test_kill_switch()
+
+    assert passed is False
+    assert "unavailable on Windows" in message
+
+
+def test_proxy_process_list_excludes_shared_library(tmp_path):
+    with patch("blackoutkit.security.BINS_DIR", tmp_path):
+        (tmp_path / "blackout_core.dll").write_bytes(b"dll")
+        (tmp_path / "xray.exe").write_bytes(b"exe")
+
+        processes = sec._get_proxy_processes()
+
+    assert str((tmp_path / "xray.exe").resolve()) in processes
+    assert str((tmp_path / "blackout_core.dll").resolve()) not in processes
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+def test_enable_kill_switch_removes_legacy_rules_before_refusing(mock_run):
+    mock_run.return_value = MagicMock(stdout="OK")
+
+    assert sec.enable_kill_switch() is False
+    mock_run.assert_called_once()
+    assert "BlackoutKit-KillSwitch-Block" in mock_run.call_args.args[0][3]
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run", side_effect=OSError("powershell unavailable"))
+def test_enable_kill_switch_handles_legacy_cleanup_failure(mock_run):
+    assert sec.enable_kill_switch() is False
+
 
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
@@ -81,38 +121,9 @@ def test_disable_kill_switch_win32(mock_run):
 
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
-def test_kill_switch_is_active_win32(mock_run):
-    mock_result = MagicMock()
-    mock_result.stdout = "ACTIVE"
-    mock_run.return_value = mock_result
-    assert sec.kill_switch_is_active() is True
-    
-    mock_result.stdout = "FOO"
+def test_kill_switch_status_does_not_query_unsafe_legacy_rules(mock_run):
     assert sec.kill_switch_is_active() is False
-
-@patch("sys.platform", "win32")
-@patch("blackoutkit.security.kill_switch_is_active", return_value=True)
-@patch("socket.create_connection", side_effect=OSError("Blocked"))
-@patch("socket.getaddrinfo")
-def test_test_kill_switch_success(mock_gai, mock_cc, mock_active):
-    passed, msg = sec.test_kill_switch()
-    assert passed is True
-    assert "Kill switch VERIFIED" in msg
-
-@patch("sys.platform", "win32")
-@patch("blackoutkit.security.kill_switch_is_active", return_value=True)
-@patch("socket.create_connection")
-def test_test_kill_switch_failed_conn(mock_cc, mock_active):
-    passed, msg = sec.test_kill_switch()
-    assert passed is False
-    assert "Kill switch FAILED" in msg
-
-@patch("sys.platform", "win32")
-@patch("blackoutkit.security.kill_switch_is_active", return_value=False)
-def test_test_kill_switch_not_active(mock_active):
-    passed, msg = sec.test_kill_switch()
-    assert passed is False
-    assert "Kill switch is NOT active" in msg
+    mock_run.assert_not_called()
 
 
 # === CRYPTO ===

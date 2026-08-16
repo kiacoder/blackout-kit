@@ -601,27 +601,22 @@ def check_firewall_rules() -> CheckResult:
     if sys.platform != "win32":
         return CheckResult("Firewall integrity", True, "N/A")
 
-    s = cfg.load()
-    enabled = s.get("kill_switch", False)
-    if not enabled:
-        return CheckResult("Firewall integrity", True, "OK (Kill switch disabled)")
-
-    try:
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", "Get-NetFirewallRule -Name 'Blackout-KillSwitch' -ErrorAction SilentlyContinue"],
-            capture_output=True, text=True, errors="ignore"
-        )
-        if "Blackout-KillSwitch" in r.stdout:
-            return CheckResult("Firewall integrity", True, "OK (Kill switch rules active)")
-    except Exception:
-        pass
+    if not cfg.load().get("kill_switch", False):
+        return CheckResult("Firewall integrity", True, "OK (Linux-only kill switch unavailable on Windows)")
 
     from . import security as sec
+
+    def disable_unsupported_windows_setting():
+        try:
+            sec.disable_kill_switch()
+        finally:
+            cfg.set_value("kill_switch", False)
+
     return CheckResult(
         "Firewall integrity", False,
-        "Kill switch rules are missing from Windows Firewall.",
+        "Windows kill switch is unavailable; stale Blackout Kit rules and the saved setting should be removed.",
         fixable=True,
-        fix=sec.enable_kill_switch
+        fix=disable_unsupported_windows_setting,
     )
 
 

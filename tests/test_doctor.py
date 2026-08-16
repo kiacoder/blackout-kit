@@ -171,14 +171,27 @@ def test_check_process_conflicts(mock_pid, mock_iter):
     res.fix()
 
 @patch("sys.platform", "win32")
+@patch("blackoutkit.security.disable_kill_switch")
+@patch("blackoutkit.settings.set_value")
 @patch("blackoutkit.settings.load", return_value={"kill_switch": True})
-@patch("subprocess.run")
-def test_check_firewall_rules(mock_run, mock_load):
-    mock_run.return_value = MagicMock(stdout="Blackout-KillSwitch")
-    assert doc.check_firewall_rules().ok is True
-    
-    mock_run.return_value = MagicMock(stdout="")
-    assert doc.check_firewall_rules().ok is False
+def test_check_firewall_rules_resets_unsupported_windows_setting(mock_load, mock_set_value, mock_disable):
+    result = doc.check_firewall_rules()
+
+    assert result.ok is False
+    assert result.fixable is True
+    assert "unavailable" in result.message
+    result.fix()
+    mock_disable.assert_called_once()
+    mock_set_value.assert_called_once_with("kill_switch", False)
+
+
+@patch("sys.platform", "win32")
+@patch("blackoutkit.settings.load", return_value={"kill_switch": False})
+def test_check_firewall_rules_reports_windows_unavailability_when_disabled(mock_load):
+    result = doc.check_firewall_rules()
+
+    assert result.ok is True
+    assert "unavailable" in result.message
 
 @patch("sys.platform", "win32")
 @patch("platform.machine", return_value="AMD64")

@@ -192,7 +192,7 @@ def mode(
 def killswitch(
     action: str = typer.Argument(None, help="on | off | test (omit to interactively select)"),
 ):
-    """Enable, disable, or test the kill switch."""
+    """Manage the Linux-only endpoint-scoped kill switch."""
     from .cli import cmd_killswitch
 
     if not action:
@@ -653,7 +653,7 @@ def panic():
 
 @app.command()
 def shield():
-    """🛡️ Activate Mullvad-style strict kill switch and Ad/Tracker blocker"""
+    """Apply DNS blocking and request Linux-only firewall protection"""
     from .cli import cmd_shield
     class DummyArgs: pass
     cmd_shield(DummyArgs())

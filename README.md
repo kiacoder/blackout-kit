@@ -72,18 +72,18 @@ BlackoutKit includes a Model Context Protocol (MCP) server for AI clients with a
 
 ### Exposed AI Agent Tools
 
-* `blackout_connect`: Start an explicitly selected engine. The MCP server passes `auto` through to the daemon rather than resolving the interactive CLI recommendation, so agents should select a supported engine explicitly.
-* `blackout_disconnect`: Stop the managed daemon. The legacy MCP dispatch does not invoke the terminal command's system-proxy cleanup, so it leaves proxy cleanup to the user or terminal CLI.
+* `blackout_connect`: Start an explicitly selected engine. The MCP interface intentionally does not expose `auto` or the temporary Iran profile.
+* `blackout_disconnect`: Stop the managed daemon and remove only Blackout-managed local proxy and kill-switch state; unrelated external proxy settings remain unchanged.
 * `blackout_emergency`: Start the configured local candidate sequence (Linux uses its supported subset).
 * `blackout_status`: Read daemon state and the current system-proxy state; it does not report public IP or remote latency.
 * `blackout_read_logs`: Read recent local daemon logs.
-* `blackout_config`: List, add, import, or remove saved proxy URIs.
-* `blackout_settings`: Read or change saved settings. Its legacy value handling differs from the terminal CLI, so use the terminal CLI for booleans, lists, and full settings reset.
+* `blackout_config`: List, add, import, or remove saved proxy URIs. Routine replies never echo URI credentials.
+* `blackout_settings`: Read, change, or reset settings with the same value validation as the terminal CLI. Credential-bearing values are masked in routine reads.
 * `blackout_split_tunnel`: Maintain locally stored Windows `ProxyOverride` bypass patterns; it is not network-level routing.
-* `blackout_net_tools`: Exposes the working legacy subset: DNS benchmark, DNS flush, and direct DNS-server setting. For targeted recovery, hotspot, or ping, use the terminal CLI rather than this MCP tool.
+* `blackout_net_tools`: Run DNS benchmark/flush/set, targeted recovery, hotspot, and TCP ping actions; network-changing calls return their actual result.
 * `blackout_scan`: Run the built-in Cloudflare IP reachability scan; it does not scan a local network or arbitrary ports.
 * `blackout_doctor`: Run diagnostics. The MCP implementation currently does not forward its `fix` option.
-* `blackout_security_mode`: Read or set the local SPEED/PRIVATE/LEGEND preset; it does not toggle the kill switch.
+* `blackout_security_mode`: Apply the same local SPEED/PRIVATE/LEGEND preset as `blackout mode`; it does not toggle the kill switch.
 
 ---
 
@@ -244,7 +244,7 @@ python blackout.py bins download
 **Windows**
 - Python 3.10+
 - Windows 10 or 11 (x64)
-- Administrator privileges for the kill switch, Defender exclusion, and VPN engines
+- Administrator privileges for Defender exclusion and VPN engines; the kill switch is unavailable because unsafe legacy Windows Firewall rules are removed
 
 **Linux x86_64 — Ubuntu/Debian, Fedora, and Arch**
 - Python 3.10+, `iproute2`, and either `nftables` or both `iptables` and `ip6tables`

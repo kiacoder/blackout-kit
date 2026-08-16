@@ -74,9 +74,11 @@ def start_launcher():
     mode_dropdown = ctk.CTkComboBox(settings_frame, variable=mode_var, values=["speed", "private", "legend"])
     mode_dropdown.pack(fill="x", pady=(0,10))
     
-    # Killswitch
-    killswitch_var = ctk.BooleanVar(value=False)
-    ctk.CTkSwitch(settings_frame, text="Enable Network Killswitch", variable=killswitch_var, onvalue=True, offvalue=False).pack(anchor="w", pady=10)
+    ctk.CTkLabel(
+        settings_frame,
+        text="Linux only: endpoint-scoped kill switch requires a validated upstream endpoint.",
+        text_color="gray60",
+    ).pack(anchor="w", pady=10)
 
     
     # We will store the launch configuration here

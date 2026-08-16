@@ -40,6 +40,48 @@ def test_status_forwards_watch_settings():
     assert args.interval == 3.0
 
 
+def test_settings_display_value_masks_sensitive_values():
+    from blackoutkit import settings
+
+    assert settings.display_value("ikev2_password", "secret") == "[hidden]"
+    assert settings.display_value("softether_password", "secret") == "[hidden]"
+    assert settings.display_value("xray_fingerprint", "chrome") == "chrome"
+
+
+def test_settings_set_masks_secret_in_confirmation(monkeypatch):
+    from blackoutkit import cli
+
+    printed = []
+    monkeypatch.setattr(cli.cfg, "load", lambda: dict(cli.cfg.DEFAULTS))
+    monkeypatch.setattr(cli.cfg, "set_value", lambda *_args: None)
+    monkeypatch.setattr(cli.console, "print", lambda message: printed.append(str(message)))
+
+    cli.cmd_settings(type("Args", (), {
+        "settings_command": "set",
+        "key": "ikev2_password",
+        "value": "secret-password",
+    })())
+
+    assert "[hidden]" in printed[0]
+    assert "secret-password" not in printed[0]
+
+
+def test_settings_rejects_windows_kill_switch_activation(monkeypatch):
+    from blackoutkit import cli
+
+    printed = []
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli.console, "print", lambda message: printed.append(str(message)))
+
+    cli.cmd_settings(type("Args", (), {
+        "settings_command": "set",
+        "key": "kill_switch",
+        "value": "true",
+    })())
+
+    assert any("available only on Linux" in message for message in printed)
+
+
 def test_noninteractive_connect_preserves_missing_engine_for_smart_resolution(monkeypatch):
     monkeypatch.setattr(typer_cli, "is_interactive", lambda: False)
     with patch("blackoutkit.cli.cmd_connect") as cmd_connect:
@@ -171,3 +213,40 @@ def test_tools_netfix_uses_shared_default_recovery():
     args = cmd_tools.call_args.args[0]
     assert args.tools_command == "netfix"
     assert not hasattr(args, "full_route_reset")
+
+
+def test_shield_forwards_to_legacy_dispatcher():
+    with patch("blackoutkit.cli.cmd_shield") as cmd_shield:
+        typer_cli.shield()
+
+    cmd_shield.assert_called_once()
+
+
+def test_shield_does_not_enable_windows_kill_switch(monkeypatch):
+    from blackoutkit import cli
+
+    printed = []
+    monkeypatch.setattr(cli.sys, "platform", "win32")
+    monkeypatch.setattr(cli.console, "print", lambda message: printed.append(str(message)))
+    with patch("blackoutkit.security.enable_kill_switch") as enable_kill_switch, \
+         patch("blackoutkit.tools.set_dns", return_value=True):
+        cli.cmd_shield(object())
+
+    enable_kill_switch.assert_not_called()
+    assert any("unavailable on Windows" in message for message in printed)
+
+
+def test_shield_enables_linux_kill_switch_only_on_success(monkeypatch):
+    from blackoutkit import cli
+
+    printed = []
+    monkeypatch.setattr(cli.sys, "platform", "linux")
+    monkeypatch.setattr(cli.console, "print", lambda message: printed.append(str(message)))
+    with patch("blackoutkit.security.enable_kill_switch", return_value=True) as enable_kill_switch, \
+         patch("blackoutkit.settings.set_value") as set_value, \
+         patch("blackoutkit.tools.set_dns", return_value=True):
+        cli.cmd_shield(object())
+
+    enable_kill_switch.assert_called_once()
+    set_value.assert_called_once_with("kill_switch", True)
+    assert any("Linux kill switch enabled" in message for message in printed)

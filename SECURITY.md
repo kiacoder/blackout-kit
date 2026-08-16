@@ -94,9 +94,9 @@ We appreciate reporters who respect this window.
 
 ## Recent Security Improvements (v1.1.x)
 
-- **Kill switch rewritten**: old `localport`-based rules never matched proxy
-  outbound traffic (proxy uses random source ports). Now uses per-process
-  firewall rules via PowerShell. Run `blackout killswitch test` to verify.
+- **Windows kill switch retired**: legacy Windows Firewall rules were removed
+  because block rules override the per-process allow rules they require. The
+  verified implementation is Linux-only, endpoint-scoped firewall protection.
 - **Download integrity**: all downloaded binaries verified for valid PE
   headers (MZ + PE signature) before install. Corrupt/tampered files rejected.
 - **Watchdog cleanup**: if the daemon is End-Tasked while kill switch is on,
@@ -135,6 +135,10 @@ Persistent local data can include:
 - Daemon logs, local stability history, certificate records created by TLS checks, and Windows system-proxy bypass rules.
 - Engine binaries and local WARP/Psiphon identity or datastore caches generated at runtime.
 
+Routine terminal and MCP settings views mask the stored IKEv2 password/PSK and
+SoftEther password. Those values remain plaintext in `settings.json`; masking is
+an output safeguard, not encryption at rest.
+
 Protect this data as sensitive. A proxy URI can contain server credentials, and an upstream proxy/VPN operator can observe traffic routed through that server.
 
 ## Guidance for Recommendations
@@ -157,11 +161,12 @@ This tool intentionally trades some security for circumvention effectiveness:
 - **Config encryption** uses a machine-derived AES-256-GCM key. It protects
   local encrypted-at-rest config storage but is not portable and does not
   protect an already-compromised device.
-- **Kill switch** uses Windows Firewall on Windows and a Blackout Kit-owned
-  nftables table (or iptables/ip6tables fallback) on Linux. A kernel-level
-  adversary can bypass either. On Linux it permits only validated upstream
-  endpoint IPs, loopback, LAN/DHCP, and `BlackoutKit-TUN`; it refuses to enable
-  if it cannot resolve a safe endpoint allowlist.
+- **Kill switch** is supported only on Linux using a Blackout Kit-owned
+  nftables table (or iptables/ip6tables fallback). A kernel-level adversary can
+  bypass it. It permits only validated upstream endpoint IPs, loopback,
+  LAN/DHCP, and `BlackoutKit-TUN`; it refuses to enable if it cannot resolve a
+  safe endpoint allowlist. Windows legacy rules are removed rather than treated
+  as protection.
 - **Linux system networking** requires `sudo` and supports XRay, TUN,
   Hysteria2, and TUIC on x86_64. Cleanup removes only `inet blackoutkit`,
   `BLACKOUTKIT_*`, the dedicated routing table `20220`, and the deterministic

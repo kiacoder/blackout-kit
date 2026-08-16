@@ -44,8 +44,8 @@ def _check_compat() -> list[str]:
     # Platform — Windows strongly preferred; Linux/macOS work in degraded mode
     if sys.platform != "win32":
         warnings.append(
-            f"Running on {sys.platform} — most features require Windows 10+. "
-            "Kill switch, registry proxy, and GoodbyeDPI are Windows-only."
+            f"Running on {sys.platform} — Windows provides the broad engine catalog. "
+            "Linux provides the managed XRay/TUN subset and the endpoint-scoped kill switch."
         )
     else:
         # Windows version — require Windows 10 (build 10240) or later

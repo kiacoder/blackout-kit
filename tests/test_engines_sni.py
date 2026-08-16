@@ -120,7 +120,7 @@ def test_sni_engine_start_auto_fail(mock_load, mock_get_dll, mock_scan, tmp_path
     assert engine.start() is False
 
 @patch("asyncio.new_event_loop")
-@patch("blackoutkit.scanner.ip_scanner.scan_ips")
+@patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
 @patch("blackoutkit.scanner.ip_scanner.generate_cloudflare_ips")
 @patch("blackoutkit.settings.get")
 def test_run_auto_scan_success(mock_get, mock_gen, mock_scan, mock_loop, tmp_path):
@@ -155,7 +155,7 @@ def test_run_auto_scan_success(mock_get, mock_gen, mock_scan, mock_loop, tmp_pat
     assert mock_dll.StopSNIC.call_count > 0
 
 @patch("asyncio.new_event_loop")
-@patch("blackoutkit.scanner.ip_scanner.scan_ips")
+@patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
 def test_run_auto_scan_no_ips(mock_scan, mock_loop, tmp_path):
     mock_loop_instance = MagicMock()
     mock_loop.return_value = mock_loop_instance
@@ -232,7 +232,7 @@ def test_sni_engine_start_wait_port_fails(mock_wait, mock_load, mock_get_dll, tm
         mock_stop.assert_called_once()
 
 @patch("asyncio.new_event_loop")
-@patch("blackoutkit.scanner.ip_scanner.scan_ips")
+@patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
 @patch("blackoutkit.scanner.ip_scanner.generate_cloudflare_ips")
 @patch("blackoutkit.settings.get")
 def test_run_auto_scan_phase1_fast(mock_get, mock_gen, mock_scan, mock_loop, tmp_path):
@@ -256,7 +256,7 @@ def test_run_auto_scan_phase1_fast(mock_get, mock_gen, mock_scan, mock_loop, tmp
     assert winner is not None
 
 @patch("asyncio.new_event_loop")
-@patch("blackoutkit.scanner.ip_scanner.scan_ips")
+@patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
 @patch("blackoutkit.scanner.ip_scanner.generate_cloudflare_ips")
 @patch("blackoutkit.settings.get")
 def test_run_auto_scan_cached_ip(mock_get, mock_gen, mock_scan, mock_loop, tmp_path):
