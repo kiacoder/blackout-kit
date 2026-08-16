@@ -178,12 +178,17 @@ This tool intentionally trades some security for circumvention effectiveness:
 - **Plaintext credentials** — IKEv2/SoftEther passwords are stored as plaintext
   in `settings.json`. `blackout config encrypt` protects only saved proxy URIs,
   not these settings; LEGEND mode does not encrypt either location.
-- **Legacy Pion transitives** — Dependabot alerts #28 (`github.com/pion/dtls/v2`)
-  and #60 (`github.com/pion/stun`) remain open because their affected v2/v1 module
-  lines have no patched release. They are required by the upstream
-  `warp-plus → psiphon-tunnel-core` integration. All other patchable WARP graph
-  advisories are pinned at their fixed releases. We monitor the upstream migration
-  to patched Pion major versions and will update as soon as a compatible release exists.
+- **Legacy Pion transitives** — Dependabot alerts #28
+  (`GHSA-9f3f-wv7r-qc8r`, `github.com/pion/dtls/v2`) and #60
+  (`GHSA-34rh-wp3j-6cxc`, unversioned `github.com/pion/stun`) remain open because
+  their affected v2/v0 module lines have no patched release. They are required by
+  the upstream `warp-plus → psiphon-tunnel-core` integration. The current Psiphon
+  branch uses patched Pion v3 APIs but still retains the legacy compatibility
+  modules, so upgrading to its unreleased pseudo-version would not resolve these
+  alerts and would raise the required Go toolchain to 1.26. All other patchable
+  WARP graph advisories are pinned at their fixed releases. We retain and monitor
+  these alerts rather than dismissing them, and will update when a compatible
+  upstream release removes the legacy module paths.
 
 ## Hall of Fame
 
