@@ -39,7 +39,7 @@
 
 ## Where we're going
 
-### Phase 1: Network analysis toolkit (1.3.x)
+### Phase 1: Network analysis & diagnostics (1.3.x)
 
 The tools NetworkChuck uses every day, built into one CLI/GUI:
 
@@ -52,37 +52,59 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | Connection table | Live TCP/UDP connection table with process attribution | "What is my computer connected to right now?" |
 | Latency monitor | Continuous ping/traceroute with history graph | "Is my internet getting worse?" |
 | DNS inspector | Show which DNS servers you're using, query logs, poisoning detection | "Is someone messing with my DNS?" |
+| Subnet Calculator | Instantly print network range, broadcast, min/max hosts | "Never do subnet math in your head again" |
+| Speedtest History | Visual terminal graph of speedtests over 30 days | "Prove your ISP is throttling you at 8 PM" |
 
-### Phase 2: Traffic & download manager (1.4.x)
+### Phase 2: Traffic, downloads & sharing (1.4.x)
 
 | Feature | What it does | Why it matters |
 |---|---|---|
 | Download manager | Multi-threaded downloads with resume, queue, and speed limits | Everyone needs this |
+| Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | Clean CLI downloading |
+| Torrent/Magnet support | Lightweight terminal-based torrent client | No need for heavy GUI apps |
 | Traffic shaper | QoS rules — prioritize/govern specific apps or protocols | "Make my games faster, slow down background updates" |
 | Bandwidth caps | Set daily/monthly limits per interface | Data caps are real, especially on cellular |
 | Traffic logging | Persistent log of network usage by app/protocol/time | "Where did my 50GB go this month?" |
 | Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | Clean browsing without browser extensions |
+| Setup export/import | Share your exact config, DNS, and engine state via one string | "Send your perfect bypass setup to a friend" |
+| LAN IP Cache sharing | Share a 40ms Cloudflare IP with neighbors over LAN | Skip the 2-minute scan |
 
 ### Phase 3: Antivirus & security hardening (1.5.x)
 
 | Feature | What it does | Why it matters |
 |---|---|---|
 | File scanner | Scan files with Windows Defender / ClamAV from the CLI | "Scan this download before I open it" |
+| VirusTotal integration | Calculate file hash and check 70+ AV engines via API | Zero-execution malware check |
+| MAC Address Spoofer | Randomize Wi-Fi MAC to avoid tracking on public networks | Airport/Cafe privacy |
+| Public Wi-Fi Honeypot | Open a fake port to detect if someone on the cafe Wi-Fi is scanning you | "192.168.1.14 is scanning your computer" |
 | Malware network detection | Alert on suspicious outbound connections (C2 patterns, mining pools) | Catch malware by its network behavior |
 | Phishing protection | DNS-level blocking of known phishing domains | Stop phishing before it reaches the browser |
 | Network hardening audit | Check firewall rules, open ports, exposed services, weak configs | "Is my system actually secure?" |
 | Secure DNS resolver | Built-in DoH/DoT with tamper detection and fallback | "Nobody is poisoning my DNS" |
 | Process network monitor | Flag processes making unexpected connections | "Why is this app talking to Russia?" |
+| Global Panic Button | Sever ALL network connections on the PC instantly | The ultimate killswitch |
 
-### Phase 4: Pro features (1.6.x+)
+### Phase 4: Pro & AI features (1.6.x+)
 
 | Feature | What it does | Why it matters |
 |---|---|---|
+| AI Network Explainer | MCP tool: Claude reads your live network state to spot anomalies | "Claude, is any process acting suspicious?" |
+| SSH Vault & Manager | Built-in SSH client using the existing AES-256 vault | Replace Termius/PuTTY |
 | PCAP export | Export captures as `.pcap` for Wireshark | Interoperability with existing tools |
 | Scriptable automation | Python/TOML automation rules for network events | "When X happens, do Y automatically" |
 | Network simulation | Simulate latency/packet loss for testing | DevOps and QA use case |
 | REST API | Expose all tools via a local REST API | Integration with other tools and dashboards |
 | Web dashboard | Browser-based network monitoring UI | "See my whole network at a glance" |
+
+---
+
+## Technical improvements (Ongoing)
+
+Before adding new features, the foundation must be reinforced:
+
+1. **GUI Parity:** Bring the CustomTkinter GUI up to par with the CLI. Add `--russia`/`--iran` toggles, visual latency graphs, and a "hacker dashboard" aesthetic.
+2. **Daemon IPC Rewrite:** Upgrade from simple files to named pipes or local gRPC for real-time daemon metrics (exact bytes/sec) without disk I/O.
+3. **YARA Rules Engine:** Allow power users to write custom security rules for memory/file scanning.
 
 ---
 
