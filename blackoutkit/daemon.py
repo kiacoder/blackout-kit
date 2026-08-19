@@ -676,6 +676,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         # Track previous run total bytes in case of engine restarts
         accumulated_rx = 0
         accumulated_tx = 0
+        data_phase_failures = 0
 
         while _wait_for_daemon_delay(retry_interval, my_pid):
             alive = [engine for engine in active if engine.is_running()]
@@ -683,7 +684,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 if not _reconnect("All engines stopped unexpectedly."):
                     break
                 continue
-                
+
             rx, tx = 0, 0
             try:
                 import psutil
@@ -716,6 +717,28 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                     if not _reconnect("Proxy port closed."):
                         break
                     continue
+
+                if s.get("config_rotation", True):
+                    from .scanner.proxy_tester import test_http_proxy
+                    http_latency = test_http_proxy(proxy_host, proxy_port, timeout=5)
+                    if http_latency is None:
+                        data_phase_failures += 1
+                        log.warning(
+                            "TCP port open but HTTP proxy dead (%d consecutive failure(s)) "
+                            "— possible data-phase drop (endpoint may be blocked by TSPU).",
+                            data_phase_failures,
+                        )
+                        if data_phase_failures >= 2:
+                            log.warning("Data-phase drop confirmed — rotating to next config.")
+                            data_phase_failures = 0
+                            if not _reconnect("Data-phase drop (port open but no data flow)."):
+                                break
+                            continue
+                    else:
+                        if data_phase_failures:
+                            log.info("HTTP proxy recovered after %d data-phase failure(s).", data_phase_failures)
+                        data_phase_failures = 0
+
                 log.info(f"Heartbeat OK — proxy latency: {latency:.0f}ms")
             else:
                 log.debug("Network-level engine has no proxy port; skipping proxy health probe.")

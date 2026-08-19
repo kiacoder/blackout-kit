@@ -386,6 +386,39 @@ def check_country_profile() -> CheckResult:
         return CheckResult("Country profile", True, f"Could not detect ({e})")
 
 
+def check_russia_whitelist() -> list[CheckResult]:
+    """Check if saved proxy configs are on the Russian cellular whitelist."""
+    results = []
+    try:
+        profile = _load_country_profile_quietly()
+        if not profile or profile.code != "RU":
+            return results
+
+        from .russia_whitelist import check_whitelist_status
+        from .config.manager import load_configs
+        from .tools import resolve_doh
+
+        configs = load_configs()
+        if not configs:
+            return results
+
+        for c in configs:
+            if c.protocol not in ("vless", "trojan", "vmess", "hysteria2", "tuic"):
+                continue
+            host = c.address
+            resolved = resolve_doh(host)
+            ip = resolved or host
+            on_whitelist, detail = check_whitelist_status(ip)
+            results.append(CheckResult(
+                f"Whitelist: {c.name or c.address}",
+                True,
+                detail,
+            ))
+    except Exception as exc:
+        results.append(CheckResult("Russia whitelist", True, f"Could not check ({exc})"))
+    return results
+
+
 # ──────────────────── Epic checks ────────────────────────────────
 
 _MIN_FREE_MB = 200   # Minimum free disk space (MB) before warning
@@ -900,6 +933,7 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
     all_results.extend(check_python_deps())
     all_results.extend(check_bins_present())
     all_results.extend(check_binary_runnable())    # Epic
+    all_results.extend(check_russia_whitelist())   # Russia whitelist (informational)
 
     if auto_fix:
         for r in all_results:
