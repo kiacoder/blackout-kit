@@ -316,3 +316,61 @@ def test_get_speedtest_history_corrupt_file_returns_empty(tmp_path, monkeypatch)
     bad_file.write_text("{not valid json")
     monkeypatch.setattr(tools, "SPEEDTEST_HISTORY_FILE", bad_file)
     assert tools.get_speedtest_history() == []
+
+
+# ─────────────────────────── Latency monitor ───────────────────────
+
+def test_ping_once_success_returns_positive_rtt():
+    with patch("socket.create_connection", return_value=MagicMock()):
+        rtt = tools.ping_once("8.8.8.8")
+    assert rtt is not None
+    assert rtt >= 0
+
+
+def test_ping_once_failure_returns_none():
+    with patch("socket.create_connection", side_effect=OSError("timed out")):
+        assert tools.ping_once("8.8.8.8") is None
+
+
+# ─────────────────────────── Bandwidth monitor ──────────────────────
+
+def test_get_interface_io_counters_maps_psutil_output():
+    fake_counter = SimpleNamespace(bytes_recv=100, bytes_sent=50)
+    fake_psutil = MagicMock()
+    fake_psutil.net_io_counters.return_value = {"eth0": fake_counter}
+
+    with patch.dict("sys.modules", {"psutil": fake_psutil}):
+        result = tools.get_interface_io_counters()
+
+    assert result == {"eth0": (100, 50)}
+
+
+def test_get_interface_io_counters_handles_failure():
+    fake_psutil = MagicMock()
+    fake_psutil.net_io_counters.side_effect = OSError("boom")
+
+    with patch.dict("sys.modules", {"psutil": fake_psutil}):
+        assert tools.get_interface_io_counters() == {}
+
+
+def test_compute_bandwidth_rates_basic_diff():
+    prev = {"eth0": (1000, 500)}
+    curr = {"eth0": (3000, 1500)}
+    rates = tools.compute_bandwidth_rates(prev, curr, elapsed=2.0)
+    assert rates == {"eth0": {"rx_bps": 1000.0, "tx_bps": 500.0}}
+
+
+def test_compute_bandwidth_rates_new_interface_defaults_to_zero():
+    rates = tools.compute_bandwidth_rates({}, {"eth1": (500, 200)}, elapsed=1.0)
+    assert rates == {"eth1": {"rx_bps": 0.0, "tx_bps": 0.0}}
+
+
+def test_compute_bandwidth_rates_clamps_negative_on_counter_reset():
+    prev = {"eth0": (5000, 5000)}
+    curr = {"eth0": (100, 100)}  # interface restarted, counters reset to near-zero
+    rates = tools.compute_bandwidth_rates(prev, curr, elapsed=1.0)
+    assert rates == {"eth0": {"rx_bps": 0.0, "tx_bps": 0.0}}
+
+
+def test_compute_bandwidth_rates_zero_elapsed_returns_empty():
+    assert tools.compute_bandwidth_rates({}, {"eth0": (1, 1)}, elapsed=0) == {}

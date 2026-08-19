@@ -652,6 +652,32 @@ def tools_scan_ports(
     args.ports = ports
     cmd_tools(args)
 
+@tools_app.command("latency-monitor")
+def tools_latency_monitor(
+    host: str = typer.Argument("8.8.8.8", help="Host to ping continuously"),
+    interval: float = typer.Option(1.0, "--interval", "-i", help="Seconds between samples"),
+):
+    """Live-updating ping graph with rolling avg/jitter/loss. Ctrl+C to stop."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "latency-monitor"
+    args.host = host
+    args.interval = interval
+    cmd_tools(args)
+
+@tools_app.command("bandwidth")
+def tools_bandwidth(
+    interval: float = typer.Option(1.0, "--interval", "-i", help="Seconds between samples"),
+):
+    """Live-updating per-interface upload/download throughput. Ctrl+C to stop."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "bandwidth"
+    args.interval = interval
+    cmd_tools(args)
+
 @tools_app.command("cert-check")
 def tools_cert_check(
     host: str = typer.Argument(None, help="Host to check"),

@@ -1260,6 +1260,57 @@ def scan_ports(
     return open_ports
 
 
+def ping_once(host: str, timeout: float = 2.0) -> float | None:
+    """Single TCP :80 ping RTT sample in ms, or None on timeout/refused.
+
+    Unlike ping(), this takes exactly one sample and does not sleep afterward —
+    intended for callers that control their own sampling interval (e.g. a live
+    latency monitor).
+    """
+    try:
+        start = time.monotonic()
+        sock = socket.create_connection((host, 80), timeout=timeout)
+        sock.close()
+        return (time.monotonic() - start) * 1000
+    except Exception:
+        return None
+
+
+# ─────────────────────────── Bandwidth monitor ────────────────────
+
+def get_interface_io_counters() -> dict[str, tuple[int, int]]:
+    """Return a one-shot {interface_name: (bytes_recv, bytes_sent)} snapshot via psutil."""
+    import psutil
+
+    try:
+        counters = psutil.net_io_counters(pernic=True)
+    except Exception:
+        return {}
+    return {name: (c.bytes_recv, c.bytes_sent) for name, c in counters.items()}
+
+
+def compute_bandwidth_rates(
+    prev: dict[str, tuple[int, int]],
+    curr: dict[str, tuple[int, int]],
+    elapsed: float,
+) -> dict[str, dict]:
+    """
+    Diff two interface-counter snapshots into per-interface throughput.
+    Returns {interface: {rx_bps, tx_bps}}. Counter resets/rollovers clamp to 0
+    instead of reporting a negative rate.
+    """
+    if elapsed <= 0:
+        return {}
+    rates: dict[str, dict] = {}
+    for name, (rx, tx) in curr.items():
+        prev_rx, prev_tx = prev.get(name, (rx, tx))
+        rates[name] = {
+            "rx_bps": max(0, rx - prev_rx) / elapsed,
+            "tx_bps": max(0, tx - prev_tx) / elapsed,
+        }
+    return rates
+
+
 def calculate_subnet(ip_cidr: str) -> dict | None:
     """
     Calculate subnet details (Network, Broadcast, Mask, Usable range) from a CIDR string.

@@ -1045,6 +1045,56 @@ def _sparkline(data: list[float | None], width: int = 15, higher_is_better: bool
     return res
 
 
+def _format_bps(bps: float) -> str:
+    for unit in ("B/s", "KB/s", "MB/s", "GB/s"):
+        if bps < 1024.0:
+            return f"{bps:.1f} {unit}"
+        bps /= 1024.0
+    return f"{bps:.1f} TB/s"
+
+
+def _latency_monitor_panel(host: str, history: list[float | None], window: int = 60) -> Panel:
+    display = history[-window:]
+    stats = net_tools.ping_stats(display) if display else {"avg": None, "min": None, "max": None, "jitter": None, "loss_pct": 0.0}
+    graph = _sparkline(display, width=max(1, min(40, len(display))))
+
+    table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
+    table.add_column(style="muted", width=16)
+    table.add_column()
+    table.add_row("Target", host)
+    table.add_row("Samples", str(len(display)))
+    table.add_row("History", graph if display else "[dim]collecting...[/dim]")
+    if stats["avg"] is not None:
+        jitter_str = f"{stats['jitter']:.1f}ms" if stats["jitter"] is not None else "-"
+        table.add_row("Avg / Min / Max", f"{stats['avg']:.1f}ms / {stats['min']:.1f}ms / {stats['max']:.1f}ms")
+        table.add_row("Jitter", jitter_str)
+        table.add_row("Loss", f"{stats['loss_pct']:.0f}%")
+    latest = display[-1] if display else None
+    latest_disp = latency_color(latest) if latest is not None else ("[error]timeout[/error]" if display else "[dim]-[/dim]")
+    table.add_row("Latest", latest_disp)
+    return Panel(table, title=f"[heading]Latency Monitor — {host}[/heading]  [muted](Ctrl+C to stop)[/muted]", border_style="panel.border")
+
+
+def _bandwidth_panel(rates: dict[str, dict], history: dict[str, list[float]]) -> Panel:
+    table = Table(box=box.SIMPLE, header_style="table.header")
+    table.add_column("Interface", style="cyan")
+    table.add_column("Download", style="white")
+    table.add_column("Upload", style="white")
+    table.add_column("Trend (down)")
+
+    active = {name: r for name, r in rates.items() if r["rx_bps"] > 0 or r["tx_bps"] > 0}
+    shown = active if active else rates
+    for name in sorted(shown, key=lambda n: shown[n]["rx_bps"], reverse=True)[:8]:
+        r = shown[name]
+        graph = _sparkline(history.get(name, []), width=max(1, min(20, len(history.get(name, [])))), higher_is_better=True)
+        table.add_row(name, _format_bps(r["rx_bps"]), _format_bps(r["tx_bps"]), graph)
+
+    if not shown:
+        table.add_row("[dim]no interfaces found[/dim]", "-", "-", "")
+
+    return Panel(table, title="[heading]Bandwidth Monitor[/heading]  [muted](Ctrl+C to stop)[/muted]", border_style="panel.border")
+
+
 def _status_panel(snapshot: dict) -> Panel:
     state = snapshot["state"]
     pid = snapshot["pid"]
@@ -1329,6 +1379,8 @@ def cmd_tools(args):
             "  [cyan]scan-ports <host>[/cyan]        — Scan common TCP ports\n"
             "  [cyan]discover[/cyan]                 — Discover devices on your LAN\n"
             "  [cyan]dns-inspect[/cyan]              — Check for DNS interference/poisoning\n"
+            "  [cyan]latency-monitor [host][/cyan]   — Live ping graph with jitter/loss\n"
+            "  [cyan]bandwidth[/cyan]                — Live per-interface throughput\n"
             "  [cyan]cert-check <host[:port]>[/cyan] — TLS certificate check\n"
             "  [cyan]netfix[/cyan]                   — Targeted Blackout network recovery\n"
             "  [cyan]arp-flush[/cyan]                — Explicitly flush local ARP/neighbor cache\n",
@@ -1655,6 +1707,38 @@ def cmd_tools(args):
         console.print()
         console.print(table)
         console.print()
+
+    elif args.tools_command == "latency-monitor":
+        host = getattr(args, "host", "8.8.8.8")
+        interval = getattr(args, "interval", 1.0)
+        history: list[float | None] = []
+        console.print()
+        try:
+            with Live(_latency_monitor_panel(host, history), console=console, refresh_per_second=4) as live:
+                while True:
+                    history.append(net_tools.ping_once(host))
+                    live.update(_latency_monitor_panel(host, history))
+                    time.sleep(interval)
+        except KeyboardInterrupt:
+            console.print("\n[muted]Latency monitor stopped.[/muted]")
+
+    elif args.tools_command == "bandwidth":
+        interval = getattr(args, "interval", 1.0)
+        history: dict[str, list[float]] = {}
+        prev = net_tools.get_interface_io_counters()
+        console.print()
+        try:
+            with Live(_bandwidth_panel({}, history), console=console, refresh_per_second=4) as live:
+                while True:
+                    time.sleep(interval)
+                    curr = net_tools.get_interface_io_counters()
+                    rates = net_tools.compute_bandwidth_rates(prev, curr, interval)
+                    prev = curr
+                    for name, r in rates.items():
+                        history.setdefault(name, []).append(r["rx_bps"])
+                    live.update(_bandwidth_panel(rates, history))
+        except KeyboardInterrupt:
+            console.print("\n[muted]Bandwidth monitor stopped.[/muted]")
 
     elif args.tools_command == "dns-set":
         presets = {

@@ -397,14 +397,18 @@ Examples:
   blackout tools connections --established
   blackout tools scan-ports 192.168.1.1 --ports 22,80,443
   blackout tools discover
+  blackout tools latency-monitor 1.1.1.1 --interval 0.5
+  blackout tools bandwidth
 
 Network analysis toolkit:
-  • subnet            Calculate network/broadcast/usable range from a CIDR
-  • connections        Live TCP/UDP connection table with process attribution
-  • scan-ports <host>  Scan a host for open ports (defaults to common services)
-  • discover           Sweep the local LAN for live hosts (IP/MAC/hostname)
+  • subnet              Calculate network/broadcast/usable range from a CIDR
+  • connections         Live TCP/UDP connection table with process attribution
+  • scan-ports <host>   Scan a host for open ports (defaults to common services)
+  • discover            Sweep the local LAN for live hosts (IP/MAC/hostname)
   • dns-inspect         Compare system DNS vs. a trusted resolver for tampering signals
   • speedtest-history   Show a graph of past speedtest results
+  • latency-monitor     Live ping graph with rolling avg/jitter/loss (Ctrl+C to stop)
+  • bandwidth           Live per-interface upload/download throughput (Ctrl+C to stop)
 
 [dim]Some tools change local network state; read the command output carefully.
 scan-ports and discover only probe hosts you're authorized to test.[/dim]
