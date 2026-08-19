@@ -1,160 +1,88 @@
 # Blackout Kit — Roadmap
 
-This roadmap reflects the **current 1.1.1 codebase** and separates shipped work from next-step work more clearly.
-
-Ranks in historical project language remain useful as flavor, but this roadmap now prioritizes factual status over hype.
+This roadmap reflects the **current codebase** including Russia support and the strategic shift toward cybersecurity features.
 
 ---
 
-## Current release line: 1.1.1 stabilization
+## Current release line: 1.2.x — Russia support shipped, cybersecurity next
 
-The current line is focused on **stabilization, correctness, packaging, documentation accuracy, and boundary hardening**.
+### What just shipped (Russia support)
 
-That includes work already visible in the codebase such as:
-
-- Typer-based public CLI routing
-- Windows packaged executable and Linux runtime build pipeline
-- Linux managed runtime support for `xray`, `tun`, `hysteria2`, and `tuic`
-- local readiness checks
-- route recommendation dashboard
-- targeted recovery and recovery audit history
-- machine-bound vault storage for proxy URIs and supported VPN secrets
-- MCP server with an explicitly constrained tool surface
-- client-side VLESS REALITY handling
-- experimental native GDPI backend with `legacy` kept as the default
-
----
-
-## Shipped capabilities
-
-### Core product and UX
-
-| Item | Status | Notes |
+| Feature | Status | Notes |
 |---|---|---|
-| Typer public CLI | Done | `blackoutkit/typer_cli.py` is the current public CLI entrypoint |
-| Legacy dispatcher compatibility | Done | Typer forwards into the established `cli.py` command implementations |
-| Zero-flag launcher flow | Done | Launcher tries GUI first and falls back to interactive terminal menu |
+| RU country profile | Done | Engine order: xray → hysteria2 → tuic → awg → warp/gdpi/tun → psiphon |
+| `--russia` transport preset | Done | Temporary overrides, no saved settings writes, works in background |
+| Country-aware routing | Done | XRay split-tunnel and TUN bypass domains are country-aware (RU: Yandex/VK/Ozon) |
+| XHTTP transport | Done | `type=xhttp` and legacy `type=splithttp` in V2Ray URIs |
+| Smart config rotation | Done | Daemon auto-rotates to next saved config when endpoint fails (blocked IP) |
+| AmneziaWG engine | Done | `.conf` file parsing, sing-box `amnezia-wireguard` outbound, experimental |
+| Whitelist awareness | Done | Doctor checks if proxy server IP is on Russian cellular whitelist |
+| Data-phase drop detection | Done | Daemon detects "TCP open but HTTP dead" and triggers rotation |
+| `blackout help russia` | Done | Dedicated help topic with field-verified transport notes |
+| ISP country-code detection | Done | `IspInfo` carries `country_code` from ip-api.com |
+
+### What shipped earlier (1.1.x)
+
+| Feature | Status | Notes |
+|---|---|---|
+| Typer public CLI | Done | `blackoutkit/typer_cli.py` |
 | Route recommendation dashboard | Done | Local-only ranking via `blackout route` |
-| Local readiness checks | Done | `blackout ready [engine]` and internal gating before connect/start paths |
+| Local readiness checks | Done | `blackout ready [engine]` |
 | Live status view | Done | `blackout status --watch` |
-| Desktop GUI | Done | Windows-only `CustomTkinter` GUI surface |
-| MCP server | Done | Documented stdio tool surface in `blackoutkit/mcp_server.py` |
+| Desktop GUI | Done | Windows-only CustomTkinter |
+| MCP server | Done | Constrained stdio tool surface |
+| XRay + REALITY | Done | VLESS REALITY on Windows and Linux |
+| Hysteria2 / TUIC | Done | sing-box proxy mode via DLL or Linux runner |
+| TUN mode | Done | Windows + Linux |
+| GoodbyeDPI | Done | `legacy` default, `native` experimental |
+| Linux endpoint-scoped kill switch | Done | nftables/iptables, endpoint-scoped |
+| Targeted crash recovery | Done | Blackout-owned state cleanup only |
+| Machine-bound encrypted vault | Done | AES-256-GCM, protects proxy URIs and secrets |
+| Country profiles | Done | IR, RU, CN, IQ, GB, US, EU |
+| Iran `--iran` preset | Done | Refactored to temporary env-based overrides |
+| Preset mechanism refactor | Done | Both `--iran` and `--russia` are non-persistent |
 
-### Connection/runtime surface
+---
 
-| Item | Windows | Linux | Notes |
-|---|---|---|---|
-| SNI path | Done | Not supported | Windows-only native DLL-backed SNI runtime |
-| XRay path | Done | Done | Linux uses the managed `blackout-engine` runner |
-| TUN path | Done | Done | Linux requires root and its managed runtime path |
-| Hysteria2 | Done | Done | sing-box proxy mode via native DLL or Linux runner |
-| TUIC | Done | Done | sing-box proxy mode via native DLL or Linux runner |
-| WARP | Done | Not supported | Current runtime is backed by `blackout_warp.dll` |
-| Psiphon | Done | Not supported | Current runtime is backed by `blackout_warp.dll` |
-| GoodbyeDPI legacy | Done | Not supported | Stable default backend |
-| GoodbyeDPI native | Experimental | Not supported | Product keeps `legacy` as the default |
-| Tor | Done | Not a primary supported path | Requires a supplied runtime |
-| Windows VPN engines | Done | Not supported | IKEv2, WireGuard, OpenVPN, SoftEther |
-| Apps Script relay | Done | Limited | HTTP relay path only |
-| mhrv relay | Done | Limited | Embedded HTTP relay; not HTTPS MITM |
+## Strategic direction: cybersecurity pivot
 
-### Safety, repair, and storage
+**Decision (2026-08-19):** VPN/bypass features are complete. New development pivots to cybersecurity — which is more fun, more legal, and serves a bigger market.
+
+Existing bypass capabilities stay as they are. No new bypass engines or protocols unless specifically requested.
+
+### Next chapter: cybersecurity features
+
+| Candidate | Why it matters | Current status |
+|---|---|---|
+| DNS security and poisoning detection | Iran and Russia both poison DNS — detection helps users understand what's happening | Not started |
+| Malware/network anomaly detection | Real-time alerting on suspicious traffic patterns | Not started |
+| Phishing protection | Block known phishing domains at the DNS level | Not started |
+| Traffic analysis protection | Detect and warn about traffic fingerprinting | Not started |
+| Secure DNS resolver | Built-in DoH/DoT with tamper detection | Not started |
+| Network hardening audit | Check Windows/Linux network config for security weaknesses | Not started |
+| Antivirus integration | Interface with Windows Defender / ClamAV for file scanning | Not started |
+
+### Maintenance priorities (ongoing)
 
 | Item | Status | Notes |
 |---|---|---|
-| Linux endpoint-scoped kill switch | Done | Supported kill-switch implementation |
-| Windows kill switch | Retired | Legacy rules intentionally removed rather than treated as supported protection |
-| Targeted crash recovery | Done | Blackout-owned routes/proxy/DNS/adapter/firewall cleanup |
-| Recovery preview/history | Done | Preview and bounded redacted audit history |
-| Machine-bound encrypted config vault | Done | Protects proxy URIs and supported secrets at rest |
-| Defender exclusion helper | Done | Windows path via `doctor --fix-av` |
-| Country profiles | Done | IR, RU, CN, IQ, GB, US, EU |
+| Native GDPI parity | Open | Verify if native reaches functional parity with legacy |
+| Documentation alignment | Active | Keep docs, help, and code in lockstep |
+| Runtime provenance clarity | Active | Make it obvious which runtimes are repo-built vs external |
+| Dependabot alerts | Open | 2 moderate vulnerabilities flagged on GitHub |
 
 ---
 
-## Immediate documentation and maintenance priorities
-
-These are the highest-value near-term priorities after the current documentation refresh.
-
-### 1. Native GDPI parity decision
-
-**Status:** Active product question
-
-The codebase already includes an experimental native GDPI path, but the product intentionally keeps `legacy` as the default.
-
-Near-term goal:
-
-- verify whether the native path reaches functional parity on real Windows environments
-- document exact limitations if it does not
-- keep `legacy` default until parity is demonstrated, not assumed
-
-### 2. Documentation and in-app help alignment
-
-**Status:** Active
-
-The markdown docs, contributor docs, and `blackout help` content should stay aligned with the actual 1.1.1 runtime surface.
-
-Near-term goal:
-
-- keep code, README, guides, and in-app help in lockstep
-- avoid claims that outgrow the shipped code
-
-### 3. Release/runtime provenance clarity
-
-**Status:** Active
-
-The project now mixes Python packaging, packaged Windows executable flows, repo-built DLL/runtime assets, and some still-external runtime dependencies.
-
-Near-term goal:
-
-- keep the provenance story clear for users and contributors
-- make it obvious which runtimes are repo-built, release-provided, auto-downloaded, or user-supplied
-
----
-
-## Next likely feature wave
-
-These are reasonable next-step areas, but they should be treated as **candidates**, not promises.
-
-### Advanced routing and runtime quality
-
-| Candidate | Why it matters | Current caution |
-|---|---|---|
-| Persistent daemon IPC improvements | Cleaner status/control channel | Should not destabilize the existing daemon lifecycle |
-| Better local health scoring | Smarter engine recommendations | Must stay clearly local-only and not imply remote validation |
-| More polished GUI workflows | Better usability for Windows users | GUI should remain honest about local-vs-remote state |
-| Runtime provenance reporting | Better trust/debug story | Needs careful wording and release integration |
-
-### Transport and protocol work
-
-| Candidate | Why it matters | Current caution |
-|---|---|---|
-| ShadowTLS evaluation | Useful transport option in some environments | Must be implemented and verified before being advertised |
-| More sing-box-backed protocol coverage | Reuse native/runtime infrastructure | Avoid feature claims before configuration and validation are real |
-| Better Linux operational ergonomics | Makes Linux support easier to use | Keep Linux scope explicit rather than growing implied support |
-
-### Contributor and release operations
-
-| Candidate | Why it matters | Current caution |
-|---|---|---|
-| Stronger release checklists | Better artifact confidence | Avoid claiming reproducibility that is not actually enforced |
-| More targeted tests around docs-sensitive behavior | Prevent docs drift | Focus on user-visible commands, readiness, recovery, and config flows |
-| Public maintainer docs | Easier outside contribution | Keep internal scratch notes separate from canonical docs |
-
----
-
-## Explicitly deferred or intentionally limited areas
-
-These areas are either intentionally limited today or should not be presented as active product guarantees.
+## Explicitly deferred or intentionally limited
 
 | Area | Current stance |
 |---|---|
 | Windows kill switch | Intentionally unsupported; legacy rules removed |
-| Full Linux parity with Windows engine catalog | Not a current goal |
+| Full Linux parity with Windows engine catalog | Not a goal |
+| New bypass engines/protocols | Not planned — VPN/bypass work is finished |
 | Claims of anonymity or detection resistance | Avoid unless independently justified |
-| “Country profile means it will work there” messaging | Avoid; profiles are guidance only |
+| "Country profile means it will work there" | Avoid; profiles are guidance only |
 | Aggressive auto-repair of unrelated network state | Avoid; targeted recovery is the policy |
-| Making native GDPI the default prematurely | Avoid until parity is proven |
 
 ---
 
@@ -162,15 +90,15 @@ These areas are either intentionally limited today or should not be presented as
 
 | Version line | Focus |
 |---|---|
-| 1.1.x | Stabilization, packaging, boundary hardening, docs accuracy, Linux managed runtime support |
-| 1.2.x | Only after stabilization: carefully selected transport/runtime improvements and contributor ergonomics |
-| Later | Broader UX/runtime expansions only if they can be documented and verified honestly |
+| 1.1.x | Stabilization, packaging, docs accuracy, Linux runtime (shipped) |
+| 1.2.x | Russia support: RU profile, --russia preset, XHTTP, AmneziaWG, smart rotation, whitelist awareness, data-phase detection (shipped) |
+| 1.3.x | Cybersecurity pivot: DNS security, malware detection, phishing protection, network hardening |
 
 ---
 
 ## Maintainer rule of thumb
 
-A roadmap item should move from “candidate” to “shipped” only when all three are true:
+A roadmap item should move from "candidate" to "shipped" only when all three are true:
 
 1. the code path exists
 2. the platform/runtime scope is explicit
