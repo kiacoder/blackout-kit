@@ -3,7 +3,7 @@ import json
 import base64
 import binascii
 from pathlib import Path
-from blackoutkit.config.manager import ProxyConfig, save_configs, _parse_vmess, parse_v2ray_uri
+from blackoutkit.config.manager import ProxyConfig, save_configs, _parse_vmess, parse_v2ray_uri, select_proxy_config
 
 def test_save_configs(tmp_path: Path):
     configs = [
@@ -153,3 +153,48 @@ def test_parse_v2ray_uri_invalid_returns_none():
     assert parse_v2ray_uri("vmess://invalid_base64!!!") is None
     bad_json = base64.b64encode(b"not json").decode('utf-8')
     assert parse_v2ray_uri(f"vmess://{bad_json}") is None
+
+
+def test_select_proxy_config_rotates_by_offset(monkeypatch):
+    configs = [
+        ProxyConfig(protocol="vless", address="1.1.1.1", port=443),
+        ProxyConfig(protocol="vless", address="2.2.2.2", port=443),
+        ProxyConfig(protocol="trojan", address="3.3.3.3", port=443),
+    ]
+    monkeypatch.setattr("blackoutkit.config.manager.load_configs", lambda: configs)
+
+    monkeypatch.delenv("BLACKOUT_CONFIG_OFFSET", raising=False)
+    selected = select_proxy_config(("vless", "trojan"))
+    assert selected.address == "1.1.1.1"
+
+    monkeypatch.setenv("BLACKOUT_CONFIG_OFFSET", "1")
+    selected = select_proxy_config(("vless", "trojan"))
+    assert selected.address == "2.2.2.2"
+
+    monkeypatch.setenv("BLACKOUT_CONFIG_OFFSET", "2")
+    selected = select_proxy_config(("vless", "trojan"))
+    assert selected.address == "3.3.3.3"
+
+    monkeypatch.setenv("BLACKOUT_CONFIG_OFFSET", "3")
+    selected = select_proxy_config(("vless", "trojan"))
+    assert selected.address == "1.1.1.1"  # wraps around
+
+
+def test_select_proxy_config_filters_by_protocol(monkeypatch):
+    configs = [
+        ProxyConfig(protocol="hysteria2", address="1.1.1.1", port=443),
+        ProxyConfig(protocol="vless", address="2.2.2.2", port=443),
+    ]
+    monkeypatch.setattr("blackoutkit.config.manager.load_configs", lambda: configs)
+    monkeypatch.delenv("BLACKOUT_CONFIG_OFFSET", raising=False)
+
+    selected = select_proxy_config(("vless",))
+    assert selected.protocol == "vless"
+    assert selected.address == "2.2.2.2"
+
+    selected = select_proxy_config(("hysteria2",))
+    assert selected.protocol == "hysteria2"
+    assert selected.address == "1.1.1.1"
+
+    selected = select_proxy_config(("tuic",))
+    assert selected is None

@@ -1,4 +1,5 @@
 import json
+import os
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -223,3 +224,26 @@ def test_xray_fragment_accepts_empty_string():
     from blackoutkit import settings
 
     assert settings.validate("xray_fragment", "") == (True, "")
+
+
+def test_config_rotation_increments_offset_on_reconnect(monkeypatch, tmp_path):
+    _configure_daemon_loop(monkeypatch, tmp_path, [True, False, False], iter([True, True]))
+    monkeypatch.setattr("blackoutkit.tools.run_network_recovery", MagicMock())
+    monkeypatch.delenv("BLACKOUT_CONFIG_OFFSET", raising=False)
+
+    daemon.run_daemon_loop("xray")
+
+    # After all reconnects failed, the offset should have been incremented
+    assert os.environ.get("BLACKOUT_CONFIG_OFFSET") is not None
+    assert int(os.environ["BLACKOUT_CONFIG_OFFSET"]) >= 1
+
+
+def test_config_rotation_resets_on_success(monkeypatch, tmp_path):
+    _configure_daemon_loop(monkeypatch, tmp_path, [True, True], iter([True, False]))
+    monkeypatch.setattr("blackoutkit.tools.run_network_recovery", MagicMock())
+    monkeypatch.setenv("BLACKOUT_CONFIG_OFFSET", "3")
+
+    daemon.run_daemon_loop("xray")
+
+    # After successful reconnect, offset should be cleared
+    assert "BLACKOUT_CONFIG_OFFSET" not in os.environ

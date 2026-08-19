@@ -40,11 +40,11 @@ class XRayEngine(Engine):
         self.proxy_config = proxy_config
         if not self.proxy_config:
             try:
-                from ..config.manager import load_configs
-                for c in load_configs():
-                    if c.protocol in ("vless", "trojan", "vmess"):
-                        self.proxy_config = c
-                        break
+                from ..config.manager import select_proxy_config
+                compatible = ("vless", "trojan", "vmess")
+                if sys.platform.startswith("linux"):
+                    compatible = ("vless", "trojan")
+                self.proxy_config = select_proxy_config(compatible)
             except Exception:
                 pass
         if sys.platform.startswith("linux") and self.proxy_config and self.proxy_config.protocol == "vmess":

@@ -561,6 +561,9 @@ The preset applies temporary local overrides for one launch only:
   • Prefer a server whose IP sits on or behind a whitelisted range
   • If a working endpoint suddenly fails completely, the IP was likely
     just blocked — rotate to the next saved config instead of retrying
+  • Smart config rotation is ON by default: the daemon automatically
+    cycles to the next saved config when a reconnect attempt fails
+  • Disable with: [bold]blackout settings set config_rotation false[/bold]
   • REALITY does not use the normal TLS cert-check path; use
     [bold]blackout tools cert-check[/bold] only for normal TLS hosts
 

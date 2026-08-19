@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ## [Unreleased]
 
 ### Added
+- **Smart config rotation:** When a working endpoint fails (e.g. IP blocked), the daemon automatically rotates to the next saved proxy config instead of retrying the same dead endpoint. Controlled by `config_rotation` setting (default: enabled). Particularly useful in Russia where blocked IPs die instantly.
+- **XHTTP transport support:** XRay now supports `type=xhttp` (and legacy `type=splithttp`) in V2Ray URIs, including `mode` parameter (auto/packet-up/stream-up). Works with REALITY.
 - **Russia country profile:** Added `RU` as a first-class country profile with engine order `xray → hysteria2 → tuic → warp/gdpi/tun → psiphon`, recommended bypass DNS, and Russia-specific test URLs.
 - **Russia transport preset:** Added `--russia` flag on `blackout connect` and `blackout start` that applies temporary local overrides (PRIVATE mode, DoH enabled, Iran-specific split-tunnel and fragmentation disabled) without rewriting saved settings. Overrides are forwarded into background daemon runs.
 - **Country-aware routing:** XRay split-tunnel and TUN bypass domains are now country-aware — RU profile routes Yandex, VK, Ozon, and other Russian domestic domains direct instead of Iranian `.ir` domains. TUN direct DNS uses Yandex DNS (77.88.8.8) for RU.

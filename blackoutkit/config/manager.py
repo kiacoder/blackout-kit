@@ -5,6 +5,7 @@ Loads/saves configs and imports from subscription URLs.
 """
 import base64
 import json
+import os
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
@@ -211,6 +212,25 @@ def save_configs(configs: list[ProxyConfig], path: Path | None = None):
     p = path or CONFIGS_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
+
+
+def select_proxy_config(protocols: tuple[str, ...]) -> ProxyConfig | None:
+    """
+    Select a proxy config compatible with the given protocols, using config rotation.
+
+    Reads BLACKOUT_CONFIG_OFFSET to cycle through compatible configs.
+    This enables smart config rotation: when an IP gets blocked, the daemon
+    increments the offset and the next engine instance picks a different config.
+    """
+    try:
+        offset = int(os.environ.get("BLACKOUT_CONFIG_OFFSET", "0"))
+    except ValueError:
+        offset = 0
+    configs = load_configs()
+    compatible = [c for c in configs if c.protocol in protocols]
+    if not compatible:
+        return None
+    return compatible[offset % len(compatible)]
 
 
 def add_config(uri: str) -> ProxyConfig:

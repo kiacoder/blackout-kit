@@ -32,14 +32,11 @@ class SingBoxProxyEngine(Engine):
             )
         if not self.proxy_config:
             try:
-                from ..config.manager import load_configs
-                for c in load_configs():
-                    if c.protocol not in self.supported_protocols:
-                        continue
-                    if self.requested_protocol and c.protocol != self.requested_protocol:
-                        continue
-                    self.proxy_config = c
-                    break
+                from ..config.manager import select_proxy_config
+                if self.requested_protocol:
+                    self.proxy_config = select_proxy_config((self.requested_protocol,))
+                else:
+                    self.proxy_config = select_proxy_config(self.supported_protocols)
             except Exception:
                 pass
         self.socks_port = socks_port or s["xray_socks_port"]

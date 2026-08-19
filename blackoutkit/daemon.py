@@ -600,6 +600,15 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 return False
             _stop_active_engines()
             restart_count += 1
+
+            if s.get("config_rotation", True):
+                current_offset = int(os.environ.get("BLACKOUT_CONFIG_OFFSET", "0"))
+                os.environ["BLACKOUT_CONFIG_OFFSET"] = str(current_offset + 1)
+                log.info(
+                    "Config rotation: trying next saved config (offset %d → %d).",
+                    current_offset, current_offset + 1,
+                )
+
             log.warning(
                 "%s Restart attempt %d/%d.",
                 failure_reason,
@@ -608,6 +617,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             )
             active = try_start_engines(active_engine_name)
             if active:
+                os.environ.pop("BLACKOUT_CONFIG_OFFSET", None)
                 _write_daemon_state(
                     active_engine_name,
                     cfg,
