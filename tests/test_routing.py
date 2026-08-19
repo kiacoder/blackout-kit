@@ -68,7 +68,7 @@ def test_linux_filters_to_supported_engines_and_requires_runner():
         platform="linux",
     )
 
-    assert {candidate.engine for candidate in candidates}.issubset({"xray", "tun", "hysteria2", "tuic"})
+    assert {candidate.engine for candidate in candidates}.issubset({"xray", "tun", "hysteria2", "tuic", "awg"})
     assert all("Linux runner missing" in candidate.blockers for candidate in candidates)
 
 
@@ -80,7 +80,7 @@ def test_linux_order_never_adds_windows_engines():
         platform="linux",
     )
 
-    assert {candidate.engine for candidate in candidates} == {"xray", "tun", "hysteria2", "tuic"}
+    assert {candidate.engine for candidate in candidates} == {"xray", "tun", "hysteria2", "tuic", "awg"}
 
 
 def test_reality_vless_is_compatible_with_linux_xray_and_tun():

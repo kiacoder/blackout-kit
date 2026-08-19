@@ -142,6 +142,9 @@ DEFAULTS = {
 
     # Smart config rotation
     "config_rotation":     True,        # Rotate to next saved config when current endpoint fails (blocked IP)
+
+    # AmneziaWG
+    "awg_config_file":     "",          # Full path to AmneziaWG .conf file
 }
 
 
@@ -154,7 +157,7 @@ _POSITIVE     = (lambda v: v > 0,           "must be > 0")
 _ENGINE_CHOICES = [
     "auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
     "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
-    "tuic", "legend",
+    "tuic", "awg", "legend",
 ]
 
 _VALIDATORS: dict[str, tuple] = {
@@ -477,6 +480,7 @@ def describe(key: str) -> str:
         "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
         "config_rotation":    "When enabled, the daemon rotates to the next saved config on reconnect failure (blocked IP)",
+        "awg_config_file":    "Full path to your AmneziaWG .conf file",
     }
     return descriptions.get(key, "No description available.")
 

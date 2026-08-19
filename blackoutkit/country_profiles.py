@@ -43,7 +43,7 @@ _PROFILES: list[CountryProfile] = [
         code             = "RU",
         name             = "Russia",
         censorship_level = "high",
-        engine_order     = ["xray", "hysteria2", "tuic", "warp", "gdpi", "tun", "psiphon"],
+        engine_order     = ["xray", "hysteria2", "tuic", "awg", "warp", "gdpi", "tun", "psiphon"],
         bypass_dns       = [
             ("Cloudflare", "1.1.1.1"),
             ("Quad9",      "9.9.9.9"),

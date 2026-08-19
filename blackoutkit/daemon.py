@@ -382,6 +382,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     from .engines.xray import XRayEngine
     from .engines.tun import TUNEngine
     from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
+    from .engines.amneziawg import AmneziaWGEngine
 
     if sys.platform == "win32":
         from .engines.sni import SNIEngine
@@ -453,6 +454,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         "softether":  lambda: (SoftEtherEngine(),),
         "hysteria2":  lambda: (Hysteria2Engine(),),
         "tuic":       lambda: (TuicEngine(),),
+        "awg":        lambda: (AmneziaWGEngine(),),
         "legend":     lambda: (TorEngine(), SNIEngine(), XRayEngine()),
     }
 
@@ -460,7 +462,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         ENGINE_MAP = {
             name: factory
             for name, factory in ENGINE_MAP.items()
-            if name in {"xray", "tun", "hysteria2", "tuic"}
+            if name in {"xray", "tun", "hysteria2", "tuic", "awg"}
         }
     s = cfg.load()
 

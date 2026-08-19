@@ -3,10 +3,11 @@ from dataclasses import dataclass
 import sys
 
 
-LINUX_ENGINES = frozenset({"xray", "tun", "hysteria2", "tuic"})
+LINUX_ENGINES = frozenset({"xray", "tun", "hysteria2", "tuic", "awg"})
 PROXY_PROTOCOLS = {
     "hysteria2": {"hysteria2"},
     "tuic": {"tuic"},
+    "awg": set(),
 }
 BINARY_REQUIREMENTS = {
     "sni": ("sni-spoofing",),
@@ -23,6 +24,7 @@ BINARY_REQUIREMENTS = {
     "tun": ("mhrv",),
     "hysteria2": ("mhrv",),
     "tuic": ("mhrv",),
+    "awg": ("mhrv",),
 }
 SETTING_REQUIREMENTS = {
     "ikev2": ("ikev2_server", "ikev2_username", "ikev2_password"),
@@ -59,7 +61,7 @@ def platform_engines(platform: str | None = None) -> set[str]:
     return {
         "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
         "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
-        "tuic", "legend",
+        "tuic", "awg", "legend",
     }
 
 

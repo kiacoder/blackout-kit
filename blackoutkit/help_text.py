@@ -247,10 +247,15 @@ Examples:
 
 [bold]Windows supports:[/bold]
   sni, xray, gdpi, psiphon, warp, tun, tor, mhrv, ikev2,
-  wireguard, openvpn, softether, appsscript, hysteria2, tuic, legend
+  wireguard, openvpn, softether, appsscript, hysteria2, tuic, awg, legend
 
 [bold]XRay transports:[/bold]
   ws, tcp, grpc, xhttp (also accepts legacy type=splithttp)
+
+[bold]AmneziaWG (experimental):[/bold]
+  blackout settings set awg_config_file /path/to/amneziawg.conf
+  blackout start awg
+  blackout start awg --russia
 
 [bold]Linux supports:[/bold]
   xray, tun, hysteria2, tuic
@@ -528,7 +533,7 @@ Blackout Kit ships first-class Russia support through the RU country profile and
   blackout country set RU
 
 Recommends engines in this order on both Windows and Linux:
-  xray → hysteria2 → tuic → (Windows: warp, gdpi; Linux: tun)
+  xray → hysteria2 → tuic → awg → (Windows: warp, gdpi; Linux: tun)
 
 [bold]Phase 2 — Russia transport preset[/bold]
   blackout connect --russia

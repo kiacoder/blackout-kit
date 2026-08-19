@@ -26,6 +26,7 @@ from .softether  import SoftEtherEngine
 from .neighbor   import NeighborShareEngine, NeighborConnectEngine
 from .appsscript import AppsScriptEngine
 from .singbox_proxy import SingBoxProxyEngine, Hysteria2Engine, TuicEngine
+from .amneziawg  import AmneziaWGEngine
 from .base       import Engine
 
 # ──────────────────────────── Registry ───────────────────────────────────────
@@ -49,6 +50,7 @@ ENGINE_REGISTRY: dict[str, type[Engine]] = {
     "appsscript": AppsScriptEngine,
     "hysteria2":  Hysteria2Engine,
     "tuic":       TuicEngine,
+    "awg":        AmneziaWGEngine,
 }
 
 
@@ -104,6 +106,7 @@ __all__ = [
     "WireGuardEngine", "OpenVPNEngine", "SoftEtherEngine",
     "NeighborShareEngine", "NeighborConnectEngine",
     "AppsScriptEngine", "SingBoxProxyEngine", "Hysteria2Engine", "TuicEngine",
+    "AmneziaWGEngine",
     "Engine",
     # Registry & helpers
     "ENGINE_REGISTRY",

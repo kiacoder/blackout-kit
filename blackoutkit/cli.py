@@ -99,7 +99,7 @@ def test_direct(*args, **kwargs):
 
 # ──────────────────────────── Engine map ─────────────────────────
 
-ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "legend"]
+ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend"]
 
 def _get_engine_classes(name: str) -> tuple:
     if sys.platform.startswith("linux") and name == "tun":
@@ -152,6 +152,9 @@ def _get_engine_classes(name: str) -> tuple:
     elif name == "tuic":
         from .engines.singbox_proxy import TuicEngine
         return (TuicEngine,)
+    elif name == "awg":
+        from .engines.amneziawg import AmneziaWGEngine
+        return (AmneziaWGEngine(),)
     elif name == "legend":
         from .engines.tor import TorEngine
         from .engines.sni import SNIEngine
@@ -176,11 +179,12 @@ AUTO_DOWNLOAD_DEPENDENCIES = {
     "tun": ["sing-box"],
     "hysteria2": [],
     "tuic": [],
+    "awg": [],
     "ikev2": [],
     "appsscript": [],
 }
 
-_LINUX_SUPPORTED_ENGINES = frozenset({"xray", "tun", "hysteria2", "tuic"})
+_LINUX_SUPPORTED_ENGINES = frozenset({"xray", "tun", "hysteria2", "tuic", "awg"})
 
 
 def _platform_engine_error(name: str) -> str | None:
@@ -2573,6 +2577,7 @@ def cmd_menu_select_engine():
         ("warp",       "Cloudflare WARP (clean residential IP)"),
         ("hysteria2",  "Hysteria2 QUIC proxy via sing-box"),
         ("tuic",       "TUIC QUIC proxy via sing-box"),
+        ("awg",        "AmneziaWG — obfuscated WireGuard via sing-box (experimental)"),
         ("legend",     "Legend Mode (Tor + SNI + XRay chained)"),
         ("appsscript", "Google Apps Script HTTP Relay (ultimate fallback)"),
         ("mhrv",       "Embedded HTTP Google Apps Script relay"),
