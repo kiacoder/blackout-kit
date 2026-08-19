@@ -249,6 +249,9 @@ Examples:
   sni, xray, gdpi, psiphon, warp, tun, tor, mhrv, ikev2,
   wireguard, openvpn, softether, appsscript, hysteria2, tuic, legend
 
+[bold]XRay transports:[/bold]
+  ws, tcp, grpc, xhttp (also accepts legacy type=splithttp)
+
 [bold]Linux supports:[/bold]
   xray, tun, hysteria2, tuic
 
@@ -545,6 +548,7 @@ The preset applies temporary local overrides for one launch only:
   • VLESS + REALITY over TCP — fastest and most reliable path
   • Hysteria2 — works on cellular but slower than REALITY
   • Both XHTTP and plain REALITY transports work well
+  • XHTTP is now supported: add configs with type=xhttp or type=splithttp
 
 [bold]Known Russian filtering behavior[/bold]
   • Cellular whitelist mode: only whitelisted IP ranges pass

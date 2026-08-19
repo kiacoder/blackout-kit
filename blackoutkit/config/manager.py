@@ -26,13 +26,14 @@ class ProxyConfig:
     path:      str  = "/"       # WebSocket path
     alpn:      str  = ""        # TLS ALPN
     fp:        str  = "chrome"  # TLS fingerprint
-    transport: str  = "ws"      # ws / tcp / grpc
+    transport: str  = "ws"      # ws / tcp / grpc / xhttp
     security:  str  = "tls"     # tls / reality / none
     public_key: str = ""        # REALITY server public key
     short_id:  str  = ""        # REALITY short ID
     spider_x:  str  = ""        # REALITY spider path
     flow:      str  = ""        # VLESS flow (e.g. xtls-rprx-vision)
     service_name: str = ""      # gRPC service name
+    xhttp_mode: str = ""        # XHTTP mode: auto / packet-up / stream-up
     insecure:  bool = True      # allowInsecure
     name:      str  = ""        # Config label (#fragment)
     raw_uri:   str  = ""        # Original URI string
@@ -54,8 +55,8 @@ class ProxyConfig:
             return "REALITY config is missing the server public key (pbk)."
         if not self.sni:
             return "REALITY config is missing the server name (sni)."
-        if self.transport not in {"tcp", "ws", "grpc"}:
-            return f"REALITY transport '{self.transport}' is unsupported; use tcp, ws, or grpc."
+        if self.transport not in {"tcp", "ws", "grpc", "xhttp", "splithttp"}:
+            return f"REALITY transport '{self.transport}' is unsupported; use tcp, ws, grpc, or xhttp."
         return None
 
     def transport_label(self) -> str:
@@ -131,6 +132,10 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
         else:
             uuid = credential
 
+    transport = q("type", "ws").lower()
+    if transport == "splithttp":
+        transport = "xhttp"
+
     return ProxyConfig(
         protocol  = proto,
         address   = host,
@@ -142,13 +147,14 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
         path      = q("path", "/"),
         alpn      = q("alpn"),
         fp        = q("fp", "chrome"),
-        transport = q("type", "ws").lower(),
+        transport = transport,
         security  = q("security", "tls").lower(),
         public_key = q("pbk") or q("publicKey"),
         short_id   = q("sid") or q("shortId"),
         spider_x   = q("spx") or q("spiderX"),
         flow       = q("flow"),
         service_name = q("serviceName"),
+        xhttp_mode = q("mode"),
         insecure  = insecure,
         name      = name,
         raw_uri   = uri,

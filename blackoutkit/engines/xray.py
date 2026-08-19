@@ -259,6 +259,14 @@ class XRayEngine(Engine):
             }
         elif c.transport == "grpc":
             stream["grpcSettings"] = {"serviceName": c.service_name}
+        elif c.transport in ("xhttp", "splithttp"):
+            xhttp_settings = {
+                "path": c.path or "/",
+                "host": c.host or c.sni,
+            }
+            if c.xhttp_mode:
+                xhttp_settings["mode"] = c.xhttp_mode
+            stream["xhttpSettings"] = xhttp_settings
 
         if is_reality:
             stream["security"] = "reality"

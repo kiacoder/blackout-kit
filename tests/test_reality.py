@@ -127,6 +127,50 @@ def test_reality_grpc_outbound_preserves_service_name():
     assert "tlsSettings" not in outbound["streamSettings"]
 
 
+def test_xhttp_transport_parses_and_generates_correct_stream():
+    config = parse_v2ray_uri(
+        "vless://id@server.example:443?security=tls&sni=cdn.example&type=xhttp"
+        "&path=%2Fxp&host=cdn.example&mode=packet-up"
+    )
+    assert config.transport == "xhttp"
+    assert config.xhttp_mode == "packet-up"
+    assert config.path == "/xp"
+
+    engine = XRayEngine(proxy_config=config, socks_port=19080, http_port=19081)
+
+    with patch("blackoutkit.settings.load", return_value=_settings()), \
+         patch("blackoutkit.cert_bypass.should_allow_insecure", return_value=(True, "")), \
+         patch("blackoutkit.tools.resolve_doh", return_value=None):
+        outbound = engine._build_outbound(config)
+
+    stream = outbound["streamSettings"]
+    assert stream["network"] == "xhttp"
+    assert stream["xhttpSettings"] == {
+        "path": "/xp",
+        "host": "cdn.example",
+        "mode": "packet-up",
+    }
+    assert "wsSettings" not in stream
+    assert "grpcSettings" not in stream
+
+
+def test_splithttp_transport_normalizes_to_xhttp():
+    config = parse_v2ray_uri(
+        "vless://id@server.example:443?security=tls&sni=cdn.example&type=splithttp&path=%2Fsp"
+    )
+    assert config.transport == "xhttp"
+
+
+def test_xhttp_reality_config_is_valid():
+    config = parse_v2ray_uri(
+        "vless://id@server.example:443?security=reality&sni=www.microsoft.com"
+        "&pbk=KEY&sid=abcd&type=xhttp&mode=auto"
+    )
+    assert config.transport == "xhttp"
+    assert config.is_reality()
+    assert config.reality_validation_error() is None
+
+
 def test_normal_tls_vless_keeps_certificate_policy_and_websocket_stream():
     config = parse_v2ray_uri(
         "vless://id@server.example:443?security=tls&sni=cdn.example&type=ws&path=%2Fws&host=cdn.example"
