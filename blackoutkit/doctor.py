@@ -265,6 +265,48 @@ def check_windivert() -> CheckResult:
     )
 
 
+def check_scapy() -> CheckResult:
+    """Check if scapy is installed (needed for `blackout tools capture`)."""
+    try:
+        __import__("scapy.all")
+        return CheckResult("Python: scapy (packet capture)", True, "Installed")
+    except ImportError:
+        return CheckResult(
+            "Python: scapy (packet capture)", False,
+            "Not installed — required for `blackout tools capture`",
+            fixable=True,
+            fix=lambda: subprocess.run([sys.executable, "-m", "pip", "install", "scapy"], check=False),
+        )
+
+
+def check_npcap() -> CheckResult:
+    """Check for the OS-level packet capture driver scapy needs to actually sniff live traffic."""
+    if sys.platform == "win32":
+        system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+        if (system32 / "Npcap").exists() or (system32 / "wpcap.dll").exists():
+            return CheckResult("Npcap (packet capture driver)", True, "Found")
+        return CheckResult(
+            "Npcap (packet capture driver)", False,
+            "Missing — required for `blackout tools capture` to sniff live traffic. "
+            'Install from https://npcap.com (check "Install Npcap in WinPcap API-compatible Mode").',
+            fixable=False,
+        )
+
+    try:
+        import ctypes.util
+        found = ctypes.util.find_library("pcap") is not None
+    except Exception:
+        found = False
+    if found:
+        return CheckResult("libpcap (packet capture driver)", True, "Found")
+    return CheckResult(
+        "libpcap (packet capture driver)", False,
+        "Missing — required for `blackout tools capture`. Install via your package manager "
+        "(e.g. `apt install libpcap-dev`).",
+        fixable=False,
+    )
+
+
 def check_network_driver() -> CheckResult:
     """Check basic platform networking prerequisites."""
     if sys.platform.startswith("linux"):
@@ -917,6 +959,8 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_country_profile(),   # Country profile (informational)
         check_network_driver(),
         check_windivert(),
+        check_scapy(),
+        check_npcap(),
         check_system_path(),
         check_config_security(),
         check_process_conflicts(),

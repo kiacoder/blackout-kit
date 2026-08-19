@@ -678,6 +678,27 @@ def tools_bandwidth(
     args.interval = interval
     cmd_tools(args)
 
+@tools_app.command("capture")
+def tools_capture(
+    iface: str = typer.Argument(None, help="Interface name to capture on (see `tools adapters`); omit for auto"),
+    count: int = typer.Option(0, "--count", "-c", help="Stop after N packets (0 = unbounded, Ctrl+C to stop)"),
+    filter: str = typer.Option(None, "--filter", "-f", help="Raw BPF filter expression (e.g. 'tcp port 443')"),
+    host: str = typer.Option(None, "--host", help="Shorthand filter for traffic to/from this host"),
+):
+    """Live packet capture with a scrolling view and a final protocol/talkers summary. Ctrl+C to stop.
+
+    Requires scapy (`pip install scapy`) and, on Windows, Npcap — run `blackout doctor` to check.
+    """
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "capture"
+    args.iface = iface
+    args.count = count
+    args.filter = filter
+    args.host = host
+    cmd_tools(args)
+
 @tools_app.command("cert-check")
 def tools_cert_check(
     host: str = typer.Argument(None, help="Host to check"),

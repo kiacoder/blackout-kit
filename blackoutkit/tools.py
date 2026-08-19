@@ -1311,6 +1311,142 @@ def compute_bandwidth_rates(
     return rates
 
 
+# ─────────────────────────── Packet capture ────────────────────────
+
+class CaptureUnavailable(Exception):
+    """Raised when scapy (and/or its Npcap/libpcap driver) isn't available."""
+
+
+def parse_packet_summary(pkt) -> dict:
+    """
+    Translate a scapy packet into a flat, display-friendly dict.
+    Tolerant of non-IP frames (ARP, raw Ethernet) — falls back to "-" fields
+    rather than raising, since capture must never crash on an unusual frame.
+    """
+    ts = float(getattr(pkt, "time", time.time()))
+    length = len(pkt) if hasattr(pkt, "__len__") else 0
+
+    src = dst = "-"
+    sport = dport = None
+    proto = "OTHER"
+
+    if pkt.haslayer("ARP"):
+        arp = pkt["ARP"]
+        proto = "ARP"
+        src = getattr(arp, "psrc", "-")
+        dst = getattr(arp, "pdst", "-")
+    elif pkt.haslayer("IP") or pkt.haslayer("IPv6"):
+        ip_layer = pkt["IP"] if pkt.haslayer("IP") else pkt["IPv6"]
+        src = getattr(ip_layer, "src", "-")
+        dst = getattr(ip_layer, "dst", "-")
+        if pkt.haslayer("TCP"):
+            proto = "TCP"
+            sport = int(pkt["TCP"].sport)
+            dport = int(pkt["TCP"].dport)
+        elif pkt.haslayer("UDP"):
+            proto = "UDP"
+            sport = int(pkt["UDP"].sport)
+            dport = int(pkt["UDP"].dport)
+        elif pkt.haslayer("ICMP"):
+            proto = "ICMP"
+        else:
+            proto = "IP"
+
+    try:
+        summary = pkt.summary()
+    except Exception:
+        summary = f"{proto} {length}B"
+
+    return {
+        "ts": ts,
+        "proto": proto,
+        "src": src,
+        "sport": sport,
+        "dst": dst,
+        "dport": dport,
+        "length": length,
+        "summary": summary,
+    }
+
+
+def capture_packets(
+    iface: str | None = None,
+    bpf_filter: str | None = None,
+    count: int = 0,
+    stop_event=None,
+    on_packet=None,
+) -> None:
+    """
+    Sniff live packets via scapy, calling on_packet(dict) for each one via
+    parse_packet_summary(). Blocks until `count` packets are captured (count=0
+    means unbounded) or stop_event is set. Raises CaptureUnavailable if scapy
+    (or its underlying Npcap/libpcap driver) can't be used.
+    """
+    try:
+        import scapy.all as scapy
+    except Exception as exc:
+        raise CaptureUnavailable(str(exc)) from exc
+
+    def _prn(pkt):
+        if on_packet:
+            on_packet(parse_packet_summary(pkt))
+
+    def _stop_filter(_pkt):
+        return bool(stop_event and stop_event.is_set())
+
+    try:
+        scapy.sniff(
+            iface=iface or None,
+            filter=bpf_filter or None,
+            count=count or 0,
+            prn=_prn,
+            stop_filter=_stop_filter,
+            store=False,
+        )
+    except CaptureUnavailable:
+        raise
+    except Exception as exc:
+        raise CaptureUnavailable(str(exc)) from exc
+
+
+def summarize_capture_packets(packets: list[dict]) -> dict:
+    """
+    Pure post-capture summary: protocol breakdown, top-5 talkers by source
+    address, total packets/bytes, and capture duration. No scapy involved —
+    operates purely on the dicts produced by parse_packet_summary().
+    """
+    if not packets:
+        return {
+            "total_packets": 0,
+            "total_bytes": 0,
+            "duration": 0.0,
+            "protocol_counts": {},
+            "top_talkers": [],
+        }
+
+    protocol_counts: dict[str, int] = {}
+    talker_counts: dict[str, int] = {}
+    total_bytes = 0
+
+    for pkt in packets:
+        protocol_counts[pkt["proto"]] = protocol_counts.get(pkt["proto"], 0) + 1
+        total_bytes += pkt.get("length", 0)
+        src = pkt.get("src", "-")
+        if src and src != "-":
+            talker_counts[src] = talker_counts.get(src, 0) + 1
+
+    top_talkers = sorted(talker_counts.items(), key=lambda kv: kv[1], reverse=True)[:5]
+    timestamps = [pkt["ts"] for pkt in packets]
+
+    return {
+        "total_packets": len(packets),
+        "total_bytes": total_bytes,
+        "duration": max(timestamps) - min(timestamps) if len(timestamps) > 1 else 0.0,
+        "protocol_counts": protocol_counts,
+        "top_talkers": top_talkers,
+    }
+
+
 def calculate_subnet(ip_cidr: str) -> dict | None:
     """
     Calculate subnet details (Network, Broadcast, Mask, Usable range) from a CIDR string.

@@ -399,6 +399,8 @@ Examples:
   blackout tools discover
   blackout tools latency-monitor 1.1.1.1 --interval 0.5
   blackout tools bandwidth
+  blackout tools capture eth0 --count 100
+  blackout tools capture --filter "tcp port 443" --host 1.1.1.1
 
 Network analysis toolkit:
   • subnet              Calculate network/broadcast/usable range from a CIDR
@@ -409,9 +411,11 @@ Network analysis toolkit:
   • speedtest-history   Show a graph of past speedtest results
   • latency-monitor     Live ping graph with rolling avg/jitter/loss (Ctrl+C to stop)
   • bandwidth           Live per-interface upload/download throughput (Ctrl+C to stop)
+  • capture <iface>     Live packet capture with a protocol/talkers summary (Ctrl+C to stop).
+                        Requires scapy + Npcap (Windows) / libpcap (Linux) — see `blackout doctor`.
 
 [dim]Some tools change local network state; read the command output carefully.
-scan-ports and discover only probe hosts you're authorized to test.[/dim]
+scan-ports, discover, and capture only probe/observe hosts and traffic you're authorized to test.[/dim]
 """,
 
 "neighbor": """

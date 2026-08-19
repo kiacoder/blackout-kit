@@ -145,6 +145,10 @@ DEFAULTS = {
 
     # AmneziaWG
     "awg_config_file":     "",          # Full path to AmneziaWG .conf file
+
+    # Packet capture
+    "capture_default_iface": "",        # Empty = pass no --iface, let scapy pick / require explicit choice
+    "capture_max_packets":  2000,       # In-memory ring buffer cap feeding the live view + summary
 }
 
 
@@ -202,6 +206,7 @@ _VALIDATORS: dict[str, tuple] = {
     "selected_engine":    (str,   lambda v: v in _ENGINE_CHOICES, "must be: auto or one of " + ", ".join(_ENGINE_CHOICES)),
     "engine_order":       (list,  lambda v: len(v) > 0 and all(e in _ENGINE_CHOICES for e in v),
                             "must be a non-empty list of valid engines: " + ", ".join(_ENGINE_CHOICES)),
+    "capture_max_packets": (int,  lambda v: 100 <= v <= 100000, "must be 100–100000"),
 }
 
 # ──────────────────────────── Env overrides ───────────────────────
@@ -444,6 +449,8 @@ def describe(key: str) -> str:
         "scan_timeout":       "Seconds to wait per IP during scan",
         "scan_ip_count":      "Number of Cloudflare IPs to generate per scan",
         "engine_order":       "Engine priority order for emergency mode",
+        "capture_default_iface": "Default interface for `tools capture` when none is given",
+        "capture_max_packets":   "In-memory packet buffer cap for `tools capture` (feeds the live view + summary)",
         "retry_interval":     "Seconds between healthy daemon connection checks",
         "max_retries":        "Maximum automatic reconnect attempts before the daemon exits",
         "reconnect_initial_delay": "First automatic reconnect delay in seconds",

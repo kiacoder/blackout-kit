@@ -4,10 +4,12 @@ All user-facing commands live here.
 """
 import argparse
 import asyncio
+from collections import deque
 from contextlib import contextmanager
 import json
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -1095,6 +1097,62 @@ def _bandwidth_panel(rates: dict[str, dict], history: dict[str, list[float]]) ->
     return Panel(table, title="[heading]Bandwidth Monitor[/heading]  [muted](Ctrl+C to stop)[/muted]", border_style="panel.border")
 
 
+_CAPTURE_PROTO_STYLES = {"TCP": "cyan", "UDP": "yellow", "ICMP": "magenta", "ARP": "blue", "IP": "white"}
+
+
+def _capture_panel(packets: deque, stats: dict, iface: str) -> Panel:
+    table = Table(box=box.SIMPLE, header_style="table.header")
+    table.add_column("Time", style="muted", no_wrap=True)
+    table.add_column("Proto", width=6)
+    table.add_column("Source", style="white")
+    table.add_column("Destination", style="white")
+    table.add_column("Len", justify="right", style="dim")
+
+    for pkt in list(packets)[-15:]:
+        style = _CAPTURE_PROTO_STYLES.get(pkt["proto"], "dim")
+        src = f"{pkt['src']}:{pkt['sport']}" if pkt["sport"] else pkt["src"]
+        dst = f"{pkt['dst']}:{pkt['dport']}" if pkt["dport"] else pkt["dst"]
+        table.add_row(
+            time.strftime("%H:%M:%S", time.localtime(pkt["ts"])),
+            f"[{style}]{pkt['proto']}[/{style}]",
+            src,
+            dst,
+            str(pkt["length"]),
+        )
+
+    if not packets:
+        table.add_row("", "", "[dim]waiting for traffic...[/dim]", "", "")
+
+    proto_counts = stats.get("protocol_counts", {})
+    footer = "  ".join(f"{proto}: {n}" for proto, n in sorted(proto_counts.items(), key=lambda kv: -kv[1]))
+    subtitle = f"[muted]{footer}[/muted]" if footer else None
+
+    return Panel(
+        table,
+        title=f"[heading]Packet Capture — {iface or 'auto'}[/heading]  [muted]({stats.get('total_packets', 0)} captured, Ctrl+C to stop)[/muted]",
+        subtitle=subtitle,
+        border_style="panel.border",
+    )
+
+
+def _capture_summary_table(summary: dict) -> Table:
+    table = make_table(
+        f"Capture Summary  ({summary['total_packets']} packets, {summary['total_bytes']:,} bytes, {summary['duration']:.1f}s)",
+        [("Protocol", "cyan"), ("Packets", "bold white")],
+        [],
+    )
+    for proto, n in sorted(summary["protocol_counts"].items(), key=lambda kv: -kv[1]):
+        table.add_row(proto, str(n))
+
+    if summary["top_talkers"]:
+        table.add_row("", "")
+        table.add_row("[bold]Top talkers[/bold]", "")
+        for addr, n in summary["top_talkers"]:
+            table.add_row(addr, str(n))
+
+    return table
+
+
 def _status_panel(snapshot: dict) -> Panel:
     state = snapshot["state"]
     pid = snapshot["pid"]
@@ -1739,6 +1797,74 @@ def cmd_tools(args):
                     live.update(_bandwidth_panel(rates, history))
         except KeyboardInterrupt:
             console.print("\n[muted]Bandwidth monitor stopped.[/muted]")
+
+    elif args.tools_command == "capture":
+        from .proxy_manager import is_admin
+
+        iface = getattr(args, "iface", None)
+        count = getattr(args, "count", 0) or 0
+        bpf_filter = getattr(args, "filter", None)
+        host_filter = getattr(args, "host", None)
+        if host_filter:
+            bpf_filter = f"host {host_filter}" if not bpf_filter else f"({bpf_filter}) and host {host_filter}"
+
+        if not is_admin():
+            console.print(
+                "[warning]Not running elevated — packet capture usually requires Administrator/root "
+                "privileges. Continuing anyway; it may fail below.[/warning]\n"
+            )
+
+        max_packets = cfg.get("capture_max_packets", 2000)
+        packets: deque = deque(maxlen=max_packets)
+        stop_event = threading.Event()
+        capture_error: list[Exception] = []
+
+        def _on_packet(pkt: dict):
+            packets.append(pkt)
+
+        def _run_capture():
+            try:
+                net_tools.capture_packets(
+                    iface=iface,
+                    bpf_filter=bpf_filter,
+                    count=count,
+                    stop_event=stop_event,
+                    on_packet=_on_packet,
+                )
+            except Exception as exc:
+                capture_error.append(exc)
+            finally:
+                stop_event.set()
+
+        console.print()
+        thread = threading.Thread(target=_run_capture, daemon=True)
+        thread.start()
+        try:
+            with Live(_capture_panel(packets, {}, iface), console=console, refresh_per_second=4) as live:
+                while not stop_event.is_set():
+                    stats = net_tools.summarize_capture_packets(list(packets))
+                    live.update(_capture_panel(packets, stats, iface))
+                    time.sleep(0.25)
+                    if count and len(packets) >= count:
+                        break
+        except KeyboardInterrupt:
+            stop_event.set()
+        thread.join(timeout=2.0)
+
+        if capture_error:
+            exc = capture_error[0]
+            console.print(f"\n[error]Packet capture unavailable: {exc}[/error]")
+            console.print(
+                "[muted]Install scapy (`pip install scapy`) and, on Windows, Npcap from "
+                "https://npcap.com (check \"WinPcap API-compatible Mode\" during install). "
+                "Run `blackout doctor` to check prerequisites.[/muted]\n"
+            )
+            return
+
+        console.print("\n[muted]Capture stopped.[/muted]\n")
+        summary = net_tools.summarize_capture_packets(list(packets))
+        console.print(_capture_summary_table(summary))
+        console.print()
 
     elif args.tools_command == "dns-set":
         presets = {

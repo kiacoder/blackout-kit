@@ -2,8 +2,11 @@
 port scanner, LAN discovery, DNS inspector, and speedtest history."""
 import json
 import socket
+import threading
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from blackoutkit import tools
 
@@ -374,3 +377,176 @@ def test_compute_bandwidth_rates_clamps_negative_on_counter_reset():
 
 def test_compute_bandwidth_rates_zero_elapsed_returns_empty():
     assert tools.compute_bandwidth_rates({}, {"eth0": (1, 1)}, elapsed=0) == {}
+
+
+# ─────────────────────────── Packet capture ─────────────────────────
+
+class FakePacket:
+    """Minimal stand-in for a scapy packet — only the attributes/methods
+    parse_packet_summary() actually touches."""
+
+    def __init__(self, layers=None, length=100, ts=1_700_000_000.0, summary_text="pkt"):
+        self._layers = layers or {}
+        self._length = length
+        self.time = ts
+        self._summary_text = summary_text
+
+    def haslayer(self, name):
+        return name in self._layers
+
+    def __getitem__(self, name):
+        return self._layers[name]
+
+    def __len__(self):
+        return self._length
+
+    def summary(self):
+        return self._summary_text
+
+
+def test_parse_packet_summary_tcp():
+    pkt = FakePacket({
+        "IP": SimpleNamespace(src="1.1.1.1", dst="2.2.2.2"),
+        "TCP": SimpleNamespace(sport=51000, dport=443),
+    }, length=60, summary_text="IP / TCP 1.1.1.1:51000 > 2.2.2.2:443")
+    result = tools.parse_packet_summary(pkt)
+    assert result["proto"] == "TCP"
+    assert result["src"] == "1.1.1.1"
+    assert result["dst"] == "2.2.2.2"
+    assert result["sport"] == 51000
+    assert result["dport"] == 443
+    assert result["length"] == 60
+    assert "TCP" in result["summary"]
+
+
+def test_parse_packet_summary_udp():
+    pkt = FakePacket({
+        "IP": SimpleNamespace(src="10.0.0.5", dst="8.8.8.8"),
+        "UDP": SimpleNamespace(sport=53, dport=53),
+    })
+    result = tools.parse_packet_summary(pkt)
+    assert result["proto"] == "UDP"
+    assert result["sport"] == 53
+    assert result["dport"] == 53
+
+
+def test_parse_packet_summary_arp_has_no_ports():
+    pkt = FakePacket({"ARP": SimpleNamespace(psrc="192.168.1.5", pdst="192.168.1.1")})
+    result = tools.parse_packet_summary(pkt)
+    assert result["proto"] == "ARP"
+    assert result["src"] == "192.168.1.5"
+    assert result["dst"] == "192.168.1.1"
+    assert result["sport"] is None
+    assert result["dport"] is None
+
+
+def test_parse_packet_summary_icmp():
+    pkt = FakePacket({"IP": SimpleNamespace(src="1.1.1.1", dst="2.2.2.2"), "ICMP": SimpleNamespace()})
+    result = tools.parse_packet_summary(pkt)
+    assert result["proto"] == "ICMP"
+    assert result["sport"] is None
+
+
+def test_parse_packet_summary_unknown_frame_defaults_to_other():
+    pkt = FakePacket({})
+    result = tools.parse_packet_summary(pkt)
+    assert result["proto"] == "OTHER"
+    assert result["src"] == "-"
+    assert result["dst"] == "-"
+
+
+def test_parse_packet_summary_falls_back_when_summary_raises():
+    pkt = FakePacket({"IP": SimpleNamespace(src="1.1.1.1", dst="2.2.2.2"), "TCP": SimpleNamespace(sport=1, dport=2)})
+    pkt.summary = lambda: (_ for _ in ()).throw(Exception("boom"))
+    result = tools.parse_packet_summary(pkt)
+    assert "TCP" in result["summary"]
+
+
+def _patched_scapy(fake_scapy):
+    """`import scapy.all as scapy` resolves via attribute access off the parent
+    package object (`__import__('scapy.all').all`), not a direct sys.modules
+    lookup — so the parent mock's `.all` attribute must *be* fake_scapy."""
+    fake_parent = MagicMock()
+    fake_parent.all = fake_scapy
+    return patch.dict("sys.modules", {"scapy": fake_parent, "scapy.all": fake_scapy})
+
+
+def test_capture_packets_calls_sniff_with_translated_args():
+    fake_scapy = MagicMock()
+    calls = {}
+    fake_scapy.sniff.side_effect = lambda **kwargs: calls.update(kwargs)
+
+    received = []
+    with _patched_scapy(fake_scapy):
+        tools.capture_packets(iface="eth0", bpf_filter="tcp", count=5, on_packet=received.append)
+
+    assert calls["iface"] == "eth0"
+    assert calls["filter"] == "tcp"
+    assert calls["count"] == 5
+    assert calls["store"] is False
+
+    fake_pkt = FakePacket({"IP": SimpleNamespace(src="1.1.1.1", dst="2.2.2.2"), "TCP": SimpleNamespace(sport=1, dport=2)})
+    calls["prn"](fake_pkt)
+    assert len(received) == 1
+    assert received[0]["proto"] == "TCP"
+
+
+def test_capture_packets_stop_filter_reflects_stop_event():
+    fake_scapy = MagicMock()
+    calls = {}
+    fake_scapy.sniff.side_effect = lambda **kwargs: calls.update(kwargs)
+    stop_event = threading.Event()
+
+    with _patched_scapy(fake_scapy):
+        tools.capture_packets(stop_event=stop_event)
+
+    assert calls["stop_filter"](FakePacket()) is False
+    stop_event.set()
+    assert calls["stop_filter"](FakePacket()) is True
+
+
+def test_capture_packets_raises_capture_unavailable_when_scapy_missing():
+    with patch.dict("sys.modules", {"scapy.all": None}):
+        with pytest.raises(tools.CaptureUnavailable):
+            tools.capture_packets()
+
+
+def test_capture_packets_wraps_sniff_errors_as_capture_unavailable():
+    fake_scapy = MagicMock()
+    fake_scapy.sniff.side_effect = OSError("Permission denied")
+
+    with _patched_scapy(fake_scapy):
+        with pytest.raises(tools.CaptureUnavailable):
+            tools.capture_packets()
+
+
+def test_summarize_capture_packets_empty():
+    assert tools.summarize_capture_packets([]) == {
+        "total_packets": 0,
+        "total_bytes": 0,
+        "duration": 0.0,
+        "protocol_counts": {},
+        "top_talkers": [],
+    }
+
+
+def test_summarize_capture_packets_counts_bytes_and_talkers():
+    packets = [
+        {"ts": 10.0, "proto": "TCP", "src": "1.1.1.1", "length": 100},
+        {"ts": 11.0, "proto": "TCP", "src": "1.1.1.1", "length": 50},
+        {"ts": 12.0, "proto": "UDP", "src": "2.2.2.2", "length": 200},
+        {"ts": 13.0, "proto": "ARP", "src": "-", "length": 60},
+    ]
+    summary = tools.summarize_capture_packets(packets)
+    assert summary["total_packets"] == 4
+    assert summary["total_bytes"] == 410
+    assert summary["duration"] == 3.0
+    assert summary["protocol_counts"] == {"TCP": 2, "UDP": 1, "ARP": 1}
+    assert summary["top_talkers"][0] == ("1.1.1.1", 2)
+    assert all(addr != "-" for addr, _ in summary["top_talkers"])
+
+
+def test_summarize_capture_packets_top_talkers_capped_at_five():
+    packets = [{"ts": float(i), "proto": "TCP", "src": f"10.0.0.{i}", "length": 1} for i in range(7)]
+    summary = tools.summarize_capture_packets(packets)
+    assert len(summary["top_talkers"]) == 5

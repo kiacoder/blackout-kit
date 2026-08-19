@@ -25,6 +25,7 @@ dependencies = [
     "pystray>=0.19.3",
     "Pillow>=10.0.0",
     "customtkinter>=5.2.2",
+    "scapy>=2.5.0",
 ]
 
 [project.scripts]
