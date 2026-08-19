@@ -1,6 +1,6 @@
 # Security Policy
 
-Blackout Kit is a censorship-circumvention toolkit that can affect user privacy, device networking, and trust decisions about upstream servers. Its security model matters because incorrect claims or unsafe local behavior can put users at risk.
+Blackout Kit is a network security and bypass toolkit that can affect user privacy, device networking, and trust decisions about upstream servers. Its security model matters because incorrect claims or unsafe local behavior can put users at risk.
 
 This document describes the **current** security posture of the shipped codebase.
 

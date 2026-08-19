@@ -8,7 +8,7 @@ If you want to contribute code, package releases, or maintain docs, read [../CON
 
 ## What Blackout Kit does
 
-Blackout Kit is a **local** censorship-circumvention toolkit.
+Blackout Kit is a **network security and bypass toolkit**.
 
 It helps you:
 

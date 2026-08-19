@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "blackout-kit"
 version = "1.1.1"
-description = "Local censorship-circumvention toolkit for Windows and Linux"
+description = "Network security and bypass toolkit for Windows and Linux"
 readme = "README.md"
 authors = [
     { name = "Kiacoder" }

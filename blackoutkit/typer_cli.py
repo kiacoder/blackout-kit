@@ -11,7 +11,7 @@ from .theme import ask_choice, ask_int, ask_text, console, is_interactive, print
 
 app = typer.Typer(
     name="blackout",
-    help="Blackout Kit — DPI Bypass & Censorship Circumvention Toolkit",
+    help="Blackout Kit — Network Security & Bypass Toolkit",
     add_completion=False,
     no_args_is_help=False,
     rich_markup_mode="rich"

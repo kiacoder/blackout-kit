@@ -112,7 +112,7 @@ BANNER = f"""[bold red]
 [bold white]                    ██╔═██╗ ██║   ██║   [/bold white]
 [bold white]                    ██║  ██╗██║   ██║   [/bold white]
 [bold white]                    ╚═╝  ╚═╝╚═╝   ╚═╝   [/bold white]
-[dim]                     v{__version__} — DPI Bypass & Freedom Toolkit[/dim]"""
+[dim]                     v{__version__} — Network Toolkit[/dim]"""
 
 
 # ──────────────────────────────── Public helpers ──────────────────────────────

@@ -15,7 +15,7 @@
                   ╚═╝  ╚═╝╚═╝   ╚═╝
 ```
 
-**Blackout Kit (`blackout-kit`) — Local Censorship-Circumvention Toolkit**
+**Blackout Kit (`blackout-kit`) — Network Security & Bypass Toolkit**
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
@@ -25,7 +25,7 @@
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
-*A Windows-first desktop and CLI toolkit that coordinates local bypass engines, proxy configuration, diagnostics, and targeted recovery. Linux supports a smaller managed runtime subset for XRay, TUN, Hysteria2, and TUIC.*
+*A network security and bypass toolkit for Windows and Linux. 17+ engines, MCP-integrated diagnostics, country-aware routing, smart config rotation, encrypted vault, and self-healing crash recovery.*
 
 **Country profiles:** 🇮🇷 Iran · 🇷🇺 Russia · 🇨🇳 China · 🇮🇶 Iraq · 🇬🇧 United Kingdom · 🇺🇸 United States · 🇪🇺 Europe
 
