@@ -390,12 +390,18 @@ def verify_bins_integrity() -> dict[str, str]:
 
 # ──────────────────────────── Public API ─────────────────────────
 
+_check_installed_cache = None
+
 def check_installed() -> dict[str, bool]:
     """Return {key: True/False} — True when all expected output_bins files exist in bins/."""
+    global _check_installed_cache
+    if _check_installed_cache is not None:
+        return _check_installed_cache.copy()
     status = {}
     for key, info in BIN_REGISTRY.items():
         status[key] = all((BINS_DIR / b).exists() for b in info.output_bins)
-    return status
+    _check_installed_cache = status
+    return status.copy()
 
 
 def get_latest_version(key: str) -> str | None:
@@ -424,6 +430,9 @@ def download_binary(
 
     Returns (True, success_message) or (False, error_message).
     """
+    global _check_installed_cache
+    _check_installed_cache = None
+    
     info = BIN_REGISTRY.get(key)
     if not info:
         return False, f"Unknown binary key: '{key}'. Valid keys: {', '.join(BIN_REGISTRY)}"

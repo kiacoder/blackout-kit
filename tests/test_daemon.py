@@ -28,6 +28,7 @@ def _configure_daemon_loop(monkeypatch, tmp_path, outcomes, waits):
     from blackoutkit.engines import xray
     from blackoutkit import settings
     from blackoutkit import tray
+    from blackoutkit import readiness
     from blackoutkit.scanner import proxy_tester
 
     _FakeXRayEngine.outcomes = list(outcomes)
@@ -40,6 +41,7 @@ def _configure_daemon_loop(monkeypatch, tmp_path, outcomes, waits):
         "reconnect_max_delay": 60,
         "gdpi_backend": "legacy",
     })
+    monkeypatch.setattr(readiness, "evaluate", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(tray, "start_tray", lambda *_args: None)
     monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: None)
     monkeypatch.setattr(daemon.subprocess, "Popen", MagicMock())
@@ -193,3 +195,31 @@ def test_reconnect_delay_settings_are_bounded():
     assert settings.validate("reconnect_max_delay", 3601) == (False, "must be 1–3600")
     assert settings.validate("reconnect_initial_delay", 2) == (True, "")
     assert settings.validate("reconnect_max_delay", 60) == (True, "")
+
+
+def test_start_appends_env_overrides_to_background_command(monkeypatch, tmp_path):
+    commands = []
+    monkeypatch.setattr(daemon, "APP_DATA_DIR", tmp_path)
+    monkeypatch.setattr(daemon, "PID_FILE", tmp_path / "daemon.pid")
+    monkeypatch.setattr(daemon, "STATE_FILE", tmp_path / "daemon_state.json")
+    monkeypatch.setattr(daemon, "get_pid", lambda: 4242 if (tmp_path / "daemon.pid").exists() else None)
+    monkeypatch.setattr(daemon.time, "sleep", lambda *_args: None)
+
+    def fake_run(cmd, **_kwargs):
+        commands.append(cmd)
+        (tmp_path / "daemon.pid").write_text("4242", encoding="utf-8")
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(daemon.subprocess, "run", fake_run)
+    monkeypatch.setattr(daemon, "is_process_alive", lambda pid: pid == 4242)
+
+    pid = daemon.start("xray", env_overrides={"BLACKOUT_COUNTRY": "RU"})
+
+    assert pid == 4242
+    assert any("--env-overrides-json" in part for part in commands[0])
+
+
+def test_xray_fragment_accepts_empty_string():
+    from blackoutkit import settings
+
+    assert settings.validate("xray_fragment", "") == (True, "")

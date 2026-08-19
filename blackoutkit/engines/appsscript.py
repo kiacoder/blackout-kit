@@ -105,12 +105,16 @@ def _relay_request(gas_id: str, target_url: str, method: str,
         headers={
             "Content-Type": "application/json",
             "User-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "Accept-Encoding": "gzip",
         },
     )
     try:
         ctx = ssl.create_default_context()
         with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT, context=ctx) as resp:
             raw = resp.read()
+            if resp.info().get('Content-Encoding') == 'gzip':
+                import gzip
+                raw = gzip.decompress(raw)
         return json.loads(raw)
     except Exception:
         return None

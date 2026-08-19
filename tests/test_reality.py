@@ -140,10 +140,16 @@ def test_normal_tls_vless_keeps_certificate_policy_and_websocket_stream():
 
     stream = outbound["streamSettings"]
     assert stream["security"] == "tls"
-    assert stream["tlsSettings"]["allowInsecure"] is False
+    assert stream["tlsSettings"] == {"serverName": "cdn.example", "fingerprint": "chrome"}
     assert stream["wsSettings"]["path"] == "/ws"
     assert "realitySettings" not in stream
     policy.assert_called_once_with("server.example", 443, "speed")
+
+
+def test_cert_probe_supports_python_tls_enum_aliases():
+    from blackoutkit import cert_bypass as cb
+
+    assert cb._TLS12 == cb.ssl.TLSVersion.TLSv1_2
 
 
 def test_invalid_reality_config_fails_before_certificate_probe():

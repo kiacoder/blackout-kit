@@ -52,7 +52,7 @@ def get_pid() -> int | None:
         return None
 
 
-def start(engine_name: str) -> int:
+def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
     """
     Launch a background daemon process for the given engine.
     Returns the PID of the spawned process.
@@ -96,6 +96,8 @@ def start(engine_name: str) -> int:
             if os.path.exists(exe_w):
                 exe = exe_w
             cmd = [exe, str(entry), "_daemon_run", "--engine", engine_name]
+        if env_overrides:
+            cmd.extend(["--env-overrides-json", json.dumps(env_overrides, separators=(",", ":"))])
 
         PID_FILE.unlink(missing_ok=True)
         STATE_FILE.unlink(missing_ok=True)
@@ -164,7 +166,22 @@ def stop() -> bool:
         LOCK_FILE.unlink(missing_ok=True)
         return False
 
-    # Create a shutdown request file so the daemon gracefully exits
+    ipc_file = APP_DATA_DIR / "daemon.ipc"
+    if ipc_file.exists():
+        try:
+            port = int(ipc_file.read_text().strip())
+            import socket
+            with socket.create_connection(("127.0.0.1", port), timeout=2.0) as conn:
+                conn.sendall(b"STOP\n")
+            # Wait for graceful shutdown
+            for _ in range(30):
+                if not ipc_file.exists():
+                    return True
+                time.sleep(0.1)
+        except Exception:
+            pass
+
+    # Create a shutdown request file as fallback
     (APP_DATA_DIR / "daemon.stop.request").touch(exist_ok=True)
 
     try:
@@ -178,21 +195,30 @@ def stop() -> bool:
         parent.terminate()
         # Wait a bit for it to cleanup
         try:
-            parent.wait(timeout=3)
+            parent.wait(3)
         except psutil.TimeoutExpired:
+            for child in parent.children(recursive=True):
+                try:
+                    child.kill()
+                except Exception:
+                    pass
             parent.kill()
     except ImportError:
-        try:
-            import signal
-            os.kill(pid, signal.SIGTERM)
-        except Exception:
-            pass
+        import ctypes
+        PROCESS_TERMINATE = 1
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
+        if handle:
+            ctypes.windll.kernel32.TerminateProcess(handle, -1)
+            ctypes.windll.kernel32.CloseHandle(handle)
     except Exception:
         pass
 
+    time.sleep(1)
     PID_FILE.unlink(missing_ok=True)
-    STATE_FILE.unlink(missing_ok=True)
     LOCK_FILE.unlink(missing_ok=True)
+    STATE_FILE.unlink(missing_ok=True)
+    ipc_file.unlink(missing_ok=True)
+    (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
     return True
 
 
@@ -220,11 +246,39 @@ def get_state() -> dict | None:
 
 
 def read_logs(lines: int = 50) -> str:
+    """Return the last N lines of the daemon log."""
     if not LOG_FILE.exists():
-        return "(no logs yet)"
-    content = LOG_FILE.read_text(encoding="utf-8", errors="replace")
-    all_lines = content.splitlines()
-    return "\n".join(all_lines[-lines:])
+        return "No daemon logs available."
+    try:
+        content = LOG_FILE.read_text(encoding="utf-8", errors="replace")
+        all_lines = content.splitlines()
+        return "\n".join(all_lines[-lines:])
+    except Exception as exc:
+        return f"Could not read log file: {exc}"
+
+
+def get_recent_events(lines: int = 5) -> list[str]:
+    """Parse the daemon log for connection lifecycle events."""
+    if not LOG_FILE.exists():
+        return []
+    try:
+        content = LOG_FILE.read_text(encoding="utf-8", errors="replace")
+        events = []
+        for line in reversed(content.splitlines()):
+            if "Starting engine" in line or "Daemon shutting down" in line or "stopped unexpectedly" in line or "Proxy port closed" in line or "Reconnecting" in line:
+                # Strip out the typical format "YYYY-MM-DD HH:MM:SS,ms - INFO - "
+                parts = line.split(" - ", 2)
+                if len(parts) >= 3:
+                    ts = parts[0].split(",")[0].split(" ")[1] # Just HH:MM:SS
+                    msg = parts[2]
+                    events.append(f"{ts} - {msg}")
+                else:
+                    events.append(line)
+            if len(events) >= lines:
+                break
+        return list(reversed(events))
+    except Exception:
+        return []
 
 
 # ─────────────────────────── Daemon runner ───────────────────────
@@ -278,6 +332,7 @@ def _write_daemon_state(
     last_failure: str | None = None,
     next_retry_delay: int | None = None,
     started: str | None = None,
+    io_bytes: tuple[int, int] | None = None,
 ) -> None:
     """Persist a state snapshot owned by the daemon, not an individual engine."""
     _ensure_dir()
@@ -290,6 +345,8 @@ def _write_daemon_state(
         "last_failure": last_failure,
         "next_retry_delay": next_retry_delay,
     }
+    if io_bytes is not None:
+        state["io_bytes"] = io_bytes
     try:
         temporary = STATE_FILE.with_suffix(".tmp")
         temporary.write_text(json.dumps(state), encoding="utf-8")
@@ -298,13 +355,20 @@ def _write_daemon_state(
         pass
 
 
-def run_daemon_loop(engine_name: str):
+def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     """
     Internal: runs inside the background process.
     Starts the requested engine(s) and monitors them.
     """
-    import os
-    import sys
+    env_overrides = {}
+    if env_overrides_json:
+        try:
+            env_overrides = json.loads(env_overrides_json)
+        except json.JSONDecodeError:
+            env_overrides = {}
+    for key, value in env_overrides.items():
+        os.environ[key] = str(value)
+
     global cfg_lock, _shutdown_requested
     _shutdown_requested = False
     cfg_lock = _threading.Lock()
@@ -420,29 +484,39 @@ def run_daemon_loop(engine_name: str):
             log.error("Linux kill switch could not be enabled for %s; refusing to start the tunnel.", name)
             return []
 
+        import concurrent.futures
         engines = list(factory())
         started = []
-        for eng in engines:
-            if eng.start():
-                log.info(f"{eng.name} started (PID {eng.pid})")
-                started.append(eng)
-            else:
-                # Treat any failure in the group as a full group failure.
-                # e.g. SNI+XRay: SNI ok but XRay fails → proxy port never opens.
-                # Stop already-started engines and let emergency mode try the next one.
-                log.warning(
-                    f"{eng.name} failed — rolling back partial group start."
-                )
-                for already_started in started:
-                    try:
-                        already_started.stop()
-                    except Exception:
-                        pass
-                if linux_kill_switch:
-                    sec.disable_kill_switch()
-                    sec.clear_linux_kill_switch_endpoint(name)
-                return []
-        return started
+        failed = False
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(engines) if engines else 1) as executor:
+            future_to_eng = {executor.submit(eng.start): eng for eng in engines}
+            for future in concurrent.futures.as_completed(future_to_eng):
+                eng = future_to_eng[future]
+                try:
+                    success = future.result()
+                    if success:
+                        log.info(f"{eng.name} started (PID {eng.pid})")
+                        started.append(eng)
+                    else:
+                        failed = True
+                except Exception as exc:
+                    log.error(f"{eng.name} start exception: {exc}")
+                    failed = True
+
+        if failed or len(started) != len(engines):
+            log.warning("One or more engines failed — rolling back partial group start.")
+            for already_started in started:
+                try:
+                    already_started.stop()
+                except Exception:
+                    pass
+            if linux_kill_switch:
+                sec.disable_kill_switch()
+                sec.clear_linux_kill_switch_endpoint(name)
+            return []
+
+        return engines
 
     active_engine_name = engine_name
     if engine_name == "emergency":
@@ -587,12 +661,31 @@ def run_daemon_loop(engine_name: str):
         return False
 
     try:
+        # Track previous run total bytes in case of engine restarts
+        accumulated_rx = 0
+        accumulated_tx = 0
+
         while _wait_for_daemon_delay(retry_interval, my_pid):
             alive = [engine for engine in active if engine.is_running()]
             if not alive:
                 if not _reconnect("All engines stopped unexpectedly."):
                     break
                 continue
+                
+            rx, tx = 0, 0
+            try:
+                import psutil
+                for engine in alive:
+                    if engine.pid:
+                        try:
+                            p = psutil.Process(engine.pid)
+                            io = p.io_counters()
+                            rx += io.read_bytes
+                            tx += io.write_bytes
+                        except Exception:
+                            pass
+            except ImportError:
+                pass
 
             with cfg_lock:
                 proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
@@ -625,6 +718,7 @@ def run_daemon_loop(engine_name: str):
                 restarts=restart_count,
                 status="connected",
                 started=daemon_started,
+                io_bytes=(accumulated_rx + rx, accumulated_tx + tx)
             )
 
     except KeyboardInterrupt:

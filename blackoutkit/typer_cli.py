@@ -175,6 +175,7 @@ def connect(
     engine: str = typer.Option(None, "--engine", help="Engine to use"),
     background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
     iran: bool = typer.Option(False, "--iran", help="TIC 2026 evasion profile"),
+    russia: bool = typer.Option(False, "--russia", help="Russia transport preset"),
 ):
     """Smart connect — uses a recommendation when no engine is specified."""
     from .cli import cmd_connect
@@ -187,6 +188,7 @@ def connect(
     args.engine = engine
     args.background = background
     args.iran = iran
+    args.russia = russia
     cmd_connect(args)
 
 
@@ -615,6 +617,7 @@ def start(
     engine: str = typer.Option(None, "--engine", help="Engine to use"),
     background: bool = typer.Option(False, "--background", "-d", help="Run as daemon"),
     iran: bool = typer.Option(False, "--iran", help="TIC 2026 profile"),
+    russia: bool = typer.Option(False, "--russia", help="Russia transport preset"),
 ):
     """Start a selected bypass engine."""
     from .cli import cmd_start
@@ -628,6 +631,7 @@ def start(
     args.engine = None
     args.background = background
     args.iran = iran
+    args.russia = russia
     cmd_start(args)
 
 @app.command()
@@ -746,7 +750,7 @@ def country_status(ctx: typer.Context):
         cmd_country(args)
 
 @country_app.command("set")
-def country_set(code: str = typer.Argument(..., help="Country code: IR, CN, IQ, GB, US, or EU")):
+def country_set(code: str = typer.Argument(..., help="Country code: IR, RU, CN, IQ, GB, US, or EU")):
     """Pin the active country profile."""
     from .cli import cmd_country
     class DummyArgs:
@@ -899,12 +903,14 @@ def bins_update():
 
 @app.command(name="_daemon_run", hidden=True)
 def daemon_run(
-    engine: str = typer.Option(..., "--engine")
+    engine: str = typer.Option(..., "--engine"),
+    env_overrides_json: str = typer.Option(None, "--env-overrides-json", hidden=True),
 ):
     from .cli import cmd_daemon_run
     class DummyArgs: pass
     args = DummyArgs()
     args.engine = engine
+    args.env_overrides_json = env_overrides_json
     cmd_daemon_run(args)
 
 @app.command()

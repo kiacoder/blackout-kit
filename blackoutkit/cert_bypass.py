@@ -22,6 +22,10 @@ import tempfile
 import threading
 import time
 from dataclasses import asdict, dataclass
+
+_TLS12 = getattr(ssl.TLSVersion, "TLS1_2", None)
+if _TLS12 is None:
+    _TLS12 = getattr(ssl.TLSVersion, "TLSv1_2")
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -239,7 +243,7 @@ def check_host_cert(
 
     # ── Try strict TLS handshake ──────────────────────────────────
     ctx_strict  = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx_strict.minimum_version = ssl.TLSVersion.TLS1_2
+    ctx_strict.minimum_version = _TLS12
     ctx_strict.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
     cert_ok     = False
     cert_info:  dict = {}
@@ -281,7 +285,7 @@ def check_host_cert(
     # ── If strict failed, try lenient to still get cert details ──
     if not cert_ok and not cert_info:
         ctx_lenient = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        ctx_lenient.minimum_version = ssl.TLSVersion.TLS1_2
+        ctx_lenient.minimum_version = _TLS12
         ctx_lenient.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
         ctx_lenient.check_hostname = False
         ctx_lenient.verify_mode    = ssl.CERT_NONE

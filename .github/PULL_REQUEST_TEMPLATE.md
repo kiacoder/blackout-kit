@@ -1,28 +1,78 @@
-## Description
-Provide a brief description of the changes in this PR.
+## Summary
 
-## Related Issue
-Link to the issue that this PR addresses, if applicable.
+Describe what changed and why.
 
-## Motivation and Context
-Why is this change required? What problem does it solve?
+## Scope
 
-## How Has This Been Tested?
-Please describe in detail how you tested your changes.
-Include details of your testing environment, and the tests you ran to see how your change affects other areas of the code, etc.
-Mention engine type(s), country profile assumptions, and whether you tested HTTP proxy, SOCKS proxy, daemon mode, or non-interactive fallback paths.
+What does this PR affect?
 
-## Screenshots (if appropriate):
+- [ ] CLI behavior
+- [ ] GUI behavior
+- [ ] MCP surface
+- [ ] Engine/runtime behavior
+- [ ] Downloader / runtime assets
+- [ ] Config / vault behavior
+- [ ] Recovery / `blackout fix`
+- [ ] Packaging / release flow
+- [ ] Documentation / help text only
 
-## Types of changes
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
-- [ ] Documentation update
-- [ ] Hardening / Security update
+## Platform impact
 
-## Checklist:
-- [ ] My code follows the code style of this project.
-- [ ] My change requires a change to the documentation.
-- [ ] I have updated the documentation accordingly.
-- [ ] I have read the **CONTRIBUTING** document (if applicable).
+- [ ] Windows
+- [ ] Linux
+- [ ] Both
+- [ ] No runtime/platform impact
+
+## Engine / workflow impact
+
+List the engine(s), protocol(s), or workflow(s) affected.
+
+Examples: `xray`, `tun`, `gdpi`, `warp`, `psiphon`, `hysteria2`, `tuic`, config import, route ranking, readiness, vault, MCP, packaged exe.
+
+## Boundary check
+
+If relevant, explain how this PR preserves the important project boundaries:
+
+- local readiness vs remote success
+- targeted recovery vs destructive reset
+- Linux-supported kill switch vs unsupported Windows legacy rules
+- accurate platform scope
+- accurate runtime asset naming and provenance
+
+## Testing
+
+Describe what you tested.
+
+Include concrete commands when possible.
+
+Examples:
+
+- `python blackout.py version`
+- `python blackout.py --help`
+- `python blackout.py help quick_start`
+- `python blackout.py ready xray`
+- `python -m pytest --rootdir=. tests`
+
+Also mention whether you tested:
+
+- [ ] foreground CLI
+- [ ] background daemon path
+- [ ] interactive terminal path
+- [ ] non-interactive path
+- [ ] Windows-specific path
+- [ ] Linux-specific path
+- [ ] docs/help output alignment
+
+## Documentation
+
+- [ ] No documentation change needed
+- [ ] I updated public docs (`README`, guides, or `SECURITY.md`)
+- [ ] I updated in-app help text if command behavior or wording changed
+
+## Screenshots / logs
+
+Add screenshots or sanitized logs if they help explain the change.
+
+## Notes for reviewers
+
+Anything reviewers should pay special attention to?

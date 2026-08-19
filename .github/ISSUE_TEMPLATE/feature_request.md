@@ -1,22 +1,86 @@
 ---
 name: Feature request
-about: Suggest an idea for Blackout Kit
+about: Suggest an improvement for Blackout Kit
 title: ''
 labels: 'enhancement'
 assignees: ''
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I'm always frustrated when [...]
+## Problem
 
-**Describe the solution you'd like**
-A clear and concise description of what you want to happen.
+What problem are you trying to solve?
 
-**Describe alternatives you've considered**
-A clear and concise description of any alternative solutions or features you've considered.
+## Proposed improvement
 
-**Additional context**
-Add any other context or screenshots about the feature request here.
+Describe the behavior you want.
 
-**Region / censorship context (optional but helpful)**
-If this request is region-specific, note the country profile, ISP, and whether the issue affects TCP-only engines, SOCKS proxies, QUIC engines, or full-tunnel modes.
+## Why this belongs in Blackout Kit
+
+Explain why this should live in the product instead of being left to an upstream engine, an external tool, or local documentation.
+
+## Category
+
+- [ ] CLI / UX
+- [ ] GUI
+- [ ] Engine/runtime behavior
+- [ ] Recovery / diagnostics
+- [ ] Packaging / install flow
+- [ ] MCP tooling
+- [ ] Documentation / contributor workflow
+- [ ] Security / trust boundary
+
+## Platform scope
+
+Which platform should this affect?
+
+- [ ] Windows only
+- [ ] Linux only
+- [ ] Both
+- [ ] Not sure
+
+## Engine or workflow context
+
+If relevant, which engine, protocol, or workflow is this about?
+
+Examples:
+
+- `xray`
+- `tun`
+- `gdpi`
+- `warp`
+- `psiphon`
+- `hysteria2`
+- `tuic`
+- config import
+- vault / encryption
+- `blackout fix`
+- `blackout route`
+- packaged exe / release assets
+
+## Constraints or risks
+
+Are there any important boundaries we should preserve?
+
+Examples:
+
+- must remain local-only
+- must not imply remote validation
+- must not broaden recovery into destructive reset behavior
+- must keep Linux/Windows scope explicit
+- must not weaken secret handling
+
+## Alternatives considered
+
+What alternatives have you thought about already?
+
+## Region / censorship context
+
+If this is region-specific, include:
+
+- country profile
+- ISP or network type
+- whether this is about DPI, remote blocking, DNS interference, or runtime packaging
+
+## Additional notes
+
+Anything else maintainers should know?

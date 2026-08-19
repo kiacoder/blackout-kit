@@ -1,195 +1,179 @@
-# Blackout Kit — Full Roadmap & TODO
+# Blackout Kit — Roadmap
 
-Items marked ✅ are implemented. Ranks follow the project scale: Common → Uncommon → Rare → Unique → Epic → Heroic → Legendary → Myth.
+This roadmap reflects the **current 1.1.1 codebase** and separates shipped work from next-step work more clearly.
 
----
-
-## 🛡️ AUDIT & HARDENING (v1.0.1)
-
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| 10-Agent Autonomous Audit | ✅ Done | Epic | Full codebase review |
-| Fix Zip Slip Path Traversal | ✅ Done | Heroic | `updater.py` |
-| Fix Subprocess Deadlocks | ✅ Done | Epic | `DEVNULL` instead of `PIPE` |
-| Localization-Independent Parsing | ✅ Done | Epic | `psutil` & `PowerShell` in `tools.py` |
-| Graceful Go Engine Shutdowns | ✅ Done | Epic | Prevents routing/DNS corruption |
-| Concurrent Cache Safety | ✅ Done | Rare | Atomic `replace()` |
-| Windows UAC Awareness | ✅ Done | Rare | Admin checks in network tools |
+Ranks in historical project language remain useful as flavor, but this roadmap now prioritizes factual status over hype.
 
 ---
 
-## 🛡️ BYPASS ENGINES
+## Current release line: 1.1.1 stabilization
 
-Windows exposes the full engine catalog below. Linux x86_64 supports only XRay,
-XRay → sing-box TUN, Hysteria2, and TUIC through the managed `blackout-engine`
-runner; availability still depends on local prerequisites and a compatible saved
-configuration.
+The current line is focused on **stabilization, correctness, packaging, documentation accuracy, and boundary hardening**.
 
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| SNI Spoofing (TCP Sequence Injection) | ✅ Done | Epic | Windows-local SNI component; network effectiveness varies |
-| XRay-core (Trojan + VLESS, TLS and REALITY) | ✅ Done | Epic | Dynamic transport-aware config generation; REALITY is client-side only |
-| GoodbyeDPI (Windows TCP handling) | ✅ Done | Rare | Legacy backend is the stable default; native Go/WinDivert backend is experimental |
-| Psiphon multi-protocol | ✅ Done | Rare | Windows Psiphon Tunnel Core path with configured country preference |
-| Cloudflare WARP | ✅ Done | Rare | Windows WARP client path using warp-plus |
-| Tor / Onion routing | ✅ Done | Rare | Local SOCKS5 listener on :9050 when the supplied Tor runtime starts |
-| TUN mode | ✅ Done | Rare | Windows runs sing-box; Linux uses XRay → sing-box through the managed runner |
-| IKEv2 / L2TP / SSTP / PPTP | ✅ Done | Rare | Windows built-in VPN, no extra binary |
-| WireGuard (real monitoring) | ✅ Done | Epic | Real sc query thread, no fake sentinel |
-| OpenVPN (startup verified) | ✅ Done | Epic | Reads log for "Initialization Sequence Completed" |
-| SoftEther (real monitoring) | ✅ Done | Epic | vpncmd AccountStatusGet polling |
-| mhrv (embedded HTTP GAS relay) | ✅ Done | Rare | HTTP :8085; HTTPS CONNECT is intentionally unsupported |
-| Google Apps Script relay | ✅ Done | Rare | HTTP relay through configured Google Apps Script endpoints; HTTPS CONNECT is unsupported |
-| **Hysteria 2** | ✅ Done | Rare | QUIC proxy through sing-box from a compatible saved configuration, selectable as `hysteria2` |
-| **TUIC** | ✅ Done | Rare | QUIC proxy through sing-box from a compatible saved configuration, selectable as `tuic` |
-| **XRay client-side VLESS REALITY** | ✅ Done | Rare | Imports standard VLESS REALITY URIs for XRay/TUN; it does not provide server setup, anonymity, or a detection-resistance guarantee. |
-| **ShadowTLS** | 🔜 v1.2 | — | Evaluate a verified ShadowTLS configuration path |
-| **ShadowSocks + Obfs4** | 🔜 v1.2 | — | Evaluate sing-box support and interoperability |
-| **XTLS Direct Read/Write** | 🔜 v1.3 | — | Evaluate XRay performance-mode support and safety boundaries |
-| **ECH (Encrypted Client Hello)** | 🔜 future | — | Research experimental client support and network compatibility |
+That includes work already visible in the codebase such as:
+
+- Typer-based public CLI routing
+- Windows packaged executable and Linux runtime build pipeline
+- Linux managed runtime support for `xray`, `tun`, `hysteria2`, and `tuic`
+- local readiness checks
+- route recommendation dashboard
+- targeted recovery and recovery audit history
+- machine-bound vault storage for proxy URIs and supported VPN secrets
+- MCP server with an explicitly constrained tool surface
+- client-side VLESS REALITY handling
+- experimental native GDPI backend with `legacy` kept as the default
 
 ---
 
-## 🇮🇷 IRAN-SPECIFIC EVASION (TIC 2026)
+## Shipped capabilities
 
-Iran operates centralized "chokepoint" DPI at TIC gateways.
-During unrest they switch to White List mode (NIN — National Information Network).
-Standard TCP fragmentation NO LONGER WORKS — their hardware reassembles TCP before inspecting SNI.
+### Core product and UX
 
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| TCP Sequence Injection (out-of-window decoy) | ✅ Done | Epic | SNI spoofer's core mechanism |
-| XRay fingerprint setting | ✅ Done | Rare | PRIVATE applies a random XRay fingerprint; it does not guarantee camouflage or bypass |
-| Configurable fake SNI | ✅ Done | Rare | Windows SNI stack supports a configured local fake-SNI value; network effectiveness varies |
-| `blackout connect --iran` profile | ✅ Done | Rare | Applies documented local XRay/SNI settings while respecting an existing custom fake SNI |
-| **TLS Record-Layer Fragmentation** | ✅ Done | Rare | XRay `fragment` mode is generated from `xray_fragment` |
-| **DoH bootstrapping at startup** | ✅ Done | Rare | Resolves XRay proxy hosts through Cloudflare DoH before connection |
-| Active probing resistance | 🔜 v1.2 | — | Research verified server-side approaches; no client-only guarantee |
-| Iran White List mode survival (NIN) | 🔜 v1.2 | — | Research network-specific fallback options; availability cannot be assumed |
+| Item | Status | Notes |
+|---|---|---|
+| Typer public CLI | Done | `blackoutkit/typer_cli.py` is the current public CLI entrypoint |
+| Legacy dispatcher compatibility | Done | Typer forwards into the established `cli.py` command implementations |
+| Zero-flag launcher flow | Done | Launcher tries GUI first and falls back to interactive terminal menu |
+| Route recommendation dashboard | Done | Local-only ranking via `blackout route` |
+| Local readiness checks | Done | `blackout ready [engine]` and internal gating before connect/start paths |
+| Live status view | Done | `blackout status --watch` |
+| Desktop GUI | Done | Windows-only `CustomTkinter` GUI surface |
+| MCP server | Done | Documented stdio tool surface in `blackoutkit/mcp_server.py` |
 
----
+### Connection/runtime surface
 
-## 🔒 PRIVACY & SECURITY
+| Item | Windows | Linux | Notes |
+|---|---|---|---|
+| SNI path | Done | Not supported | Windows-only native DLL-backed SNI runtime |
+| XRay path | Done | Done | Linux uses the managed `blackout-engine` runner |
+| TUN path | Done | Done | Linux requires root and its managed runtime path |
+| Hysteria2 | Done | Done | sing-box proxy mode via native DLL or Linux runner |
+| TUIC | Done | Done | sing-box proxy mode via native DLL or Linux runner |
+| WARP | Done | Not supported | Current runtime is backed by `blackout_warp.dll` |
+| Psiphon | Done | Not supported | Current runtime is backed by `blackout_warp.dll` |
+| GoodbyeDPI legacy | Done | Not supported | Stable default backend |
+| GoodbyeDPI native | Experimental | Not supported | Product keeps `legacy` as the default |
+| Tor | Done | Not a primary supported path | Requires a supplied runtime |
+| Windows VPN engines | Done | Not supported | IKEv2, WireGuard, OpenVPN, SoftEther |
+| Apps Script relay | Done | Limited | HTTP relay path only |
+| mhrv relay | Done | Limited | Embedded HTTP relay; not HTTPS MITM |
 
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| Security modes (Speed / Private / LEGEND) | ✅ Done | Rare | `blackout mode speed\|private\|legend` |
-| Kill switch (Linux nftables / iptables) | ✅ Done | Rare | Endpoint-scoped Linux rules with iptables fallback; unavailable on Windows |
-| Config encryption (AES-256-GCM) | ✅ Done | Rare | Machine-derived local encryption; not portable and not a replacement for device security |
-| Windows Defender exclusion | ✅ Done | Rare | `blackout doctor --fix-av` |
-| Stability tracking (latency + trend) | ✅ Done | Rare | Per-engine history |
-| Multi-hop (XRay → Tor) | 🔜 v1.2 | — | Requires an explicit verified chain implementation before being documented as available |
-| XRay fingerprint setting | ✅ Done | Rare | Configures the XRay fingerprint; it does not guarantee anti-fingerprinting results |
-| **DoH bootstrapping** | ✅ Done | Rare | Resolves configured XRay proxy hosts through DoH before connection when required |
-| **Config encryption** | ✅ Done | Rare | AES-256-GCM encryption with a machine-derived key; not portable |
-| **Triple-hop / Cascaded VPN** | 🔜 v1.2 | — | Chain 3+ proxies |
-| **WebRTC + IPv6 leak protection** | 🔜 v1.2 | — | Windows Firewall rules |
-| **DNS over QUIC (DoQ)** | 🔜 v1.2 | — | Faster than DoH |
-| **Process-level split tunneling** | 🔜 v1.2 | — | Route per-app via WFP driver |
-| **PFS policy review** | 🔜 v1.3 | — | Document protocol-specific forward-secrecy properties and configuration limits |
-| **Post-Quantum Cryptography (PQC)** | 🔜 future | — | Research upstream support and compatibility before exposing a setting |
+### Safety, repair, and storage
 
----
-
-## 🔧 SELF-HEALING & NETWORK REPAIR
-
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| Doctor (self-diagnosis + auto-fix) | ✅ Done | Rare | `blackout doctor [--fix]` |
-| Winsock + TCP/IP stack reset | ✅ Done | Rare | Explicit `blackout fix --full-stack-reset` emergency option |
-| DNS flush | ✅ Done | Rare | `blackout tools dns-flush` |
-| DNS preset switching | ✅ Done | Rare | Cloudflare / Shecan / Electro / 403 / Begzar |
-| Network adapter list | ✅ Done | Uncommon | `blackout tools adapters` |
-| MTU detection | ✅ Done | Uncommon | `blackout tools mtu` |
-| Ping + traceroute | ✅ Done | Uncommon | TCP-based |
-| Hotspot sharing | ✅ Done | Uncommon | Windows Mobile Hotspot toggle |
-| ICS guidance (share VPN over hotspot) | ✅ Done | Uncommon | Detects an eligible Windows adapter and prints manual ICS steps; it does not configure ICS |
-| **`blackout fix` shorthand** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
-| **TUN/TAP / Wintun driver reset** | ✅ Done | Rare | `blackout fix` restarts only its stale deterministic `BlackoutKit-TUN` adapter; physical, WireGuard, and third-party adapters are excluded |
-| **Stale routing table flush** | ✅ Done | Rare | Default removes only stale Blackout virtual-adapter routes; `--full-route-reset` keeps `route -f` explicit |
-| **DNS hijack recovery** | ✅ Done | Rare | Restores DHCP DNS only on connected physical adapters still pointed at loopback DNS |
-| **Real-time fixer checklist** | ✅ Done | Rare | `blackout fix` shows a live Rich checklist for each repair step |
-| **Auto-reconnect with backoff** | ✅ Done | Rare | Daemon retries with cancellable capped exponential backoff; targeted daemon recovery preserves proxy/routes outside Blackout ownership |
-| **Certificate store cleanup** | N/A | — | mhrv is an HTTP relay and never creates, trusts, or installs a CA certificate |
-| **ARP / neighbor cache flush** | ✅ Done | Rare | Explicit only: `tools arp-flush` or `fix --flush-arp`; never daemon recovery |
+| Item | Status | Notes |
+|---|---|---|
+| Linux endpoint-scoped kill switch | Done | Supported kill-switch implementation |
+| Windows kill switch | Retired | Legacy rules intentionally removed rather than treated as supported protection |
+| Targeted crash recovery | Done | Blackout-owned routes/proxy/DNS/adapter/firewall cleanup |
+| Recovery preview/history | Done | Preview and bounded redacted audit history |
+| Machine-bound encrypted config vault | Done | Protects proxy URIs and supported secrets at rest |
+| Defender exclusion helper | Done | Windows path via `doctor --fix-av` |
+| Country profiles | Done | IR, RU, CN, IQ, GB, US, EU |
 
 ---
 
-## 🖥️ CLI / UX — GEMINI REDESIGN
+## Immediate documentation and maintenance priorities
 
-> Gemini recommends full migration from argparse → Typer + Rich interactive menus.
-> "Normal users should never have to type a flag."
+These are the highest-value near-term priorities after the current documentation refresh.
 
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| Rich terminal output (colors, tables, panels) | ✅ Done | Rare | Already looks good |
-| ASCII banner + spinner animations | ✅ Done | Rare | On startup and long operations |
-| argparse-based commands | ✅ Done | Uncommon | Works but not beginner-friendly |
-| **Typer migration** | ✅ Done | Rare | Typer is the public command entrypoint and delegates to the proven dispatcher |
-| **Interactive dashboard (Zero-Flag mode)** | ✅ Done | Rare | `blackout` with no args opens a keyboard-driven menu for common actions |
-| **`blackout connect` smart command** | ✅ Done | Rare | Uses the highest locally ready recommendation unless an engine is explicit |
-| **`blackout connect --iran`** | ✅ Done | Rare | Applies documented local profile settings; it does not guarantee bypass success |
-| **`blackout fix`** | ✅ Done | Rare | One command runs the core network repair steps with a live Rich checklist |
-| **Global exception handler** | ✅ Done | Rare | Redacted Rich error panel with safe local diagnostic guidance |
-| **Rich.Prompt interactive menus** | ✅ Done | Rare | Prompts only in interactive terminals; explicit CLI arguments remain script-safe |
-| **Real-time status panel** | ✅ Done | Rare | Read-only `blackout status --watch`: daemon, local ports, stability, and reconnect state |
-| **Smart-routing dashboard** | ✅ Done | Rare | `blackout route` ranks local readiness/history; `connect auto` uses its recommendation |
-| **Dark/Light theme toggle** | ✅ Done | Rare | Persistent Blackout Kit Rich palette only; host-terminal and GUI settings stay unchanged |
-| **Tauri desktop app** | 🔜 future | — | Optional GUI wrapper |
-| **Tray integration** | 🔜 future | — | System tray icon + quick connect |
+### 1. Native GDPI parity decision
 
----
+**Status:** Active product question
 
-## ⚡ PERFORMANCE & SPEED
+The codebase already includes an experimental native GDPI path, but the product intentionally keeps `legacy` as the default.
 
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| Async IP scanner (100 concurrent) | ✅ Done | Rare | asyncio-based |
-| IP scan cache (12h TTL) | ✅ Done | Rare | Offline-first |
-| **Lazy CLI imports** | 🔜 v1.2 | — | Import engine only when used → startup ~800ms → ~200ms |
-| **KNOWN_GOOD_IPS scan first** | 🔜 v1.2 | — | Try pre-tested IPs before full scan |
-| **Parallel engine startup** | 🔜 v1.2 | — | Start SNI + XRay threads simultaneously |
-| **Binary detection cache** | 🔜 v1.2 | — | Don't re-scan bins/ on every command |
-| **Persistent daemon IPC socket** | 🔜 v1.2 | — | Replace PID file polling with proper socket |
-| **Compressed GAS relay** | 🔜 v1.2 | — | gzip responses → less bandwidth |
-| **Connection pooling in proxy tester** | 🔜 v1.2 | — | Reuse TCP connections |
+Near-term goal:
 
----
+- verify whether the native path reaches functional parity on real Windows environments
+- document exact limitations if it does not
+- keep `legacy` default until parity is demonstrated, not assumed
 
-## 🌍 PLATFORM SUPPORT
+### 2. Documentation and in-app help alignment
 
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| Windows 10/11 | ✅ Done | Epic | Broad engine catalog; individual engines retain their own runtime and privilege prerequisites |
-| WSL (Ubuntu on Windows) | ✅ Done | Uncommon | Linux runtime subset where WSL supports required TUN/firewall commands; no WinDivert or Windows Firewall integration |
-| **Linux native (x86_64)** | ✅ Done | Rare | Ubuntu/Debian, Fedora, Arch: XRay, XRay → sing-box TUN, Hysteria2, and TUIC through blackout-engine; endpoint-scoped nftables/iptables kill switch |
-| **macOS (pf firewall)** | 🔜 future | — | Kill switch + proxy |
-| **Russia TSPU research** | 🔜 far future | — | Assess regional constraints and supported upstream configurations before promising a bypass path |
+**Status:** Active
+
+The markdown docs, contributor docs, and `blackout help` content should stay aligned with the actual 1.1.1 runtime surface.
+
+Near-term goal:
+
+- keep code, README, guides, and in-app help in lockstep
+- avoid claims that outgrow the shipped code
+
+### 3. Release/runtime provenance clarity
+
+**Status:** Active
+
+The project now mixes Python packaging, packaged Windows executable flows, repo-built DLL/runtime assets, and some still-external runtime dependencies.
+
+Near-term goal:
+
+- keep the provenance story clear for users and contributors
+- make it obvious which runtimes are repo-built, release-provided, auto-downloaded, or user-supplied
 
 ---
 
-## 📊 ANALYTICS & MONITORING
+## Next likely feature wave
 
-| Feature | Status | Rank | Notes |
-|---------|--------|------|-------|
-| Stability tracking (latency + loss% + trend) | ✅ Done | Rare | Per-engine, stored in stability.json |
-| Speed test (Cloudflare) | ✅ Done | Uncommon | `blackout tools speedtest` |
-| **Real-time latency graph** | 🔜 v1.2 | — | Live terminal graph during connection |
-| **Connection event log** | 🔜 v1.2 | — | Timestamped connect/disconnect history |
-| **Data transferred counter** | 🔜 v1.2 | — | Show total bytes proxied |
-| **Node health auto-check** | 🔜 v1.2 | — | Ping all saved V2Ray configs, sort by speed |
+These are reasonable next-step areas, but they should be treated as **candidates**, not promises.
+
+### Advanced routing and runtime quality
+
+| Candidate | Why it matters | Current caution |
+|---|---|---|
+| Persistent daemon IPC improvements | Cleaner status/control channel | Should not destabilize the existing daemon lifecycle |
+| Better local health scoring | Smarter engine recommendations | Must stay clearly local-only and not imply remote validation |
+| More polished GUI workflows | Better usability for Windows users | GUI should remain honest about local-vs-remote state |
+| Runtime provenance reporting | Better trust/debug story | Needs careful wording and release integration |
+
+### Transport and protocol work
+
+| Candidate | Why it matters | Current caution |
+|---|---|---|
+| ShadowTLS evaluation | Useful transport option in some environments | Must be implemented and verified before being advertised |
+| More sing-box-backed protocol coverage | Reuse native/runtime infrastructure | Avoid feature claims before configuration and validation are real |
+| Better Linux operational ergonomics | Makes Linux support easier to use | Keep Linux scope explicit rather than growing implied support |
+
+### Contributor and release operations
+
+| Candidate | Why it matters | Current caution |
+|---|---|---|
+| Stronger release checklists | Better artifact confidence | Avoid claiming reproducibility that is not actually enforced |
+| More targeted tests around docs-sensitive behavior | Prevent docs drift | Focus on user-visible commands, readiness, recovery, and config flows |
+| Public maintainer docs | Easier outside contribution | Keep internal scratch notes separate from canonical docs |
 
 ---
 
-## 🗓️ VERSION TARGETS
+## Explicitly deferred or intentionally limited areas
 
-| Version | Focus | Key items |
-|---------|-------|-----------|
-| **v1.1.1** (current) | Release stabilization | Installable package, standalone executable, CLI parity, Linux x86_64 managed runner, local route/status/theme UX, targeted recovery, and client-side VLESS REALITY |
-| **v1.2** (next) | Advanced transport + monitoring | ShadowTLS, process-level split tunneling, and real-time monitoring work |
-| **v1.3** | Performance + hardening | XTLS, lazy imports, persistent IPC, and remaining performance improvements |
-| **far future** | GUI + Russia + exotic protocols | Tauri, tray, Russia TSPU, ECH, PQC, macOS |
+These areas are either intentionally limited today or should not be presented as active product guarantees.
+
+| Area | Current stance |
+|---|---|
+| Windows kill switch | Intentionally unsupported; legacy rules removed |
+| Full Linux parity with Windows engine catalog | Not a current goal |
+| Claims of anonymity or detection resistance | Avoid unless independently justified |
+| “Country profile means it will work there” messaging | Avoid; profiles are guidance only |
+| Aggressive auto-repair of unrelated network state | Avoid; targeted recovery is the policy |
+| Making native GDPI the default prematurely | Avoid until parity is proven |
 
 ---
 
-*Community-driven. Open an issue to suggest features or report what's blocked in your region.*
+## Version focus summary
+
+| Version line | Focus |
+|---|---|
+| 1.1.x | Stabilization, packaging, boundary hardening, docs accuracy, Linux managed runtime support |
+| 1.2.x | Only after stabilization: carefully selected transport/runtime improvements and contributor ergonomics |
+| Later | Broader UX/runtime expansions only if they can be documented and verified honestly |
+
+---
+
+## Maintainer rule of thumb
+
+A roadmap item should move from “candidate” to “shipped” only when all three are true:
+
+1. the code path exists
+2. the platform/runtime scope is explicit
+3. the docs can describe it without hedging into fiction
+
+That rule is especially important for a project like Blackout Kit, where inaccurate claims are themselves a security and trust problem.

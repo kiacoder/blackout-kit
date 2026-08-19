@@ -41,6 +41,6 @@ def test_ready_gate_blocks_connect_before_scan_or_settings_write(monkeypatch):
     monkeypatch.setattr(cli, "generate_cloudflare_ips", scanner)
     monkeypatch.setattr(cli.cfg, "load", lambda: dict(cli.cfg.DEFAULTS))
 
-    cli.cmd_connect(type("Args", (), {"pos_engine": "xray", "engine": None, "background": False, "iran": False})())
+    cli.cmd_connect(type("Args", (), {"pos_engine": "xray", "engine": None, "background": False, "iran": False, "russia": False})())
 
     scanner.assert_not_called()

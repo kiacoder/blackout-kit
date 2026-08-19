@@ -1,340 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Blackout Kit: An all-in-one internet censorship circumvention toolkit. Bypass DPI, unblock websites, and protect your privacy with zero logs. Supports GoodbyeDPI, Xray, WireGuard, and more.">
-    <meta name="keywords" content="blackout kit, censorship bypass, vpn, goodbyedpi, xray, v2ray, psiphon, anti-censorship, dpi bypass, zero logs">
-    <meta name="author" content="kiacoder">
-    <title>Blackout Kit | DPI Bypass & Censorship Circumvention Toolkit</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --bg-color: #050505;
-            --surface: #111111;
-            --primary: #00ffcc;
-            --primary-glow: rgba(0, 255, 204, 0.3);
-            --text-main: #ffffff;
-            --text-muted: #888888;
-            --glass-bg: rgba(25, 25, 25, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.08);
-        }
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            line-height: 1.6;
-            overflow-x: hidden;
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(0, 255, 204, 0.05), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(0, 150, 255, 0.05), transparent 25%);
-        }
-
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 2rem 5%;
-            position: absolute;
-            width: 100%;
-            top: 0;
-            z-index: 10;
-        }
-
-        .logo {
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            font-size: 1.5rem;
-            color: var(--primary);
-            text-shadow: 0 0 15px var(--primary-glow);
-            letter-spacing: -1px;
-        }
-
-        .nav-links a {
-            color: var(--text-main);
-            text-decoration: none;
-            margin-left: 2rem;
-            font-weight: 600;
-            transition: color 0.3s ease;
-        }
-
-        .nav-links a:hover {
-            color: var(--primary);
-        }
-
-        .github-btn {
-            background: transparent;
-            border: 1px solid var(--primary);
-            color: var(--primary);
-            padding: 0.6rem 1.2rem;
-            border-radius: 6px;
-            text-decoration: none;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.9rem;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 10px transparent;
-        }
-
-        .github-btn:hover {
-            background: var(--primary);
-            color: var(--bg-color);
-            box-shadow: 0 0 20px var(--primary-glow);
-        }
-
-        header {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            padding: 0 20px;
-            position: relative;
-        }
-
-        h1 {
-            font-size: clamp(3rem, 8vw, 5.5rem);
-            font-weight: 800;
-            line-height: 1.1;
-            margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, #fff 0%, #a0a0a0 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            animation: fadeUp 1s ease-out;
-        }
-
-        .subtitle {
-            font-size: clamp(1.1rem, 2vw, 1.4rem);
-            color: var(--text-muted);
-            max-width: 600px;
-            margin-bottom: 3rem;
-            animation: fadeUp 1s ease-out 0.2s backwards;
-        }
-
-        .cta-container {
-            display: flex;
-            gap: 1.5rem;
-            animation: fadeUp 1s ease-out 0.4s backwards;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: var(--bg-color);
-            padding: 1rem 2.5rem;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 1.1rem;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 25px var(--primary-glow);
-            border: 1px solid transparent;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 0 40px rgba(0, 255, 204, 0.6);
-        }
-
-        .terminal-preview {
-            margin-top: 5rem;
-            background: var(--surface);
-            border: 1px solid #333;
-            border-radius: 12px;
-            padding: 1.5rem;
-            width: 100%;
-            max-width: 700px;
-            text-align: left;
-            font-family: 'JetBrains Mono', monospace;
-            color: #dcdcdc;
-            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-            animation: fadeUp 1s ease-out 0.6s backwards;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .terminal-header {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 1rem;
-        }
-
-        .dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-        }
-        .dot.red { background: #ff5f56; }
-        .dot.yellow { background: #ffbd2e; }
-        .dot.green { background: #27c93f; }
-
-        .typing {
-            color: var(--primary);
-        }
-
-        .features-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            padding: 5rem 5%;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        .feature-card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(10px);
-            padding: 2.5rem;
-            border-radius: 16px;
-            transition: transform 0.3s ease, border-color 0.3s ease;
-        }
-
-        .feature-card:hover {
-            transform: translateY(-5px);
-            border-color: var(--primary);
-        }
-
-        .feature-icon {
-            font-size: 2.5rem;
-            margin-bottom: 1.5rem;
-            background: linear-gradient(135deg, var(--primary) 0%, #0096ff 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        .feature-title {
-            font-size: 1.4rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-        }
-
-        .feature-desc {
-            color: var(--text-muted);
-            font-size: 1rem;
-        }
-
-        @keyframes fadeUp {
-            from { opacity: 0; transform: translateY(30px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        footer {
-            text-align: center;
-            padding: 3rem 0;
-            color: var(--text-muted);
-            border-top: 1px solid #222;
-            margin-top: 4rem;
-        }
-
-        /* SEO Hidden Block for Spiders */
-        .seo-text {
-            position: absolute;
-            left: -9999px;
-            top: auto;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blackout Kit</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0b0b0b; color: #f5f5f5; }
+    header, main, footer { max-width: 1000px; margin: 0 auto; padding: 24px; }
+    nav a { color: #7ee7d8; margin-right: 16px; text-decoration: none; }
+    .card { background: #151515; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; margin: 16px 0; }
+    h1, h2, h3 { color: #ffffff; }
+    p, li { line-height: 1.6; }
+    .muted { color: #b0b0b0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    code { background: #1d1d1d; padding: 2px 6px; border-radius: 6px; }
+  </style>
 </head>
 <body>
+  <header>
     <nav>
-        <div class="logo"><a href="index.html" style="text-decoration:none; color:inherit;">BLACKOUT_KIT</a></div>
-        <div class="nav-links">
-            <a href="engines.html">Engines</a>
-            <a href="privacy.html">Privacy</a>
-            <a href="download.html">Download</a>
-            <a href="https://github.com/kiacoder/blackout-kit" class="github-btn" target="_blank">GitHub</a>
-        </div>
+      <a href="index.html">Overview</a>
+      <a href="engines.html">Engines</a>
+      <a href="privacy.html">Security</a>
+      <a href="download.html">Install</a>
+      <a href="https://github.com/kiacoder/blackout-kit">GitHub</a>
     </nav>
+    <h1>Blackout Kit</h1>
+    <p class="muted">A Windows-first local censorship-circumvention toolkit with a narrower managed Linux runtime path.</p>
+  </header>
 
-    <header>
-        <h1>Unblock the Internet.</h1>
-        <p class="subtitle">A unified, zero-logs command-line toolkit that orchestrates 13+ bypass engines (GoodbyeDPI, Xray, WireGuard, Psiphon) to defeat ISP censorship globally.</p>
-        
-        <div class="cta-container">
-            <a href="https://github.com/kiacoder/blackout-kit/releases" class="btn-primary">Download for Windows</a>
-        </div>
-
-        <div class="terminal-preview">
-            <div class="terminal-header">
-                <div class="dot red"></div>
-                <div class="dot yellow"></div>
-                <div class="dot green"></div>
-            </div>
-            <p><span class="typing">PS C:\></span> blackout connect --iran</p>
-            <p style="color: #888; margin-top: 8px;">[info] Analyzing ISP censorship level...</p>
-            <p style="color: #888;">[info] Country detected: IRAN (High Censorship)</p>
-            <p style="color: #00ffcc; margin-top: 8px;">✓ SNI Spoofing Engine Active</p>
-            <p style="color: #00ffcc;">✓ System Proxy Set → 127.0.0.1:8085</p>
-            <p style="color: #fff; margin-top: 8px; font-weight: bold;">Connection Secured. Press Ctrl+C to stop.</p>
-        </div>
-    </header>
-
-    <section id="features" class="features-grid">
-        <div class="feature-card">
-            <div class="feature-icon">🛡️</div>
-            <h3 class="feature-title">Absolute Privacy</h3>
-            <p class="feature-desc">Zero telemetry, zero trackers, and zero remote logging. We use a strict firewall kill switch and Ad-blocking DNS (Mullvad/AdGuard) to guarantee your real IP never leaks.</p>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">⚡</div>
-            <h3 class="feature-title">13+ Bypass Engines</h3>
-            <p class="feature-desc">From SNI spoofing and GoodbyeDPI to Xray/V2Ray and Cloudflare WARP. If one engine gets blocked by your ISP, Blackout Kit automatically switches to the next one.</p>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">🌍</div>
-            <h3 class="feature-title">Country-Aware Routing</h3>
-            <p class="feature-desc">Built-in profiles for Iran, China, Iraq, UK, and the EU. Automatically selects the optimal evasion technique based on local DPI hardware and censorship laws.</p>
-        </div>
-        <div class="feature-card">
-            <div class="feature-icon">🔧</div>
-            <h3 class="feature-title">Self-Healing Doctor</h3>
-            <p class="feature-desc">Network broken? Just run <code>blackout doctor --fix</code>. It automatically repairs Winsock, flushes DNS, and configures Windows Defender exclusions to get you back online.</p>
-        </div>
+  <main>
+    <section class="card">
+      <h2>What it is</h2>
+      <p>Blackout Kit coordinates local bypass engines, saved proxy or VPN configurations, local readiness checks, targeted recovery, and user-facing CLI/GUI workflows.</p>
+      <p>It is <strong>not</strong> a hosted VPN service and does not operate the upstream servers users trust for tunneled traffic.</p>
     </section>
 
-    <!-- SEO Content for Google Spiders -->
-    <div class="seo-text">
-        <h2>What is Blackout Kit?</h2>
-        <p>Blackout Kit is an open-source internet censorship circumvention and DPI bypass toolkit for Windows. It acts as an aggregator for the world's most powerful bypass engines, including GoodbyeDPI, Xray, Psiphon, WireGuard, OpenVPN, Tor, and more. It is designed to bypass Deep Packet Inspection (DPI) in countries with extreme censorship like Iran, China, and Iraq.</p>
-        
-        <h2>Is Blackout Kit safe to use?</h2>
-        <p>Yes. Blackout Kit is fully open-source and operates entirely locally on your Windows PC. Unlike commercial VPNs, it does not collect logs, track usage, or route your traffic through centralized proprietary servers. It includes features like a Mullvad-style strict kill switch, AdGuard tracker blocking, and randomized TLS fingerprints for maximum security.</p>
+    <section class="grid">
+      <div class="card">
+        <h3>Windows</h3>
+        <p>Broad engine catalog, GUI, system-proxy workflows, split-tunnel proxy bypass patterns, and native DLL-backed runtime paths.</p>
+      </div>
+      <div class="card">
+        <h3>Linux</h3>
+        <p>Supported paths are currently <code>xray</code>, <code>tun</code>, <code>hysteria2</code>, and <code>tuic</code> through the managed <code>blackout-engine</code> runtime.</p>
+      </div>
+      <div class="card">
+        <h3>Safety model</h3>
+        <p>Readiness and route ranking are local-only. A green local check does not prove remote reachability or bypass success.</p>
+      </div>
+    </section>
 
-        <h2>How to bypass ISP torrent blocks in the EU or UK?</h2>
-        <p>Blackout Kit includes an EU profile that leverages GoodbyeDPI and Cloudflare WARP to effortlessly bypass ISP-level DNS poisoning and light DPI filters used to block sites like The Pirate Bay in the UK and Portugal.</p>
-    </div>
+    <section class="card">
+      <h2>Guides</h2>
+      <ul>
+        <li><a href="../README.md">README</a> for the high-level project overview</li>
+        <li><a href="user-guide.md">User Guide</a> for operators and end users</li>
+        <li><a href="../CONTRIBUTING.md">Contributing Guide</a> for maintainers and contributors</li>
+        <li><a href="../SECURITY.md">Security Policy</a> for threat model and trust boundaries</li>
+      </ul>
+    </section>
 
-    <footer>
-        <p>Open Source &bull; Made by Kiacoder &bull; Licensed under MIT</p>
-    </footer>
+    <section class="card">
+      <h2>Important boundaries</h2>
+      <ul>
+        <li>Blackout Kit does not guarantee anonymity.</li>
+        <li>Country profiles are guidance, not proof.</li>
+        <li>The supported kill switch is Linux-only.</li>
+        <li>Default recovery is intentionally targeted, not a full system reset.</li>
+      </ul>
+    </section>
+  </main>
 
-    <script>
-        // Simple typing effect for the terminal
-        const typingElement = document.querySelector('.typing');
-        const originalText = typingElement.innerText;
-        typingElement.innerText = '';
-        
-        let i = 0;
-        function typeWriter() {
-            if (i < originalText.length) {
-                typingElement.innerHTML += originalText.charAt(i);
-                i++;
-                setTimeout(typeWriter, 100);
-            }
-        }
-        
-        setTimeout(typeWriter, 1500);
-    </script>
+  <footer>
+    <p class="muted">Open source • MIT licensed • Made by Kiacoder</p>
+  </footer>
 </body>
 </html>

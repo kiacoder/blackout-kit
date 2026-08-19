@@ -32,6 +32,7 @@ class IspInfo:
     asn: str        # "AS197207"
     city: str
     country: str
+    country_code: str = ""
 
 
 # ──────────────────── Iranian ISP ASN → friendly name ────────────
@@ -210,7 +211,7 @@ def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
     # ── Primary: ip-api.com ──
     try:
         req = urllib.request.Request(
-            "http://ip-api.com/json?fields=isp,org,as,city,country",
+            "http://ip-api.com/json?fields=isp,org,as,city,country,countryCode",
             headers={"User-Agent": "blackout-kit/1.0"},
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -225,6 +226,7 @@ def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
             asn=asn,
             city=data.get("city", ""),
             country=data.get("country", ""),
+            country_code=data.get("countryCode", ""),
         )
     except Exception as e:
         _log.debug("ip-api.com lookup failed: %s", e)
@@ -247,6 +249,7 @@ def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
             asn=asn,
             city=data.get("city", ""),
             country=data.get("country", ""),
+            country_code=data.get("country", ""),
         )
     except Exception as e:
         _log.debug("ipinfo.io lookup failed: %s", e)

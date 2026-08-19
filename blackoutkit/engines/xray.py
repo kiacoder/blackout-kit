@@ -118,6 +118,13 @@ class XRayEngine(Engine):
 
         # ── Smart Split Tunneling ─────────────────────────────────
         if s.get("xray_split_tunnel"):
+            from ..country_profiles import bypass_domains_for
+            country_code = s.get("country", "")
+            bypass_domains = bypass_domains_for(country_code)
+            domain_rules = []
+            for entry in bypass_domains:
+                if entry.startswith("domain:"):
+                    domain_rules.append(entry.replace("domain:", ""))
             config["routing"]["rules"].extend([
                 {
                     "type": "field",
@@ -134,12 +141,7 @@ class XRayEngine(Engine):
                 },
                 {
                     "type": "field",
-                    "domain": [
-                        "regexp:.*\\.ir$",
-                        "regexp:.*\\.gov\\.ir$",
-                        "regexp:.*\\.ac\\.ir$",
-                        "regexp:.*\\.co\\.ir$"
-                    ],
+                    "domain": domain_rules,
                     "outboundTag": "direct"
                 }
             ])
@@ -275,7 +277,6 @@ class XRayEngine(Engine):
             stream["tlsSettings"] = {
                 "serverName": c.sni,
                 "fingerprint": c.fp or s["xray_fingerprint"],
-                "allowInsecure": allow_insecure,
             }
 
         if c.protocol == "trojan":

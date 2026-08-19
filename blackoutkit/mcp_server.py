@@ -293,12 +293,12 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                 return "Error: an explicit supported engine is required"
             if engine not in _MCP_ENGINES:
                 return f"Error: unsupported engine '{engine}'"
+            if args.get("iran"):
+                return "Error: MCP connect does not support the Iran profile"
             from . import readiness
             checks = readiness.evaluate(engine)
             if not all(item.ok or not item.blocking for item in checks):
                 return json.dumps({"engine": engine, "ready": False, "checks": [item.__dict__ for item in checks]}, indent=2)
-            if args.get("iran"):
-                return "Error: MCP connect does not support the Iran profile"
             from . import daemon
             pid = daemon.start(engine)
             if pid:

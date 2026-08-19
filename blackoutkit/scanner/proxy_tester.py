@@ -43,6 +43,14 @@ def test_tcp_port(host: str, port: int, timeout: float = 3.0) -> float | None:
         return None
 
 
+_httpx_clients = {}
+
+def _get_httpx_client(proxy_url: str, timeout: int):
+    import httpx
+    if proxy_url not in _httpx_clients:
+        _httpx_clients[proxy_url] = httpx.Client(proxy=proxy_url, timeout=timeout)
+    return _httpx_clients[proxy_url]
+
 def test_http_proxy(
     proxy_host: str = "127.0.0.1",
     proxy_port: int = 10809,
@@ -50,22 +58,33 @@ def test_http_proxy(
     timeout: int = 10,
 ) -> float | None:
     """
-    Test HTTP proxy connectivity.
+    Test HTTP proxy connectivity with connection pooling.
     Returns latency_ms or None if proxy is unreachable/broken.
     """
-    proxy_url = f"http://{proxy_host}:{proxy_port}"
-    handler = urllib.request.ProxyHandler({
-        "http":  proxy_url,
-        "https": proxy_url,
-    })
-    opener = urllib.request.build_opener(handler)
     try:
+        proxy_url = f"http://{proxy_host}:{proxy_port}"
+        client = _get_httpx_client(proxy_url, timeout)
         start = time.monotonic()
-        opener.open(test_url, timeout=timeout)
-        return (time.monotonic() - start) * 1000
+        resp = client.get(test_url)
+        if resp.status_code < 400:
+            return (time.monotonic() - start) * 1000
+    except ImportError:
+        # Fallback to urllib if httpx is missing
+        proxy_url = f"http://{proxy_host}:{proxy_port}"
+        handler = urllib.request.ProxyHandler({
+            "http":  proxy_url,
+            "https": proxy_url,
+        })
+        opener = urllib.request.build_opener(handler)
+        try:
+            start = time.monotonic()
+            opener.open(test_url, timeout=timeout)
+            return (time.monotonic() - start) * 1000
+        except Exception:
+            return None
     except Exception:
         return None
-
+    return None
 
 def test_socks5_proxy(
     proxy_host: str = "127.0.0.1",
@@ -74,17 +93,17 @@ def test_socks5_proxy(
     timeout: int = 10,
 ) -> float | None:
     """
-    Test SOCKS5 proxy connectivity.
+    Test SOCKS5 proxy connectivity with connection pooling.
     Requires the 'httpx' package with SOCKS support.
     Returns latency_ms or None.
     """
     try:
-        import httpx
-        with httpx.Client(proxy=f"socks5://{proxy_host}:{proxy_port}", timeout=timeout) as client:
-            start = time.monotonic()
-            resp = client.get(test_url)
-            if resp.status_code < 400:
-                return (time.monotonic() - start) * 1000
+        proxy_url = f"socks5://{proxy_host}:{proxy_port}"
+        client = _get_httpx_client(proxy_url, timeout)
+        start = time.monotonic()
+        resp = client.get(test_url)
+        if resp.status_code < 400:
+            return (time.monotonic() - start) * 1000
     except Exception:
         pass
     return None

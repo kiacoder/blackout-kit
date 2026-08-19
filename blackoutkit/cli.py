@@ -4,7 +4,9 @@ All user-facing commands live here.
 """
 import argparse
 import asyncio
+from contextlib import contextmanager
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -23,20 +25,77 @@ from .theme import console, print_banner, make_table, latency_color, refresh_con
 from . import settings as cfg
 from . import daemon
 
-from .proxy_manager   import set_system_proxy, clear_system_proxy, get_proxy_status
-from .scanner.ip_scanner  import generate_cloudflare_ips, scan_ips, save_cache
-from .scanner.proxy_tester import test_direct, test_http_proxy, test_socks5_proxy, test_tcp_port
-from .config.manager  import (
-    load_configs, add_config, remove_config,
-    import_and_merge,
-)
-from . import tools as net_tools
-from . import doctor as doc
-from . import updater
-from .help_text import get_help
+import importlib
 
-from . import security as sec
-from . import country_profiles as cp
+class _LazyModule:
+    def __init__(self, name, package):
+        self._name = name
+        self._package = package
+        self._mod = None
+    def __getattr__(self, item):
+        if self._mod is None:
+            self._mod = importlib.import_module(self._name, self._package)
+        return getattr(self._mod, item)
+
+net_tools = _LazyModule(".tools", "blackoutkit")
+doc = _LazyModule(".doctor", "blackoutkit")
+updater = _LazyModule(".updater", "blackoutkit")
+sec = _LazyModule(".security", "blackoutkit")
+cp = _LazyModule(".country_profiles", "blackoutkit")
+
+def set_system_proxy(*args, **kwargs):
+    from .proxy_manager import set_system_proxy as _func
+    return _func(*args, **kwargs)
+
+def clear_system_proxy(*args, **kwargs):
+    from .proxy_manager import clear_system_proxy as _func
+    return _func(*args, **kwargs)
+
+def get_proxy_status(*args, **kwargs):
+    from .proxy_manager import get_proxy_status as _func
+    return _func(*args, **kwargs)
+
+def generate_cloudflare_ips(*args, **kwargs):
+    from .scanner.ip_scanner import generate_cloudflare_ips as _func
+    return _func(*args, **kwargs)
+
+def scan_ips(*args, **kwargs):
+    from .scanner.ip_scanner import scan_ips as _func
+    return _func(*args, **kwargs)
+
+def save_cache(*args, **kwargs):
+    from .scanner.ip_scanner import save_cache as _func
+    return _func(*args, **kwargs)
+
+def load_configs(*args, **kwargs):
+    from .config.manager import load_configs as _func
+    return _func(*args, **kwargs)
+
+def add_config(*args, **kwargs):
+    from .config.manager import add_config as _func
+    return _func(*args, **kwargs)
+
+def remove_config(*args, **kwargs):
+    from .config.manager import remove_config as _func
+    return _func(*args, **kwargs)
+
+def import_and_merge(*args, **kwargs):
+    from .config.manager import import_and_merge as _func
+    return _func(*args, **kwargs)
+
+def get_help(*args, **kwargs):
+    from .help_text import get_help as _func
+    return _func(*args, **kwargs)
+
+
+def test_tcp_port(*args, **kwargs):
+    from .scanner.proxy_tester import test_tcp_port as _func
+    return _func(*args, **kwargs)
+
+
+def test_direct(*args, **kwargs):
+    from .scanner.proxy_tester import test_direct as _func
+    return _func(*args, **kwargs)
 
 # ──────────────────────────── Engine map ─────────────────────────
 
@@ -163,31 +222,118 @@ def _linux_dependency_hint() -> str:
     return "Install the Linux x86_64 Blackout Kit release asset so bins/blackout-engine is available."
 
 
-# Snapshot of settings before --iran changes were applied.
-# Restored by cmd_start() cleanup so the Iran profile doesn't persist permanently.
-_pre_iran_snapshot: dict | None = None
+def _setting_env_name(key: str) -> str:
+    return f"BLACKOUT_{key.upper()}"
 
 
-def _save_iran_snapshot():
-    global _pre_iran_snapshot
-    _pre_iran_snapshot = {
-        "security_mode": cfg.load().get("security_mode"),
-        "xray_fingerprint": cfg.load().get("xray_fingerprint"),
-        "sni_fake_sni": cfg.load().get("sni_fake_sni"),
-        "xray_fragment": cfg.load().get("xray_fragment"),
+def _setting_env_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return ",".join(str(item) for item in value)
+    return str(value)
+
+
+def _env_overrides_from_settings(overrides: dict[str, object]) -> dict[str, str]:
+    return {
+        _setting_env_name(key): _setting_env_value(value)
+        for key, value in overrides.items()
     }
 
 
-def _restore_iran_snapshot():
-    global _pre_iran_snapshot
-    if _pre_iran_snapshot is None:
-        return
+@contextmanager
+def _temporary_env_overrides(env_overrides: dict[str, str] | None):
+    previous: dict[str, str | None] = {}
+    env_overrides = env_overrides or {}
+    for key, value in env_overrides.items():
+        previous[key] = os.environ.get(key)
+        os.environ[key] = value
     try:
-        for key, value in _pre_iran_snapshot.items():
-            cfg.set_value(key, value)
-    except Exception:
-        pass
-    _pre_iran_snapshot = None
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
+def _mode_overrides(mode_name: str) -> dict[str, object]:
+    mode = sec.MODES.get(mode_name, {})
+    overrides = {
+        key: value
+        for key, value in mode.items()
+        if key != "description" and key in cfg.DEFAULTS
+    }
+    overrides["security_mode"] = mode_name
+    return overrides
+
+
+def _preset_payload(preset_name: str | None, settings: dict, *, direct_start: bool = False) -> tuple[str | None, dict[str, str], list[str], str | None]:
+    if not preset_name:
+        return None, {}, [], None
+
+    if preset_name == "iran":
+        overrides = _mode_overrides("legend" if direct_start else "private")
+        overrides["country"] = "IR"
+        if direct_start:
+            overrides["sni_fake_sni"] = "www.snapp.ir"
+            overrides["xray_fragment"] = "10-20,30-40"
+        else:
+            overrides["xray_fingerprint"] = "firefox"
+            current_sni = settings.get("sni_fake_sni", "")
+            arvancloud_sni = settings.get("sni_arvancloud_sni", "www.arvancloud.ir")
+            if current_sni in ("www.hcaptcha.com", ""):
+                overrides["sni_fake_sni"] = arvancloud_sni
+            if not settings.get("xray_fragment"):
+                overrides["xray_fragment"] = "10-50,10-50"
+
+        changes = [
+            "Country profile: Iran",
+            f"Security mode: {str(overrides['security_mode']).upper()}",
+            f"TLS fingerprint: {overrides['xray_fingerprint']}",
+        ]
+        if "sni_fake_sni" in overrides:
+            changes.append(f"Fake SNI → {overrides['sni_fake_sni']}")
+        if overrides.get("xray_fragment"):
+            changes.append("TLS fragmentation enabled")
+        footer = "[dim]This preset applies temporary local overrides for Iran-specific routing assumptions and does not rewrite your saved settings.[/dim]"
+        return "Iran 2026 — TIC Evasion", _env_overrides_from_settings(overrides), changes, footer
+
+    if preset_name == "russia":
+        overrides = _mode_overrides("private")
+        overrides.update({
+            "country": "RU",
+            "xray_doh_dns": True,
+            "xray_split_tunnel": False,
+            "xray_fragment": "",
+        })
+        current_sni = settings.get("sni_fake_sni", "")
+        if current_sni in (settings.get("sni_arvancloud_sni", "www.arvancloud.ir"), ""):
+            overrides["sni_fake_sni"] = "www.hcaptcha.com"
+        changes = [
+            "Country profile: Russia",
+            "Security mode: PRIVATE",
+            "DNS-over-HTTPS enabled",
+            "Iran-specific split-tunnel rules disabled",
+            "Iran-specific TLS fragmentation disabled",
+        ]
+        if "sni_fake_sni" in overrides:
+            changes.append(f"Fake SNI → {overrides['sni_fake_sni']}")
+        footer = "[dim]This preset temporarily pins RU guidance for mixed VLESS, Trojan, Hysteria2, and TUIC paths without changing your saved defaults.[/dim]"
+        return "Russia — Transport Preset", _env_overrides_from_settings(overrides), changes, footer
+
+    raise ValueError(f"Unknown preset: {preset_name}")
+
+
+def _print_preset_panel(title: str, changes: list[str], footer: str | None) -> None:
+    from .theme import success_panel
+
+    body = "[bold]Preset Active[/bold]\n\n" + "\n".join(f"  • {change}" for change in changes)
+    if footer:
+        body += f"\n\n{footer}"
+    console.print()
+    console.print(success_panel(body, title=title))
 
 
 def _start_engine_stack(name: str):
@@ -350,7 +496,7 @@ def cmd_country(args):
     if not profile:
         console.print(Panel(
             "  [warning]Could not detect country.[/warning]\n\n"
-            "  [dim]Set manually: [bold]blackout country set IR[/bold][/dim]\n"
+            "  [dim]Set manually with [bold]blackout country set <code>[/bold][/dim]\n"
             f"  [dim]Valid codes: {'  '.join(VALID_COUNTRY_CODES)}[/dim]",
             title="[bold]Country Profile[/bold]",
             border_style="yellow",
@@ -428,29 +574,40 @@ def _scan_fake_snis():
 
 
 def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
-    console.print(f"[info]Generating {count} Cloudflare IPs to scan...[/info]")
-    ips = generate_cloudflare_ips(count)
-
-    scanned = {"done": 0}
-
-    with Progress(
-        SpinnerColumn(style="bold red"),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(bar_width=40, style="red", complete_style="green"),
-        TaskProgressColumn(),
-        TimeElapsedColumn(),
-        console=console,
-        transient=True,
-    ) as progress:
-        task = progress.add_task(f"Scanning {len(ips)} IPs on :443 ...", total=len(ips))
-
-        def on_done():
-            scanned["done"] += 1
-            progress.advance(task)
-
-        results = asyncio.run(
-            scan_ips(ips, concurrency=concurrency, timeout=timeout, progress_callback=on_done)
-        )
+    console.print("[info]Testing pre-tested known-good IPs first...[/info]")
+    from .scanner.ip_scanner import KNOWN_GOOD_IPS, scan_ips, generate_cloudflare_ips
+    from . import settings as cfg
+    custom_ips = cfg.load().get("sni_custom_ips") or []
+    pre_tested = list(set(custom_ips + KNOWN_GOOD_IPS))
+    
+    results = asyncio.run(
+        scan_ips(pre_tested, concurrency=concurrency, timeout=timeout)
+    )
+    
+    if results:
+        # Found good IPs, no need to do a full scan
+        ips = pre_tested
+        console.print(f"[success]Found {len(results)} working IPs from known-good list. Skipping full scan.[/success]")
+    else:
+        console.print(f"[warning]Known-good IPs failed. Generating {count} random Cloudflare IPs to scan...[/warning]")
+        ips = generate_cloudflare_ips(count)
+        scanned = {"done": 0}
+        with Progress(
+            SpinnerColumn(style="bold red"),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=40, style="red", complete_style="green"),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(f"Scanning {len(ips)} IPs on :443 ...", total=len(ips))
+            def on_done():
+                scanned["done"] += 1
+                progress.advance(task)
+            results = asyncio.run(
+                scan_ips(ips, concurrency=concurrency, timeout=timeout, progress_callback=on_done)
+            )
 
     if results:
         save_cache(results)
@@ -536,163 +693,166 @@ def _health_check_target(proxy_info):
 
 
 def cmd_start(args):
-    engine_name = _linux_default_engine(_resolve_engine_name(args))
-    platform_error = _platform_engine_error(engine_name)
-    if platform_error:
-        console.print(f"[error]{platform_error}[/error]")
+    requested_engine = _resolve_engine_name(args)
+    engine_name = _linux_default_engine(requested_engine)
+    background = getattr(args, "background", False)
+    iran = getattr(args, "iran", False)
+    russia = getattr(args, "russia", False)
+
+    if iran and russia:
+        console.print("[error]Choose only one preset: --iran or --russia.[/error]")
         return
-    background  = getattr(args, "background", False)
-    iran        = getattr(args, "iran", False)
-    if not _ensure_ready("legend" if iran else engine_name):
-        return
-    proxy_info = None
-    health_target = None
-    
-    if iran:
-        console.print(Panel(
-            "[bold red]🔥 TIC 2026 EVASION PROFILE ACTIVATED[/bold red]\n\n"
-            "[muted]Deploying advanced countermeasures for extreme censorship environments.[/muted]\n"
-            "  [success]✓[/success] Forcing Tor network integration\n"
-            "  [success]✓[/success] Scrambling XRay signatures (random TLS ClientHello)\n"
-            "  [success]✓[/success] Fragmenting SNI packets\n"
-            "  [success]✓[/success] Using internal relay routing",
-            border_style="red"
-        ))
-        _save_iran_snapshot()
-        cfg.set_value("security_mode", "legend")
-        cfg.set_value("xray_fingerprint", "random")
-        cfg.set_value("sni_fake_sni", "www.snapp.ir")
-        cfg.set_value("xray_fragment", "10-20,30-40")
-        engine_name = "legend"
 
-    s = cfg.load()
+    preset_name = "iran" if iran else "russia" if russia else None
+    preset_title = None
+    preset_changes: list[str] = []
+    preset_footer = None
+    env_overrides: dict[str, str] = {}
+    base_settings = cfg.load()
 
-    import ctypes
-    is_admin = False
-    try:
-        is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-    except Exception:
-        pass
+    if preset_name:
+        if preset_name == "iran":
+            engine_name = "legend"
+            if requested_engine not in {"auto", "sni", "xray", "legend", "tor"}:
+                console.print("[yellow]Iran preset is tuned for the Tor + SNI + XRay stack and related local settings.[/yellow]")
+        preset_title, env_overrides, preset_changes, preset_footer = _preset_payload(
+            preset_name,
+            base_settings,
+            direct_start=True,
+        )
 
-    if background:
+    effective_engine_name = engine_name
+    with _temporary_env_overrides(env_overrides):
+        platform_error = _platform_engine_error(effective_engine_name)
+        if platform_error:
+            console.print(f"[error]{platform_error}[/error]")
+            return
+        if not _ensure_ready(effective_engine_name):
+            return
+
+        if preset_title:
+            _print_preset_panel(preset_title, preset_changes, preset_footer)
+
+        s = cfg.load()
+        proxy_info = None
+        health_target = None
+
+        import ctypes
+        is_admin = False
         try:
-            pid = daemon.start(engine_name)
-            console.print(Panel(
-                f"[success]Engine:[/success]  [bold]{engine_name}[/bold]\n"
-                f"[success]PID:[/success]     [bold]{pid}[/bold]\n"
-                f"[success]Log:[/success]     [dim]{daemon.LOG_FILE}[/dim]\n\n"
-                f"[muted]Run [bold]blackout status[/bold] to monitor.[/muted]\n"
-                f"[muted]Run [bold]blackout stop[/bold] to stop.[/muted]",
-                title="[bold green]✓ Blackout Kit — Background[/bold green]",
-                border_style="green",
-            ))
-        except RuntimeError as e:
-            console.print(f"[error]{e}[/error]")
-        return
+            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
+        except Exception:
+            pass
 
-    # ── Foreground mode ──
-    if sys.platform == "win32" and not is_admin and engine_name in EXTRA_ADMIN_ENGINES:
-        console.print("[warning]Elevating to Administrator... Please accept the UAC prompt.[/warning]")
-        try:
-            pid = daemon.start(engine_name)
-            if not pid:
-                console.print("[error]Failed to start daemon (UAC prompt declined or timed out).[/error]")
-                return
-            console.print(f"  [success]✓ {engine_name}[/success] running in background (PID {pid})")
-            console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
-            
-            # Tail daemon log
-            with open(daemon.LOG_FILE, "r", encoding="utf-8") as f:
-                f.seek(0, 2)
-                try:
-                    while daemon.get_pid() is not None:
-                        line = f.readline()
-                        if not line:
-                            time.sleep(0.1)
-                            continue
-                        # Print pretty log
-                        if "[ERROR]" in line:
-                            console.print(f"[red]{line.strip()}[/red]")
-                        elif "[WARNING]" in line:
-                            console.print(f"[yellow]{line.strip()}[/yellow]")
-                        elif "[success]" in line:
-                            console.print(f"[green]{line.strip()}[/green]")
-                        else:
-                            console.print(f"[dim]{line.strip()}[/dim]")
-                except KeyboardInterrupt:
-                    pass
-                finally:
-                    console.print("\n[warning]Stopping...[/warning]")
-                    daemon.stop()
-            return
-        except RuntimeError as e:
-            console.print(f"[error]{e}[/error]")
+        if background:
+            try:
+                pid = daemon.start(effective_engine_name, env_overrides=env_overrides)
+                console.print(Panel(
+                    f"[success]Engine:[/success]  [bold]{effective_engine_name}[/bold]\n"
+                    f"[success]PID:[/success]     [bold]{pid}[/bold]\n"
+                    f"[success]Log:[/success]     [dim]{daemon.LOG_FILE}[/dim]\n\n"
+                    f"[muted]Run [bold]blackout status[/bold] to monitor.[/muted]\n"
+                    f"[muted]Run [bold]blackout stop[/bold] to stop.[/muted]",
+                    title="[bold green]✓ Blackout Kit — Background[/bold green]",
+                    border_style="green",
+                ))
+            except RuntimeError as e:
+                console.print(f"[error]{e}[/error]")
             return
 
-    # Normal foreground mode (admin or no elevation needed)
-    kill_switch_enabled = False
-    if sys.platform.startswith("linux") and s.get("kill_switch", False):
-        if not sec.prepare_linux_kill_switch(engine_name):
-            console.print("[error]Could not resolve a safe Linux kill-switch endpoint; refusing to start.[/error]")
-            return
-        if not sec.enable_kill_switch(engine_name):
-            console.print("[error]Linux kill switch could not be enabled; refusing to start the system tunnel.[/error]")
-            return
-        kill_switch_enabled = True
-
-    engines = _start_engine_stack(engine_name)
-
-    if not engines:
-        if kill_switch_enabled:
-            sec.disable_kill_switch()
-            sec.clear_linux_kill_switch_endpoint(engine_name)
-        console.print("[error]No engines could start. Make sure binaries are in bins/.[/error]")
-        return
-
-    for eng in engines:
-        console.print(f"  [success]✓ {eng.name}[/success] running (PID {eng.pid})")
-
-    if s.get("auto_set_proxy"):
-        proxy_info = cfg.get_engine_proxy_details(engine_name, s)
-        if proxy_info:
-            p_host, p_port = proxy_info
-            if set_system_proxy(p_host, p_port):
-                console.print(f"  [success]✓ System proxy set[/success] → {p_host}:{p_port}")
-            health_target = _health_check_target(proxy_info)
-        else:
-            console.print("  [info]Network-level engine — no system proxy needed[/info]")
-
-    console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
-
-    try:
-        last_check = time.monotonic()
-        while all(e.is_running() for e in engines):
-            time.sleep(1)
-            
-            # Every 10 seconds, check if the proxy is actually routing traffic
-            now = time.monotonic()
-            if now - last_check > 10.0:
-                last_check = now
-                if s.get("auto_set_proxy") and health_target:
-                    import socket
+        if sys.platform == "win32" and not is_admin and effective_engine_name in EXTRA_ADMIN_ENGINES:
+            console.print("[warning]Elevating to Administrator... Please accept the UAC prompt.[/warning]")
+            try:
+                pid = daemon.start(effective_engine_name, env_overrides=env_overrides)
+                if not pid:
+                    console.print("[error]Failed to start daemon (UAC prompt declined or timed out).[/error]")
+                    return
+                console.print(f"  [success]✓ {effective_engine_name}[/success] running in background (PID {pid})")
+                console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
+                with open(daemon.LOG_FILE, "r", encoding="utf-8") as f:
+                    f.seek(0, 2)
                     try:
-                        with socket.create_connection(health_target, timeout=2.0):
-                            pass
-                    except Exception:
-                        console.print("\n[warning]⚠ Proxy port stopped responding. Check your internet connection.[/warning]")
-    except KeyboardInterrupt:
-        pass
-    finally:
-        console.print("\n[warning]Stopping...[/warning]")
+                        while daemon.get_pid() is not None:
+                            line = f.readline()
+                            if not line:
+                                time.sleep(0.1)
+                                continue
+                            if "[ERROR]" in line:
+                                console.print(f"[red]{line.strip()}[/red]")
+                            elif "[WARNING]" in line:
+                                console.print(f"[yellow]{line.strip()}[/yellow]")
+                            elif "[success]" in line:
+                                console.print(f"[green]{line.strip()}[/green]")
+                            else:
+                                console.print(f"[dim]{line.strip()}[/dim]")
+                    except KeyboardInterrupt:
+                        pass
+                    finally:
+                        console.print("\n[warning]Stopping...[/warning]")
+                        daemon.stop()
+                return
+            except RuntimeError as e:
+                console.print(f"[error]{e}[/error]")
+                return
+
+        kill_switch_enabled = False
+        if sys.platform.startswith("linux") and s.get("kill_switch", False):
+            if not sec.prepare_linux_kill_switch(effective_engine_name):
+                console.print("[error]Could not resolve a safe Linux kill-switch endpoint; refusing to start.[/error]")
+                return
+            if not sec.enable_kill_switch(effective_engine_name):
+                console.print("[error]Linux kill switch could not be enabled; refusing to start the system tunnel.[/error]")
+                return
+            kill_switch_enabled = True
+
+        engines = _start_engine_stack(effective_engine_name)
+        if not engines:
+            if kill_switch_enabled:
+                sec.disable_kill_switch()
+                sec.clear_linux_kill_switch_endpoint(effective_engine_name)
+            console.print("[error]No engines could start. Make sure binaries are in bins/.[/error]")
+            return
+
         for eng in engines:
-            eng.stop()
+            console.print(f"  [success]✓ {eng.name}[/success] running (PID {eng.pid})")
+
         if s.get("auto_set_proxy"):
-            clear_system_proxy()
-        if kill_switch_enabled:
-            sec.disable_kill_switch()
-            sec.clear_linux_kill_switch_endpoint(engine_name)
-        _restore_iran_snapshot()
-        console.print("[success]Stopped. System proxy cleared.[/success]")
+            proxy_info = cfg.get_engine_proxy_details(effective_engine_name, s)
+            if proxy_info:
+                p_host, p_port = proxy_info
+                if set_system_proxy(p_host, p_port):
+                    console.print(f"  [success]✓ System proxy set[/success] → {p_host}:{p_port}")
+                health_target = _health_check_target(proxy_info)
+            else:
+                console.print("  [info]Network-level engine — no system proxy needed[/info]")
+
+        console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
+        try:
+            last_check = time.monotonic()
+            while all(e.is_running() for e in engines):
+                time.sleep(1)
+                now = time.monotonic()
+                if now - last_check > 10.0:
+                    last_check = now
+                    if s.get("auto_set_proxy") and health_target:
+                        import socket
+                        try:
+                            with socket.create_connection(health_target, timeout=2.0):
+                                pass
+                        except Exception:
+                            console.print("\n[warning]⚠ Proxy port stopped responding. Check your internet connection.[/warning]")
+        except KeyboardInterrupt:
+            pass
+        finally:
+            console.print("\n[warning]Stopping...[/warning]")
+            for eng in engines:
+                eng.stop()
+            if s.get("auto_set_proxy"):
+                clear_system_proxy()
+            if kill_switch_enabled:
+                sec.disable_kill_switch()
+                sec.clear_linux_kill_switch_endpoint(effective_engine_name)
+            console.print("[success]Stopped. System proxy cleared.[/success]")
 
 
 def cmd_stop(args):
@@ -832,7 +992,43 @@ def _status_snapshot() -> dict:
         "http_open": test_tcp_port("127.0.0.1", http_port) is not None if http_port else None,
         "socks_open": test_tcp_port("127.0.0.1", socks_port) is not None if socks_port else None,
         "stability": sec.get_stability_score(active_engine) if state else None,
+        "latencies": sec.get_recent_latencies(active_engine) if state else [],
+        "events": daemon.get_recent_events(3) if pid else [],
     }
+
+
+def _sparkline(data: list[float | None], width: int = 15) -> str:
+    """Generate a Unicode sparkline from numeric data."""
+    valid = [v for v in data if v is not None]
+    if not valid:
+        return "[muted]" + " " * width + "[/muted]"
+    
+    # Pad to width
+    data = data[-width:]
+    if len(data) < width:
+        data = [None] * (width - len(data)) + data
+        
+    min_val, max_val = min(valid), max(valid)
+    bars = " ▂▃▄▅▆▇█"
+    
+    res = ""
+    for v in data:
+        if v is None:
+            res += "[error]x[/error]"
+        else:
+            if min_val == max_val:
+                idx = 3
+            else:
+                idx = int((v - min_val) / (max_val - min_val) * 7)
+            # Higher latency = worse = red, lower = better = green
+            if v < 300:
+                color = "success"
+            elif v < 800:
+                color = "warning"
+            else:
+                color = "error"
+            res += f"[{color}]{bars[idx]}[/{color}]"
+    return res
 
 
 def _status_panel(snapshot: dict) -> Panel:
@@ -857,16 +1053,36 @@ def _status_panel(snapshot: dict) -> Panel:
     stability = snapshot["stability"]
     stability_info = "[muted]No local health history[/muted]"
     if stability and stability.get("avg_ms") is not None:
+        graph = _sparkline(snapshot.get("latencies", []))
         stability_info = (
             f"avg {stability['avg_ms']:.0f}ms · loss {stability['loss_pct']:.0f}% · "
-            f"{stability['trend']}"
+            f"{stability['trend']}  {graph}"
         )
     proxy = snapshot["proxy"]
     proxy_info = f"[success]● Active[/success]  {proxy['server']}" if proxy["enabled"] else "[muted]○ Off[/muted]"
+    
+    io_info = ""
+    if state and "io_bytes" in state and state["io_bytes"]:
+        rx, tx = state["io_bytes"]
+        def fmt_bytes(b):
+            for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                if b < 1024.0:
+                    return f"{b:.1f}{unit}"
+                b /= 1024.0
+            return f"{b:.1f}PB"
+        io_info = f"[cyan]↓[/cyan] {fmt_bytes(rx)}   [magenta]↑[/magenta] {fmt_bytes(tx)}"
+
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
     table.add_column(style="muted", width=18)
     table.add_column()
     table.add_row("Daemon", daemon_info)
+    if io_info:
+        table.add_row("Data transferred", io_info)
+    
+    events = snapshot.get("events", [])
+    if events:
+        table.add_row("Recent events", "\n".join(events))
+
     table.add_row("System proxy", proxy_info)
     table.add_row("HTTP local port", "[success]Open[/success]" if snapshot["http_open"] else "[muted]n/a[/muted]" if snapshot["http_open"] is None else "[error]Closed[/error]")
     table.add_row("SOCKS local port", "[success]Open[/success]" if snapshot["socks_open"] else "[muted]n/a[/muted]" if snapshot["socks_open"] is None else "[error]Closed[/error]")
@@ -2144,13 +2360,29 @@ def _ensure_ready(engine_name: str) -> bool:
 
 def cmd_connect(args):
     """Smart connect — auto-preps and starts the best locally-ready engine."""
-    s = cfg.load()
     requested_engine = getattr(args, "pos_engine", None) or getattr(args, "engine", None)
-    recommended = _recommended_engine_name()
-    engine_name = recommended if requested_engine in (None, "auto") else requested_engine
-
     background = getattr(args, "background", False)
     iran_mode = getattr(args, "iran", False)
+    russia_mode = getattr(args, "russia", False)
+
+    if iran_mode and russia_mode:
+        console.print("[error]Choose only one preset: --iran or --russia.[/error]")
+        return
+
+    preset_name = "iran" if iran_mode else "russia" if russia_mode else None
+    env_overrides: dict[str, str] = {}
+    connect_profile = None
+    base_settings = cfg.load()
+
+    if preset_name:
+        _title, env_overrides, _changes, _footer = _preset_payload(preset_name, base_settings, direct_start=False)
+
+    with _temporary_env_overrides(env_overrides):
+        recommended = _recommended_engine_name()
+        connect_profile = _get_active_profile()
+
+    engine_name = recommended if requested_engine in (None, "auto") else requested_engine
+
     if requested_engine is None and is_interactive() and not background:
         choice = ask_choice(
             f"Recommended engine: {recommended}. Continue or choose manually?",
@@ -2161,65 +2393,14 @@ def cmd_connect(args):
             console.print("[muted]Connection cancelled.[/muted]")
             return
         if choice == "manual":
-            cmd_route(args)
-            choices = [candidate.engine for candidate in _routing_candidates()]
+            with _temporary_env_overrides(env_overrides):
+                cmd_route(args)
+                choices = [candidate.engine for candidate in _routing_candidates()]
             engine_name = ask_choice("Choose an engine", choices, default=recommended)
             if not engine_name:
                 console.print("[muted]Connection cancelled.[/muted]")
                 return
 
-    if not _ensure_ready(engine_name):
-        return
-
-    # Apply Iran bypass profile if requested
-    if iran_mode:
-        _save_iran_snapshot()
-        from .theme import success_panel
-        arvancloud_sni = s.get("sni_arvancloud_sni", "www.arvancloud.ir")
-        profile_changes = []
-
-        try:
-            sec.apply_mode("private")
-            profile_changes.append("Security mode: PRIVATE")
-        except Exception:
-            pass
-
-        try:
-            cfg.set_value("xray_fingerprint", "firefox")
-            profile_changes.append("TLS fingerprint: Firefox")
-        except Exception:
-            pass
-
-        try:
-            current_sni = s.get("sni_fake_sni", "")
-            # Only overwrite if still at the default — respect user's custom SNI choice
-            if current_sni in ("www.hcaptcha.com", "") and current_sni != arvancloud_sni:
-                cfg.set_value("sni_fake_sni", arvancloud_sni)
-                profile_changes.append(f"Fake SNI → {arvancloud_sni} (Iran domestic CDN)")
-        except Exception:
-            pass
-
-        try:
-            current_frag = s.get("xray_fragment", "")
-            if not current_frag:
-                cfg.set_value("xray_fragment", "10-50,10-50")
-                profile_changes.append("TLS fragmentation enabled")
-        except Exception:
-            pass
-
-        s = cfg.load()
-
-        console.print()
-        console.print(success_panel(
-            "[bold]Iran Bypass Profile Active[/bold]\n\n" +
-            "\n".join(f"  • {c}" for c in profile_changes) +
-            "\n\n[dim]This profile applies local XRay/SNI settings. Its effectiveness "
-            "depends on the network, upstream configuration, and current filtering rules.[/dim]",
-            title="Iran 2026 — TIC Evasion",
-        ))
-
-    # Print country-aware hint
-    connect_profile = _get_active_profile()
     if connect_profile:
         rec = connect_profile.engine_order[0] if connect_profile.engine_order else engine_name
         console.print(
@@ -2232,8 +2413,14 @@ def cmd_connect(args):
                 "China's Great Firewall (GFW blocks IPs + SNI).\n"
                 "  Suggested engine: [bold]blackout connect --engine xray[/bold]"
             )
+        if connect_profile.code == "RU" and engine_name in ("sni", "gdpi"):
+            console.print(
+                "[yellow]Note:[/yellow] Russia's preset currently favors XRay and QUIC-capable paths first.\n"
+                "  Suggested engines: [bold]blackout connect --engine xray[/bold], "
+                "[bold]blackout connect --engine hysteria2[/bold], or [bold]blackout connect --engine tuic[/bold]"
+            )
 
-    # If SNI engine and no saved Cloudflare IP, do a quick 10-IP scan first.
+    s = cfg.load()
     if not sys.platform.startswith("linux") and engine_name in ("sni", "auto") and not s.get("sni_connect_ip"):
         console.print("[yellow]No saved Cloudflare IP — running quick scan (10 IPs)...[/yellow]")
         ips = generate_cloudflare_ips(10)
@@ -2252,13 +2439,14 @@ def cmd_connect(args):
         else:
             console.print("[warning]No reachable Cloudflare IPs. Proceeding anyway...[/warning]")
 
-    # Delegate to cmd_start with resolved engine
     class _FakeArgs:
         pass
+
     fake = _FakeArgs()
     fake.engine = engine_name if engine_name != "auto" else "sni"
     fake.background = background
-    fake.iran = False
+    fake.iran = iran_mode
+    fake.russia = russia_mode
     cmd_start(fake)
 
 
@@ -2473,7 +2661,7 @@ def _interactive_menu():
         ("🚀 Connect",   "Start bypass — smart/preferred engine", "1"),
         ("⚡ Emergency",  "Try locally supported candidates", "2"),
         ("🔌 Engine",     "Select manual bypass engine (sni/psiphon/warp...)", "3"),
-        ("🌍 Country",    "Show or set country profile (IR/CN/…)", "4"),
+        ("🌍 Country",    "Show or set country profile (IR/RU/CN/…)", "4"),
         ("📊 Status",    "Check daemon + connection health", "5"),
         ("📡 Live Status", "Watch local connection state", "W"),
         ("🧭 Routing",   "Rank local engine readiness", "R"),
@@ -2583,7 +2771,7 @@ def _interactive_menu():
 
 def cmd_daemon_run(args):
     """Hidden command — runs inside the background daemon process."""
-    daemon.run_daemon_loop(args.engine)
+    daemon.run_daemon_loop(args.engine, getattr(args, "env_overrides_json", None))
 
 
 def main():

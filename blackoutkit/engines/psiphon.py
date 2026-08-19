@@ -1,7 +1,7 @@
 """
 Blackout Kit - Psiphon engine.
-Uses our own blackout_warp.dll (Go) for multi-protocol VPN.
-No external binary downloads needed.
+Uses the current blackout_warp.dll runtime path for the active Psiphon implementation.
+Source installs still need that local runtime asset available.
 """
 from .base import Engine
 from .. import settings as cfg

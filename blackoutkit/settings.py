@@ -127,7 +127,7 @@ DEFAULTS = {
     "gas_proxy_port":       8087,
 
     # Country profile
-    "country":              "",  # ISO code (IR/US/GB/CN/IQ/EU). Empty = auto-detect from ISP.
+    "country":              "",  # ISO code (IR/RU/US/GB/CN/IQ/EU). Empty = auto-detect from ISP.
 
     # Iran 2026 Evasion
     "xray_fragment":        "10-50,10-50",  # TLS record fragment mode (range,range)
@@ -170,7 +170,7 @@ _VALIDATORS: dict[str, tuple] = {
     "softether_port":     (int,   *_PORT_RANGE),
     "neighbor_proxy_port":(int,   *_PORT_RANGE),
     "gas_proxy_port":     (int,   *_PORT_RANGE),
-    "xray_fragment":      (str,   lambda v: v.count(",") == 1, "must be 'range,range' (e.g. 10-50,10-50)"),
+    "xray_fragment":      (str,   lambda v: v == "" or v.count(",") == 1, "must be empty or 'range,range' (e.g. 10-50,10-50)"),
     "xray_split_tunnel":  (bool,  lambda v: True,            "must be true or false"),
     "xray_doh_dns":       (bool,  lambda v: True,            "must be true or false"),
     "scan_concurrency":   (int,   lambda v: 1 <= v <= 500,   "must be 1–500"),
@@ -467,8 +467,8 @@ def describe(key: str) -> str:
         "neighbor_proxy_port":"Proxy port to share with nearby LAN devices",
         "neighbor_bind_lan":  "Bind proxy to 0.0.0.0 so LAN devices can reach it",
         "gas_proxy_port":     "Local port for Google Apps Script HTTP relay proxy",
-        "country":            "Country profile code (IR/US/GB/CN/IQ/EU). Empty = auto-detect from ISP.",
-        "xray_fragment":      "XRay TLS record fragment: range,range (TIC 2026 evasion)",
+        "country":            "Country profile code (IR/RU/US/GB/CN/IQ/EU). Empty = auto-detect from ISP.",
+        "xray_fragment":      "XRay TLS record fragment: empty disables it, otherwise range,range (e.g. 10-50,10-50)",
         "sni_arvancloud_sni": "Fake SNI using Iran domestic CDN (arvancloud.ir) — unblockable inside Iran",
         "xray_split_tunnel":  "Bypass proxy for local LAN and domestic (.ir) traffic",
         "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",

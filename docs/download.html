@@ -1,160 +1,68 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Download | Blackout Kit</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        /* Shared Styles */
-        :root {
-            --bg-color: #050505;
-            --surface: #111111;
-            --primary: #00ffcc;
-            --primary-glow: rgba(0, 255, 204, 0.3);
-            --text-main: #ffffff;
-            --text-muted: #888888;
-            --glass-bg: rgba(25, 25, 25, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.08);
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            line-height: 1.6;
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(0, 255, 204, 0.05), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(0, 150, 255, 0.05), transparent 25%);
-        }
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 2rem 5%;
-            position: absolute;
-            width: 100%;
-            top: 0;
-            z-index: 10;
-        }
-        .logo {
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            font-size: 1.5rem;
-            color: var(--primary);
-            text-shadow: 0 0 15px var(--primary-glow);
-            letter-spacing: -1px;
-        }
-        .nav-links a {
-            color: var(--text-main);
-            text-decoration: none;
-            margin-left: 2rem;
-            font-weight: 600;
-            transition: color 0.3s ease;
-        }
-        .nav-links a:hover { color: var(--primary); }
-        .github-btn {
-            background: transparent;
-            border: 1px solid var(--primary);
-            color: var(--primary);
-            padding: 0.6rem 1.2rem;
-            border-radius: 6px;
-            text-decoration: none;
-            font-family: 'JetBrains Mono', monospace;
-        }
-        .github-btn:hover { background: var(--primary); color: var(--bg-color); }
-        
-        .page-header {
-            padding: 10rem 5% 4rem;
-            text-align: center;
-        }
-        h1 {
-            font-size: 4rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #fff 0%, #a0a0a0 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .content {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 2rem 5%;
-        }
-        .download-card {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            padding: 3rem;
-            border-radius: 16px;
-            margin-bottom: 2rem;
-            backdrop-filter: blur(10px);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 2rem;
-        }
-        .download-info h2 { color: #fff; font-size: 2rem; margin-bottom: 0.5rem; }
-        .download-info p { color: var(--text-muted); }
-        .btn-download {
-            background: var(--primary);
-            color: var(--bg-color);
-            padding: 1rem 2.5rem;
-            border-radius: 8px;
-            text-decoration: none;
-            font-weight: 600;
-            font-size: 1.1rem;
-            transition: all 0.3s ease;
-            box-shadow: 0 0 25px var(--primary-glow);
-            white-space: nowrap;
-        }
-        .btn-download:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(0, 255, 204, 0.6); }
-        
-        .code-block {
-            background: #000;
-            padding: 1.5rem;
-            border-radius: 8px;
-            font-family: 'JetBrains Mono', monospace;
-            color: var(--primary);
-            margin-top: 1rem;
-            border: 1px solid #333;
-            overflow-x: auto;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Install Blackout Kit</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0b0b0b; color: #f5f5f5; }
+    header, main, footer { max-width: 1000px; margin: 0 auto; padding: 24px; }
+    nav a { color: #7ee7d8; margin-right: 16px; text-decoration: none; }
+    .card { background: #151515; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; margin: 16px 0; }
+    pre { background: #111; border: 1px solid #2a2a2a; padding: 16px; border-radius: 10px; overflow-x: auto; }
+    .muted { color: #b0b0b0; }
+  </style>
 </head>
 <body>
+  <header>
     <nav>
-        <div class="logo"><a href="index.html" style="text-decoration:none; color:inherit;">BLACKOUT_KIT</a></div>
-        <div class="nav-links">
-            <a href="engines.html">Engines</a>
-            <a href="privacy.html">Privacy</a>
-            <a href="download.html" style="color: var(--primary);">Download</a>
-            <a href="https://github.com/kiacoder/blackout-kit" class="github-btn" target="_blank">GitHub</a>
-        </div>
+      <a href="index.html">Overview</a>
+      <a href="engines.html">Engines</a>
+      <a href="privacy.html">Security</a>
+      <a href="download.html">Install</a>
+      <a href="https://github.com/kiacoder/blackout-kit">GitHub</a>
     </nav>
+    <h1>Install Blackout Kit</h1>
+    <p class="muted">Choose the install path that matches your platform and trust needs.</p>
+  </header>
 
-    <div class="page-header">
-        <h1>Get Blackout Kit.</h1>
-        <p style="color: var(--text-muted); font-size: 1.2rem; margin-top: 1rem;">Available for Windows 10 & 11.</p>
-    </div>
+  <main>
+    <section class="card">
+      <h2>Windows packaged app</h2>
+      <p>Download the latest packaged executable from GitHub Releases:</p>
+      <p><a href="https://github.com/kiacoder/blackout-kit/releases">https://github.com/kiacoder/blackout-kit/releases</a></p>
+    </section>
 
-    <div class="content">
-        <div class="download-card">
-            <div class="download-info">
-                <h2>Standalone Executable</h2>
-                <p>Fully bundled with all 13+ engine binaries. No Python required.<br><strong>Perfect for when the internet goes out.</strong></p>
-            </div>
-            <a href="https://github.com/kiacoder/blackout-kit/releases" class="btn-download">Download .exe</a>
-        </div>
+    <section class="card">
+      <h2>Windows source install</h2>
+      <pre>git clone https://github.com/kiacoder/blackout-kit.git
+cd blackout-kit
+pip install -r requirements.txt
+python blackout.py version
+python blackout.py bins
+python blackout.py bins download</pre>
+    </section>
 
-        <div class="download-card" style="flex-direction: column; align-items: flex-start;">
-            <div class="download-info" style="width: 100%;">
-                <h2>Developer Installation (PowerShell)</h2>
-                <p>Install the Blackout Kit directly from the source using our automated one-liner. Requires Python 3.9+.</p>
-            </div>
-            <div class="code-block" style="width: 100%;">
-                iwr -useb https://raw.githubusercontent.com/kiacoder/blackout-kit/main/install.ps1 | iex
-            </div>
-        </div>
-    </div>
+    <section class="card">
+      <h2>Linux source/runtime install</h2>
+      <pre>python3 -m pip install -r requirements.txt
+mkdir -p bins
+chmod +x bins/blackout-engine
+python3 blackout.py version</pre>
+      <p>Linux requires the managed runtime asset in <code>bins/blackout-engine</code> and currently supports only <code>xray</code>, <code>tun</code>, <code>hysteria2</code>, and <code>tuic</code>.</p>
+    </section>
+
+    <section class="card">
+      <h2>After install</h2>
+      <pre>python blackout.py doctor
+python blackout.py route
+python blackout.py ready xray
+python blackout.py connect</pre>
+    </section>
+  </main>
+
+  <footer>
+    <p class="muted">See the User Guide for the full first-run flow.</p>
+  </footer>
 </body>
 </html>

@@ -1,208 +1,350 @@
 # Security Policy
 
-Blackout Kit is a censorship circumvention toolkit. Its security directly
-protects users in high-risk environments — we take this seriously.
+Blackout Kit is a censorship-circumvention toolkit that can affect user privacy, device networking, and trust decisions about upstream servers. Its security model matters because incorrect claims or unsafe local behavior can put users at risk.
 
-## Supported Versions
+This document describes the **current** security posture of the shipped codebase.
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 1.1.x   | Active support     |
-| 1.0.x   | Security patches   |
-| < 1.0   | Unsupported        |
+---
 
-Only the latest minor release receives full updates. Critical patches are
-backported to the previous minor for 30 days.
+## Supported versions
 
-## Threat Model
+| Version line | Status |
+|---|---|
+| 1.1.x | Active support |
+| 1.0.x | Security patches only |
+| < 1.0 | Unsupported |
 
-Blackout Kit assumes the following adversary capabilities:
+Only the latest minor release receives full updates. Critical fixes may be backported to the previous minor for a limited window.
 
-| Adversary | Capabilities | Mitigation |
-|-----------|-------------|------------|
-| **ISP / DPI** | Packet inspection, SNI blocking, port blocking | Supported local engines and configured upstream proxy protocols; effectiveness varies by network and configuration |
-| **National Firewall** | Active probing, protocol classification, IP blacklisting | XRay and compatible upstream configurations where available; no active-probing or detection-resistance guarantee |
-| **Local Network Admin** | DNS poisoning, deep packet inspection, throttling | Optional DoH bootstrap, platform-specific kill switch, and encrypted proxy transports when configured |
-| **Passive Eavesdropper** | Traffic correlation, metadata analysis | Encrypted transports and normal-TLS certificate policy; timing correlation remains out of scope |
+---
 
-**We do NOT protect against:**
-- A state actor with physical device access
-- Targeted malware/keylogger on the user's machine
-- Traffic correlation via timing analysis at scale
-- Compromise of upstream proxy/VPN servers
+## Scope of protection
 
-## Reporting a Vulnerability
+Blackout Kit is a **local coordinator**. It orchestrates local runtimes, settings, recovery, and trust decisions around saved proxy or VPN configurations.
 
-**DO NOT open a public issue.** Vulnerabilities in circumvention tools can
-put users at risk if disclosed before a fix is available.
+It is **not**:
 
-### Preferred: GitHub Private Reporting
-Use GitHub's [private vulnerability reporting](https://github.com/kiacoder/blackout-kit/security/advisories/new).
+- an anonymity system
+- a hosted VPN service
+- a guarantee against DPI, probing, or blocking
+- a guarantee that a country profile or mode will work on a given network
+- a replacement for endpoint security on a compromised machine
 
-If private reporting is unavailable, contact the repository maintainer through the
-GitHub account listed on the project page. Do not post exploit details or sensitive
-configuration data in a public issue.
+### What Blackout Kit does control
 
-### What to expect
+- local runtime startup and shutdown
+- local port exposure for engines that provide HTTP or SOCKS listeners
+- local settings validation
+- local encrypted storage of saved proxy URIs and supported VPN secrets
+- local readiness checks that avoid contacting remote hosts
+- targeted cleanup of Blackout-owned network state after crashes
+- Linux endpoint-scoped firewall protection when enabled and valid
 
-- **Acknowledgment**: within 48 hours
-- **Status update**: every 5 days until resolved
-- **Fix timeline**: critical (7 days), high (14 days), medium (30 days)
-- **Credit**: you'll be credited in the advisory (or remain anonymous if you prefer)
-- **CVE**: we will request a CVE ID for confirmed vulnerabilities
+### What Blackout Kit does not control
 
-### Scope
+- remote VPN or proxy server integrity
+- upstream operator trustworthiness
+- destination-side tracking or fingerprinting
+- network conditions outside the local machine
+- traffic-analysis resistance
+- physical or malware compromise of the device
 
-| In scope | Out of scope |
-|----------|-------------|
-| SNI spoofing leaks (real IP exposure) | Theoretical attacks without a PoC |
-| Kill switch bypass | Social engineering |
-| Binary integrity / supply chain | `blackout doctor` false positives |
-| DNS leak through any engine | DoS without privacy impact |
-| Config encryption weaknesses | Vulnerabilities in external engines (report upstream) |
-| Proxy authentication bypass | Dependabot-flagged Go dep vulns (transitive deps pinned by xray-core, sing-box, warp-plus — see Known Trade-offs) |
+---
 
-## Coordinated Disclosure
+## Threat model
 
-We follow a 90-day coordinated disclosure window:
+Blackout Kit assumes adversaries can vary from ordinary ISP filtering to stronger national filtering systems.
 
-1. **Report received** — we acknowledge within 48h
-2. **Fix developed** — we aim for a patch within the fix timeline above
-3. **Patch released** — a new version is published with a security advisory
-4. **Public disclosure** — 90 days after the fix release, we publish details
+| Adversary | Expected capability | Relevant Blackout Kit defenses |
+|---|---|---|
+| ISP / ordinary DPI | SNI filtering, destination blocking, DNS interference, simple protocol classification | Local engine selection, configured proxy transports, optional DoH bootstrap, targeted local recovery |
+| National firewall | Active probing, IP blacklisting, transport classification, dynamic filtering | Compatible local XRay/TUN paths, compatible user-supplied upstream configuration, country-aware guidance |
+| Local network admin | DNS poisoning, policy filtering, local throttling, basic monitoring | Encrypted upstream transports when configured, optional Linux kill switch, local system-proxy and TUN control |
+| Passive eavesdropper | Metadata observation, timing observation, endpoint correlation | Only what the selected upstream transport actually provides |
 
-We appreciate reporters who respect this window.
+### Explicitly out of scope
 
-## Supply Chain Security
+Blackout Kit does not claim protection against:
 
-### Go Module Pinning
-- All dependencies are pinned via `go.sum` in `engine/` and `engine/warp/`
-- Dependabot monitors the Go module graphs for vulnerable transitive dependencies
-- Patchable transitive dependencies are pinned at or above their fixed releases and verified in the Windows WARP DLL build
-- Upstream forks (utls, quic-go) are reviewed before updating
+- physical access to the device
+- keyloggers or local malware
+- large-scale traffic-correlation attacks
+- compromise of the upstream server operator
+- legal coercion
+- a privileged local adversary that can alter kernel or firewall behavior
 
-### Release Artifacts
-- CI builds the supported Windows and Linux native artifacts from repository sources.
-- Verify the release asset, commit, and any published checksums before deploying it in a high-risk environment.
-- Build the native artifacts locally when you need to inspect the exact source and toolchain inputs (see below).
+---
 
-### Dependency Audit
-- `go mod verify` is run before every release
-- `govulncheck` is run periodically to catch known CVEs
-- We prioritize upgrading `golang.org/x/crypto` (the primary attack surface,
-  a transitive dep of xray-core, sing-box, and warp-plus)
+## Platform security boundaries
 
-## Recent Security Improvements (v1.1.x)
+### Windows
 
-- **Windows kill switch retired**: legacy Windows Firewall rules were removed
-  because block rules override the per-process allow rules they require. The
-  verified implementation is Linux-only, endpoint-scoped firewall protection.
-- **Download integrity**: all downloaded binaries verified for valid PE
-  headers (MZ + PE signature) before install. Corrupt/tampered files rejected.
-- **Watchdog cleanup**: if the daemon is End-Tasked while kill switch is on,
-  internet is no longer permanently blocked.
-- **DLL crash detection**: engines that crash silently (segfault, deadlock)
-  are now detected via TCP port probes and auto-restarted by the daemon.
-- **Config isolation**: each engine writes to a unique temp directory
-  instead of shared `bins/`, preventing cross-instance corruption.
+Windows is the broadest product surface, but some historical ideas are now intentionally retired.
 
-## Native Runtime Build Scope
+Current Windows security facts:
 
-The repository builds Blackout Kit's Go wrappers in `engine/`; it does not build every third-party runtime or downloaded engine from source. Use the release checksums and upstream provenance for those dependencies.
+- the Windows engine catalog is broad
+- some engines or maintenance actions require elevation
+- the system proxy is used only when an engine exposes a local proxy endpoint and `auto_set_proxy` is enabled
+- the desktop GUI and Windows system-proxy bypass rules are Windows-only features
+- the old Windows Firewall kill-switch approach is **not** treated as supported protection and its legacy rules are removed rather than documented as safe
 
-```bash
-# Windows native core (run with a Windows Go toolchain)
-cd engine
-go build -buildmode=c-shared -o ../bins/blackout_core.dll .
+### Linux
 
-# Windows WARP/Psiphon wrapper
-cd warp
-go build -buildmode=c-shared -o ../../bins/blackout_warp.dll .
+Linux has a smaller runtime surface but the **verified kill-switch implementation** lives here.
 
-# Linux x86_64 managed runner (run with a Linux Go toolchain)
-cd ..
-go build -o ../dist/blackout-engine-linux-amd64 .
-```
+Current Linux security facts:
 
-A successful local build demonstrates that the selected source and toolchain compile; it is not, by itself, a reproducible-build attestation or a substitute for validating release checksums.
+- supported engines are limited to `xray`, `tun`, `hysteria2`, and `tuic`
+- TUN and firewall operations require `sudo`
+- the supported kill switch is endpoint-scoped and Blackout-owned
+- cleanup removes only Blackout-owned firewall, tunnel, and routing state rather than resetting the whole system
 
-## Data Privacy & Telemetry
+---
 
-Blackout Kit does not include a first-party analytics or telemetry service. It does make network requests when you invoke features that need them, including updates, subscription imports, scans, DNS resolution, certificate checks, speed tests, and unpinned ISP/country lookup.
+## Security modes
 
-Persistent local data can include:
-- Settings and saved proxy configuration URIs. `blackout config encrypt` stores saved URIs plus IKEv2 password/PSK and SoftEther passwords in machine-bound AES-256-GCM vault records; active vault data is read only in memory.
-- Daemon logs, local stability history, certificate records created by TLS checks, redacted recovery audit history, and Windows system-proxy bypass rules.
-- Engine binaries and local WARP/Psiphon identity or datastore caches generated at runtime.
+Blackout Kit exposes three local security modes:
 
-Routine terminal and MCP settings views mask IKEv2 and SoftEther credentials.
-When the vault is active, `settings.json` does not contain those secret fields.
-`blackout config decrypt` is an explicit same-machine recovery operation that
-restores plaintext files; re-encrypt when recovery is complete.
+- `speed`
+- `private`
+- `legend`
 
-Protect this data as sensitive. A proxy URI can contain server credentials, and an upstream proxy/VPN operator can observe traffic routed through that server.
+These are **local configuration presets**, not threat-model guarantees.
 
-## Guidance for Recommendations
+### What they actually change
 
-Do not describe Blackout Kit as universally safe, anonymous, undetectable, or more private than another product without an independent review of the current release and the user's threat model. It is a local coordinator for engines and user-supplied upstream configurations; it does not operate the proxy/VPN servers that carry tunneled traffic.
+The mode system currently adjusts local XRay and legacy-GDPI behavior, such as:
 
-For high-risk use, evaluate the current source, release provenance, local-device security, upstream operator trust, platform constraints, and applicable law before relying on any engine or mode.
+- XRay fingerprint selection
+- XRay MUX enablement
+- handling of known-bad **normal TLS** certificates
+- legacy GDPI flags
 
-## Known Trade-offs
+### What they do not guarantee
 
-This tool intentionally trades some security for circumvention effectiveness:
+The mode system does not guarantee:
 
-- **Normal TLS `allowInsecure = true`** (SPEED/PRIVATE) — accepts unverified
-  normal TLS certificates for compatibility. LEGEND rejects a known-bad normal
-  TLS certificate unless explicitly allowed. VLESS REALITY instead relies on
-  XRay's configured public-key handshake and does not use this certificate policy.
-- **VLESS REALITY trust** — import REALITY URIs only from a trusted server
-  operator. Blackout Kit does not discover servers, generate server keys, or
-  validate the operator beyond XRay's configured handshake.
-- **Config and credential encryption** uses machine-derived AES-256-GCM records
-  with authenticated record labels. It protects supported proxy URIs, IKEv2/L2TP
-  passwords/PSKs, and SoftEther passwords at rest but is not portable and does
-  not protect an already-compromised device. `blackout config decrypt` deliberately
-  restores plaintext for same-machine recovery and should be followed by re-encryption.
-- **Local readiness checks** validate only local settings, files, process state,
-  and loopback ports. They never establish a tunnel, resolve an upstream endpoint,
-  probe remote reachability, or guarantee that an engine will connect.
-- **Recovery audit history** is local-only and bounded. It records executed
-  Blackout-owned recovery actions and redacts URI credentials and secret-like values;
-  it is diagnostic data, not a forensic or tamper-proof log.
-- **Kill switch** is supported only on Linux using a Blackout Kit-owned
-  nftables table (or iptables/ip6tables fallback). A kernel-level adversary can
-  bypass it. It permits only validated upstream endpoint IPs, loopback,
-  LAN/DHCP, and `BlackoutKit-TUN`; it refuses to enable if it cannot resolve a
-  safe endpoint allowlist. Windows legacy rules are removed rather than treated
-  as protection.
-- **Linux system networking** requires `sudo` and supports XRay, TUN,
-  Hysteria2, and TUIC on x86_64. Cleanup removes only `inet blackoutkit`,
-  `BLACKOUTKIT_*`, the dedicated routing table `20220`, and the deterministic
-  `BlackoutKit-TUN` interface; it never flushes system routes or manages
-  third-party VPN interfaces.
-- **ARP repair is explicit** — `blackout tools arp-flush` and
-  `blackout fix --flush-arp` can briefly interrupt LAN neighbor discovery, so
-  default recovery and daemon reconnects never run it.
-- **Plaintext credentials** — IKEv2/SoftEther passwords are stored as plaintext
-  in `settings.json`. `blackout config encrypt` protects only saved proxy URIs,
-  not these settings; LEGEND mode does not encrypt either location.
-- **Legacy Pion transitives** — Dependabot alerts #28
-  (`GHSA-9f3f-wv7r-qc8r`, `github.com/pion/dtls/v2`) and #60
-  (`GHSA-34rh-wp3j-6cxc`, unversioned `github.com/pion/stun`) remain open because
-  their affected v2/v0 module lines have no patched release. They are required by
-  the upstream `warp-plus → psiphon-tunnel-core` integration. The current Psiphon
-  branch uses patched Pion v3 APIs but still retains the legacy compatibility
-  modules, so upgrading to its unreleased pseudo-version would not resolve these
-  alerts and would raise the required Go toolchain to 1.26. All other patchable
-  WARP graph advisories are pinned at their fixed releases. We retain and monitor
-  these alerts rather than dismissing them, and will update when a compatible
-  upstream release removes the legacy module paths.
+- anonymity
+- anti-fingerprinting success
+- remote server trust
+- multi-hop privacy
+- that a blocked network will become reachable
 
-## Hall of Fame
+### REALITY boundary
 
-We maintain a list of researchers who have responsibly disclosed
-vulnerabilities. Thank you for helping protect users worldwide.
+VLESS REALITY is handled by XRay’s configured REALITY handshake and public key validation. It does **not** use the normal TLS certificate probe and policy path used for ordinary TLS streams.
 
-To be added, simply submit a valid report through the channels above and
-let us know if you'd like to be credited.
+---
+
+## Kill switch policy
+
+### Supported implementation
+
+The only supported kill switch is the **Linux endpoint-scoped firewall kill switch**.
+
+It:
+
+- uses a Blackout Kit-owned firewall table/rule set
+- allows only loopback, LAN/DHCP, the managed tunnel path, and the validated upstream endpoint
+- refuses activation if it cannot establish a safe endpoint allowlist
+- cleans up only the Blackout-owned firewall objects
+
+### Unsupported implementation
+
+The old Windows kill-switch idea is intentionally **not** supported.
+
+Reason: Windows Firewall block rules override the per-process allow rules the design would depend on. Rather than pretending that setup is protective, Blackout Kit removes the legacy rules and documents Windows kill-switch support as unavailable.
+
+---
+
+## Readiness and status boundaries
+
+Blackout Kit includes local-only readiness and status features. These are useful, but their limits matter.
+
+### `blackout ready`
+
+`blackout ready` checks only local state such as:
+
+- saved settings
+- encrypted storage health
+- platform support
+- installed runtimes
+- loopback port conflicts
+- saved proxy protocol compatibility
+- daemon ownership
+
+It does **not**:
+
+- resolve remote reachability as proof of success
+- contact upstream nodes to validate the tunnel
+- download runtimes
+- mutate settings or networking
+- guarantee that a later connection attempt will work
+
+### `blackout status`
+
+`blackout status` reads daemon state, local proxy state, local ports, and saved health history. It does not prove that the user’s internet traffic is successfully flowing through the selected upstream service.
+
+---
+
+## Recovery and repair boundaries
+
+Blackout Kit intentionally distinguishes **targeted recovery** from **broad reset**.
+
+### Default targeted recovery
+
+The default `blackout fix` / `blackout tools netfix` path aims to repair only Blackout-owned or clearly stale local state.
+
+Examples include:
+
+- stale Blackout system-proxy settings
+- stale Blackout-owned routes
+- loopback-DNS leftovers on physical adapters
+- unhealthy deterministic `BlackoutKit-TUN` state
+- DNS cache flushes
+- Linux removal of Blackout-owned firewall and tunnel objects
+
+### Broader resets
+
+Windows-only full reset flags remain explicit and opt-in because they can disrupt unrelated system networking.
+
+That distinction is part of the security design: avoid destructive cleanup unless the user asks for it.
+
+---
+
+## Local encrypted storage
+
+Blackout Kit supports machine-bound authenticated encrypted storage.
+
+### What is protected
+
+Current code protects:
+
+- saved proxy configuration URIs
+- supported IKEv2/L2TP secrets
+- supported SoftEther secrets
+
+### Important properties
+
+- encryption is **machine-bound**
+- it protects data **at rest** on the local machine
+- it is not a substitute for host security
+- it is not portable by default
+- `blackout config decrypt` is a same-machine recovery action that restores plaintext files
+
+### Not a promise of secrecy against compromise
+
+If the device is already compromised, or if the user deliberately decrypts the stored data, local encrypted storage is no longer a meaningful protection boundary.
+
+---
+
+## Supply-chain and build security
+
+### Repo-controlled artifacts
+
+This repository builds and tests:
+
+- the Python package
+- the Windows packaged executable
+- the Linux managed runtime artifact
+- Go dependency graphs used in the managed native components
+
+### Current CI signals
+
+The current GitHub workflows perform:
+
+- Python test runs
+- wheel installation smoke tests
+- Windows executable smoke tests
+- Linux runtime build validation
+- distro-level package smoke tests on Debian, Fedora, and Arch containers
+- CodeQL analysis for Python and Go
+
+### Important supply-chain limit
+
+Blackout Kit does not build every third-party upstream project from source inside this repository. Some engine paths still depend on downloaded or externally supplied binaries, or on local runtime assets produced elsewhere in the release process.
+
+That means users and maintainers should verify release provenance and runtime assets appropriate to their threat model.
+
+---
+
+## Vulnerability reporting
+
+Do **not** open a public issue for an exploitable security problem in a circumvention tool.
+
+### Preferred channel
+
+Use GitHub private vulnerability reporting:
+
+- [Private vulnerability reporting](https://github.com/kiacoder/blackout-kit/security/advisories/new)
+
+If private reporting is unavailable, contact the maintainer through the GitHub account listed on the project page and avoid posting exploit details publicly.
+
+### What to include
+
+Please include:
+
+- affected version
+- platform and install method
+- engine or command path involved
+- minimal reproduction steps
+- expected versus actual behavior
+- whether the issue is local-only, remote-triggerable, or requires user interaction
+- whether the issue affects trust, privacy, persistence, recovery, or arbitrary code execution
+
+### Response goals
+
+- acknowledgment within 48 hours
+- regular status updates while triaging
+- fix priority based on user-risk severity
+- public disclosure only after a fix window or coordinated disclosure decision
+
+---
+
+## In-scope issue classes
+
+Examples of security-relevant issues for this project include:
+
+- proxy or VPN credential exposure
+- broken vault or plaintext-restoration behavior
+- kill-switch bypass within the claimed supported Linux scope
+- unintended destructive network recovery beyond documented scope
+- unsafe local file extraction or overwrite behavior
+- trust-boundary failures around TLS or REALITY handling claims
+- sensitive data exposure through terminal or MCP output
+- supply-chain verification or runtime integrity failures within project-controlled logic
+
+Examples that are usually **not** in scope for this repo include:
+
+- theoretical bypass claims without a concrete repro
+- upstream vulnerabilities in third-party engines that Blackout Kit does not own
+- denial-of-service reports that do not create a meaningful privacy or trust failure
+- generic “a blocked site is still blocked” reports without a product defect
+
+---
+
+## Guidance for maintainers and writers
+
+When describing Blackout Kit publicly:
+
+Do **not** claim that it is:
+
+- universally safe
+- anonymous
+- undetectable
+- more private than another product without current evidence
+- guaranteed to work in a country because a profile exists
+
+Do describe it as:
+
+- a local coordinator for bypass engines and user-supplied upstream configurations
+- a Windows-first toolkit with a narrower Linux support scope
+- a product that distinguishes local readiness from actual remote reachability
+- a tool with a documented, bounded Linux kill switch and targeted recovery model
+
+---
+
+## Hall of thanks
+
+Responsible reporters who help improve user safety are appreciated. If a report leads to a confirmed fix and the reporter wants credit, they can be acknowledged in the related advisory.

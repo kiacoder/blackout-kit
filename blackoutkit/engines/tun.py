@@ -42,7 +42,7 @@ DEFAULT_BYPASS_IPS = [
     "172.16.0.0/12",
 ]
 
-# Routes that bypass by domain (Iranian domestic sites — always direct)
+# Routes that bypass by domain — country-aware; falls back to Iranian domestic sites
 DEFAULT_BYPASS_DOMAINS = [
     "domain:ir",             # all .ir domains
     "domain:aparat.com",
@@ -65,8 +65,13 @@ class TUNEngine(Engine):
         s = cfg.load()
         self.socks_upstream = socks_upstream
         self.socks_port     = socks_port or s["xray_socks_port"]
-        self.bypass_domains = bypass_domains or DEFAULT_BYPASS_DOMAINS
+        if bypass_domains is None:
+            from ..country_profiles import bypass_domains_for
+            bypass_domains = bypass_domains_for(s.get("country", ""))
+        self.bypass_domains = bypass_domains
         self.bypass_ips     = bypass_ips    or DEFAULT_BYPASS_IPS
+        from ..country_profiles import direct_dns_for
+        self.direct_dns = direct_dns_for(s.get("country", ""))
 
     def _generate_singbox_config(self) -> dict:
         """Generate sing-box configuration for TUN mode."""
@@ -120,7 +125,7 @@ class TUNEngine(Engine):
             "dns": {
                 "servers": [
                     {"tag": "remote", "address": "tls://1.1.1.1", "detour": "proxy"},
-                    {"tag": "direct", "address": "223.5.5.5",     "detour": "direct"},
+                    {"tag": "direct", "address": self.direct_dns, "detour": "direct"},
                 ],
                 "rules": [
                     {

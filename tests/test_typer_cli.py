@@ -85,11 +85,12 @@ def test_settings_rejects_windows_kill_switch_activation(monkeypatch):
 def test_noninteractive_connect_preserves_missing_engine_for_smart_resolution(monkeypatch):
     monkeypatch.setattr(typer_cli, "is_interactive", lambda: False)
     with patch("blackoutkit.cli.cmd_connect") as cmd_connect:
-        typer_cli.connect(pos_engine=None, engine=None, background=False, iran=False)
+        typer_cli.connect(pos_engine=None, engine=None, background=False, iran=False, russia=False)
 
     args = cmd_connect.call_args.args[0]
     assert args.pos_engine is None
     assert args.engine is None
+    assert args.russia is False
 
 
 def test_noninteractive_config_add_does_not_prompt(monkeypatch):
@@ -131,6 +132,15 @@ def test_documented_options_are_registered():
 
     result = runner.invoke(typer_cli.app, ["tools", "--help"])
     assert "arp-flush" in result.output
+
+    result = runner.invoke(typer_cli.app, ["connect", "--help"])
+    assert "--russia" in result.output
+
+    result = runner.invoke(typer_cli.app, ["start", "--help"])
+    assert "--russia" in result.output
+
+    result = runner.invoke(typer_cli.app, ["country", "set", "--help"])
+    assert "RU" in result.output
 
 
 def test_doctor_forwards_fix_options():
@@ -175,11 +185,30 @@ def test_certificate_check_forwards_allow_flag():
 
 def test_country_set_forwards_code():
     with patch("blackoutkit.cli.cmd_country") as cmd_country:
-        typer_cli.country_set("IR")
+        typer_cli.country_set("RU")
 
     args = cmd_country.call_args.args[0]
     assert args.country_command == "set"
-    assert args.code == "IR"
+    assert args.code == "RU"
+
+
+def test_connect_forwards_russia_flag():
+    with patch("blackoutkit.cli.cmd_connect") as cmd_connect:
+        typer_cli.connect(pos_engine="xray", engine=None, background=True, iran=False, russia=True)
+
+    args = cmd_connect.call_args.args[0]
+    assert args.pos_engine == "xray"
+    assert args.background is True
+    assert args.russia is True
+
+
+def test_start_forwards_russia_flag():
+    with patch("blackoutkit.cli.cmd_start") as cmd_start:
+        typer_cli.start(pos_engine="xray", engine=None, background=False, iran=False, russia=True)
+
+    args = cmd_start.call_args.args[0]
+    assert args.pos_engine == "xray"
+    assert args.russia is True
 
 
 def test_bins_update_forwards_to_legacy_dispatcher():

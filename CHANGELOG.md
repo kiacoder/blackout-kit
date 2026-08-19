@@ -1,44 +1,29 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented here.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-### Fixed
-- **MCP operational parity:** Replaced stale MCP dispatches with the supported daemon, settings, security-mode, recovery, hotspot, and ping helpers; explicit connection requests now avoid unsupported auto/profile behavior and report daemon start rather than a verified tunnel.
-- **Credential storage:** `blackout config encrypt` now protects supported IKEv2/L2TP and SoftEther credentials alongside proxy URIs instead of leaving them in plaintext settings.
-- **Encrypted config usability:** Encrypted saved proxy configurations now load and update in memory without silently recreating `configs.txt` during normal operation.
-- **Connection startup safety:** All CLI, daemon, and MCP engine starts now use the same local readiness gate before mutating settings, scanning, downloading, starting engines, enabling the kill switch, or repairing networking.
-
 ### Added
-- **Authenticated local vault:** Added machine-bound AES-256-GCM vault records with authenticated labels for saved proxy URIs and supported VPN secrets, plus explicit same-machine plaintext recovery through `blackout config decrypt`.
-- **Local readiness check:** Added `blackout ready [engine]` and `blackout_ready` MCP diagnostics for strictly local engine validation without remote probes, DNS resolution, downloads, elevation, or connection changes.
-- **Recovery preview and audit:** Added `blackout fix --preview`, `blackout fix --history`, `blackout tools netfix --preview`, and MCP preview/history options. Executed recoveries now keep bounded, redacted local action history; previews never mutate state or create an audit entry.
-
-- **Sensitive routine output:** Masked stored IKEv2 and SoftEther credentials in terminal and MCP settings reads, and stopped echoing proxy URI credentials after MCP config import/add operations.
-- **Kill-switch ownership:** Windows now refuses to install a broad outbound allow rule when no managed proxy executable can be allowlisted.
-- **Documentation accuracy:** Aligned public and in-app documentation with the shipped Linux engine subset, local-only routing recommendations, Windows proxy-bypass scope, targeted recovery boundaries, VLESS REALITY trust model, security-mode behavior, and the MCP server's actual tool dispatch scope.
-- **WARP dependency graph:** Raised all patchable transitive Go dependencies to their published security fixes, including the critical `golang.org/x/crypto` advisories. The native WARP/Psiphon DLL graph is now verified and compiled in Windows CI.
-- **mhrv certificate-store claim:** Corrected documentation that incorrectly described the embedded HTTP relay as an HTTPS MITM engine that installs a CA. mhrv never modifies Windows certificate stores, so certificate cleanup is not applicable.
-- **Daemon restart resilience:** Failed engine restarts now stay alive through a bounded, cancellable exponential-backoff cycle rather than terminating the daemon immediately. Daemon state consistently records the daemon PID, including for DLL-backed engines.
-- **Client-side VLESS REALITY:** Added parsing and exact round-trip storage for standard VLESS REALITY URIs, including public-key aliases, short IDs, spider paths, flow, gRPC service names, and TCP/WebSocket/gRPC transport settings. XRay/TUN now generate REALITY outbounds without TLS certificate probes or TLS-only policy fields; CLI lists remain redacted.
-- **Safe terminal UX bundle:** Added redacted friendly failure panels, interactive-only Rich prompts, `blackout status --watch`, local-only `blackout route` recommendations, and a persistent `blackout theme dark|light` Rich palette. These views never probe remote nodes, start engines, download components, repair networking, or change the host terminal/GUI theme.
-- **Linux x86_64 TUN runtime:** Added the supported Linux XRay → sing-box system-tunnel path for Ubuntu/Debian, Fedora, and Arch. It uses the managed `blackout-engine` runner, requires `sudo`, routes DNS through the tunnel, and keeps Linux firewall and route-table state under Blackout Kit-owned names.
-- **Linux kill switch:** Added endpoint-scoped nftables protection with an iptables/ip6tables fallback. It refuses activation without a validated proxy endpoint and removes only `inet blackoutkit` / `BLACKOUTKIT_*` rules on cleanup.
-- **Explicit ARP-cache repair:** Added `blackout tools arp-flush` and `blackout fix --flush-arp`. ARP/neighbor cache clearing is never part of default recovery or daemon reconnects.
-- **Dependabot residual-risk tracking:** Documented the only two remaining WARP graph advisories—legacy `pion/dtls/v2` and `pion/stun` lines with no upstream patch release—and retained them as open alerts rather than treating them as resolved or dismissing them.
-- **Daemon-safe targeted reconnect recovery:** After a failed restart, the daemon can repair only verified stale Blackout routes, loopback DNS, and Blackout-owned virtual adapters before retrying. It preserves the active system proxy and kill switch and never runs `route -f`, Winsock, TCP/IP, or DHCP resets.
-- **Reconnect policy settings:** Added `reconnect_initial_delay` and `reconnect_max_delay` to tune capped automatic retry timing.
-- **Targeted post-crash network recovery:** `blackout fix` and `blackout tools netfix` now clear stale Blackout proxy/routes, restore DHCP DNS only from loopback DNS on physical adapters, restart only the deterministic BlackoutKit-TUN adapter, and flush DNS without disturbing unrelated VPNs.
-- **Explicit emergency resets:** `blackout fix --full-route-reset` runs `route -f` only when deliberately requested; `blackout fix --full-stack-reset` separately enables Winsock, TCP/IP, autotuning, and DHCP reset.
+- **Russia country profile:** Added `RU` as a first-class country profile with engine order `xray → hysteria2 → tuic → warp/gdpi/tun → psiphon`, recommended bypass DNS, and Russia-specific test URLs.
+- **Russia transport preset:** Added `--russia` flag on `blackout connect` and `blackout start` that applies temporary local overrides (PRIVATE mode, DoH enabled, Iran-specific split-tunnel and fragmentation disabled) without rewriting saved settings. Overrides are forwarded into background daemon runs.
+- **Country-aware routing:** XRay split-tunnel and TUN bypass domains are now country-aware — RU profile routes Yandex, VK, Ozon, and other Russian domestic domains direct instead of Iranian `.ir` domains. TUN direct DNS uses Yandex DNS (77.88.8.8) for RU.
+- **`blackout help russia` topic:** Dedicated in-app help topic covering the RU profile, preset, field-verified transport notes, and known Russian filtering behavior.
+- **ISP country-code detection:** `IspInfo` now carries `country_code` from ip-api.com, and `detect_country()` checks it before falling back to the country name.
 
 ### Changed
-- **Virtual adapter diagnostics:** `blackout doctor` distinguishes detected healthy TUN/TAP/Wintun/WireGuard adapters from stale post-crash state.
+- **Preset mechanism refactor:** Converted `--iran` from persistent settings writes to temporary env-based overrides, matching the new `--russia` flow. Both presets now leave saved settings unchanged, even in background mode.
+- **Documentation refresh:** Rewrote the public docs to align with the shipped 1.1.1 codebase, clarified platform scope, separated user and maintainer guides, expanded contributor templates, refreshed local project notes, and synchronized in-app help wording with the current command and runtime surface.
+
+### Fixed
+- **XRay TLS compatibility:** Removed the deprecated `allowInsecure` field from XRay `tlsSettings` that the current XRay runtime rejects with a config parse error.
+- **Python TLS enum compatibility:** Added a fallback for `ssl.TLSVersion.TLS1_2` vs `TLSv1_2` in cert probing and SNI HTTP testing, which crashed on some Python builds.
+- **Empty `xray_fragment` validation:** The Russia preset clears `xray_fragment` to disable Iran-specific fragmentation, but the validator rejected empty strings. Now accepts empty or `range,range`.
 
 ## [1.1.1] - 2026-08-14
+
 ### Fixed
 - Packaged every `blackoutkit` subpackage and Typer runtime dependency so source installs and the standalone executable can start correctly.
 - Restored documented Typer commands and options for diagnostics, logs, binaries, country profiles, emergency background mode, certificate overrides, help, and updates.
@@ -50,47 +35,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Updated the roadmap and command documentation to reflect the actual v1.1 feature set.
 
 ### Added
-- **Typer CLI rewrite:** Modernized the CLI routing using Typer, maintaining backward compatibility with the monolithic `cli.py` legacy dispatcher functions while improving command organization.
-- **Iran TIC 2026 Evasion Flag:** Added `--iran` flag to `blackout connect` which automatically activates a specialized bypass profile (Private mode, Firefox fingerprinting, ArvanCloud SNI spoofing, and TLS record fragmentation).
-- **Native GDPI runtime:** Added the experimental Go/WinDivert implementation with `StartGDPIC`, `StopGDPIC`, and `IsGDPIRunningC` exports through `blackout_core.dll`.
+- **Typer CLI rewrite:** Modernized CLI routing using Typer while keeping compatibility with the monolithic dispatcher functions in `cli.py`.
+- **Iran TIC 2026 profile:** Added `--iran` on `blackout connect` to apply a specialized local settings bundle.
+- **Native GDPI runtime:** Added the experimental Go/WinDivert implementation exported through `blackout_core.dll`.
 - **GDPI backend selection:** Added `gdpi_backend` with `legacy` as the stable default and `native` as an explicit experimental option.
 
-### Fixed
-- **Syntax and Lint Fixes:** Addressed severe `F821` undefined variable errors (like `os` in `elevate.py`), removed `F401` unused imports, fixed `F541` missing f-string placeholders, and cleared unused local variables.
-- **Engine selection consistency:** `xray` is now exposed consistently across CLI choices, daemon startup, and settings validation.
-- **QUIC engine routing:** `hysteria2` and `tuic` now use protocol-specific engine classes and refuse mismatched configs instead of silently picking the wrong sing-box config.
-- **Status accuracy:** `blackout status` now derives HTTP/SOCKS checks from the active engine instead of assuming XRay ports for every engine.
-- **Background health checks:** SOCKS-style proxy targets are normalized before heartbeat/health probes in foreground and daemon monitoring paths.
-- **Binary updater stability:** `blackout bins update` no longer references an undefined `installed` variable.
-- **CLI startup fallback:** missing-`rich` error handling in `blackout.py` now degrades to plain-text output without secondary crash loops in non-interactive mode.
-
-### Changed
-- **Dependencies Bump:** Upgraded `cryptography` to `>=43.0.0`, `httpx[http2]` to `>=0.27.0`, `rich` to `>=13.7.1`, and `psutil` to `>=6.0.0` across `pyproject.toml` and `requirements.txt` to clear Dependabot security alerts.
-- **Theme setting behavior:** `color_theme` now takes effect in the CLI settings flow instead of being dead configuration.
-- **GDPI product direction:** the stable legacy GoodbyeDPI path remains the default backend, while the native Go/WinDivert implementation is treated as experimental until it reaches parity.
-- **Docs consistency:** README, roadmap, and metadata text now reflect the actual engine set, country profiles, current command surface, and GDPI backend split.
-
 ## [1.1.0] - 2026-07-25
+
 ### Added
-- **Consolidated Test Suite:** Created a robust suite under `tests/` using `pytest`, testing VMess parsing (`_parse_vmess`), configuration saving, `is_sni_compatible`, and network utility diagnostics (`ping_stats`).
+- **Consolidated test suite:** Added a `tests/` suite covering config parsing, saved configuration flows, engine helpers, and diagnostics-sensitive behavior.
 
 ### Changed
-- **Updated Go Engines & Rebuilds:** Upgraded Go engine modules to latest versions and cross-compiled the Windows binary assets (`blackout_core.dll`, `blackout_warp.dll`, `blackout-engine.exe`) using CGO toolchains.
+- **Go engine rebuilds:** Rebuilt the Windows and native runtime artifacts, including `blackout_core.dll`, `blackout_warp.dll`, and related assets.
 
 ### Fixed
-- **IP Scan Cache Write:** Fixed a bug in `blackout scan` that bypassed the cache manager, causing it to fail saving Cloudflare IP results to `scan_cache.json` and triggering false preflight warnings.
-- **Clean Proxy Stderr:** Overrode Google Apps Script connection handlers to suppress stdout/stderr stack traces when clients drop connections.
-- **Robust Port Checking:** Improved `check_port_free` in the base engine class to use socket `bind` tests with `SO_REUSEADDR` rather than relying on socket connection probes.
-- **Code Cleanup:** Removed unused Python imports (`Path`, `Panel`, `latency_color`) inside `tools.py` to optimize import times and code health.
+- **IP scan cache writes:** Fixed a bug in `blackout scan` that bypassed the cache manager and failed to persist Cloudflare scan results correctly.
+- **Cleaner relay logging:** Suppressed unnecessary Apps Script relay output when clients drop connections.
+- **Port checking:** Improved `check_port_free` in the engine base class to use bind-based testing instead of connection probing.
+- **Code cleanup:** Removed unused imports in `tools.py`.
 
 ## [1.0.1] - 2026-06-09
-### Security & Hardening
-- **Extensive Codebase Audit:** Ran 10 autonomous agents to audit all modules for security, logic, and concurrency bugs.
-- **Fixed Path Traversal:** Fixed a critical Zip Slip vulnerability in `updater.py` that allowed rogue updates to escape the project directory.
-- **Fixed Silent UAC Failures:** Core network operations (MTU, DNS) now proactively check for administrator privileges instead of failing silently.
-- **Fixed Subprocess Deadlocks:** Redirected standard output to `DEVNULL` across all proxy engines, preventing silent daemon freezes caused by unread OS pipe buffers filling up.
-- **Localization Bug Fixes:** Refactored `tools.py` to use `psutil` and `PowerShell` instead of scraping hardcoded English strings from `netsh`/`ipconfig`, ensuring full compatibility with non-English Windows setups.
-- **Graceful Shutdowns:** Added `SIGINT`/`SIGTERM` handling to Go proxy wrappers (`xray`, `singbox`). Hard-kills no longer corrupt Windows routing tables or leave system proxy states mangled.
-- **Concurrency Safety:** Applied safe file-writing patterns with temporary files and atomic replacements for the `ip_scanner` cache to prevent race conditions during concurrent IP tests.
-- **Robust Updates:** Fixed a bug on Windows where update rollbacks would fail due to active Python file locks, corrupting the app directory.
-- **HTTP Engine Stability:** Fixed body exhaustion and multi-value header mishandling in the Google Apps Script HTTP relay engine.
+
+### Security & hardening
+- **Codebase audit:** Ran an extensive audit across the project and fixed multiple security, logic, and concurrency issues.
+- **Zip Slip fix:** Hardened `updater.py` against path traversal during archive extraction.
+- **Privilege awareness:** Added proactive admin checks where Windows networking operations require elevation.
+- **Subprocess deadlock prevention:** Redirected engine output away from blocking pipe setups that could freeze daemon paths.
+- **Localization-safe Windows parsing:** Reworked network tooling to avoid brittle parsing of localized command output.
+- **Graceful shutdowns:** Improved Go-engine shutdown handling so route and DNS state are less likely to be left behind.
+- **Atomic cache writes:** Hardened scanner cache writes against corruption.
+- **Update rollback stability:** Improved Windows update rollback behavior when files are locked.
+- **HTTP relay robustness:** Fixed Apps Script relay issues around body exhaustion and header handling.

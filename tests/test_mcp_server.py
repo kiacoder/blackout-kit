@@ -31,7 +31,8 @@ def test_connect_rejects_legacy_iran_profile():
 
 
 def test_connect_reports_daemon_start_without_claiming_connection():
-    with patch("blackoutkit.daemon.start", return_value=4242) as start:
+    with patch("blackoutkit.readiness.evaluate", return_value=[]), \
+         patch("blackoutkit.daemon.start", return_value=4242) as start:
         result = mcp.handle_tool_call("blackout_connect", {"engine": "xray"})
 
     start.assert_called_once_with("xray")

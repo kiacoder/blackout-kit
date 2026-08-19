@@ -1,136 +1,72 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Privacy | Blackout Kit</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        /* Shared Styles */
-        :root {
-            --bg-color: #050505;
-            --surface: #111111;
-            --primary: #00ffcc;
-            --primary-glow: rgba(0, 255, 204, 0.3);
-            --text-main: #ffffff;
-            --text-muted: #888888;
-            --glass-bg: rgba(25, 25, 25, 0.6);
-            --glass-border: rgba(255, 255, 255, 0.08);
-        }
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            line-height: 1.6;
-            background-image: 
-                radial-gradient(circle at 15% 50%, rgba(0, 255, 204, 0.05), transparent 25%),
-                radial-gradient(circle at 85% 30%, rgba(0, 150, 255, 0.05), transparent 25%);
-        }
-        nav {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 2rem 5%;
-            position: absolute;
-            width: 100%;
-            top: 0;
-            z-index: 10;
-        }
-        .logo {
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 700;
-            font-size: 1.5rem;
-            color: var(--primary);
-            text-shadow: 0 0 15px var(--primary-glow);
-            letter-spacing: -1px;
-        }
-        .nav-links a {
-            color: var(--text-main);
-            text-decoration: none;
-            margin-left: 2rem;
-            font-weight: 600;
-            transition: color 0.3s ease;
-        }
-        .nav-links a:hover { color: var(--primary); }
-        .github-btn {
-            background: transparent;
-            border: 1px solid var(--primary);
-            color: var(--primary);
-            padding: 0.6rem 1.2rem;
-            border-radius: 6px;
-            text-decoration: none;
-            font-family: 'JetBrains Mono', monospace;
-        }
-        .github-btn:hover { background: var(--primary); color: var(--bg-color); }
-        
-        .page-header {
-            padding: 10rem 5% 4rem;
-            text-align: center;
-        }
-        h1 {
-            font-size: 4rem;
-            font-weight: 800;
-            background: linear-gradient(135deg, #fff 0%, #a0a0a0 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-        .content {
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 2rem 5%;
-        }
-        .glass-panel {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            padding: 2.5rem;
-            border-radius: 16px;
-            margin-bottom: 2rem;
-            backdrop-filter: blur(10px);
-        }
-        h2 { color: var(--primary); margin-bottom: 1rem; }
-        p { color: var(--text-muted); margin-bottom: 1rem; }
-        ul { color: var(--text-muted); padding-left: 1.5rem; margin-bottom: 1rem; }
-        li { margin-bottom: 0.5rem; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Blackout Kit Security Boundaries</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0b0b0b; color: #f5f5f5; }
+    header, main, footer { max-width: 1000px; margin: 0 auto; padding: 24px; }
+    nav a { color: #7ee7d8; margin-right: 16px; text-decoration: none; }
+    .card { background: #151515; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; margin: 16px 0; }
+    .muted { color: #b0b0b0; }
+    ul { line-height: 1.7; }
+  </style>
 </head>
 <body>
+  <header>
     <nav>
-        <div class="logo"><a href="index.html" style="text-decoration:none; color:inherit;">BLACKOUT_KIT</a></div>
-        <div class="nav-links">
-            <a href="engines.html">Engines</a>
-            <a href="privacy.html" style="color: var(--primary);">Privacy</a>
-            <a href="download.html">Download</a>
-            <a href="https://github.com/kiacoder/blackout-kit" class="github-btn" target="_blank">GitHub</a>
-        </div>
+      <a href="index.html">Overview</a>
+      <a href="engines.html">Engines</a>
+      <a href="privacy.html">Security</a>
+      <a href="download.html">Install</a>
+      <a href="https://github.com/kiacoder/blackout-kit">GitHub</a>
     </nav>
+    <h1>Security and Privacy Boundaries</h1>
+    <p class="muted">Blackout Kit is careful about what it does claim and what it does not claim.</p>
+  </header>
 
-    <div class="page-header">
-        <h1>Zero Logs. Absolute Privacy.</h1>
-        <p style="color: var(--text-muted); font-size: 1.2rem; margin-top: 1rem;">Blackout Kit is designed from the ground up to protect you from tracking and DPI.</p>
-    </div>
+  <main>
+    <section class="card">
+      <h2>What Blackout Kit does provide</h2>
+      <ul>
+        <li>Local runtime orchestration</li>
+        <li>Local readiness and route guidance</li>
+        <li>Machine-bound encrypted storage for saved proxy URIs and supported secrets</li>
+        <li>Linux endpoint-scoped kill switch support</li>
+        <li>Targeted cleanup of Blackout-owned crash leftovers</li>
+      </ul>
+    </section>
 
-    <div class="content">
-        <div class="glass-panel">
-            <h2>No Telemetry, Ever.</h2>
-            <p>Unlike commercial VPNs that route your data through centralized servers they own, Blackout Kit's primary engines manipulate packets <strong>locally</strong> on your own PC. This means you connect directly to destination websites without any middleman seeing your traffic.</p>
-            <p>The application itself has zero phone-home mechanisms, zero trackers, and zero analytics.</p>
-        </div>
+    <section class="card">
+      <h2>What it does not guarantee</h2>
+      <ul>
+        <li>Anonymity</li>
+        <li>Traffic-analysis resistance</li>
+        <li>That a country profile will work on a given network</li>
+        <li>That a green local readiness check means the tunnel will succeed</li>
+        <li>That an upstream server is trustworthy</li>
+      </ul>
+    </section>
 
-        <div class="glass-panel">
-            <h2>Three Security Tiers</h2>
-            <ul>
-                <li><strong>SPEED:</strong> Max compatibility. No overhead.</li>
-                <li><strong>PRIVATE:</strong> Random TLS fingerprints to avoid traffic analysis.</li>
-                <li><strong>LEGEND:</strong> Multi-hop routing (Xray → Tor), encrypted configs tied to your hardware ID, and strict certificate pinning. Near untraceable.</li>
-            </ul>
-        </div>
+    <section class="card">
+      <h2>Security modes</h2>
+      <ul>
+        <li><strong>speed</strong> — compatibility-focused local settings</li>
+        <li><strong>private</strong> — randomized XRay fingerprint plus MUX</li>
+        <li><strong>legend</strong> — stricter handling for known-bad normal TLS certificates</li>
+      </ul>
+      <p>These are local configuration presets, not privacy guarantees.</p>
+    </section>
 
-        <div class="glass-panel">
-            <h2>Mullvad-Style Strict Kill Switch & Adblock</h2>
-            <p>If you run <code>blackout shield</code> or <code>blackout killswitch on</code>, Blackout Kit modifies the Windows Firewall at the kernel level. If your proxy drops, your internet is instantly severed, guaranteeing your real IP address never leaks.</p>
-            <p>Shield mode also sets your system DNS to AdGuard or Mullvad DNS, stripping trackers and ads from your network entirely.</p>
-        </div>
-    </div>
+    <section class="card">
+      <h2>Kill switch policy</h2>
+      <p>The supported kill switch is Linux-only. The old Windows Firewall approach is intentionally unsupported and its legacy rules are removed instead of being treated as safe protection.</p>
+    </section>
+  </main>
+
+  <footer>
+    <p class="muted">For the full threat model, read SECURITY.md in the repository root.</p>
+  </footer>
 </body>
 </html>

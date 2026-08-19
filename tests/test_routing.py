@@ -109,3 +109,29 @@ def test_stability_evidence_prefers_stable_candidate():
 
     assert candidates[0].engine == "hysteria2"
     assert "80ms average" in candidates[0].evidence
+
+
+def test_ru_profile_prefers_xray_then_quic_on_windows():
+    candidates = recommend_routes(
+        {"selected_engine": "auto", "engine_order": []},
+        country_profile=_profile(["xray", "hysteria2", "tuic", "warp", "gdpi", "tun", "psiphon"]),
+        installed={"mhrv": True, "warp_dll": True, "goodbyedpi": True},
+        protocols={"vless", "hysteria2", "tuic"},
+        platform="win32",
+    )
+
+    ready = [candidate.engine for candidate in candidates if candidate.ready]
+    assert ready[:3] == ["xray", "hysteria2", "tuic"]
+
+
+def test_ru_profile_prefers_xray_then_quic_on_linux():
+    candidates = recommend_routes(
+        {"selected_engine": "auto", "engine_order": []},
+        country_profile=_profile(["xray", "hysteria2", "tuic", "warp", "gdpi", "tun", "psiphon"]),
+        installed={"linux_engine": True},
+        protocols={"vless", "hysteria2", "tuic"},
+        platform="linux",
+    )
+
+    ready = [candidate.engine for candidate in candidates if candidate.ready]
+    assert ready[:3] == ["xray", "hysteria2", "tuic"]

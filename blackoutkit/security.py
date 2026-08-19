@@ -635,7 +635,16 @@ def get_stability_score(engine_name: str) -> dict:
     return {"avg_ms": avg_ms, "loss_pct": loss_pct, "trend": trend, "stable": stable}
 
 
-def all_stability_scores() -> dict[str, dict]:
+def get_recent_latencies(engine_name: str) -> list:
+    """Return raw list of recent latency measurements (float or None)."""
+    try:
+        data = json.loads(_STABILITY_FILE.read_text()) if _STABILITY_FILE.exists() else {}
+        return [s.get("ms") for s in data.get(engine_name, [])]
+    except Exception:
+        return []
+
+
+def all_stability_scores() -> dict:
     """
     Return stability scores for every engine that has recorded data.
     Keys are engine names; values are the same dicts as get_stability_score().

@@ -264,7 +264,10 @@ class SNIEngine(Engine):
             start = time.monotonic()
             sock = socket.create_connection(self._health_check_addr, timeout=3.0)
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            context.minimum_version = ssl.TLSVersion.TLS1_2
+            tls12 = getattr(ssl.TLSVersion, "TLS1_2", None)
+            if tls12 is None:
+                tls12 = getattr(ssl.TLSVersion, "TLSv1_2")
+            context.minimum_version = tls12
             context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
             context.check_hostname = False
             context.verify_mode = ssl.CERT_NONE

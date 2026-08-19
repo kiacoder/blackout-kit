@@ -1,31 +1,87 @@
 ---
 name: Bug report
-about: Create a report to help us improve Blackout Kit
+about: Report a reproducible Blackout Kit bug
 title: ''
 labels: 'bug'
 assignees: ''
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## Summary
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Run command '...'
-2. See error
+Describe the bug in one or two clear sentences.
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Expected behavior
 
-**Screenshots / Logs**
-If applicable, add screenshots or output of `blackout logs` to help explain your problem.
+What did you expect to happen?
 
-**Environment (please complete the following information):**
- - OS: [e.g. Windows 10, Windows 11]
- - Blackout Kit Version [e.g. v1.1.1]
- - Engine used [e.g. sni, xray, warp, hysteria2, tuic]
- - Country profile / ISP (optional, but helps with censorship-specific bugs):
- - Installed via: [e.g. standalone exe, source checkout]
+## Actual behavior
 
-**Additional context**
-Add any other context about the problem here.
+What happened instead?
+
+## Reproduction steps
+
+1. Run command or open feature: `...`
+2. Use engine / mode / profile: `...`
+3. Observe failure: `...`
+
+## Scope of the failure
+
+Please mark what this bug affects:
+
+- [ ] CLI only
+- [ ] GUI only
+- [ ] MCP only
+- [ ] Local readiness / status / routing output
+- [ ] Connection startup
+- [ ] Background daemon behavior
+- [ ] Crash recovery / `blackout fix`
+- [ ] Config or vault storage
+- [ ] Packaging / install / runtime assets
+- [ ] Documentation / help output
+
+## Environment
+
+- OS:
+- Architecture:
+- Blackout Kit version:
+- Install method: standalone exe / source checkout / wheel / other
+- Python version (if applicable):
+- Engine used:
+- Security mode:
+- Country profile (auto or pinned):
+- Was admin/root required for this path?
+
+## Local vs remote context
+
+This project distinguishes local behavior from remote reachability. Please tell us which kind of issue this is:
+
+- [ ] Local-only bug (settings, routing UI, readiness, recovery, logs, packaging, etc.)
+- [ ] Remote-dependent bug (needs a specific proxy/VPN server or filtered network)
+- [ ] Not sure
+
+If remote-dependent, include any non-sensitive context that matters:
+
+- protocol involved (VLESS / Trojan / VMess / Hysteria2 / TUIC / VPN engine / other)
+- whether you used a saved config, subscription import, or local-only engine path
+- whether the issue happens on every network or only one ISP / location
+
+## Logs / screenshots / terminal output
+
+Paste relevant output from:
+
+- `blackout status`
+- `blackout ready <engine>`
+- `blackout logs`
+- `blackout doctor`
+
+If you include screenshots, make sure they do not reveal secrets.
+
+## Additional notes
+
+Anything else that would help reproduce or narrow the bug?
+
+## Before submitting
+
+- [ ] I checked the current README and guides.
+- [ ] I included platform, engine, and install details.
+- [ ] I removed secrets, credentials, and subscription URLs from the report.
