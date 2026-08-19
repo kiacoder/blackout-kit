@@ -1,107 +1,118 @@
 # Blackout Kit — Roadmap
 
-This roadmap reflects the **current codebase** including Russia support and the strategic shift toward cybersecurity features.
+> **Vision:** A complete network toolkit that a network engineer like NetworkChuck would love to use.
+> Not just a VPN. Not just cybersecurity. A Swiss army knife for networking — traffic management,
+> network analysis, antivirus, download management, and security hardening, all in one tool.
 
 ---
 
-## Current release line: 1.2.x — Russia support shipped, cybersecurity next
+## Where we are now
 
-### What just shipped (Russia support)
-
-| Feature | Status | Notes |
-|---|---|---|
-| RU country profile | Done | Engine order: xray → hysteria2 → tuic → awg → warp/gdpi/tun → psiphon |
-| `--russia` transport preset | Done | Temporary overrides, no saved settings writes, works in background |
-| Country-aware routing | Done | XRay split-tunnel and TUN bypass domains are country-aware (RU: Yandex/VK/Ozon) |
-| XHTTP transport | Done | `type=xhttp` and legacy `type=splithttp` in V2Ray URIs |
-| Smart config rotation | Done | Daemon auto-rotates to next saved config when endpoint fails (blocked IP) |
-| AmneziaWG engine | Done | `.conf` file parsing, sing-box `amnezia-wireguard` outbound, experimental |
-| Whitelist awareness | Done | Doctor checks if proxy server IP is on Russian cellular whitelist |
-| Data-phase drop detection | Done | Daemon detects "TCP open but HTTP dead" and triggers rotation |
-| `blackout help russia` | Done | Dedicated help topic with field-verified transport notes |
-| ISP country-code detection | Done | `IspInfo` carries `country_code` from ip-api.com |
-
-### What shipped earlier (1.1.x)
+### Shipped: VPN/bypass engine (1.1.x — 1.2.x)
 
 | Feature | Status | Notes |
 |---|---|---|
-| Typer public CLI | Done | `blackoutkit/typer_cli.py` |
-| Route recommendation dashboard | Done | Local-only ranking via `blackout route` |
-| Local readiness checks | Done | `blackout ready [engine]` |
-| Live status view | Done | `blackout status --watch` |
-| Desktop GUI | Done | Windows-only CustomTkinter |
-| MCP server | Done | Constrained stdio tool surface |
-| XRay + REALITY | Done | VLESS REALITY on Windows and Linux |
-| Hysteria2 / TUIC | Done | sing-box proxy mode via DLL or Linux runner |
+| SNI / XRay / REALITY | Done | VLESS, Trojan, VMess on Windows + Linux |
+| Hysteria2 / TUIC | Done | sing-box proxy via DLL or Linux runner |
+| AmneziaWG | Done | Obfuscated WireGuard via sing-box |
 | TUN mode | Done | Windows + Linux |
 | GoodbyeDPI | Done | `legacy` default, `native` experimental |
-| Linux endpoint-scoped kill switch | Done | nftables/iptables, endpoint-scoped |
-| Targeted crash recovery | Done | Blackout-owned state cleanup only |
-| Machine-bound encrypted vault | Done | AES-256-GCM, protects proxy URIs and secrets |
+| WARP / Psiphon | Done | Windows DLL-backed |
 | Country profiles | Done | IR, RU, CN, IQ, GB, US, EU |
-| Iran `--iran` preset | Done | Refactored to temporary env-based overrides |
-| Preset mechanism refactor | Done | Both `--iran` and `--russia` are non-persistent |
+| `--iran` / `--russia` presets | Done | Temporary env-based overrides |
+| XHTTP transport | Done | `type=xhttp` + legacy `splithttp` |
+| Smart config rotation | Done | Auto-rotate on blocked IP |
+| Data-phase drop detection | Done | TCP open but HTTP dead → rotate |
+| Whitelist awareness | Done | Doctor checks Russian cellular whitelist |
+| Country-aware routing | Done | Yandex/VK/Ozon direct for RU |
+| Kill switch (Linux) | Done | Endpoint-scoped nftables/iptables |
+| Encrypted vault | Done | AES-256-GCM machine-bound storage |
+| Crash recovery | Done | Targeted, Blackout-owned state cleanup |
+| MCP server | Done | Constrained stdio tool surface |
+| Desktop GUI | Done | Windows CustomTkinter |
+| Route dashboard | Done | Local-only engine recommendation |
+| Doctor diagnostics | Done | Full environment + runtime checks |
+
+**VPN/bypass work is finished.** No new bypass engines planned. Existing capabilities stay.
 
 ---
 
-## Strategic direction: cybersecurity pivot
+## Where we're going
 
-**Decision (2026-08-19):** VPN/bypass features are complete. New development pivots to cybersecurity — which is more fun, more legal, and serves a bigger market.
+### Phase 1: Network analysis toolkit (1.3.x)
 
-Existing bypass capabilities stay as they are. No new bypass engines or protocols unless specifically requested.
+The tools NetworkChuck uses every day, built into one CLI/GUI:
 
-### Next chapter: cybersecurity features
-
-| Candidate | Why it matters | Current status |
+| Feature | What it does | Why Chuck would love it |
 |---|---|---|
-| DNS security and poisoning detection | Iran and Russia both poison DNS — detection helps users understand what's happening | Not started |
-| Malware/network anomaly detection | Real-time alerting on suspicious traffic patterns | Not started |
-| Phishing protection | Block known phishing domains at the DNS level | Not started |
-| Traffic analysis protection | Detect and warn about traffic fingerprinting | Not started |
-| Secure DNS resolver | Built-in DoH/DoT with tamper detection | Not started |
-| Network hardening audit | Check Windows/Linux network config for security weaknesses | Not started |
-| Antivirus integration | Interface with Windows Defender / ClamAV for file scanning | Not started |
+| Packet capture + analysis | Capture and inspect network traffic (like Wireshark-lite) | "Look at your packets without leaving the terminal" |
+| Port scanner | Scan networks for open ports (like nmap-lite) | "Know what's listening on your network" |
+| Network discovery | Map devices on your LAN, show IPs/MACs/vendors | "Who's on my network?" |
+| Bandwidth monitor | Real-time per-process and per-connection traffic stats | "What's eating my bandwidth?" |
+| Connection table | Live TCP/UDP connection table with process attribution | "What is my computer connected to right now?" |
+| Latency monitor | Continuous ping/traceroute with history graph | "Is my internet getting worse?" |
+| DNS inspector | Show which DNS servers you're using, query logs, poisoning detection | "Is someone messing with my DNS?" |
 
-### Maintenance priorities (ongoing)
+### Phase 2: Traffic & download manager (1.4.x)
 
-| Item | Status | Notes |
+| Feature | What it does | Why it matters |
 |---|---|---|
-| Native GDPI parity | Open | Verify if native reaches functional parity with legacy |
-| Documentation alignment | Active | Keep docs, help, and code in lockstep |
-| Runtime provenance clarity | Active | Make it obvious which runtimes are repo-built vs external |
-| Dependabot alerts | Open | 2 moderate vulnerabilities flagged on GitHub |
+| Download manager | Multi-threaded downloads with resume, queue, and speed limits | Everyone needs this |
+| Traffic shaper | QoS rules — prioritize/govern specific apps or protocols | "Make my games faster, slow down background updates" |
+| Bandwidth caps | Set daily/monthly limits per interface | Data caps are real, especially on cellular |
+| Traffic logging | Persistent log of network usage by app/protocol/time | "Where did my 50GB go this month?" |
+| Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | Clean browsing without browser extensions |
+
+### Phase 3: Antivirus & security hardening (1.5.x)
+
+| Feature | What it does | Why it matters |
+|---|---|---|
+| File scanner | Scan files with Windows Defender / ClamAV from the CLI | "Scan this download before I open it" |
+| Malware network detection | Alert on suspicious outbound connections (C2 patterns, mining pools) | Catch malware by its network behavior |
+| Phishing protection | DNS-level blocking of known phishing domains | Stop phishing before it reaches the browser |
+| Network hardening audit | Check firewall rules, open ports, exposed services, weak configs | "Is my system actually secure?" |
+| Secure DNS resolver | Built-in DoH/DoT with tamper detection and fallback | "Nobody is poisoning my DNS" |
+| Process network monitor | Flag processes making unexpected connections | "Why is this app talking to Russia?" |
+
+### Phase 4: Pro features (1.6.x+)
+
+| Feature | What it does | Why it matters |
+|---|---|---|
+| PCAP export | Export captures as `.pcap` for Wireshark | Interoperability with existing tools |
+| Scriptable automation | Python/TOML automation rules for network events | "When X happens, do Y automatically" |
+| Network simulation | Simulate latency/packet loss for testing | DevOps and QA use case |
+| REST API | Expose all tools via a local REST API | Integration with other tools and dashboards |
+| Web dashboard | Browser-based network monitoring UI | "See my whole network at a glance" |
 
 ---
 
-## Explicitly deferred or intentionally limited
+## Design principles
 
-| Area | Current stance |
-|---|---|
-| Windows kill switch | Intentionally unsupported; legacy rules removed |
-| Full Linux parity with Windows engine catalog | Not a goal |
-| New bypass engines/protocols | Not planned — VPN/bypass work is finished |
-| Claims of anonymity or detection resistance | Avoid unless independently justified |
-| "Country profile means it will work there" | Avoid; profiles are guidance only |
-| Aggressive auto-repair of unrelated network state | Avoid; targeted recovery is the policy |
+1. **One tool, many purposes** — like a Swiss army knife, not 10 separate apps
+2. **Terminal-first** — everything works from the CLI; GUI is a bonus
+3. **Local-only** — no cloud, no telemetry, no phone home
+4. **Honest** — never claim a feature does more than it does
+5. **Fun to use** — NetworkChuck would want to make a video about it
 
 ---
 
 ## Version focus summary
 
-| Version line | Focus |
-|---|---|
-| 1.1.x | Stabilization, packaging, docs accuracy, Linux runtime (shipped) |
-| 1.2.x | Russia support: RU profile, --russia preset, XHTTP, AmneziaWG, smart rotation, whitelist awareness, data-phase detection (shipped) |
-| 1.3.x | Cybersecurity pivot: DNS security, malware detection, phishing protection, network hardening |
+| Version | Focus | Status |
+|---|---|---|
+| 1.1.x | VPN/bypass engines, stabilization, docs | Shipped |
+| 1.2.x | Russia support: RU profile, presets, XHTTP, AmneziaWG, smart rotation, diagnostics | Shipped |
+| 1.3.x | Network analysis: packet capture, port scanner, bandwidth monitor, connection table, DNS inspector | Next |
+| 1.4.x | Traffic & downloads: download manager, traffic shaper, ad blocking, usage logging | Planned |
+| 1.5.x | Antivirus & security: file scanner, malware detection, phishing protection, hardening audit | Planned |
+| 1.6.x+ | Pro: PCAP export, automation, REST API, web dashboard | Future |
 
 ---
 
 ## Maintainer rule of thumb
 
-A roadmap item should move from "candidate" to "shipped" only when all three are true:
-
-1. the code path exists
-2. the platform/runtime scope is explicit
-3. the docs can describe it without hedging into fiction
-
-That rule is especially important for a project like Blackout Kit, where inaccurate claims are themselves a security and trust problem.
+A roadmap item ships only when:
+1. The code path exists and works
+2. The scope is explicit (what it does and doesn't do)
+3. The docs describe it honestly
+4. It's fun to use
