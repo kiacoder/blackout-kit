@@ -385,14 +385,29 @@ Examples:
   blackout tools dns-bench
   blackout tools dns-set cloudflare
   blackout tools dns-flush
+  blackout tools dns-inspect
   blackout tools speedtest
+  blackout tools speedtest-history
   blackout tools adapters
   blackout tools traceroute google.com
   blackout tools cert-check example.com
   blackout tools netfix
   blackout tools arp-flush
+  blackout tools subnet 192.168.1.0/24
+  blackout tools connections --established
+  blackout tools scan-ports 192.168.1.1 --ports 22,80,443
+  blackout tools discover
 
-[dim]Some tools change local network state; read the command output carefully.[/dim]
+Network analysis toolkit:
+  • subnet            Calculate network/broadcast/usable range from a CIDR
+  • connections        Live TCP/UDP connection table with process attribution
+  • scan-ports <host>  Scan a host for open ports (defaults to common services)
+  • discover           Sweep the local LAN for live hosts (IP/MAC/hostname)
+  • dns-inspect         Compare system DNS vs. a trusted resolver for tampering signals
+  • speedtest-history   Show a graph of past speedtest results
+
+[dim]Some tools change local network state; read the command output carefully.
+scan-ports and discover only probe hosts you're authorized to test.[/dim]
 """,
 
 "neighbor": """

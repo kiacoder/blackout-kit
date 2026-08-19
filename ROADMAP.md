@@ -43,17 +43,17 @@
 
 The tools NetworkChuck uses every day, built into one CLI/GUI:
 
-| Feature | What it does | Why Chuck would love it |
-|---|---|---|
-| Packet capture + analysis | Capture and inspect network traffic (like Wireshark-lite) | "Look at your packets without leaving the terminal" |
-| Port scanner | Scan networks for open ports (like nmap-lite) | "Know what's listening on your network" |
-| Network discovery | Map devices on your LAN, show IPs/MACs/vendors | "Who's on my network?" |
-| Bandwidth monitor | Real-time per-process and per-connection traffic stats | "What's eating my bandwidth?" |
-| Connection table | Live TCP/UDP connection table with process attribution | "What is my computer connected to right now?" |
-| Latency monitor | Continuous ping/traceroute with history graph | "Is my internet getting worse?" |
-| DNS inspector | Show which DNS servers you're using, query logs, poisoning detection | "Is someone messing with my DNS?" |
-| Subnet Calculator | Instantly print network range, broadcast, min/max hosts | "Never do subnet math in your head again" |
-| Speedtest History | Visual terminal graph of speedtests over 30 days | "Prove your ISP is throttling you at 8 PM" |
+| Feature | What it does | Why Chuck would love it | Status |
+|---|---|---|---|
+| Port scanner | Scan networks for open ports (like nmap-lite) | "Know what's listening on your network" | **Done** — `blackout tools scan-ports <host> [--ports ...]` |
+| Network discovery | Map devices on your LAN, show IPs/MACs/hostnames | "Who's on my network?" | **Done** — `blackout tools discover` |
+| Connection table | Live TCP/UDP connection table with process attribution | "What is my computer connected to right now?" | **Done** — `blackout tools connections [--established]` |
+| DNS inspector | Compare system DNS vs. a trusted resolver, surface poisoning signals | "Is someone messing with my DNS?" | **Done** — `blackout tools dns-inspect` |
+| Subnet Calculator | Instantly print network range, broadcast, min/max hosts | "Never do subnet math in your head again" | **Done** — `blackout tools subnet <cidr>` |
+| Speedtest History | Visual terminal graph of speedtests over time | "Prove your ISP is throttling you at 8 PM" | **Done** — `blackout tools speedtest-history` (auto-recorded on every `speedtest` run) |
+| Packet capture + analysis | Capture and inspect network traffic (like Wireshark-lite) | "Look at your packets without leaving the terminal" | Planned |
+| Bandwidth monitor | Real-time per-process and per-connection traffic stats | "What's eating my bandwidth?" | Planned |
+| Latency monitor | Continuous ping/traceroute with history graph | "Is my internet getting worse?" | Planned |
 
 ### Phase 2: Traffic, downloads & sharing (1.4.x)
 
@@ -124,7 +124,7 @@ Before adding new features, the foundation must be reinforced:
 |---|---|---|
 | 1.1.x | VPN/bypass engines, stabilization, docs | Shipped |
 | 1.2.x | Russia support: RU profile, presets, XHTTP, AmneziaWG, smart rotation, diagnostics | Shipped |
-| 1.3.x | Network analysis: packet capture, port scanner, bandwidth monitor, connection table, DNS inspector | Next |
+| 1.3.x | Network analysis: subnet calc, connection table, port scanner, LAN discovery, DNS inspector, speedtest history shipped — packet capture, bandwidth/latency monitors next | In progress |
 | 1.4.x | Traffic & downloads: download manager, traffic shaper, ad blocking, usage logging | Planned |
 | 1.5.x | Antivirus & security: file scanner, malware detection, phishing protection, hardening audit | Planned |
 | 1.6.x+ | Pro: PCAP export, automation, REST API, web dashboard | Future |

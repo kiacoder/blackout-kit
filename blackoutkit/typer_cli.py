@@ -480,6 +480,15 @@ def tools_speedtest():
     args.tools_command = "speedtest".replace("_", "-")
     cmd_tools(args)
 
+@tools_app.command("speedtest-history")
+def tools_speedtest_history():
+    """Show a trend graph of your last 30 recorded speedtests."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "speedtest-history"
+    cmd_tools(args)
+
 @tools_app.command("adapters")
 def tools_adapters():
     """List network adapters and IPs"""
@@ -583,6 +592,64 @@ def tools_traceroute(host: str = typer.Argument(None, help="Host to trace")):
     args = DummyArgs()
     args.tools_command = "traceroute"
     args.host = host
+    cmd_tools(args)
+
+@tools_app.command("subnet")
+def tools_subnet(cidr: str = typer.Argument(..., help="IP with CIDR mask (e.g. 192.168.1.0/24)")):
+    """Calculate subnet range, broadcast, and mask."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "subnet"
+    args.cidr = cidr
+    cmd_tools(args)
+
+@tools_app.command("connections")
+def tools_connections(
+    established: bool = typer.Option(False, "--established", help="Show only ESTABLISHED connections (hide listeners)"),
+):
+    """Show a live table of active TCP/UDP connections with process names."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "connections"
+    args.established = established
+    cmd_tools(args)
+
+@tools_app.command("dns-inspect")
+def tools_dns_inspect():
+    """Compare system DNS resolution against a trusted resolver to spot interference."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "dns-inspect"
+    cmd_tools(args)
+
+@tools_app.command("discover")
+def tools_discover():
+    """Discover live devices on your local subnet (ARP-based LAN scan)."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "discover"
+    cmd_tools(args)
+
+@tools_app.command("scan-ports")
+def tools_scan_ports(
+    host: str = typer.Argument(None, help="Host or IP to scan"),
+    ports: str = typer.Option(None, "--ports", "-p", help="Port range (e.g. 1-1000) or comma list (e.g. 22,80,443). Omit to scan common ports."),
+):
+    """Scan a host for open TCP ports (common ports by default)."""
+    from .cli import cmd_tools
+
+    host = host or ask_text("Enter host or IP to scan")
+    if not host:
+        return
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "scan-ports"
+    args.host = host
+    args.ports = ports
     cmd_tools(args)
 
 @tools_app.command("cert-check")

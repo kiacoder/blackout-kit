@@ -1,0 +1,318 @@
+"""Tests for the Phase 1 network analysis toolkit: subnet calc, connections,
+port scanner, LAN discovery, DNS inspector, and speedtest history."""
+import json
+import socket
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from blackoutkit import tools
+
+
+# ─────────────────────────── Subnet calculator ────────────────────
+
+def test_calculate_subnet_slash_24():
+    result = tools.calculate_subnet("192.168.1.0/24")
+    assert result == {
+        "network": "192.168.1.0",
+        "broadcast": "192.168.1.255",
+        "netmask": "255.255.255.0",
+        "cidr": 24,
+        "total_hosts": 256,
+        "usable_hosts": 254,
+        "first_ip": "192.168.1.1",
+        "last_ip": "192.168.1.254",
+    }
+
+
+def test_calculate_subnet_slash_28():
+    result = tools.calculate_subnet("10.0.0.16/28")
+    assert result["network"] == "10.0.0.16"
+    assert result["broadcast"] == "10.0.0.31"
+    assert result["usable_hosts"] == 14
+
+
+def test_calculate_subnet_host_bits_set_uses_strict_false():
+    """A host address with bits set in the host portion should still resolve the network."""
+    result = tools.calculate_subnet("192.168.1.5/24")
+    assert result["network"] == "192.168.1.0"
+
+
+def test_calculate_subnet_slash_31_has_no_usable_range():
+    result = tools.calculate_subnet("192.168.1.0/31")
+    assert result["total_hosts"] == 2
+    assert result["usable_hosts"] == 0
+    assert result["first_ip"] == "N/A"
+
+
+def test_calculate_subnet_invalid_input_returns_none():
+    assert tools.calculate_subnet("not-an-ip") is None
+    assert tools.calculate_subnet("999.999.999.999/24") is None
+
+
+# ─────────────────────────── Live connections ─────────────────────
+
+def _fake_conn(pid, laddr, raddr=None, status="ESTABLISHED", type_=socket.SOCK_STREAM):
+    return SimpleNamespace(
+        pid=pid,
+        laddr=SimpleNamespace(ip=laddr[0], port=laddr[1]) if laddr else None,
+        raddr=SimpleNamespace(ip=raddr[0], port=raddr[1]) if raddr else None,
+        status=status,
+        type=type_,
+    )
+
+
+def test_get_active_connections_maps_process_names():
+    fake_conns = [
+        _fake_conn(1234, ("127.0.0.1", 5000), ("93.184.216.34", 443)),
+        _fake_conn(None, ("0.0.0.0", 8080), None, status="LISTEN"),
+    ]
+    fake_psutil = MagicMock()
+    fake_psutil.net_connections.return_value = fake_conns
+    fake_psutil.Process.return_value.name.return_value = "chrome.exe"
+    fake_psutil.CONN_ESTABLISHED = "ESTABLISHED"
+    fake_psutil.AccessDenied = Exception
+    fake_psutil.NoSuchProcess = Exception
+
+    with patch.dict("sys.modules", {"psutil": fake_psutil}):
+        results = tools.get_active_connections()
+
+    assert len(results) == 2
+    chrome_entry = next(r for r in results if r["pid"] == 1234)
+    assert chrome_entry["process"] == "chrome.exe"
+    assert chrome_entry["remote_addr"] == "93.184.216.34"
+    assert chrome_entry["protocol"] == "TCP"
+
+    listen_entry = next(r for r in results if r["pid"] == 0)
+    assert listen_entry["process"] == "-"
+    assert listen_entry["remote_addr"] == ""
+
+
+def test_get_active_connections_established_only_filter():
+    fake_conns = [
+        _fake_conn(1, ("127.0.0.1", 1), status="ESTABLISHED"),
+        _fake_conn(2, ("127.0.0.1", 2), status="LISTEN"),
+    ]
+    fake_psutil = MagicMock()
+    fake_psutil.net_connections.return_value = fake_conns
+    fake_psutil.Process.return_value.name.return_value = "svc.exe"
+    fake_psutil.CONN_ESTABLISHED = "ESTABLISHED"
+    fake_psutil.AccessDenied = Exception
+    fake_psutil.NoSuchProcess = Exception
+
+    with patch.dict("sys.modules", {"psutil": fake_psutil}):
+        results = tools.get_active_connections(established_only=True)
+
+    assert len(results) == 1
+    assert results[0]["status"] == "ESTABLISHED"
+
+
+def test_get_active_connections_handles_access_denied():
+    fake_psutil = MagicMock()
+    fake_psutil.AccessDenied = PermissionError
+    fake_psutil.net_connections.side_effect = fake_psutil.AccessDenied("nope")
+
+    with patch.dict("sys.modules", {"psutil": fake_psutil}):
+        results = tools.get_active_connections()
+
+    assert results == []
+
+
+# ─────────────────────────── Port scanner ──────────────────────────
+
+def test_scan_ports_reports_only_open_ports():
+    class FakeSocket:
+        def __init__(self, *_args, **_kwargs):
+            pass
+        def settimeout(self, _t):
+            pass
+        def connect_ex(self, addr):
+            # Port 80 "open" (0), everything else "closed" (1)
+            return 0 if addr[1] == 80 else 1
+        def close(self):
+            pass
+
+    with patch("socket.socket", FakeSocket), \
+         patch("socket.gethostbyname", return_value="93.184.216.34"):
+        results = tools.scan_ports("example.com", ports=[22, 80, 443])
+
+    assert len(results) == 1
+    assert results[0]["port"] == 80
+    assert results[0]["service"] == "HTTP"
+    assert results[0]["open"] is True
+
+
+def test_scan_ports_unknown_service_labeled_unknown():
+    class FakeSocket:
+        def __init__(self, *_args, **_kwargs):
+            pass
+        def settimeout(self, _t):
+            pass
+        def connect_ex(self, _addr):
+            return 0
+        def close(self):
+            pass
+
+    with patch("socket.socket", FakeSocket), \
+         patch("socket.gethostbyname", return_value="1.2.3.4"):
+        results = tools.scan_ports("1.2.3.4", ports=[54321])
+
+    assert results[0]["service"] == "unknown"
+
+
+def test_scan_ports_unresolvable_host_returns_empty():
+    with patch("socket.gethostbyname", side_effect=socket.gaierror("no such host")):
+        results = tools.scan_ports("does-not-exist.invalid", ports=[80])
+
+    assert results == []
+
+
+def test_scan_ports_defaults_to_common_ports_list():
+    class FakeSocket:
+        def __init__(self, *_args, **_kwargs):
+            pass
+        def settimeout(self, _t):
+            pass
+        def connect_ex(self, _addr):
+            return 1
+        def close(self):
+            pass
+
+    with patch("socket.socket", FakeSocket), \
+         patch("socket.gethostbyname", return_value="1.2.3.4") as resolve:
+        tools.scan_ports("1.2.3.4")
+
+    resolve.assert_called_once()
+
+
+# ─────────────────────────── LAN discovery ─────────────────────────
+
+def test_discover_lan_hosts_returns_self_and_arp_neighbors():
+    with patch.object(tools, "_local_ip_and_prefix", return_value=("192.168.1.50", "192.168.1")), \
+         patch.object(tools, "_arp_table", return_value={
+             "192.168.1.50": "aa:bb:cc:dd:ee:ff",
+             "192.168.1.1": "11:22:33:44:55:66",
+         }), \
+         patch("socket.socket") as mock_socket_cls, \
+         patch("socket.gethostbyaddr", return_value=("router.local", [], [])):
+        mock_socket_cls.return_value.connect_ex.return_value = 1
+        hosts = tools.discover_lan_hosts()
+
+    assert len(hosts) == 2
+    self_entry = next(h for h in hosts if h["is_self"])
+    assert self_entry["ip"] == "192.168.1.50"
+    assert self_entry["hostname"] == "(this device)"
+
+    neighbor = next(h for h in hosts if not h["is_self"])
+    assert neighbor["ip"] == "192.168.1.1"
+    assert neighbor["mac"] == "11:22:33:44:55:66"
+    assert neighbor["hostname"] == "router.local"
+
+
+def test_discover_lan_hosts_returns_empty_when_no_local_ip():
+    with patch.object(tools, "_local_ip_and_prefix", return_value=None):
+        assert tools.discover_lan_hosts() == []
+
+
+def test_discover_lan_hosts_hostname_lookup_failure_falls_back_to_dash():
+    with patch.object(tools, "_local_ip_and_prefix", return_value=("192.168.1.50", "192.168.1")), \
+         patch.object(tools, "_arp_table", return_value={"192.168.1.5": "de:ad:be:ef:00:01"}), \
+         patch("socket.socket") as mock_socket_cls, \
+         patch("socket.gethostbyaddr", side_effect=socket.herror("no ptr record")):
+        mock_socket_cls.return_value.connect_ex.return_value = 1
+        hosts = tools.discover_lan_hosts()
+
+    neighbor = next(h for h in hosts if not h["is_self"])
+    assert neighbor["hostname"] == "-"
+
+
+# ─────────────────────────── DNS inspector ─────────────────────────
+
+def test_inspect_dns_flags_only_when_trusted_succeeds_and_system_fails():
+    def fake_system_resolve(domain, timeout=3.0):
+        return None if domain == "www.google.com" else "1.2.3.4"
+
+    with patch.object(tools, "get_system_dns_servers", return_value=["1.1.1.1"]), \
+         patch.object(tools, "_system_resolve", side_effect=fake_system_resolve), \
+         patch.object(tools, "resolve_doh", return_value="8.8.8.8"):
+        report = tools.inspect_dns()
+
+    assert report["servers"] == ["1.1.1.1"]
+    assert report["trusted_resolver_reachable"] is True
+
+    google_check = next(c for c in report["checks"] if c["domain"] == "www.google.com")
+    assert google_check["suspect"] is True
+    assert google_check["system_ip"] == "no response"
+
+    other_check = next(c for c in report["checks"] if c["domain"] != "www.google.com")
+    assert other_check["suspect"] is False
+
+
+def test_inspect_dns_no_false_positive_when_trusted_resolver_unreachable():
+    with patch.object(tools, "get_system_dns_servers", return_value=["192.168.1.1"]), \
+         patch.object(tools, "_system_resolve", return_value="93.184.216.34"), \
+         patch.object(tools, "resolve_doh", return_value=None):
+        report = tools.inspect_dns()
+
+    assert report["trusted_resolver_reachable"] is False
+    assert all(not c["suspect"] for c in report["checks"])
+
+
+def test_get_system_dns_servers_linux_reads_resolv_conf(tmp_path, monkeypatch):
+    resolv = tmp_path / "resolv.conf"
+    resolv.write_text("nameserver 1.1.1.1\nnameserver 8.8.8.8\n# comment\n")
+
+    monkeypatch.setattr(tools.sys, "platform", "linux")
+    original_open = open
+
+    def fake_open(path, *args, **kwargs):
+        if path == "/etc/resolv.conf":
+            return original_open(resolv, *args, **kwargs)
+        return original_open(path, *args, **kwargs)
+
+    with patch("builtins.open", fake_open):
+        servers = tools.get_system_dns_servers()
+
+    assert servers == ["1.1.1.1", "8.8.8.8"]
+
+
+# ─────────────────────────── Speedtest history ─────────────────────
+
+def test_record_and_get_speedtest_history_round_trip(tmp_path, monkeypatch):
+    history_file = tmp_path / "speedtest_history.json"
+    monkeypatch.setattr(tools, "SPEEDTEST_HISTORY_FILE", history_file)
+    monkeypatch.setattr(tools, "APP_DATA_DIR", tmp_path)
+
+    tools.record_speedtest_result({"latency_ms": 20.0, "download_mbps": 100.0, "upload_mbps": 10.0})
+    tools.record_speedtest_result({"latency_ms": 25.0, "download_mbps": 150.0, "upload_mbps": 15.0})
+
+    history = tools.get_speedtest_history(limit=10)
+    assert len(history) == 2
+    assert history[0]["download_mbps"] == 100.0
+    assert history[1]["download_mbps"] == 150.0
+    assert "ts" in history[0]
+
+
+def test_speedtest_history_caps_at_max_entries(tmp_path, monkeypatch):
+    history_file = tmp_path / "speedtest_history.json"
+    monkeypatch.setattr(tools, "SPEEDTEST_HISTORY_FILE", history_file)
+    monkeypatch.setattr(tools, "APP_DATA_DIR", tmp_path)
+    monkeypatch.setattr(tools, "_SPEEDTEST_HISTORY_MAX", 3)
+
+    for i in range(5):
+        tools.record_speedtest_result({"latency_ms": i, "download_mbps": i, "upload_mbps": i})
+
+    stored = json.loads(history_file.read_text())
+    assert len(stored) == 3
+    assert stored[-1]["download_mbps"] == 4
+
+
+def test_get_speedtest_history_missing_file_returns_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(tools, "SPEEDTEST_HISTORY_FILE", tmp_path / "does_not_exist.json")
+    assert tools.get_speedtest_history() == []
+
+
+def test_get_speedtest_history_corrupt_file_returns_empty(tmp_path, monkeypatch):
+    bad_file = tmp_path / "corrupt.json"
+    bad_file.write_text("{not valid json")
+    monkeypatch.setattr(tools, "SPEEDTEST_HISTORY_FILE", bad_file)
+    assert tools.get_speedtest_history() == []

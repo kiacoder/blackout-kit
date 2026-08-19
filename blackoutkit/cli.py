@@ -1001,20 +1001,25 @@ def _status_snapshot() -> dict:
     }
 
 
-def _sparkline(data: list[float | None], width: int = 15) -> str:
-    """Generate a Unicode sparkline from numeric data."""
+def _sparkline(data: list[float | None], width: int = 15, higher_is_better: bool = False) -> str:
+    """
+    Generate a Unicode sparkline from numeric data.
+
+    higher_is_better=False (default): latency-style coloring — low values are green.
+    higher_is_better=True: throughput-style coloring — high values are green.
+    """
     valid = [v for v in data if v is not None]
     if not valid:
         return "[muted]" + " " * width + "[/muted]"
-    
+
     # Pad to width
     data = data[-width:]
     if len(data) < width:
         data = [None] * (width - len(data)) + data
-        
+
     min_val, max_val = min(valid), max(valid)
     bars = " ▂▃▄▅▆▇█"
-    
+
     res = ""
     for v in data:
         if v is None:
@@ -1024,13 +1029,18 @@ def _sparkline(data: list[float | None], width: int = 15) -> str:
                 idx = 3
             else:
                 idx = int((v - min_val) / (max_val - min_val) * 7)
-            # Higher latency = worse = red, lower = better = green
-            if v < 300:
-                color = "success"
-            elif v < 800:
-                color = "warning"
+            if higher_is_better:
+                # Higher throughput = better = green; relative to this sample's own range
+                ratio = 0.5 if min_val == max_val else (v - min_val) / (max_val - min_val)
+                color = "success" if ratio >= 0.66 else ("warning" if ratio >= 0.33 else "error")
             else:
-                color = "error"
+                # Higher latency = worse = red, lower = better = green
+                if v < 300:
+                    color = "success"
+                elif v < 800:
+                    color = "warning"
+                else:
+                    color = "error"
             res += f"[{color}]{bars[idx]}[/{color}]"
     return res
 
@@ -1310,9 +1320,15 @@ def cmd_tools(args):
             "  [cyan]dns-bench[/cyan]                — Benchmark DNS servers\n"
             "  [cyan]dns-flush[/cyan]                — Flush DNS cache\n"
             "  [cyan]speedtest[/cyan]                — Download speed test\n"
+            "  [cyan]speedtest-history[/cyan]        — Show speedtest trend over time\n"
             "  [cyan]mtu [host][/cyan]               — Detect path MTU\n"
             "  [cyan]adapters[/cyan]                 — List network adapters\n"
             "  [cyan]traceroute <host>[/cyan]        — Traceroute\n"
+            "  [cyan]subnet <ip/cidr>[/cyan]         — Calculate subnet details\n"
+            "  [cyan]connections[/cyan]              — Live TCP/UDP connection table\n"
+            "  [cyan]scan-ports <host>[/cyan]        — Scan common TCP ports\n"
+            "  [cyan]discover[/cyan]                 — Discover devices on your LAN\n"
+            "  [cyan]dns-inspect[/cyan]              — Check for DNS interference/poisoning\n"
             "  [cyan]cert-check <host[:port]>[/cyan] — TLS certificate check\n"
             "  [cyan]netfix[/cyan]                   — Targeted Blackout network recovery\n"
             "  [cyan]arp-flush[/cyan]                — Explicitly flush local ARP/neighbor cache\n",
@@ -1370,6 +1386,7 @@ def cmd_tools(args):
         console.print("\n[info]Running speed test via Cloudflare (download + upload)...[/info]\n")
         with console.status("[bold]Testing...[/bold]", spinner="dots"):
             result = net_tools.simple_speed_test()
+        net_tools.record_speedtest_result(result)
         lat         = result["latency_ms"]
         mbps        = result["download_mbps"]
         upload_mbps = result.get("upload_mbps")
@@ -1382,6 +1399,44 @@ def cmd_tools(args):
             title="[bold]Speed Test — Cloudflare[/bold]",
             border_style="cyan",
         ))
+        console.print("[muted]Saved to history — run [bold]blackout tools speedtest-history[/bold] to see the trend.[/muted]\n")
+
+    elif args.tools_command == "speedtest-history":
+        history = net_tools.get_speedtest_history(limit=30)
+        if not history:
+            console.print("[warning]No speedtest history yet. Run [bold]blackout tools speedtest[/bold] a few times first.[/warning]\n")
+            return
+
+        download_values = [entry.get("download_mbps") for entry in history]
+        graph = _sparkline(download_values, width=min(30, len(download_values)), higher_is_better=True)
+
+        valid = [v for v in download_values if v is not None]
+        avg = sum(valid) / len(valid) if valid else 0
+        best = max(valid) if valid else 0
+        worst = min(valid) if valid else 0
+
+        console.print()
+        console.print(Panel(
+            f"  [muted]Samples:[/muted]  {len(history)}\n"
+            f"  [muted]Download trend:[/muted]  {graph}\n"
+            f"  [muted]Average:[/muted]  {avg:.1f} Mbps    [muted]Best:[/muted]  {best:.1f} Mbps    [muted]Worst:[/muted]  {worst:.1f} Mbps",
+            title="[bold]Speedtest History (last 30 runs)[/bold]",
+            border_style="cyan",
+        ))
+
+        table = make_table(
+            "Recent Runs",
+            [("When", "dim"), ("Latency", ""), ("Download", "white"), ("Upload", "white")],
+            [],
+        )
+        for entry in history[-10:]:
+            when = time.strftime("%m-%d %H:%M", time.localtime(entry.get("ts", 0)))
+            lat_disp = f"{entry['latency_ms']:.0f}ms" if entry.get("latency_ms") is not None else "-"
+            dl_disp = f"{entry['download_mbps']:.1f} Mbps" if entry.get("download_mbps") is not None else "-"
+            ul_disp = f"{entry['upload_mbps']:.1f} Mbps" if entry.get("upload_mbps") is not None else "-"
+            table.add_row(when, lat_disp, dl_disp, ul_disp)
+        console.print(table)
+        console.print()
 
     elif args.tools_command == "mtu":
         host = getattr(args, "host", "8.8.8.8")
@@ -1420,6 +1475,185 @@ def cmd_tools(args):
             hops = net_tools.traceroute(host)
         for hop, line in hops:
             console.print(f"  [dim]{hop:>2}[/dim]  {line}")
+        console.print()
+
+    elif args.tools_command == "connections":
+        established_only = getattr(args, "established", False)
+        with console.status("[bold]Reading connection table...[/bold]", spinner="dots"):
+            conns = net_tools.get_active_connections(established_only=established_only)
+
+        if not conns:
+            console.print("[warning]No connections found (or permission denied — try running as administrator).[/warning]")
+            return
+
+        table = make_table(
+            f"Active Connections  ({len(conns)})",
+            [("Process", "cyan"), ("PID", "dim"), ("Proto", "yellow"),
+             ("Local", "white"), ("Remote", "white"), ("State", "")],
+            [],
+        )
+        for c in conns:
+            local = f"{c['local_addr']}:{c['local_port']}"
+            remote = f"{c['remote_addr']}:{c['remote_port']}" if c["remote_addr"] else "-"
+            status = c["status"]
+            if status == "ESTABLISHED":
+                status_disp = "[success]ESTABLISHED[/success]"
+            elif status == "LISTEN":
+                status_disp = "[cyan]LISTEN[/cyan]"
+            else:
+                status_disp = f"[dim]{status}[/dim]"
+            table.add_row(c["process"], str(c["pid"]) if c["pid"] else "-", c["protocol"], local, remote, status_disp)
+
+        console.print()
+        console.print(table)
+        console.print("[muted]Tip: use [bold]blackout tools connections --established[/bold] to hide listening sockets.[/muted]")
+        console.print()
+
+    elif args.tools_command == "dns-inspect":
+        with console.status("[bold]Comparing system DNS against a trusted resolver...[/bold]", spinner="dots"):
+            report = net_tools.inspect_dns()
+
+        servers = report["servers"]
+        console.print()
+        console.print(Panel(
+            f"[muted]Configured DNS servers:[/muted] {', '.join(servers) if servers else '[dim]unknown[/dim]'}",
+            title="[bold]System DNS[/bold]",
+            border_style="cyan",
+        ))
+
+        if not report["trusted_resolver_reachable"]:
+            console.print(
+                "\n[warning]Could not reach the trusted DoH resolver (1.1.1.1) — DNS comparison is unavailable.[/warning]\n"
+                "[muted]This can mean outbound HTTPS to 1.1.1.1 is blocked, or you have no internet access right now.[/muted]\n"
+            )
+            return
+
+        table = make_table(
+            "Resolution Comparison (system vs. trusted DoH)",
+            [("Domain", "cyan"), ("System DNS", "white"), ("Trusted DoH", "white"), ("Status", "")],
+            [],
+        )
+        suspect_count = 0
+        for check in report["checks"]:
+            if check["suspect"]:
+                suspect_count += 1
+                status = "[error]⚠ BLOCKED?[/error]"
+            else:
+                status = "[success]✓ OK[/success]"
+            table.add_row(check["domain"], check["system_ip"], check["trusted_ip"], status)
+        console.print(table)
+
+        if suspect_count:
+            console.print(
+                f"\n[warning]{suspect_count} domain(s) resolved via the trusted resolver but NOT via your system "
+                "DNS.[/warning] This can indicate DNS blocking or poisoning — it is a local heuristic signal, "
+                "not proof of tampering.\n"
+            )
+        else:
+            console.print("\n[success]No DNS interference detected against the test domain set.[/success]\n")
+
+    elif args.tools_command == "discover":
+        console.print("\n[info]Sweeping the local subnet — this can take a few seconds...[/info]\n")
+        with Progress(
+            SpinnerColumn(style="bold red"),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=40, style="red", complete_style="green"),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Discovering LAN devices...", total=254)
+            hosts = net_tools.discover_lan_hosts(progress_callback=lambda: progress.advance(task))
+
+        if not hosts:
+            console.print("[warning]Could not determine local subnet — check your network connection.[/warning]\n")
+            return
+
+        table = make_table(
+            f"LAN Devices  ({len(hosts)} found)",
+            [("IP Address", "cyan"), ("MAC Address", "dim"), ("Hostname", "white")],
+            [],
+        )
+        for h in hosts:
+            ip_disp = f"[bold]{h['ip']}[/bold] [success](you)[/success]" if h["is_self"] else h["ip"]
+            table.add_row(ip_disp, h["mac"], h["hostname"])
+        console.print(table)
+        console.print("[muted]Devices with no OS-visible MAC entry may not respond to the probe ports used.[/muted]\n")
+
+    elif args.tools_command == "scan-ports":
+        host = getattr(args, "host", None)
+        if not host:
+            return
+        port_range = getattr(args, "ports", None)
+        target_ports = None
+        if port_range:
+            try:
+                if "-" in port_range:
+                    lo, hi = port_range.split("-", 1)
+                    target_ports = list(range(int(lo), int(hi) + 1))
+                else:
+                    target_ports = [int(p.strip()) for p in port_range.split(",") if p.strip()]
+            except ValueError:
+                console.print(f"[error]Invalid port range: {port_range}[/error]")
+                return
+
+        total = len(target_ports) if target_ports else len(net_tools.COMMON_PORTS)
+        console.print(f"\n[info]Scanning {host} — {total} port(s)...[/info]\n")
+
+        with Progress(
+            SpinnerColumn(style="bold red"),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(bar_width=40, style="red", complete_style="green"),
+            TaskProgressColumn(),
+            TimeElapsedColumn(),
+            console=console,
+            transient=True,
+        ) as progress:
+            task = progress.add_task(f"Scanning {host}...", total=total)
+            results = net_tools.scan_ports(
+                host,
+                ports=target_ports,
+                progress_callback=lambda: progress.advance(task),
+            )
+
+        if not results:
+            console.print(f"[warning]No open ports found on {host} (or host unreachable).[/warning]\n")
+            return
+
+        table = make_table(
+            f"Open Ports on {host}  ({len(results)} found)",
+            [("Port", "cyan"), ("Service", "bold white"), ("Status", "")],
+            [],
+        )
+        for r in results:
+            table.add_row(str(r["port"]), r["service"], "[success]● OPEN[/success]")
+        console.print(table)
+        console.print()
+
+    elif args.tools_command == "subnet":
+        cidr = getattr(args, "cidr", None)
+        if not cidr:
+            return
+        details = net_tools.calculate_subnet(cidr)
+        if not details:
+            console.print(f"[error]Invalid IP/CIDR format: {cidr}[/error]")
+            return
+
+        table = make_table(
+            f"Subnet Calculator: {cidr}",
+            [("Property", "cyan"), ("Value", "bold white")],
+            [],
+        )
+        table.add_row("Network ID", details["network"])
+        table.add_row("Broadcast IP", details["broadcast"])
+        table.add_row("Subnet Mask", f"{details['netmask']} (/{details['cidr']})")
+        table.add_row("Usable IPs", f"{details['first_ip']} - {details['last_ip']}")
+        table.add_row("Total Hosts", str(details["total_hosts"]))
+        table.add_row("Usable Hosts", str(details["usable_hosts"]))
+
+        console.print()
+        console.print(table)
         console.print()
 
     elif args.tools_command == "dns-set":

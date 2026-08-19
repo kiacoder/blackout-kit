@@ -23,6 +23,10 @@ from rich import box
 from .theme import console, make_table
 from .proxy_manager import is_admin as _is_admin
 from . import elevate
+from . import APP_DATA_DIR
+
+SPEEDTEST_HISTORY_FILE = APP_DATA_DIR / "speedtest_history.json"
+_SPEEDTEST_HISTORY_MAX = 200
 
 
 def _run_elevated(cmd: list[str], timeout_ms: int = 30000) -> bool:
@@ -728,6 +732,37 @@ def simple_speed_test() -> dict:
     }
 
 
+def record_speedtest_result(result: dict) -> None:
+    """Append a speedtest result to the persisted history, capped at the last N entries."""
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        history = json.loads(SPEEDTEST_HISTORY_FILE.read_text()) if SPEEDTEST_HISTORY_FILE.exists() else []
+    except Exception:
+        history = []
+
+    history.append({
+        "ts": time.time(),
+        "latency_ms": result.get("latency_ms"),
+        "download_mbps": result.get("download_mbps"),
+        "upload_mbps": result.get("upload_mbps"),
+    })
+    history = history[-_SPEEDTEST_HISTORY_MAX:]
+
+    try:
+        SPEEDTEST_HISTORY_FILE.write_text(json.dumps(history, indent=2))
+    except Exception:
+        pass
+
+
+def get_speedtest_history(limit: int = 30) -> list[dict]:
+    """Return the most recent N recorded speedtest results, oldest first."""
+    try:
+        history = json.loads(SPEEDTEST_HISTORY_FILE.read_text()) if SPEEDTEST_HISTORY_FILE.exists() else []
+    except Exception:
+        history = []
+    return history[-limit:]
+
+
 # ─────────────────────────── Public IP ──────────────────────────
 
 _PUBLIC_IP_ENDPOINTS = [
@@ -947,7 +982,304 @@ def traceroute(host: str, max_hops: int = 20) -> list[tuple[int, str]]:
         return []
 
 
-# ─────────────────────────── Auto-fix ────────────────────────────
+# ─────────────────────────── Network Analysis ────────────────────
+
+def get_active_connections(established_only: bool = False) -> list[dict]:
+    """
+    Return a list of active network connections with process attribution.
+    Each entry: {pid, process, local_addr, local_port, remote_addr, remote_port, status, protocol}
+    Requires psutil. Skips connections whose owning process cannot be read (permission denied).
+    """
+    import psutil
+
+    results: list[dict] = []
+    try:
+        connections = psutil.net_connections(kind="inet")
+    except (psutil.AccessDenied, PermissionError):
+        return results
+
+    proc_name_cache: dict[int, str] = {}
+
+    for conn in connections:
+        if established_only and conn.status != psutil.CONN_ESTABLISHED:
+            continue
+        if not conn.laddr:
+            continue
+
+        pid = conn.pid
+        proc_name = "-"
+        if pid:
+            if pid in proc_name_cache:
+                proc_name = proc_name_cache[pid]
+            else:
+                try:
+                    proc_name = psutil.Process(pid).name()
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    proc_name = "(privileged)"
+                proc_name_cache[pid] = proc_name
+
+        protocol = "TCP" if conn.type == socket.SOCK_STREAM else "UDP"
+        results.append({
+            "pid": pid or 0,
+            "process": proc_name,
+            "local_addr": conn.laddr.ip,
+            "local_port": conn.laddr.port,
+            "remote_addr": conn.raddr.ip if conn.raddr else "",
+            "remote_port": conn.raddr.port if conn.raddr else 0,
+            "status": conn.status,
+            "protocol": protocol,
+        })
+
+    results.sort(key=lambda item: (item["process"].lower(), item["local_port"]))
+    return results
+
+
+# ─────────────────────────── DNS inspector ────────────────────────
+
+DNS_POISON_CHECK_DOMAINS = [
+    "www.google.com",
+    "www.youtube.com",
+    "www.wikipedia.org",
+    "www.cloudflare.com",
+]
+
+
+def get_system_dns_servers() -> list[str]:
+    """Return the DNS server IPs currently configured on active adapters."""
+    servers: set[str] = set()
+    if sys.platform == "win32":
+        snapshot = get_network_recovery_snapshot()
+        for adapter in snapshot.get("adapters", []):
+            if str(adapter.get("Status", "")).lower() != "up":
+                continue
+            for server in adapter.get("DnsServers", []):
+                servers.add(str(server))
+    else:
+        try:
+            with open("/etc/resolv.conf", "r", encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line.startswith("nameserver"):
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            servers.add(parts[1])
+        except OSError:
+            pass
+    return sorted(servers)
+
+
+def _system_resolve(domain: str, timeout: float = 3.0) -> str | None:
+    """Resolve a domain using the OS resolver (whatever DNS server is configured)."""
+    try:
+        old_timeout = socket.getdefaulttimeout()
+        socket.setdefaulttimeout(timeout)
+        try:
+            return socket.gethostbyname(domain)
+        finally:
+            socket.setdefaulttimeout(old_timeout)
+    except Exception:
+        return None
+
+
+def inspect_dns() -> dict:
+    """
+    Compare system DNS resolution against a trusted DoH resolver (Cloudflare)
+    for a set of well-known domains, to surface possible DNS interference or
+    poisoning. This is a heuristic signal, not proof of tampering — CDNs
+    legitimately return different IPs to different resolvers.
+
+    A domain is only flagged "suspect" when the trusted resolver succeeded but
+    the system resolver failed — that is the strongest local signal of
+    blocking/poisoning. If the trusted resolver itself is unreachable (e.g.
+    outbound HTTPS to 1.1.1.1 is blocked), no domain is flagged, since we have
+    no independent baseline to compare against.
+
+    Returns {servers, trusted_resolver_reachable, checks: [{domain, system_ip, trusted_ip, suspect}]}
+    """
+    servers = get_system_dns_servers()
+    checks = []
+    trusted_reachable = False
+    for domain in DNS_POISON_CHECK_DOMAINS:
+        system_ip = _system_resolve(domain)
+        trusted_ip = resolve_doh(domain)
+        if trusted_ip:
+            trusted_reachable = True
+        suspect = bool(trusted_ip) and not system_ip
+        checks.append({
+            "domain": domain,
+            "system_ip": system_ip or "no response",
+            "trusted_ip": trusted_ip or "no response",
+            "suspect": suspect,
+        })
+    return {"servers": servers, "trusted_resolver_reachable": trusted_reachable, "checks": checks}
+
+
+# ─────────────────────────── Network discovery ───────────────────
+
+def _local_ip_and_prefix() -> tuple[str, str] | None:
+    """Return (local_ip, /24 network prefix like '192.168.1') via a UDP socket trick."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            local_ip = sock.getsockname()[0]
+        prefix = ".".join(local_ip.split(".")[:3])
+        return local_ip, prefix
+    except Exception:
+        return None
+
+
+def _arp_table() -> dict[str, str]:
+    """Return {ip: mac} from the OS ARP/neighbor table."""
+    table: dict[str, str] = {}
+    try:
+        if sys.platform == "win32":
+            result = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=10, errors="ignore")
+            for line in result.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 2 and parts[0].count(".") == 3:
+                    ip, mac = parts[0], parts[1]
+                    if "-" in mac or ":" in mac:
+                        table[ip] = mac.replace("-", ":").lower()
+        else:
+            result = subprocess.run(["ip", "neigh"], capture_output=True, text=True, timeout=10, errors="ignore")
+            for line in result.stdout.splitlines():
+                parts = line.split()
+                if len(parts) >= 5 and parts[0].count(".") == 3:
+                    table[parts[0]] = parts[4].lower()
+    except Exception:
+        pass
+    return table
+
+
+def discover_lan_hosts(timeout: float = 0.3, max_workers: int = 100, progress_callback=None) -> list[dict]:
+    """
+    Sweep the local /24 subnet to discover live hosts.
+
+    Pings every address (TCP connect attempts on common ports populate the OS
+    ARP cache), then reads the ARP table for IP → MAC mappings and attempts a
+    reverse-DNS lookup for a friendly hostname.
+
+    Returns a list of {ip, mac, hostname, is_self}.
+    """
+    local = _local_ip_and_prefix()
+    if not local:
+        return []
+    local_ip, prefix = local
+
+    def _probe(ip: str) -> None:
+        for port in (80, 443, 445, 22, 139):
+            try:
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.settimeout(timeout)
+                sock.connect_ex((ip, port))
+                sock.close()
+                break
+            except Exception:
+                continue
+        if progress_callback:
+            progress_callback()
+
+    targets = [f"{prefix}.{i}" for i in range(1, 255) if f"{prefix}.{i}" != local_ip]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        list(pool.map(_probe, targets))
+
+    arp = _arp_table()
+    hosts: list[dict] = [{"ip": local_ip, "mac": arp.get(local_ip, "-"), "hostname": "(this device)", "is_self": True}]
+
+    for ip, mac in arp.items():
+        if not ip.startswith(prefix + ".") or ip == local_ip:
+            continue
+        hostname = "-"
+        try:
+            hostname = socket.gethostbyaddr(ip)[0]
+        except Exception:
+            pass
+        hosts.append({"ip": ip, "mac": mac, "hostname": hostname, "is_self": False})
+
+    hosts.sort(key=lambda h: tuple(int(part) for part in h["ip"].split(".")))
+    return hosts
+
+
+COMMON_PORTS: dict[int, str] = {
+    21: "FTP", 22: "SSH", 23: "Telnet", 25: "SMTP", 53: "DNS",
+    80: "HTTP", 110: "POP3", 111: "RPCbind", 135: "MSRPC", 139: "NetBIOS",
+    143: "IMAP", 443: "HTTPS", 445: "SMB", 465: "SMTPS", 587: "SMTP-Sub",
+    993: "IMAPS", 995: "POP3S", 1433: "MSSQL", 1521: "Oracle", 1723: "PPTP",
+    2049: "NFS", 27017: "MongoDB", 3000: "Dev-HTTP", 3306: "MySQL",
+    3389: "RDP", 5000: "Dev-HTTP", 5432: "PostgreSQL", 5900: "VNC",
+    5985: "WinRM-HTTP", 5986: "WinRM-HTTPS", 6379: "Redis", 8000: "HTTP-Alt",
+    8080: "HTTP-Proxy", 8443: "HTTPS-Alt", 9000: "Dev-HTTP", 9200: "Elasticsearch",
+    27015: "Steam", 25565: "Minecraft",
+}
+
+
+def scan_ports(
+    host: str,
+    ports: list[int] | None = None,
+    timeout: float = 0.5,
+    max_workers: int = 100,
+    progress_callback=None,
+) -> list[dict]:
+    """
+    Scan a host for open TCP ports using a thread pool of raw connect() attempts.
+
+    ports: explicit list, or None to scan the built-in COMMON_PORTS list.
+    Returns a list of {port, service, open} for every port that responded open.
+    """
+    target_ports = ports if ports is not None else list(COMMON_PORTS.keys())
+
+    try:
+        resolved_ip = socket.gethostbyname(host)
+    except socket.gaierror:
+        return []
+
+    def _check(port: int) -> dict | None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        try:
+            result = sock.connect_ex((resolved_ip, port))
+            if result == 0:
+                return {"port": port, "service": COMMON_PORTS.get(port, "unknown"), "open": True}
+            return None
+        except Exception:
+            return None
+        finally:
+            sock.close()
+            if progress_callback:
+                progress_callback()
+
+    open_ports: list[dict] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = [pool.submit(_check, port) for port in target_ports]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                open_ports.append(result)
+
+    open_ports.sort(key=lambda item: item["port"])
+    return open_ports
+
+
+def calculate_subnet(ip_cidr: str) -> dict | None:
+    """
+    Calculate subnet details (Network, Broadcast, Mask, Usable range) from a CIDR string.
+    Returns a dict with the parsed details or None if invalid.
+    """
+    try:
+        network = ipaddress.IPv4Network(ip_cidr, strict=False)
+        return {
+            "network": str(network.network_address),
+            "broadcast": str(network.broadcast_address),
+            "netmask": str(network.netmask),
+            "cidr": network.prefixlen,
+            "total_hosts": network.num_addresses,
+            "usable_hosts": network.num_addresses - 2 if network.num_addresses > 2 else 0,
+            "first_ip": str(network[1]) if network.num_addresses > 2 else "N/A",
+            "last_ip": str(network[-2]) if network.num_addresses > 2 else "N/A",
+        }
+    except ValueError:
+        return None
+
 
 def set_dns(dns_ip: str, adapter: str | None = None) -> bool:
     """
