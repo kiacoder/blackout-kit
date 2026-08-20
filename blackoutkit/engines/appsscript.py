@@ -314,6 +314,9 @@ class AppsScriptEngine(Engine):
             except Exception:
                 pass
             self._server = None
+        if self._server_thread:
+            self._server_thread.join(timeout=5)
+            self._server_thread = None
         super().stop()
 
     def is_running(self) -> bool:

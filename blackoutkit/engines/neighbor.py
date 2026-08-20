@@ -236,6 +236,9 @@ class NeighborConnectEngine(Engine):
 
     def stop(self):
         self._running = False
+        if self._thread:
+            self._thread.join(timeout=5)
+            self._thread = None
         super().stop()
 
     def is_running(self) -> bool:

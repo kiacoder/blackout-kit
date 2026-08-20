@@ -209,6 +209,9 @@ class SoftEtherEngine(Engine):
 
     def stop(self):
         self._connected = False  # Signals monitor thread to exit
+        if self._monitor_thread:
+            self._monitor_thread.join(timeout=5)
+            self._monitor_thread = None
         self._vpncmd(
             f"AccountDisconnect {SE_ACCOUNT_NAME}",
             f"AccountDelete {SE_ACCOUNT_NAME}",
