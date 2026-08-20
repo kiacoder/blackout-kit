@@ -156,8 +156,12 @@ class NeighborConnectEngine(Engine):
                     data, addr = sock.recvfrom(256)
                     if data.startswith(BEACON_PREFIX):
                         port_part = data[len(BEACON_PREFIX):]
-                        port      = int(port_part.decode())
-                        return addr[0], port
+                        try:
+                            port = int(port_part.decode())
+                            return addr[0], port
+                        except (ValueError, UnicodeDecodeError):
+                            # Malformed beacon data — skip and continue waiting
+                            pass
                 except socket.timeout:
                     pass
                 except Exception:

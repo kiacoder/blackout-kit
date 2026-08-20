@@ -292,13 +292,19 @@ def import_from_subscription(url: str) -> list[ProxyConfig]:
     """
     Fetch a V2Ray subscription URL and parse all configs.
     Subscription content may be plain-text or base64-encoded.
+    Returns empty list on network error or parse failure.
     """
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "v2rayN/6.0"},
-    )
-    with urllib.request.urlopen(req, timeout=15) as resp:
-        raw = resp.read()
+    try:
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "v2rayN/6.0"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read()
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
+        import logging
+        logging.error(f"Failed to fetch subscription from {url}: {e}")
+        return []
 
     # Attempt base64 decode (standard subscription format)
     try:
@@ -318,14 +324,21 @@ def import_and_merge(url: str) -> tuple[int, int]:
     """
     Import configs from URL and merge with existing.
     Returns (new_count, total_count).
+    Returns (0, total_count) on import failure.
     """
-    new = import_from_subscription(url)
-    existing = load_configs()
-    existing_uris = {c.raw_uri for c in existing}
-    added = [c for c in new if c.raw_uri not in existing_uris]
-    merged = existing + added
-    save_configs(merged)
-    return len(added), len(merged)
+    try:
+        new = import_from_subscription(url)
+        existing = load_configs()
+        existing_uris = {c.raw_uri for c in existing}
+        added = [c for c in new if c.raw_uri not in existing_uris]
+        merged = existing + added
+        save_configs(merged)
+        return len(added), len(merged)
+    except Exception as e:
+        import logging
+        logging.error(f"import_and_merge failed: {e}")
+        existing = load_configs()
+        return 0, len(existing)
 
 
 # ─────────────────────────── Export/Import Setup ──────────────────────────
