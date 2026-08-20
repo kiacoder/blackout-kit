@@ -2,6 +2,7 @@
 Blackout Kit - Proxy and connection tester.
 Tests whether the system proxy and SNI engines are working.
 """
+import atexit
 import socket
 import threading
 import time
@@ -62,6 +63,8 @@ def _cleanup_httpx_clients():
             except Exception:
                 pass
         _httpx_clients.clear()
+
+atexit.register(_cleanup_httpx_clients)
 
 def test_http_proxy(
     proxy_host: str = "127.0.0.1",

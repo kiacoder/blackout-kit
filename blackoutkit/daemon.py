@@ -22,6 +22,7 @@ STATE_FILE   = APP_DATA_DIR / "daemon_state.json"
 LOCK_FILE    = APP_DATA_DIR / "daemon.lock"
 
 _shutdown_requested = False
+_shutdown_lock = _threading.Lock()
 cfg_lock = None
 
 
@@ -334,8 +335,9 @@ def _reconnect_delay(attempt: int, initial_delay: int, maximum_delay: int) -> in
 
 def _daemon_shutdown_requested(daemon_pid: int) -> bool:
     """Return whether this daemon should stop without disturbing another daemon."""
-    if _shutdown_requested or (APP_DATA_DIR / "daemon.stop.request").exists():
-        return True
+    with _shutdown_lock:
+        if _shutdown_requested or (APP_DATA_DIR / "daemon.stop.request").exists():
+            return True
     try:
         if not PID_FILE.exists():
             PID_FILE.write_text(str(daemon_pid), encoding="utf-8")
@@ -405,8 +407,9 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     for key, value in env_overrides.items():
         os.environ[key] = str(value)
 
-    global cfg_lock, _shutdown_requested
-    _shutdown_requested = False
+    global cfg_lock, _shutdown_requested, _shutdown_lock
+    with _shutdown_lock:
+        _shutdown_requested = False
     cfg_lock = _threading.Lock()
     devnull = None
     try:
@@ -604,7 +607,8 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         def _on_tray_stop():
             log.info("Tray requested shutdown.")
             global _shutdown_requested
-            _shutdown_requested = True
+            with _shutdown_lock:
+                _shutdown_requested = True
 
         tray_thread = threading.Thread(target=start_tray, args=(active_engine_name, _on_tray_stop), daemon=True)
         tray_thread.start()
