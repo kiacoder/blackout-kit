@@ -164,11 +164,15 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
             "@{engine=$env:BLACKOUT_ENGINE;pid=$p.Id;started=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')} | ConvertTo-Json | Out-File -FilePath $env:BLACKOUT_STATE_FILE -Encoding UTF8 }"
         )
 
-        subprocess.run(
-            ["powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", ps_cmd],
-            creationflags=0x08000000,
-            env=env_for_ps,
-        )
+        try:
+            subprocess.run(
+                ["powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", ps_cmd],
+                creationflags=0x08000000,
+                env=env_for_ps,
+                timeout=120,
+            )
+        except subprocess.TimeoutExpired:
+            pass
 
         # Wait for PID_FILE (give user time to click UAC)
         for _ in range(600):

@@ -805,12 +805,20 @@ def _download_openvpn_binary(progress_callback: Callable[[int, int], None] | Non
                         progress_callback(downloaded, total_size or downloaded)
 
         temp_dir = Path(tempfile.mkdtemp())
-        
+
         cmd = ["msiexec", "/a", str(tmp_path), "/qb", f"TARGETDIR={temp_dir}"]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            return False, "OpenVPN MSI extraction timed out (120s)"
         if result.returncode != 0:
             cmd = ["msiexec", "/a", str(tmp_path), "/qn", f"TARGETDIR={temp_dir}"]
-            subprocess.run(cmd, check=True)
+            try:
+                subprocess.run(cmd, check=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                return False, "OpenVPN MSI extraction timed out (120s)"
+            except subprocess.CalledProcessError as e:
+                return False, f"MSI extraction failed (exit code {e.returncode})"
 
         openvpn_exe = None
         for p in temp_dir.rglob("openvpn.exe"):

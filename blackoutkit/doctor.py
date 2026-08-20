@@ -329,7 +329,7 @@ def check_network_driver() -> CheckResult:
         return CheckResult(
             "Winsock catalog", False, "Winsock may be corrupted",
             fixable=True,
-            fix=lambda: subprocess.run(["netsh", "winsock", "reset"], capture_output=True),
+            fix=lambda: subprocess.run(["netsh", "winsock", "reset"], capture_output=True, timeout=30),
         )
     except Exception as e:
         return CheckResult("Winsock catalog", False, str(e))
@@ -930,7 +930,7 @@ def check_firewall_exclusion() -> CheckResult:
             
         r = subprocess.run(
             ["powershell", "-NoProfile", "-Command", "Get-MpPreference | Select-Object -ExpandProperty ExclusionPath"],
-            capture_output=True, text=True, errors="ignore"
+            capture_output=True, text=True, errors="ignore", timeout=10
         )
         bins_str = str(BINS_DIR).lower()
         if bins_str in r.stdout.lower():
@@ -939,7 +939,7 @@ def check_firewall_exclusion() -> CheckResult:
         def _fix_exclusion():
             subprocess.run(
                 ["powershell", "-NoProfile", "-Command", f"Add-MpPreference -ExclusionPath '{BINS_DIR}'"],
-                capture_output=True
+                capture_output=True, timeout=10
             )
             
         return CheckResult("Windows Defender", False, "bins/ directory is not excluded from AV scans. False positives may occur.", fixable=True, fix=_fix_exclusion)
