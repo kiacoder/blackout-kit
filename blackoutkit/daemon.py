@@ -119,7 +119,10 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
                     f.write(str(process.pid))
                 os.replace(tmp_path, str(PID_FILE))
             except Exception:
-                os.unlink(tmp_path)
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
 
             # Atomic write of STATE file
             fd, tmp_path = tempfile.mkstemp(dir=APP_DATA_DIR, text=True)
@@ -132,7 +135,10 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
                     }, f)
                 os.replace(tmp_path, str(STATE_FILE))
             except Exception:
-                os.unlink(tmp_path)
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
             return process.pid
 
         ADMIN_REQUIRED_ENGINES = {"gdpi", "warp", "tun"}
@@ -398,12 +404,17 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     global cfg_lock, _shutdown_requested
     _shutdown_requested = False
     cfg_lock = _threading.Lock()
+    devnull = None
     try:
         devnull = open(os.devnull, "w")
         sys.stdout = devnull
         sys.stderr = devnull
     except Exception:
-        pass
+        if devnull is not None:
+            try:
+                devnull.close()
+            except Exception:
+                pass
 
     from .engines.xray import XRayEngine
     from .engines.tun import TUNEngine
@@ -428,6 +439,8 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     from . import settings as cfg
     from . import security as sec
     from .proxy_manager import set_system_proxy, clear_system_proxy
+
+    _ensure_dir()
 
     # Setup rotating logs
     handler = logging.handlers.RotatingFileHandler(

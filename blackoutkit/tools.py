@@ -1176,14 +1176,20 @@ def discover_lan_hosts(timeout: float = 0.3, max_workers: int = 100, progress_ca
 
     def _probe(ip: str) -> None:
         for port in (80, 443, 445, 22, 139):
+            sock = None
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(timeout)
                 sock.connect_ex((ip, port))
-                sock.close()
                 break
             except Exception:
                 continue
+            finally:
+                if sock is not None:
+                    try:
+                        sock.close()
+                    except Exception:
+                        pass
         if progress_callback:
             progress_callback()
 

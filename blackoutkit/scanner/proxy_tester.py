@@ -3,6 +3,7 @@ Blackout Kit - Proxy and connection tester.
 Tests whether the system proxy and SNI engines are working.
 """
 import socket
+import threading
 import time
 import urllib.request
 import urllib.error
@@ -44,12 +45,23 @@ def test_tcp_port(host: str, port: int, timeout: float = 3.0) -> float | None:
 
 
 _httpx_clients = {}
+_httpx_lock = threading.Lock()
 
 def _get_httpx_client(proxy_url: str, timeout: int):
     import httpx
-    if proxy_url not in _httpx_clients:
-        _httpx_clients[proxy_url] = httpx.Client(proxy=proxy_url, timeout=timeout)
-    return _httpx_clients[proxy_url]
+    with _httpx_lock:
+        if proxy_url not in _httpx_clients:
+            _httpx_clients[proxy_url] = httpx.Client(proxy=proxy_url, timeout=timeout)
+        return _httpx_clients[proxy_url]
+
+def _cleanup_httpx_clients():
+    with _httpx_lock:
+        for client in _httpx_clients.values():
+            try:
+                client.close()
+            except Exception:
+                pass
+        _httpx_clients.clear()
 
 def test_http_proxy(
     proxy_host: str = "127.0.0.1",

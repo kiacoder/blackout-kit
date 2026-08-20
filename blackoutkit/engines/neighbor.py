@@ -139,6 +139,7 @@ class NeighborConnectEngine(Engine):
         Listen for a LAN beacon from a NeighborShareEngine.
         Returns (host_ip, proxy_port) on success, None on timeout.
         """
+        sock = None
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
             sock.settimeout(timeout)
@@ -164,10 +165,11 @@ class NeighborConnectEngine(Engine):
         except Exception:
             pass
         finally:
-            try:
-                sock.close()
-            except Exception:
-                pass
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass
         return None
 
     @staticmethod

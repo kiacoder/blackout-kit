@@ -260,25 +260,35 @@ class SNIEngine(Engine):
         import socket
         import ssl
         import time
+        sock = None
         try:
             start = time.monotonic()
             sock = socket.create_connection(self._health_check_addr, timeout=3.0)
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-            tls12 = getattr(ssl.TLSVersion, "TLS1_2", None)
-            if tls12 is None:
-                tls12 = getattr(ssl.TLSVersion, "TLSv1_2")
-            context.minimum_version = tls12
-            context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
-            # codeql[py/insecure-protocol-defaults]
-            with context.wrap_socket(sock, server_hostname=target_host) as ssock:
-                req = f"GET / HTTP/1.1\r\nHost: {target_host}\r\nConnection: close\r\n\r\n"
-                ssock.sendall(req.encode())
-                resp = ssock.recv(4096)
-                latency = (time.monotonic() - start) * 1000
-                if b"HTTP/" in resp:
-                    return latency
+            try:
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                tls12 = getattr(ssl.TLSVersion, "TLS1_2", None)
+                if tls12 is None:
+                    tls12 = getattr(ssl.TLSVersion, "TLSv1_2")
+                context.minimum_version = tls12
+                context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                # codeql[py/insecure-protocol-defaults]
+                with context.wrap_socket(sock, server_hostname=target_host) as ssock:
+                    req = f"GET / HTTP/1.1\r\nHost: {target_host}\r\nConnection: close\r\n\r\n"
+                    ssock.sendall(req.encode())
+                    resp = ssock.recv(4096)
+                    latency = (time.monotonic() - start) * 1000
+                    if b"HTTP/" in resp:
+                        return latency
+                    return None
+            except Exception:
                 return None
         except Exception:
             return None
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except Exception:
+                    pass

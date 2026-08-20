@@ -776,27 +776,40 @@ def cmd_start(args):
                     return
                 console.print(f"  [success]✓ {effective_engine_name}[/success] running in background (PID {pid})")
                 console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
-                with open(daemon.LOG_FILE, "r", encoding="utf-8") as f:
-                    f.seek(0, 2)
-                    try:
-                        while daemon.get_pid() is not None:
-                            line = f.readline()
-                            if not line:
-                                time.sleep(0.1)
-                                continue
-                            if "[ERROR]" in line:
-                                console.print(f"[red]{line.strip()}[/red]")
-                            elif "[WARNING]" in line:
-                                console.print(f"[yellow]{line.strip()}[/yellow]")
-                            elif "[success]" in line:
-                                console.print(f"[green]{line.strip()}[/green]")
-                            else:
-                                console.print(f"[dim]{line.strip()}[/dim]")
-                    except KeyboardInterrupt:
-                        pass
-                    finally:
-                        console.print("\n[warning]Stopping...[/warning]")
+                try:
+                    # Wait for log file to be created (daemon might not have created it yet)
+                    for _ in range(100):  # Wait up to 10 seconds
+                        if daemon.LOG_FILE.exists():
+                            break
+                        time.sleep(0.1)
+                    if not daemon.LOG_FILE.exists():
+                        console.print("[warning]⚠ Daemon log file not created (may be disabled). Stopping...[/warning]")
                         daemon.stop()
+                        return
+                    with open(daemon.LOG_FILE, "r", encoding="utf-8") as f:
+                        f.seek(0, 2)
+                        try:
+                            while daemon.get_pid() is not None:
+                                line = f.readline()
+                                if not line:
+                                    time.sleep(0.1)
+                                    continue
+                                if "[ERROR]" in line:
+                                    console.print(f"[red]{line.strip()}[/red]")
+                                elif "[WARNING]" in line:
+                                    console.print(f"[yellow]{line.strip()}[/yellow]")
+                                elif "[success]" in line:
+                                    console.print(f"[green]{line.strip()}[/green]")
+                                else:
+                                    console.print(f"[dim]{line.strip()}[/dim]")
+                        except KeyboardInterrupt:
+                            pass
+                        finally:
+                            console.print("\n[warning]Stopping...[/warning]")
+                            daemon.stop()
+                except FileNotFoundError:
+                    console.print("[warning]⚠ Failed to open daemon log file. Stopping...[/warning]")
+                    daemon.stop()
                 return
             except RuntimeError as e:
                 console.print(f"[error]{e}[/error]")
