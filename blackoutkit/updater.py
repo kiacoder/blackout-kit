@@ -182,6 +182,9 @@ def download_and_apply(release: dict) -> bool:
 
             with zipfile.ZipFile(tmp_path) as zf:
                 names  = zf.namelist()
+                if not names:
+                    console.print("  [error]Archive is empty (no files).[/error]")
+                    return False
                 prefix = names[0].split("/")[0] + "/"
 
                 backup_dir = APP_DATA_DIR / "backup_src"
