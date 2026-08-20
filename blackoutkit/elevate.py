@@ -53,8 +53,8 @@ def is_admin() -> bool:
     except Exception:
         pass
     try:
-        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE", 0, winreg.KEY_WRITE)
-        winreg.CloseKey(key)
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE", 0, winreg.KEY_WRITE) as key:
+            pass
         return True
     except OSError:
         pass
