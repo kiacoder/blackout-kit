@@ -153,11 +153,13 @@ def get_proxy_status() -> dict:
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
             key      = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
             try:
-                enabled = winreg.QueryValueEx(key, "ProxyEnable")[0]
-                server  = winreg.QueryValueEx(key, "ProxyServer")[0]
-            except FileNotFoundError:
-                enabled, server = 0, ""
-            winreg.CloseKey(key)
+                try:
+                    enabled = winreg.QueryValueEx(key, "ProxyEnable")[0]
+                    server  = winreg.QueryValueEx(key, "ProxyServer")[0]
+                except FileNotFoundError:
+                    enabled, server = 0, ""
+            finally:
+                winreg.CloseKey(key)
             return {"enabled": bool(enabled), "server": server}
         except Exception:
             return {"enabled": False, "server": ""}

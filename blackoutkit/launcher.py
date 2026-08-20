@@ -128,7 +128,10 @@ def start_launcher():
     elif launch_config["env"] == "native":
         import subprocess, sys, os
         cmd = [sys.executable, "gui"] if getattr(sys, 'frozen', False) else [sys.executable, sys.argv[0], "gui"]
-        subprocess.Popen(cmd, creationflags=0x08000000 if os.name == 'nt' else 0) # CREATE_NO_WINDOW
+        try:
+            subprocess.Popen(cmd, creationflags=0x08000000 if os.name == 'nt' else 0, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # CREATE_NO_WINDOW
+        except Exception:
+            pass
         os._exit(0)
         
     return True

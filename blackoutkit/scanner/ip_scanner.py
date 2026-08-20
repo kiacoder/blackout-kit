@@ -197,9 +197,16 @@ def save_cache(results: list[tuple[str, float]]):
         import tempfile
         import os
         fd, path = tempfile.mkstemp(dir=_CACHE_FILE.parent, suffix=".tmp")
-        with os.fdopen(fd, "w") as f:
-            _json.dump(data, f, indent=2)
-        os.replace(path, _CACHE_FILE)
+        try:
+            with os.fdopen(fd, "w") as f:
+                _json.dump(data, f, indent=2)
+            os.replace(path, _CACHE_FILE)
+        except Exception:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+            raise
     except Exception:
         pass
 

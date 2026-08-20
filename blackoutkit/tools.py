@@ -938,8 +938,10 @@ def ping(host: str, count: int = 4) -> list[float | None]:
         try:
             start = time.monotonic()
             sock  = socket.create_connection((host, 80), timeout=3.0)
-            times.append((time.monotonic() - start) * 1000)
-            sock.close()
+            try:
+                times.append((time.monotonic() - start) * 1000)
+            finally:
+                sock.close()
         except Exception:
             times.append(None)
         time.sleep(0.2)

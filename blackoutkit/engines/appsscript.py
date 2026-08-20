@@ -290,6 +290,13 @@ class AppsScriptEngine(Engine):
             )
         except OSError:
             return False  # Port in use
+        except Exception:
+            if self._server:
+                try:
+                    self._server.server_close()
+                except Exception:
+                    pass
+            return False
 
         self._running = True
         self._server_thread = threading.Thread(
