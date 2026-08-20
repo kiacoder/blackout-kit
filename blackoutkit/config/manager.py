@@ -93,6 +93,8 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
 
     # credential @ host:port ? params
     at = rest.rfind("@")
+    if at < 0:
+        raise ValueError("Missing '@' delimiter in URI")
     credential = urllib.parse.unquote(rest[:at])
     host_part  = rest[at + 1:]
 
@@ -107,10 +109,18 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
     if host_port_str.startswith("["):
         bracket_end = host_port_str.index("]")
         host = host_port_str[1:bracket_end]
-        port = int(host_port_str[bracket_end + 2:])
+        try:
+            port = int(host_port_str[bracket_end + 2:])
+        except (ValueError, IndexError) as e:
+            raise ValueError(f"Invalid IPv6 port: {e}")
     else:
+        if ":" not in host_port_str:
+            raise ValueError("Missing ':' port delimiter in host:port")
         host, port_str = host_port_str.rsplit(":", 1)
-        port = int(port_str)
+        try:
+            port = int(port_str)
+        except ValueError as e:
+            raise ValueError(f"Invalid port number: {port_str} ({e})")
 
     p = urllib.parse.parse_qs(params_str, keep_blank_values=True)
 
@@ -216,8 +226,25 @@ def save_configs(configs: list[ProxyConfig], path: Path | None = None):
         vault.write_config_bytes(text.encode("utf-8"))
         return
     p = path or CONFIGS_FILE
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(text, encoding="utf-8")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        import tempfile
+        import os
+        fd, tmp_path = tempfile.mkstemp(dir=p.parent, text=True)
+        try:
+            with os.fdopen(fd, 'w', encoding='utf-8') as f:
+                f.write(text)
+            os.replace(tmp_path, str(p))
+        except Exception:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+    except (OSError, IOError) as e:
+        import logging
+        logging.error(f"Failed to save proxy configs to {p}: {e}")
+        raise
 
 
 def select_proxy_config(protocols: tuple[str, ...]) -> ProxyConfig | None:

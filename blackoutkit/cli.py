@@ -552,10 +552,14 @@ def _scan_fake_snis():
         console.print("[warning]data/fake_snis.txt not found[/warning]")
         return
 
-    domains = [
-        d.strip() for d in sni_file.read_text().splitlines()
-        if d.strip() and not d.startswith("#")
-    ]
+    try:
+        domains = [
+            d.strip() for d in sni_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            if d.strip() and not d.startswith("#")
+        ]
+    except (OSError, IOError, MemoryError) as e:
+        console.print(f"[error]Failed to read fake SNIs file: {e}[/error]")
+        return
 
     table = make_table(
         "Fake SNI Domains",

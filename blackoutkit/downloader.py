@@ -711,7 +711,10 @@ def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = 
         
         with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
             cl = resp.headers.get("Content-Length")
-            total_size = int(cl) if cl else 0
+            try:
+                total_size = int(cl) if cl else 0
+            except ValueError:
+                total_size = 0
             downloaded = 0
             with open(tmp_path, "wb") as f:
                 while True:
@@ -797,7 +800,10 @@ def _download_openvpn_binary(progress_callback: Callable[[int, int], None] | Non
         
         with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
             cl = resp.headers.get("Content-Length")
-            total_size = int(cl) if cl else 0
+            try:
+                total_size = int(cl) if cl else 0
+            except ValueError:
+                total_size = 0
             downloaded = 0
             with open(tmp_path, "wb") as f:
                 while True:
@@ -869,7 +875,10 @@ def _download_psiphon_binary(progress_callback: Callable[[int, int], None] | Non
         )
         with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
             cl = resp.headers.get("Content-Length")
-            total_size = int(cl) if cl else 0
+            try:
+                total_size = int(cl) if cl else 0
+            except ValueError:
+                total_size = 0
             downloaded = 0
             with open(temp_dest, "wb") as f:
                 while True:
