@@ -937,8 +937,9 @@ def check_firewall_exclusion() -> CheckResult:
             return CheckResult("Windows Defender", True, "OK (bins/ is excluded)")
             
         def _fix_exclusion():
+            escaped_path = str(BINS_DIR).replace("'", "''")
             subprocess.run(
-                ["powershell", "-NoProfile", "-Command", f"Add-MpPreference -ExclusionPath '{BINS_DIR}'"],
+                ["powershell", "-NoProfile", "-Command", f"Add-MpPreference -ExclusionPath '{escaped_path}'"],
                 capture_output=True, timeout=10
             )
             

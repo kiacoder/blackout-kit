@@ -169,9 +169,18 @@ def scan_sync(ips: list[str], port: int = 443, concurrency: int = 100, timeout: 
 
     results = []
     for chunk in result_str.split(","):
-        if "|" in chunk:
-            ip, lat = chunk.split("|", 1)
-            results.append((ip, float(lat)))
+        chunk = chunk.strip()
+        if not chunk or "|" not in chunk:
+            continue
+        try:
+            ip, lat_str = chunk.split("|", 1)
+            ip = ip.strip()
+            lat = float(lat_str.strip())
+            results.append((ip, lat))
+        except (ValueError, IndexError) as e:
+            import logging
+            logging.debug(f"Malformed IP scan result chunk: {chunk!r} ({e})")
+            continue
 
     return results
 
