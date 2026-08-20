@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone, timedelta
@@ -20,6 +21,7 @@ from pathlib import Path
 from typing import Optional, tuple
 
 _log = logging.getLogger(__name__)
+_adblock_lock = threading.Lock()
 
 from .. import APP_DATA_DIR
 
@@ -37,33 +39,35 @@ def _ensure_adblock_dirs() -> None:
 
 
 def _load_adblock_config() -> dict:
-    """Load adblock configuration."""
-    _ensure_adblock_dirs()
-    if not ADBLOCK_RULES_FILE.exists():
-        return {"sources": [], "custom_blocks": [], "whitelist": [], "stats": {"total_rules": 0, "queries_blocked_today": 0}}
-    try:
-        return json.loads(ADBLOCK_RULES_FILE.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {"sources": [], "custom_blocks": [], "whitelist": [], "stats": {"total_rules": 0, "queries_blocked_today": 0}}
+    """Load adblock configuration (thread-safe)."""
+    with _adblock_lock:
+        _ensure_adblock_dirs()
+        if not ADBLOCK_RULES_FILE.exists():
+            return {"sources": [], "custom_blocks": [], "whitelist": [], "stats": {"total_rules": 0, "queries_blocked_today": 0}}
+        try:
+            return json.loads(ADBLOCK_RULES_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {"sources": [], "custom_blocks": [], "whitelist": [], "stats": {"total_rules": 0, "queries_blocked_today": 0}}
 
 
 def _save_adblock_config(config: dict) -> None:
-    """Save adblock configuration atomically."""
-    _ensure_adblock_dirs()
-    try:
-        fd, tmp_path = tempfile.mkstemp(suffix=".json", dir=APP_DATA_DIR, text=True)
+    """Save adblock configuration atomically (thread-safe)."""
+    with _adblock_lock:
+        _ensure_adblock_dirs()
         try:
-            with os.fdopen(fd, 'w') as f:
-                json.dump(config, f, indent=2)
-            os.replace(tmp_path, ADBLOCK_RULES_FILE)
-        except Exception:
+            fd, tmp_path = tempfile.mkstemp(suffix=".json", dir=APP_DATA_DIR, text=True)
             try:
-                os.unlink(tmp_path)
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(config, f, indent=2)
+                os.replace(tmp_path, ADBLOCK_RULES_FILE)
             except Exception:
-                pass
-            raise
-    except Exception:
-        pass  # Silently fail
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+                raise
+        except Exception:
+            pass  # Silently fail
 
 
 def add_blocklist_source(name: str, url: str) -> bool:

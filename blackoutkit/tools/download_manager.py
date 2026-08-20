@@ -248,6 +248,9 @@ class DownloadWorker(threading.Thread):
                 status=DownloadStatus.FAILED,
                 error_message=str(e),
             )
+        finally:
+            with _worker_lock:
+                _worker_threads.pop(self.download.id, None)
 
     def _download(self):
         """Internal download implementation."""
@@ -261,10 +264,12 @@ class DownloadWorker(threading.Thread):
         # Check if we can resume (partial file exists)
         resume_from = 0
         if temp_dest.exists():
-            resume_from = temp_dest.stat().st_size
-            if resume_from == 0:
+            temp_size = temp_dest.stat().st_size
+            if temp_size == 0:
                 temp_dest.unlink()
                 resume_from = 0
+            elif temp_size > 0:
+                resume_from = temp_size
 
         try:
             # First, fetch headers to check total size and range support

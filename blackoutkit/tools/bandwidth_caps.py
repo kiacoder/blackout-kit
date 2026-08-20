@@ -12,11 +12,13 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 _log = logging.getLogger(__name__)
+_bandwidth_lock = threading.Lock()
 
 from .. import APP_DATA_DIR
 
@@ -28,85 +30,87 @@ BANDWIDTH_CAP_SETTINGS_FILE = APP_DATA_DIR / "bandwidth_caps.json"
 
 def save_daily_snapshot(interface: str, rx_bytes: int, tx_bytes: int) -> None:
     """
-    Record today's interface throughput.
+    Record today's interface throughput (thread-safe).
     Appends to history JSON atomically (one entry per interface per day).
     """
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with _bandwidth_lock:
+        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    today = datetime.now(timezone.utc).date().isoformat()
+        today = datetime.now(timezone.utc).date().isoformat()
 
-    # Load existing history
-    history = {}
-    if BANDWIDTH_HISTORY_FILE.exists():
-        try:
-            history = json.loads(BANDWIDTH_HISTORY_FILE.read_text())
-        except (json.JSONDecodeError, OSError):
-            history = {}
+        # Load existing history
+        history = {}
+        if BANDWIDTH_HISTORY_FILE.exists():
+            try:
+                history = json.loads(BANDWIDTH_HISTORY_FILE.read_text())
+            except (json.JSONDecodeError, OSError):
+                history = {}
 
-    # Ensure interface key exists
-    if interface not in history:
-        history[interface] = []
+        # Ensure interface key exists
+        if interface not in history:
+            history[interface] = []
 
-    # Check if today already exists (update or append)
-    found_today = False
-    for i, entry in enumerate(history[interface]):
-        if entry.get("date") == today:
-            history[interface][i] = {
+        # Check if today already exists (update or append)
+        found_today = False
+        for i, entry in enumerate(history[interface]):
+            if entry.get("date") == today:
+                history[interface][i] = {
+                    "date": today,
+                    "rx_bytes": rx_bytes,
+                    "tx_bytes": tx_bytes,
+                }
+                found_today = True
+                break
+
+        if not found_today:
+            history[interface].append({
                 "date": today,
                 "rx_bytes": rx_bytes,
                 "tx_bytes": tx_bytes,
-            }
-            found_today = True
-            break
+            })
 
-    if not found_today:
-        history[interface].append({
-            "date": today,
-            "rx_bytes": rx_bytes,
-            "tx_bytes": tx_bytes,
-        })
+        # Keep only last 90 days per interface
+        for iface in history:
+            if len(history[iface]) > 90:
+                history[iface] = history[iface][-90:]
 
-    # Keep only last 90 days per interface
-    for iface in history:
-        if len(history[iface]) > 90:
-            history[iface] = history[iface][-90:]
-
-    # Atomic write
-    try:
-        fd, tmp_path = tempfile.mkstemp(suffix=".json", dir=APP_DATA_DIR, text=True)
+        # Atomic write
         try:
-            with os.fdopen(fd, 'w') as f:
-                json.dump(history, f, indent=2)
-            os.replace(tmp_path, BANDWIDTH_HISTORY_FILE)
-        except Exception:
+            fd, tmp_path = tempfile.mkstemp(suffix=".json", dir=APP_DATA_DIR, text=True)
             try:
-                os.unlink(tmp_path)
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(history, f, indent=2)
+                os.replace(tmp_path, BANDWIDTH_HISTORY_FILE)
             except Exception:
-                pass
-            raise
-    except Exception:
-        pass  # Silently fail
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+                raise
+        except Exception:
+            pass  # Silently fail
 
 
 def load_bandwidth_history(interface: str, days: int = 30) -> list[dict]:
     """
-    Load last N days of throughput for an interface.
+    Load last N days of throughput for an interface (thread-safe).
     Returns list of {date, rx_bytes, tx_bytes} dicts, oldest first.
     """
-    if not BANDWIDTH_HISTORY_FILE.exists():
-        return []
+    with _bandwidth_lock:
+        if not BANDWIDTH_HISTORY_FILE.exists():
+            return []
 
-    try:
-        history = json.loads(BANDWIDTH_HISTORY_FILE.read_text())
-        entries = history.get(interface, [])
+        try:
+            history = json.loads(BANDWIDTH_HISTORY_FILE.read_text())
+            entries = history.get(interface, [])
 
-        # Keep only last N days
-        if len(entries) > days:
-            entries = entries[-days:]
+            # Keep only last N days
+            if len(entries) > days:
+                entries = entries[-days:]
 
-        return entries
-    except (json.JSONDecodeError, OSError):
-        return []
+            return entries
+        except (json.JSONDecodeError, OSError):
+            return []
 
 
 def get_current_usage(interface: str) -> tuple[int, int, int, int]:

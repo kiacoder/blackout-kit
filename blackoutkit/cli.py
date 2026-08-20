@@ -1382,8 +1382,11 @@ def cmd_config(args):
 
             if hasattr(args, "output") and args.output:
                 from pathlib import Path
-                Path(args.output).write_text(b64_string, encoding="utf-8")
-                console.print(f"[success]✓ Setup exported to:[/success] {args.output}")
+                output_path = Path(args.output).resolve()
+                if not output_path.parent.exists():
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(b64_string, encoding="utf-8")
+                console.print(f"[success]✓ Setup exported to:[/success] {output_path}")
             else:
                 console.print("[success]Setup string (base64):[/success]")
                 console.print(b64_string)

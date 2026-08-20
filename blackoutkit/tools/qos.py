@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ from typing import Optional, Callable
 from enum import Enum
 
 _log = logging.getLogger(__name__)
+_qos_lock = threading.Lock()
 
 from .. import APP_DATA_DIR
 
@@ -55,49 +57,52 @@ def _load_rules_unsafe() -> dict:
 
 def load_qos_rules() -> list[dict]:
     """
-    Load all QoS rules from storage.
+    Load all QoS rules from storage (thread-safe).
     Returns list of rule dicts with: id, name, type, target, priority, rate_limit_kbps, burst_kb, enabled, created.
     """
-    try:
-        data = _load_rules_unsafe()
-        return data.get("rules", [])
-    except Exception:
-        return []
+    with _qos_lock:
+        try:
+            data = _load_rules_unsafe()
+            return data.get("rules", [])
+        except Exception:
+            return []
 
 
 def save_qos_rules(rules: list[dict], settings: Optional[dict] = None) -> None:
     """
-    Atomically save QoS rules to JSON.
+    Atomically save QoS rules to JSON (thread-safe).
     Settings dict includes: qos_enabled, default_priority, enforcement_mode.
     """
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with _qos_lock:
+        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    data = {
-        "rules": rules,
-        "global_settings": settings or {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"},
-    }
+        data = {
+            "rules": rules,
+            "global_settings": settings or {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"},
+        }
 
-    try:
-        fd, tmp_path = tempfile.mkstemp(suffix=".json", dir=APP_DATA_DIR, text=True)
         try:
-            with os.fdopen(fd, 'w') as f:
-                json.dump(data, f, indent=2)
-            os.replace(tmp_path, QOS_RULES_FILE)
-        except Exception:
+            fd, tmp_path = tempfile.mkstemp(suffix=".json", dir=APP_DATA_DIR, text=True)
             try:
-                os.unlink(tmp_path)
+                with os.fdopen(fd, 'w') as f:
+                    json.dump(data, f, indent=2)
+                os.replace(tmp_path, QOS_RULES_FILE)
             except Exception:
-                pass
-            raise
-    except Exception:
-        pass
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+                raise
+        except Exception:
+            pass
 
 
 def _get_global_settings() -> dict:
-    """Get global QoS settings."""
-    try:
-        data = _load_rules_unsafe()
-        return data.get("global_settings", {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"})
+    """Get global QoS settings (thread-safe)."""
+    with _qos_lock:
+        try:
+            data = _load_rules_unsafe()
+            return data.get("global_settings", {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"})
     except Exception:
         return {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"}
 

@@ -217,10 +217,13 @@ class TorrentDownloadManager:
 
     def _download_worker(self, download: TorrentDownload) -> None:
         """Worker thread for downloading a single torrent."""
+        handle = None
         try:
             import libtorrent as lt
 
             with self.lock:
+                if download.status == TorrentStatus.PAUSED:
+                    return  # Skip if already paused before starting
                 download.status = TorrentStatus.DOWNLOADING
                 download.started_at = datetime.now(timezone.utc).isoformat()
                 save_torrent_queue(self.downloads)
@@ -247,6 +250,11 @@ class TorrentDownloadManager:
                 status = handle.status()
 
                 with self.lock:
+                    # Check if paused while downloading
+                    if download.status == TorrentStatus.PAUSED:
+                        handle.pause()
+                        return
+
                     download.total_size = status.total_wanted
                     download.downloaded = status.total_wanted_done
                     download.uploaded = status.all_time_upload
@@ -288,11 +296,18 @@ class TorrentDownloadManager:
 
         except Exception as e:
             with self.lock:
-                download.status = TorrentStatus.FAILED
-                download.error_message = str(e)
-                download.completed_at = datetime.now(timezone.utc).isoformat()
-                save_torrent_queue(self.downloads)
+                if download.status != TorrentStatus.PAUSED:
+                    download.status = TorrentStatus.FAILED
+                    download.error_message = str(e)
+                    download.completed_at = datetime.now(timezone.utc).isoformat()
+                    save_torrent_queue(self.downloads)
             _log.error(f"Torrent download failed ({download.id}): {e}")
+        finally:
+            if handle is not None:
+                try:
+                    handle.pause()
+                except Exception:
+                    pass
 
     def clear_completed(self) -> int:
         """Remove completed/failed torrents from queue. Returns count."""

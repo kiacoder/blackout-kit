@@ -11,11 +11,13 @@ import logging
 import os
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from . import vault
 
 _log = logging.getLogger(__name__)
+_settings_lock = threading.Lock()
 
 APP_DATA_DIR  = Path.home() / ".blackout-kit"
 SETTINGS_FILE = APP_DATA_DIR / "settings.json"
@@ -293,15 +295,16 @@ def _load_plain_settings() -> dict:
 
 
 def load() -> dict:
-    """Load settings and overlay vault-backed credentials only in memory."""
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    merged = _load_plain_settings()
-    if merged.get("secrets_vault_enabled", False):
-        try:
-            merged.update(vault.read_secrets())
-        except vault.VaultError as exc:
-            _log.warning("Encrypted settings secrets are unavailable: %s", exc)
-    return _apply_env_overrides(merged)
+    """Load settings and overlay vault-backed credentials only in memory (thread-safe)."""
+    with _settings_lock:
+        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        merged = _load_plain_settings()
+        if merged.get("secrets_vault_enabled", False):
+            try:
+                merged.update(vault.read_secrets())
+            except vault.VaultError as exc:
+                _log.warning("Encrypted settings secrets are unavailable: %s", exc)
+        return _apply_env_overrides(merged)
 
 
 def _write_plain_settings(settings: dict) -> None:
@@ -321,14 +324,15 @@ def _write_plain_settings(settings: dict) -> None:
 
 
 def save(settings: dict):
-    """Persist settings atomically while preserving activated secret vault storage."""
-    stored = dict(settings)
-    if stored.get("secrets_vault_enabled", False):
-        vault.read_secrets()
-        vault.write_secrets(stored)
-        for key in SENSITIVE_KEYS:
-            stored.pop(key, None)
-    _write_plain_settings(stored)
+    """Persist settings atomically while preserving activated secret vault storage (thread-safe)."""
+    with _settings_lock:
+        stored = dict(settings)
+        if stored.get("secrets_vault_enabled", False):
+            vault.read_secrets()
+            vault.write_secrets(stored)
+            for key in SENSITIVE_KEYS:
+                stored.pop(key, None)
+        _write_plain_settings(stored)
 
 
 def vault_health() -> tuple[bool, str]:

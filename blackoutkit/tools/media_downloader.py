@@ -190,6 +190,8 @@ class MediaDownloadManager:
         """Worker thread for downloading a single media file."""
         try:
             with self.lock:
+                if download.status == MediaDownloadStatus.PAUSED:
+                    return  # Skip if already paused before starting
                 download.status = MediaDownloadStatus.DOWNLOADING
                 download.started_at = datetime.now(timezone.utc).isoformat()
                 save_media_queue(self.downloads)
@@ -205,8 +207,16 @@ class MediaDownloadManager:
                 download.url
             ]
 
-            # Run yt-dlp
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=_DOWNLOAD_TIMEOUT)
+            # Run yt-dlp with timeout
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=_DOWNLOAD_TIMEOUT)
+            except subprocess.TimeoutExpired:
+                raise Exception(f"Download timeout after {_DOWNLOAD_TIMEOUT}s")
+
+            # Check if paused while downloading
+            with self.lock:
+                if download.status == MediaDownloadStatus.PAUSED:
+                    return
 
             if result.returncode == 0:
                 with self.lock:
@@ -222,10 +232,11 @@ class MediaDownloadManager:
 
         except Exception as e:
             with self.lock:
-                download.status = MediaDownloadStatus.FAILED
-                download.error_message = str(e)
-                download.completed_at = datetime.now(timezone.utc).isoformat()
-                save_media_queue(self.downloads)
+                if download.status != MediaDownloadStatus.PAUSED:
+                    download.status = MediaDownloadStatus.FAILED
+                    download.error_message = str(e)
+                    download.completed_at = datetime.now(timezone.utc).isoformat()
+                    save_media_queue(self.downloads)
             _log.error(f"Media download failed ({download.id}): {e}")
 
     def clear_completed(self) -> int:

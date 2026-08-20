@@ -164,7 +164,10 @@ Write-Output "OK"
         return False
 
 
+import threading
+
 _linux_endpoint_cache: dict[tuple[str, int], list[tuple[str, int]]] = {}
+_linux_endpoint_cache_lock = threading.Lock()
 
 
 def _linux_kill_switch_endpoints(engine_name: str | None = None) -> list[tuple[str, int]]:
@@ -185,11 +188,13 @@ def _linux_kill_switch_endpoints(engine_name: str | None = None) -> list[tuple[s
             if proxy.protocol not in protocols or not proxy.address or not proxy.port:
                 continue
             key = (proxy.address, proxy.port)
-            if key in _linux_endpoint_cache:
-                return _linux_endpoint_cache[key]
+            with _linux_endpoint_cache_lock:
+                if key in _linux_endpoint_cache:
+                    return _linux_endpoint_cache[key]
             endpoints = linux_network.resolve_proxy_endpoints([key])
             if endpoints:
-                _linux_endpoint_cache[key] = endpoints
+                with _linux_endpoint_cache_lock:
+                    _linux_endpoint_cache[key] = endpoints
             return endpoints
     except Exception as exc:
         _log.warning("Could not resolve Linux kill-switch endpoint: %s", exc)
@@ -203,12 +208,14 @@ def prepare_linux_kill_switch(engine_name: str) -> bool:
 
 def linux_cached_endpoint(host: str, port: int) -> str | None:
     """Return a prevalidated Linux endpoint IP for an exact proxy host and port."""
-    endpoints = _linux_endpoint_cache.get((host, port), [])
+    with _linux_endpoint_cache_lock:
+        endpoints = _linux_endpoint_cache.get((host, port), [])
     return endpoints[0][0] if endpoints else None
 
 
 def clear_linux_kill_switch_endpoint(_engine_name: str | None = None) -> None:
-    _linux_endpoint_cache.clear()
+    with _linux_endpoint_cache_lock:
+        _linux_endpoint_cache.clear()
 
 
 def _get_proxy_processes() -> list[str]:

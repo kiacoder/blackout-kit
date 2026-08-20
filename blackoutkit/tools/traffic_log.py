@@ -12,11 +12,13 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
 _log = logging.getLogger(__name__)
+_traffic_lock = threading.Lock()
 
 from .. import APP_DATA_DIR
 
@@ -27,18 +29,19 @@ TRAFFIC_LOG_FILE = APP_DATA_DIR / "traffic.jsonl"
 
 def append_connection_log(entry: dict) -> None:
     """
-    Atomically append a connection entry to the JSONL traffic log.
+    Atomically append a connection entry to the JSONL traffic log (thread-safe).
     Entry should contain: ts, pid, process, protocol, local, remote, status, duration_sec, bytes_sent, bytes_recv
     """
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with _traffic_lock:
+        APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-    entry_json = json.dumps(entry, separators=(',', ':'))
+        entry_json = json.dumps(entry, separators=(',', ':'))
 
-    try:
-        with open(TRAFFIC_LOG_FILE, 'a') as f:
-            f.write(entry_json + '\n')
-    except Exception:
-        pass  # Silently fail
+        try:
+            with open(TRAFFIC_LOG_FILE, 'a') as f:
+                f.write(entry_json + '\n')
+        except Exception:
+            pass  # Silently fail
 
 
 def load_traffic_log(
@@ -46,36 +49,37 @@ def load_traffic_log(
     limit: Optional[int] = None,
 ) -> list[dict]:
     """
-    Load traffic entries from JSONL, optionally filtered by timestamp and limited.
+    Load traffic entries from JSONL, optionally filtered by timestamp and limited (thread-safe).
     Returns list of entry dicts, newest first.
     """
-    if not TRAFFIC_LOG_FILE.exists():
-        return []
+    with _traffic_lock:
+        if not TRAFFIC_LOG_FILE.exists():
+            return []
 
-    entries = []
+        entries = []
 
-    try:
-        with open(TRAFFIC_LOG_FILE, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                    if since_ts is None or entry.get('ts', 0) >= since_ts:
-                        entries.append(entry)
-                except json.JSONDecodeError:
-                    continue
+        try:
+            with open(TRAFFIC_LOG_FILE, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if since_ts is None or entry.get('ts', 0) >= since_ts:
+                            entries.append(entry)
+                    except json.JSONDecodeError:
+                        continue
 
-        # Return newest first
-        entries.sort(key=lambda e: e.get('ts', 0), reverse=True)
+            # Return newest first
+            entries.sort(key=lambda e: e.get('ts', 0), reverse=True)
 
-        if limit:
-            entries = entries[:limit]
+            if limit:
+                entries = entries[:limit]
 
-        return entries
-    except Exception:
-        return []
+            return entries
+        except Exception:
+            return []
 
 
 def get_traffic_stats(
