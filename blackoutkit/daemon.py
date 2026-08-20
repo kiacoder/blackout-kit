@@ -69,7 +69,12 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
             lock_path.mkdir(exist_ok=False)
         except FileExistsError:
             # If lock is old (e.g. 10s), assume it's stale and take it
-            if time.time() - lock_path.stat().st_mtime > 10:
+            try:
+                lock_mtime = lock_path.stat().st_mtime
+            except FileNotFoundError:
+                # Another process deleted it between the FileExistsError and stat() call
+                lock_mtime = 0
+            if time.time() - lock_mtime > 10:
                 try:
                     lock_path.rmdir()
                     lock_path.mkdir(exist_ok=False)
