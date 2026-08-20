@@ -40,7 +40,11 @@ class TorEngine(Engine):
             f"DNSPort 5354\n"
             f"AutomapHostsOnResolve 1\n"
         )
-        torrc_path.write_text(config)
+        try:
+            torrc_path.write_text(config, encoding="utf-8")
+        except (OSError, UnicodeEncodeError) as exc:
+            self._log.error("Failed to write torrc config: %s", exc)
+            raise
 
     def start(self) -> bool:
         # Search for tor.exe directly in bins/ or in bins/Tor/
@@ -56,7 +60,11 @@ class TorEngine(Engine):
             return False
 
         torrc = binary.parent / "torrc"
-        self._write_torrc(torrc)
+        try:
+            self._write_torrc(torrc)
+        except (OSError, UnicodeEncodeError) as exc:
+            self._log.error("Could not write Tor config: %s", exc)
+            return False
 
         self._log.info(
             "Starting Tor  socks_port=%d  torrc=%s",

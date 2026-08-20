@@ -198,10 +198,16 @@ def _parse_config_text(text: str) -> list[ProxyConfig]:
 def load_configs(path: Path | None = None) -> list[ProxyConfig]:
     p = path or CONFIGS_FILE
     if path is None and CONFIGS_FILE == vault.CONFIGS_FILE and vault.config_vault_active():
-        return _parse_config_text(vault.read_config_bytes().decode("utf-8", errors="strict"))
+        try:
+            return _parse_config_text(vault.read_config_bytes().decode("utf-8", errors="strict"))
+        except (UnicodeDecodeError, vault.VaultError):
+            return []
     if not p.exists():
         return []
-    return _parse_config_text(p.read_text(encoding="utf-8", errors="replace"))
+    try:
+        return _parse_config_text(p.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, ValueError):
+        return []
 
 
 def save_configs(configs: list[ProxyConfig], path: Path | None = None):

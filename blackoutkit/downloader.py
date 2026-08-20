@@ -322,10 +322,15 @@ def _extract_from_zip(zip_path: Path, extract_map: dict[str, str]) -> tuple[bool
                 if matched is None:
                     return False, pattern
 
-                dest = BINS_DIR / out_name
-                dest.write_bytes(zf.read(matched))
+                try:
+                    dest = BINS_DIR / out_name
+                    dest.write_bytes(zf.read(matched))
+                except (OSError, IOError) as exc:
+                    return False, f"write_error: {exc}"
     except zipfile.BadZipFile:
         return False, "corrupt_zip"
+    except Exception as exc:
+        return False, f"extract_error: {exc}"
 
     return True, ""
 

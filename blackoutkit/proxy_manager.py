@@ -58,12 +58,14 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
             import winreg
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
-            winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
-            proxy_str = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
-            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_str)
-            from . import split_tunnel
-            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, split_tunnel.get_proxy_override_string())
-            winreg.CloseKey(key)
+            try:
+                winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
+                proxy_str = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
+                winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, proxy_str)
+                from . import split_tunnel
+                winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, split_tunnel.get_proxy_override_string())
+            finally:
+                winreg.CloseKey(key)
             _notify_proxy_change()
             _last_error = ""
             return True
@@ -110,10 +112,12 @@ def clear_system_proxy() -> bool:
             import winreg
             key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
-            winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
-            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
-            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "")
-            winreg.CloseKey(key)
+            try:
+                winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+                winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, "")
+                winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, "")
+            finally:
+                winreg.CloseKey(key)
             _notify_proxy_change()
             _last_error = ""
             return True

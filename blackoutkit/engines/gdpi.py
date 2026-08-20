@@ -200,7 +200,7 @@ class _LegacyGoodbyeDPIEngine(Engine):
                 self._elevated_pid = pid
                 self._log.info("GoodbyeDPI running elevated (pid=%s).", pid)
                 return True
-            except (ValueError, OSError) as exc:
+            except (ValueError, OSError, UnicodeDecodeError) as exc:
                 self._log.error("Failed to read/parse PID file: %s", exc)
 
         self._log.error("UAC elevation was denied or failed — PID file not found.")

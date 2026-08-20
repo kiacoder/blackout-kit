@@ -483,7 +483,10 @@ def add_defender_exclusion(path: Path | None = None) -> bool:
     import ctypes
     ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
     ctypes.windll.kernel32.CloseHandle(handle)
-    ok = marker.exists() and "OK" in marker.read_text()
+    try:
+        ok = marker.exists() and "OK" in marker.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        ok = False
     marker.unlink(missing_ok=True)
     return ok
 
@@ -520,7 +523,10 @@ def remove_defender_exclusion(path: Path | None = None) -> bool:
     import ctypes
     ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
     ctypes.windll.kernel32.CloseHandle(handle)
-    ok = marker.exists() and "OK" in marker.read_text()
+    try:
+        ok = marker.exists() and "OK" in marker.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        ok = False
     marker.unlink(missing_ok=True)
     return ok
 
