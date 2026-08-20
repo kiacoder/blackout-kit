@@ -6,6 +6,7 @@ import argparse
 import asyncio
 from collections import deque
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import sys
@@ -1305,7 +1306,7 @@ def cmd_logs(args):
 
 def cmd_config(args):
     if not hasattr(args, "config_command") or not args.config_command:
-        console.print("[warning]Usage: blackout config [list | add <uri> | import <url> | remove <n>][/warning]")
+        console.print("[warning]Usage: blackout config [list | add <uri> | import <url> | remove <n> | export | import-setup <string>][/warning]")
         return
 
     if args.config_command == "list":
@@ -1369,6 +1370,58 @@ def cmd_config(args):
             console.print("[warning]Run blackout config encrypt again when recovery is complete to protect them at rest.[/warning]")
         else:
             console.print("[error]Decryption failed. Encrypted files were preserved; they may be corrupted or from a different machine.[/error]")
+
+    elif args.config_command == "export":
+        from .config.manager import serialize_setup
+        import base64
+
+        try:
+            setup_data = serialize_setup()
+            blob = json.dumps(setup_data, sort_keys=True).encode("utf-8")
+            b64_string = base64.b64encode(blob).decode("ascii")
+
+            if hasattr(args, "output") and args.output:
+                from pathlib import Path
+                Path(args.output).write_text(b64_string, encoding="utf-8")
+                console.print(f"[success]✓ Setup exported to:[/success] {args.output}")
+            else:
+                console.print("[success]Setup string (base64):[/success]")
+                console.print(b64_string)
+                console.print(f"[muted]({len(b64_string)} chars)[/muted]")
+        except Exception as e:
+            console.print(f"[error]Export failed: {e}[/error]")
+
+    elif args.config_command == "import-setup":
+        from .config.manager import deserialize_setup, save_configs
+        import base64
+
+        try:
+            setup_string = args.setup_string
+            if not setup_string:
+                console.print("[error]No setup string provided.[/error]")
+                return
+
+            blob = base64.b64decode(setup_string.encode("ascii"))
+            setup_data = json.loads(blob.decode("utf-8"))
+            configs, settings_data = deserialize_setup(setup_data)
+
+            console.print(f"[info]Setup contains {len(configs)} config(s) + {len(settings_data)} setting(s)[/info]")
+
+            if not getattr(args, "force", False):
+                resp = console.input("[warning]Import will overwrite existing configs and settings. Continue? [y/N]:[/warning] ")
+                if resp.lower() != "y":
+                    console.print("[muted]Import cancelled.[/muted]")
+                    return
+
+            save_configs(configs)
+            current = cfg.load()
+            current.update(settings_data)
+            cfg.save(current)
+            console.print("[success]✓ Setup imported successfully[/success]")
+        except (base64.binascii.Error, json.JSONDecodeError, ValueError) as e:
+            console.print(f"[error]Invalid setup string: {e}[/error]")
+        except Exception as e:
+            console.print(f"[error]Import failed: {e}[/error]")
 
 
 def cmd_settings(args):
@@ -1439,6 +1492,10 @@ def cmd_tools(args):
             "  [cyan]dns-inspect[/cyan]              — Check for DNS interference/poisoning\n"
             "  [cyan]latency-monitor [host][/cyan]   — Live ping graph with jitter/loss\n"
             "  [cyan]bandwidth[/cyan]                — Live per-interface throughput\n"
+            "  [cyan]bandwidth-cap[/cyan]            — Set and monitor bandwidth limits\n"
+            "  [cyan]traffic-log[/cyan]              — Query network traffic audit trail\n"
+            "  [cyan]adblock[/cyan]                  — Manage ad/tracker blocklists\n"
+            "  [cyan]qos[/cyan]                      — Quality of Service (QoS) traffic shaping\n"
             "  [cyan]cert-check <host[:port]>[/cyan] — TLS certificate check\n"
             "  [cyan]netfix[/cyan]                   — Targeted Blackout network recovery\n"
             "  [cyan]arp-flush[/cyan]                — Explicitly flush local ARP/neighbor cache\n",
@@ -1797,6 +1854,528 @@ def cmd_tools(args):
                     live.update(_bandwidth_panel(rates, history))
         except KeyboardInterrupt:
             console.print("\n[muted]Bandwidth monitor stopped.[/muted]")
+
+    elif args.tools_command == "bandwidth-cap":
+        from .tools.bandwidth_caps import (
+            load_caps, set_cap, remove_cap, get_current_usage, get_cap, check_cap_exceeded,
+            load_bandwidth_history, list_all_caps
+        )
+
+        subcmd = getattr(args, "bandwidth_cap_subcmd", "list")
+
+        if subcmd == "set":
+            interface = getattr(args, "interface", None)
+            daily_mb = getattr(args, "daily_mb", None)
+            monthly_mb = getattr(args, "monthly_mb", None)
+
+            if not interface:
+                console.print("[error]Error: interface required[/error]")
+                return
+
+            set_cap(interface, daily_mb, monthly_mb)
+            console.print(f"[success]✓ Bandwidth cap set for {interface}[/success]")
+            if daily_mb:
+                console.print(f"  Daily limit: {daily_mb} MB")
+            if monthly_mb:
+                console.print(f"  Monthly limit: {monthly_mb} MB")
+
+        elif subcmd == "list":
+            caps = list_all_caps()
+            if not caps:
+                console.print("[muted]No bandwidth caps configured.[/muted]")
+                return
+
+            from rich.table import Table
+            table = Table(title="Bandwidth Caps")
+            table.add_column("Interface", style="cyan")
+            table.add_column("Daily Limit", style="yellow")
+            table.add_column("Monthly Limit", style="yellow")
+
+            for iface, cap_data in caps.items():
+                daily = cap_data.get("daily_mb", "—")
+                monthly = cap_data.get("monthly_mb", "—")
+                table.add_row(iface, str(daily) + " MB" if daily else "—", str(monthly) + " MB" if monthly else "—")
+
+            console.print(table)
+
+        elif subcmd == "stats":
+            interface = getattr(args, "interface", None)
+            if not interface:
+                console.print("[error]Error: interface required[/error]")
+                return
+
+            daily_limit, monthly_limit = get_cap(interface)
+            today_rx, today_tx, month_rx, month_tx = get_current_usage(interface)
+
+            console.print(f"\n[bold cyan]Bandwidth Stats for {interface}[/bold cyan]")
+            console.print(f"  Today:  {today_rx / 1024 / 1024:.1f} MB ↓ + {today_tx / 1024 / 1024:.1f} MB ↑ = {(today_rx + today_tx) / 1024 / 1024:.1f} MB total")
+            console.print(f"  Month:  {month_rx / 1024 / 1024:.1f} MB ↓ + {month_tx / 1024 / 1024:.1f} MB ↑ = {(month_rx + month_tx) / 1024 / 1024:.1f} MB total")
+
+            if daily_limit or monthly_limit:
+                exceeded, pct, status = check_cap_exceeded(interface, daily_limit, monthly_limit)
+                console.print(f"\n  Status: [{('red' if exceeded else 'yellow' if pct >= 50 else 'green')}]{status}[/]")
+                console.print(f"  Usage:  {pct:.1f}%")
+
+        elif subcmd == "remove":
+            interface = getattr(args, "interface", None)
+            if not interface:
+                console.print("[error]Error: interface required[/error]")
+                return
+
+            remove_cap(interface)
+            console.print(f"[success]✓ Bandwidth cap removed for {interface}[/success]")
+
+    elif args.tools_command == "traffic-log":
+        from .tools.traffic_log import (
+            load_traffic_log, get_traffic_stats, get_traffic_by_hour, get_top_apps,
+            prune_old_logs, clear_traffic_log, get_log_entry_count, get_log_size_mb
+        )
+
+        subcmd = getattr(args, "traffic_log_subcmd", "list")
+        app_filter = getattr(args, "app", None)
+        protocol_filter = getattr(args, "protocol", None)
+        hours_filter = getattr(args, "hours", 24)
+
+        if subcmd == "list":
+            limit = getattr(args, "limit", 50)
+            since_hours = getattr(args, "hours", 24)
+            since_ts = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).timestamp() if since_hours else None
+            entries = load_traffic_log(since_ts=since_ts, limit=limit)
+
+            if not entries:
+                console.print(f"[muted]No traffic entries in last {since_hours} hours.[/muted]")
+                return
+
+            table = Table(title=f"Network Traffic (last {since_hours}h, showing {len(entries)})")
+            table.add_column("Time", style="dim")
+            table.add_column("Process", style="cyan")
+            table.add_column("Protocol", style="yellow")
+            table.add_column("Remote", style="white")
+            table.add_column("↓ RX", style="blue")
+            table.add_column("↑ TX", style="green")
+            table.add_column("Status", style="white")
+
+            for entry in entries[:20]:
+                ts = datetime.fromtimestamp(entry['ts'], tz=timezone.utc).strftime("%H:%M:%S")
+                proc = entry.get('process', '?')[:20]
+                prot = entry.get('protocol', '?')
+                remote = entry.get('remote', '?')[:20]
+                rx_mb = entry.get('bytes_recv', 0) / 1024 / 1024
+                tx_mb = entry.get('bytes_sent', 0) / 1024 / 1024
+                status = entry.get('status', '?')
+                rx_str = f"{rx_mb:.2f} MB" if rx_mb > 0 else "—"
+                tx_str = f"{tx_mb:.2f} MB" if tx_mb > 0 else "—"
+                table.add_row(ts, proc, prot, remote, rx_str, tx_str, status)
+
+            console.print(table)
+
+        elif subcmd == "stats":
+            stats = get_traffic_stats(app=app_filter, protocol=protocol_filter)
+
+            console.print(f"\n[bold cyan]Traffic Statistics[/bold cyan]")
+            if app_filter:
+                console.print(f"[muted]Filter: app={app_filter}[/muted]")
+            if protocol_filter:
+                console.print(f"[muted]Filter: protocol={protocol_filter}[/muted]")
+
+            console.print(f"\n[bold]Overall[/bold]")
+            console.print(f"  Total connections: {stats['total_connections']}")
+            console.print(f"  Total downloaded: {stats['total_recv_bytes'] / 1024 / 1024:.1f} MB")
+            console.print(f"  Total uploaded: {stats['total_sent_bytes'] / 1024 / 1024:.1f} MB")
+
+            if stats['by_app']:
+                console.print(f"\n[bold]By App[/bold]")
+                for app_name, app_stats in sorted(stats['by_app'].items(), key=lambda x: x[1]['recv_bytes'] + x[1]['sent_bytes'], reverse=True)[:10]:
+                    rx = app_stats['recv_bytes'] / 1024 / 1024
+                    tx = app_stats['sent_bytes'] / 1024 / 1024
+                    conn = app_stats['conn_count']
+                    console.print(f"  {app_name[:30]:30} — ↓{rx:7.1f} MB  ↑{tx:7.1f} MB  ({conn} conns)")
+
+            if stats['by_protocol']:
+                console.print(f"\n[bold]By Protocol[/bold]")
+                for prot, prot_stats in sorted(stats['by_protocol'].items(), key=lambda x: x[1]['recv_bytes'] + x[1]['sent_bytes'], reverse=True):
+                    rx = prot_stats['recv_bytes'] / 1024 / 1024
+                    tx = prot_stats['sent_bytes'] / 1024 / 1024
+                    conn = prot_stats['conn_count']
+                    console.print(f"  {prot:10} — ↓{rx:7.1f} MB  ↑{tx:7.1f} MB  ({conn} conns)")
+
+        elif subcmd == "hourly":
+            since_hours = getattr(args, "hours", 24)
+            by_hour = get_traffic_by_hour(since_hours=since_hours)
+
+            console.print(f"\n[bold cyan]Traffic by Hour (last {since_hours}h)[/bold cyan]")
+            table = Table()
+            table.add_column("Hour", style="dim")
+            table.add_column("↓ Downloaded", style="blue")
+            table.add_column("↑ Uploaded", style="green")
+            table.add_column("Conns", style="yellow")
+
+            for hour_key in sorted(by_hour.keys()):
+                data = by_hour[hour_key]
+                rx_mb = data['recv_bytes'] / 1024 / 1024
+                tx_mb = data['sent_bytes'] / 1024 / 1024
+                table.add_row(hour_key, f"{rx_mb:.1f} MB", f"{tx_mb:.1f} MB", str(data['conn_count']))
+
+            console.print(table)
+
+        elif subcmd == "clear":
+            if confirm("Clear all traffic logs? This cannot be undone."):
+                clear_traffic_log()
+                console.print("[success]✓ Traffic log cleared.[/success]")
+            else:
+                console.print("[muted]Cancelled.[/muted]")
+
+        elif subcmd == "prune":
+            days = getattr(args, "older_than", 30)
+            removed = prune_old_logs(retention_days=days)
+            console.print(f"[success]✓ Removed {removed} old entries (older than {days} days).[/success]")
+
+        elif subcmd == "info":
+            entry_count = get_log_entry_count()
+            size_mb = get_log_size_mb()
+            console.print(f"\n[bold cyan]Traffic Log Info[/bold cyan]")
+            console.print(f"  Entries: {entry_count:,}")
+            console.print(f"  Size: {size_mb:.1f} MB")
+
+    elif args.tools_command == "adblock":
+        from .tools.adblock import (
+            add_blocklist_source, remove_blocklist_source, get_blocklist_sources,
+            download_blocklist, update_all_blocklists, add_custom_block, remove_custom_block,
+            add_whitelist, remove_whitelist, check_domain_blocked, get_adblock_stats,
+            get_dns_query_log, get_adblock_status
+        )
+
+        subcmd = getattr(args, "adblock_subcmd", "status")
+
+        if subcmd == "sources":
+            sources = get_blocklist_sources()
+            if not sources:
+                console.print("[muted]No blocklist sources configured.[/muted]")
+                return
+
+            table = Table(title="Ad Blocklists")
+            table.add_column("Name", style="cyan")
+            table.add_column("Rules", style="yellow")
+            table.add_column("Last Updated", style="dim")
+            table.add_column("Status", style="white")
+
+            for source in sources:
+                last_update = source.get('last_update', 'Never')
+                if last_update:
+                    try:
+                        dt = datetime.fromisoformat(last_update)
+                        last_update = dt.strftime("%Y-%m-%d %H:%M")
+                    except Exception:
+                        pass
+                rule_count = source.get('rule_count', 0)
+                status = "[green]enabled[/green]" if source.get('enabled', True) else "[dim]disabled[/dim]"
+                table.add_row(source['name'], str(rule_count), last_update, status)
+
+            console.print(table)
+
+        elif subcmd == "sources-add":
+            name = getattr(args, "name", None)
+            url = getattr(args, "url", None)
+
+            if not name or not url:
+                console.print("[error]Error: name and url required[/error]")
+                return
+
+            if add_blocklist_source(name, url):
+                console.print(f"[success]✓ Added blocklist: {name}[/success]")
+            else:
+                console.print(f"[warning]Blocklist '{name}' already exists[/warning]")
+
+        elif subcmd == "sources-remove":
+            name = getattr(args, "name", None)
+            if not name:
+                console.print("[error]Error: name required[/error]")
+                return
+
+            if remove_blocklist_source(name):
+                console.print(f"[success]✓ Removed blocklist: {name}[/success]")
+            else:
+                console.print(f"[warning]Blocklist '{name}' not found[/warning]")
+
+        elif subcmd == "custom-add":
+            domain = getattr(args, "domain", None)
+            if not domain:
+                console.print("[error]Error: domain required[/error]")
+                return
+
+            if add_custom_block(domain):
+                console.print(f"[success]✓ Added custom block: {domain}[/success]")
+            else:
+                console.print(f"[warning]Domain '{domain}' already blocked[/warning]")
+
+        elif subcmd == "custom-remove":
+            domain = getattr(args, "domain", None)
+            if not domain:
+                console.print("[error]Error: domain required[/error]")
+                return
+
+            if remove_custom_block(domain):
+                console.print(f"[success]✓ Removed custom block: {domain}[/success]")
+            else:
+                console.print(f"[warning]Domain '{domain}' not found[/warning]")
+
+        elif subcmd == "whitelist-add":
+            domain = getattr(args, "domain", None)
+            if not domain:
+                console.print("[error]Error: domain required[/error]")
+                return
+
+            if add_whitelist(domain):
+                console.print(f"[success]✓ Whitelisted: {domain}[/success]")
+            else:
+                console.print(f"[warning]Domain '{domain}' already whitelisted[/warning]")
+
+        elif subcmd == "whitelist-remove":
+            domain = getattr(args, "domain", None)
+            if not domain:
+                console.print("[error]Error: domain required[/error]")
+                return
+
+            if remove_whitelist(domain):
+                console.print(f"[success]✓ Removed from whitelist: {domain}[/success]")
+            else:
+                console.print(f"[warning]Domain '{domain}' not whitelisted[/warning]")
+
+        elif subcmd == "status":
+            status = get_adblock_status()
+            console.print(f"\n[bold cyan]Ad Blocker Status[/bold cyan]")
+            console.print(f"  Sources: {status['enabled_sources']}/{status['total_sources']} enabled")
+            console.print(f"  Total rules: {status['total_rules']:,}")
+            console.print(f"  Custom blocks: {status['custom_blocks']}")
+            console.print(f"  Whitelisted: {status['whitelisted']}")
+            console.print(f"  Blocked today: {status['queries_blocked_today']}")
+
+        elif subcmd == "stats":
+            stats = get_adblock_stats()
+            console.print(f"\n[bold cyan]Ad Blocking Statistics[/bold cyan]")
+            console.print(f"  Total rules: {stats['total_rules']:,}")
+            console.print(f"  Blocked today: {stats['queries_blocked_today']}")
+            console.print(f"  Sources: {stats['sources_enabled']}/{stats['sources_total']} enabled")
+
+            if stats['top_blocked_domains']:
+                console.print(f"\n[bold]Top Blocked Domains[/bold]")
+                for item in stats['top_blocked_domains']:
+                    console.print(f"  {item['domain']}: {item['count']} queries")
+
+        elif subcmd == "log":
+            blocked_only = getattr(args, "blocked_only", False)
+            hours = getattr(args, "hours", 24)
+            limit = getattr(args, "limit", 100)
+
+            entries = get_dns_query_log(blocked_only=blocked_only, hours=hours, limit=limit)
+
+            if not entries:
+                console.print(f"[muted]No DNS queries in last {hours} hours.[/muted]")
+                return
+
+            title = "Blocked DNS Queries" if blocked_only else "DNS Query Log"
+            table = Table(title=title)
+            table.add_column("Time", style="dim")
+            table.add_column("Domain", style="white")
+            table.add_column("Status", style="")
+
+            for entry in entries[:50]:
+                ts = datetime.fromtimestamp(entry['ts'], tz=timezone.utc).strftime("%H:%M:%S")
+                domain = entry.get('domain', '?')[:50]
+                status = "[red]BLOCKED[/red]" if entry.get('blocked') else "[green]allowed[/green]"
+                table.add_row(ts, domain, status)
+
+            console.print(table)
+
+        elif subcmd == "update":
+            console.print("[info]Updating blocklists...[/info]")
+            with console.status("[bold]Downloading...[/bold]", spinner="dots"):
+                results = update_all_blocklists()
+
+            console.print()
+            for name, (success, rule_count, error) in results.items():
+                if success:
+                    console.print(f"[success]✓ {name}[/success] — {rule_count:,} rules")
+                else:
+                    console.print(f"[error]✗ {name}[/error] — {error}")
+
+    elif args.tools_command == "qos":
+        from .tools.qos import (
+            load_qos_rules, add_rule, remove_rule, enable_rule, disable_rule,
+            list_rules, get_qos_stats, set_enforcement_mode, get_enforcement_mode,
+            compile_qos_rules_for_shaper, get_violations
+        )
+        from rich.table import Table
+
+        subcmd = getattr(args, "qos_subcmd", "rules")
+
+        if subcmd == "rules":
+            show_cmd = getattr(args, "qos_show_cmd", "list")
+
+            if show_cmd == "list":
+                rules = list_rules()
+                if not rules:
+                    console.print("[muted]No QoS rules configured.[/muted]")
+                    return
+
+                table = Table(title="QoS Rules")
+                table.add_column("ID", style="cyan")
+                table.add_column("Name", style="white")
+                table.add_column("Type", style="yellow")
+                table.add_column("Target", style="green")
+                table.add_column("Priority", style="magenta")
+                table.add_column("Rate (kbps)", style="blue")
+                table.add_column("Status", style="")
+
+                for rule in rules:
+                    enabled = "[green]●[/green]" if rule.get("enabled", True) else "[dim]○[/dim]"
+                    rate = f"{rule.get('rate_limit_kbps', 0)}" if rule.get("rate_limit_kbps", 0) > 0 else "unlimited"
+                    table.add_row(
+                        rule["id"][:8],
+                        rule["name"],
+                        rule["type"],
+                        rule["target"],
+                        str(rule.get("priority", 50)),
+                        rate,
+                        enabled
+                    )
+
+                console.print(table)
+
+            elif show_cmd == "add":
+                name = getattr(args, "name", None)
+                rule_type = getattr(args, "rule_type", None)
+                target = getattr(args, "target", None)
+                priority = getattr(args, "priority", 50)
+                rate_limit = getattr(args, "rate_limit", 0)
+
+                if not all([rule_type, target]):
+                    console.print("[error]Error: type and target required[/error]")
+                    return
+
+                # Auto-generate name if not provided
+                if not name:
+                    name = f"{rule_type}_{target.replace('.', '_').replace(':', '_')}"[:64]
+
+                rule_id = add_rule(name, rule_type, target, priority, rate_limit)
+                console.print(f"[success]✓ Created rule: {rule_id}[/success]")
+
+            elif show_cmd == "remove":
+                rule_id = getattr(args, "rule_id", None)
+                if not rule_id:
+                    console.print("[error]Error: rule_id required[/error]")
+                    return
+
+                if remove_rule(rule_id):
+                    console.print(f"[success]✓ Removed rule: {rule_id}[/success]")
+                else:
+                    console.print(f"[warning]Rule not found: {rule_id}[/warning]")
+
+            elif show_cmd == "enable":
+                rule_id = getattr(args, "rule_id", None)
+                if not rule_id:
+                    console.print("[error]Error: rule_id required[/error]")
+                    return
+
+                if enable_rule(rule_id):
+                    console.print(f"[success]✓ Enabled rule: {rule_id}[/success]")
+                else:
+                    console.print(f"[warning]Rule not found: {rule_id}[/warning]")
+
+            elif show_cmd == "disable":
+                rule_id = getattr(args, "rule_id", None)
+                if not rule_id:
+                    console.print("[error]Error: rule_id required[/error]")
+                    return
+
+                if disable_rule(rule_id):
+                    console.print(f"[success]✓ Disabled rule: {rule_id}[/success]")
+                else:
+                    console.print(f"[warning]Rule not found: {rule_id}[/warning]")
+
+        elif subcmd == "stats":
+            rule_id = getattr(args, "rule_id", None)
+
+            stats = get_qos_stats(rule_id)
+
+            if rule_id:
+                console.print(f"\n[bold cyan]QoS Rule Stats: {stats.get('name')}[/bold cyan]")
+                console.print(f"  Type: {stats.get('type')}")
+                console.print(f"  Priority: {stats.get('priority')}/100")
+                console.print(f"  Rate Limit: {stats.get('rate_limit_kbps', 0)} kbps")
+                console.print(f"  Status: {'[green]enabled[/green]' if stats.get('enabled') else '[dim]disabled[/dim]'}")
+                console.print(f"  Current RX: {stats.get('current_rx_kbps', 0):.1f} kbps")
+                console.print(f"  Current TX: {stats.get('current_tx_kbps', 0):.1f} kbps")
+                console.print(f"  Over limit: {'[warning]Yes[/warning]' if stats.get('over_limit') else '[green]No[/green]'}")
+            else:
+                console.print(f"\n[bold cyan]QoS Statistics[/bold cyan]")
+                console.print(f"  Total rules: {stats.get('total_rules')}")
+                console.print(f"  Enabled: {stats.get('enabled_rules')}")
+                console.print(f"  Mode: {stats.get('enforcement_mode').upper()}")
+
+                per_rule = stats.get('per_rule_stats', [])
+                if per_rule:
+                    table = Table(title="Per-Rule Stats")
+                    table.add_column("Rule", style="cyan")
+                    table.add_column("Priority", style="magenta")
+                    table.add_column("RX (kbps)", style="blue")
+                    table.add_column("TX (kbps)", style="blue")
+                    table.add_column("Over Limit", style="")
+
+                    for item in per_rule:
+                        over = "[warning]●[/warning]" if item.get('over_limit') else "[green]–[/green]"
+                        table.add_row(
+                            item['name'],
+                            str(item['priority']),
+                            f"{item.get('rx_kbps', 0):.1f}",
+                            f"{item.get('tx_kbps', 0):.1f}",
+                            over
+                        )
+
+                    console.print(table)
+
+        elif subcmd == "mode":
+            new_mode = getattr(args, "mode", None)
+
+            if not new_mode:
+                current = get_enforcement_mode()
+                console.print(f"\n[bold cyan]QoS Enforcement Mode[/bold cyan]")
+                console.print(f"  Current: [bold]{current.upper()}[/bold]")
+                console.print(f"  Options: off, monitor, enforce")
+                return
+
+            if set_enforcement_mode(new_mode):
+                console.print(f"[success]✓ QoS mode set to: {new_mode.upper()}[/success]")
+            else:
+                console.print(f"[error]Invalid mode: {new_mode}[/error]")
+
+        elif subcmd == "violations":
+            hours = getattr(args, "hours", 24)
+            limit = getattr(args, "limit", 50)
+
+            since_ts = time.time() - (hours * 3600)
+            violations = get_violations(since_ts=since_ts, limit=limit)
+
+            if not violations:
+                console.print(f"[muted]No violations in last {hours} hours.[/muted]")
+                return
+
+            table = Table(title="QoS Violations")
+            table.add_column("Time", style="dim")
+            table.add_column("Rule", style="cyan")
+            table.add_column("Type", style="yellow")
+            table.add_column("Details", style="white")
+
+            for v in violations[:limit]:
+                ts = datetime.fromtimestamp(v['ts'], tz=timezone.utc).strftime("%H:%M:%S")
+                table.add_row(
+                    ts,
+                    v.get('rule_id', '?')[:8],
+                    v.get('violation_type'),
+                    v.get('details', '')[: 60]
+                )
+
+            console.print(table)
 
     elif args.tools_command == "capture":
         from .proxy_manager import is_admin
@@ -2291,6 +2870,62 @@ def cmd_neighbor(args):
             engine.stop()
             console.print("[success]Stopped sharing.[/success]")
 
+    elif subcmd == "cache-list":
+        from .scanner import neighbor_cache
+        neighbors = neighbor_cache.load_neighbor_cache(max_age_minutes=1440)
+        if not neighbors:
+            console.print("[muted]No cached neighbors found.[/muted]")
+            return
+
+        table = make_table(
+            f"Cached LAN Neighbors ({len(neighbors)})",
+            [("IP", "cyan"), ("Port", "yellow"), ("MAC", "dim"), ("Hostname", "white"), ("Last Seen", "")],
+            [],
+        )
+        for n in neighbors:
+            ip = n.get("ip", "?")
+            port = str(n.get("port", "?"))
+            mac = n.get("mac", "?")
+            hostname = n.get("hostname", "-")
+            last_seen = n.get("last_seen", "?")
+            # Parse ISO timestamp to readable format
+            try:
+                from datetime import datetime
+                ts = datetime.fromisoformat(last_seen)
+                last_seen_str = ts.strftime("%H:%M:%S")
+            except Exception:
+                last_seen_str = last_seen[:19]
+            table.add_row(ip, port, mac, hostname, last_seen_str)
+
+        console.print(table)
+        age = neighbor_cache.cache_age_minutes()
+        if age >= 0:
+            console.print(f"[muted]Cache age: {age:.1f} minutes (TTL: 10 minutes)[/muted]")
+
+    elif subcmd == "cache-refresh":
+        console.print("[info]Discovering neighbors and refreshing cache (8s)...[/info]")
+        result = NeighborConnectEngine.discover(timeout=8.0)
+        if result:
+            host, port = result
+            from .scanner import neighbor_cache
+            neighbor_cache.add_neighbor(host, port)
+            console.print(f"[success]✓ Found and cached: {host}:{port}[/success]")
+        else:
+            console.print("[warning]No neighbors found on LAN.[/warning]")
+
+    elif subcmd == "cache-clear":
+        from .scanner import neighbor_cache
+        force = getattr(args, "force", False)
+
+        if not force:
+            resp = console.input("[warning]Clear all cached neighbors? [y/N]: [/warning]")
+            if resp.lower() != "y":
+                console.print("[muted]Cancelled.[/muted]")
+                return
+
+        neighbor_cache.clear_neighbor_cache()
+        console.print("[success]✓ Neighbor cache cleared[/success]")
+
 
 def _get_local_ip() -> str:
     """Get the LAN IP of this machine."""
@@ -2301,6 +2936,535 @@ def _get_local_ip() -> str:
             return s.getsockname()[0]
     except Exception:
         return "unknown"
+
+
+def cmd_download(args):
+    """Download manager — multi-threaded HTTP(S) downloads with queue, resume, and speed limiting."""
+    from .tools import download_manager
+    from . import settings as cfg
+    from rich.progress import Progress, SpinnerColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
+    from rich.table import Table
+
+    subcmd = getattr(args, "download_command", None)
+
+    if not subcmd or subcmd == "help":
+        console.print(Panel(
+            "[bold]Download Manager[/bold] — Multi-threaded downloads with resume & speed limiting.\n\n"
+            "  [cyan]add <url>[/cyan]           — Queue a download\n"
+            "  [cyan]list[/cyan]                — Show queue and progress\n"
+            "  [cyan]start [ID...]​[/cyan]      — Start queued downloads\n"
+            "  [cyan]cancel [ID...]​[/cyan]     — Pause downloads (keep partial files)\n"
+            "  [cyan]clear[/cyan]               — Clear completed downloads\n"
+            "  [cyan]watch[/cyan]               — Live progress for active downloads\n\n"
+            "[dim]Examples:[/dim]\n"
+            "  blackout download add https://example.com/file.zip\n"
+            "  blackout download list\n"
+            "  blackout download start --all\n"
+            "  blackout download watch",
+            title="Blackout Download", border_style="cyan"
+        ))
+        return
+
+    # ── add: Queue a download ──────────────────────────────────────
+    if subcmd == "add":
+        url = getattr(args, "url", None)
+        output = getattr(args, "output", None)
+        speed_limit = getattr(args, "speed_limit", 0)
+
+        if not url:
+            console.print("[error]Usage: blackout download add <url> [--output FILE] [--speed-limit KBPS][/error]")
+            return
+
+        try:
+            speed_limit = int(speed_limit) if speed_limit else 0
+        except ValueError:
+            console.print(f"[error]Invalid speed limit: {speed_limit}[/error]")
+            return
+
+        download_id = download_manager.queue_download(url, destination=output, speed_limit_kbps=speed_limit)
+        console.print(f"[success]✓ Added to queue[/success] ([dim]ID: {download_id}[/dim])")
+
+    # ── list: Show queue and progress ──────────────────────────────
+    elif subcmd == "list":
+        status_filter = getattr(args, "status", None)
+
+        downloads = download_manager.list_downloads()
+        if not downloads:
+            console.print("[muted]No downloads in queue.[/muted]")
+            return
+
+        # Build display table
+        table = make_table("Download Queue", [
+            ("ID", "cyan"),
+            ("Status", "white"),
+            ("Progress", "white"),
+            ("Speed", "white"),
+            ("Filename", "dim"),
+        ], [])
+
+        for d in downloads:
+            status_str = d.status.value
+            if d.status == download_manager.DownloadStatus.DOWNLOADING:
+                status_str = f"[bold green]{status_str}[/bold green]"
+            elif d.status == download_manager.DownloadStatus.COMPLETED:
+                status_str = f"[bold green]{status_str}[/bold green]"
+            elif d.status == download_manager.DownloadStatus.FAILED:
+                status_str = f"[bold red]{status_str}[/bold red]"
+            elif d.status == download_manager.DownloadStatus.PAUSED:
+                status_str = f"[yellow]{status_str}[/yellow]"
+
+            if d.total_size > 0:
+                pct = int((d.downloaded / d.total_size) * 100)
+                progress_str = f"{pct}% ({d.downloaded//1024//1024}MB / {d.total_size//1024//1024}MB)"
+            else:
+                progress_str = f"{d.downloaded//1024//1024}MB / ?"
+
+            speed_str = ""
+            if d.speed_limit_kbps > 0:
+                speed_str = f"{d.speed_limit_kbps} KBps"
+
+            filename = d.destination.name
+
+            table.add_row(d.id, status_str, progress_str, speed_str, filename)
+
+        console.print(table)
+
+    # ── start: Begin queued downloads ──────────────────────────────
+    elif subcmd == "start":
+        ids = getattr(args, "ids", None) or []
+        start_all = getattr(args, "all", False)
+
+        if not ids and not start_all:
+            # Start all pending by default
+            start_all = True
+
+        if start_all:
+            downloads = download_manager.list_downloads(download_manager.DownloadStatus.PENDING)
+            ids = [d.id for d in downloads]
+
+        if not ids:
+            console.print("[warning]No downloads to start.[/warning]")
+            return
+
+        for download_id in ids:
+            if download_manager.start_download(download_id):
+                console.print(f"[success]✓ Started[/success] {download_id}")
+            else:
+                console.print(f"[warning]⚠ Already running or not found: {download_id}[/warning]")
+
+    # ── cancel: Pause downloads ────────────────────────────────────
+    elif subcmd == "cancel":
+        ids = getattr(args, "ids", None) or []
+        cancel_all = getattr(args, "all", False)
+
+        if cancel_all:
+            downloads = download_manager.list_downloads(download_manager.DownloadStatus.DOWNLOADING)
+            ids = [d.id for d in downloads]
+
+        if not ids:
+            console.print("[warning]No downloads to cancel.[/warning]")
+            return
+
+        for download_id in ids:
+            if download_manager.cancel_download(download_id):
+                console.print(f"[yellow]⊘ Paused[/yellow] {download_id}")
+            else:
+                console.print(f"[warning]⚠ Not running: {download_id}[/warning]")
+
+    # ── clear: Remove completed/failed downloads ───────────────────
+    elif subcmd == "clear":
+        scope = getattr(args, "scope", "completed")  # completed | failed | all
+
+        if scope == "all":
+            if is_interactive():
+                resp = Prompt.ask("[yellow]Clear entire queue?[/yellow]", choices=["y", "n"], default="n")
+                if resp.lower() != "y":
+                    return
+            queue = []
+        else:
+            try:
+                status = download_manager.DownloadStatus(scope)
+            except ValueError:
+                console.print(f"[error]Invalid scope: {scope}[/error]")
+                return
+
+            queue = download_manager.list_downloads()
+            queue = [d for d in queue if d.status != status]
+
+        download_manager.save_queue(queue)
+        console.print(f"[success]✓ Cleared {scope} downloads[/success]")
+
+    # ── watch: Live progress display ───────────────────────────────
+    elif subcmd == "watch":
+        download_id = getattr(args, "id", None)
+
+        console.print("\n[info]Watching downloads (Ctrl+C to stop)...[/info]\n")
+
+        try:
+            with Progress(
+                SpinnerColumn(style="bold red"),
+                TaskProgressColumn(),
+                BarColumn(bar_width=40, style="red", complete_style="green"),
+                TimeElapsedColumn(),
+                console=console,
+                transient=False,
+            ) as progress:
+                # Add task for each active download
+                task_map = {}
+                if download_id:
+                    downloads = [download_manager.get_download(download_id)] if download_manager.get_download(download_id) else []
+                else:
+                    downloads = download_manager.list_downloads(download_manager.DownloadStatus.DOWNLOADING)
+
+                for d in downloads:
+                    task = progress.add_task(f"[cyan]{d.destination.name}[/cyan]", total=d.total_size or 1)
+                    task_map[d.id] = task
+
+                # Live update loop
+                if not task_map:
+                    console.print("[warning]No active downloads to watch.[/warning]")
+                    return
+
+                while task_map:
+                    for download_id, task in list(task_map.items()):
+                        d = download_manager.get_download(download_id)
+                        if not d:
+                            del task_map[download_id]
+                            continue
+
+                        progress.update(task, completed=d.downloaded, total=d.total_size or d.downloaded)
+
+                        if d.status != download_manager.DownloadStatus.DOWNLOADING:
+                            del task_map[download_id]
+
+                    if not task_map:
+                        break
+
+                    time.sleep(0.5)
+
+                console.print("\n[success]✓ Watching complete[/success]")
+
+        except KeyboardInterrupt:
+            console.print("\n[muted]Stopped watching (downloads continue in background)[/muted]\n")
+
+
+def cmd_media(args):
+    """Media downloader — Queue YouTube and similar video downloads with yt-dlp."""
+    from .tools import media_downloader
+    from rich.table import Table
+
+    subcmd = getattr(args, "media_command", None)
+
+    if not subcmd or subcmd == "help":
+        console.print(Panel(
+            "[bold]Media Downloader[/bold] — Download videos from YouTube, TikTok, etc.\n\n"
+            "  [cyan]add <url>[/cyan]               — Queue a video download\n"
+            "  [cyan]list[/cyan]                    — Show download queue\n"
+            "  [cyan]watch [ID][/cyan]              — Live progress (all or specific)\n"
+            "  [cyan]cancel <id>[/cyan]             — Stop a download\n"
+            "  [cyan]clear[/cyan]                   — Remove completed downloads\n\n"
+            "[dim]Format options:[/dim]\n"
+            "  [cyan]--format FORMAT[/cyan]         — yt-dlp format (e.g., best[ext=mp4])\n"
+            "  [cyan]--best-audio-video[/cyan]      — Download best audio + video\n"
+            "  [cyan]--output DIR[/cyan]            — Save location (default: ~/Downloads/blackout-media)\n\n"
+            "[dim]Examples:[/dim]\n"
+            "  blackout media add https://www.youtube.com/watch?v=... --format best[ext=mp4]\n"
+            "  blackout media list\n"
+            "  blackout media watch",
+            title="Blackout Media Downloader", border_style="cyan"
+        ))
+        return
+
+    manager = media_downloader.get_media_manager()
+
+    # ── add: Queue a media download ────────────────────────────────
+    if subcmd == "add":
+        url = getattr(args, "url", None)
+        format_spec = getattr(args, "format", "")
+        best_audio_video = getattr(args, "best_audio_video", False)
+        output = getattr(args, "output", None)
+
+        if not url:
+            console.print("[error]Usage: blackout media add <url> [--format FORMAT | --best-audio-video] [--output DIR][/error]")
+            return
+
+        if best_audio_video:
+            format_spec = "best"
+        elif not format_spec:
+            console.print("[error]Must specify --format or --best-audio-video[/error]")
+            return
+
+        media_id = manager.add_download(url, format_spec=format_spec, output_dir=output)
+        console.print(f"[success]✓ Queued media download[/success] ([dim]ID: {media_id}[/dim])")
+
+    # ── list: Show queue ───────────────────────────────────────────
+    elif subcmd == "list":
+        with manager.lock:
+            downloads = manager.downloads
+
+        if not downloads:
+            console.print("[muted]No media downloads in queue.[/muted]")
+            return
+
+        table = make_table("Media Downloads", [
+            ("ID", "cyan"),
+            ("Status", "white"),
+            ("Title", "dim"),
+            ("Progress", "white"),
+        ], [])
+
+        for d in downloads:
+            status_str = d.status.value
+            if d.status == media_downloader.MediaDownloadStatus.DOWNLOADING:
+                status_str = f"[bold green]{status_str}[/bold green]"
+            elif d.status == media_downloader.MediaDownloadStatus.COMPLETED:
+                status_str = f"[bold green]{status_str}[/bold green]"
+            elif d.status == media_downloader.MediaDownloadStatus.FAILED:
+                status_str = f"[bold red]{status_str}[/bold red]"
+
+            title = d.title or "(extracting...)"
+            progress = f"{d.speed_kbps} KB/s" if d.speed_kbps > 0 else "waiting"
+
+            table.add_row(d.id[:8], status_str, title, progress)
+
+        console.print(table)
+
+    # ── watch: Live progress ───────────────────────────────────────
+    elif subcmd == "watch":
+        watch_id = getattr(args, "id", None)
+
+        try:
+            while True:
+                with manager.lock:
+                    downloads = manager.downloads
+
+                if watch_id:
+                    downloads = [d for d in downloads if d.id.startswith(watch_id)]
+
+                if not downloads:
+                    console.print("[muted]No media downloads to watch.[/muted]")
+                    break
+
+                console.clear()
+                console.print("[bold cyan]Media Downloads — Live[/bold cyan]\n")
+
+                table = make_table("Status", [
+                    ("ID", "cyan"),
+                    ("Status", "white"),
+                    ("Progress", "white"),
+                    ("Speed", "white"),
+                ], [])
+
+                for d in downloads:
+                    status_str = d.status.value
+                    if d.status == media_downloader.MediaDownloadStatus.DOWNLOADING:
+                        status_str = f"[bold green]{status_str}[/bold green]"
+                    elif d.status == media_downloader.MediaDownloadStatus.COMPLETED:
+                        status_str = f"[bold green]{status_str}[/bold green]"
+                    elif d.status == media_downloader.MediaDownloadStatus.FAILED:
+                        status_str = f"[bold red]{status_str}[/bold red]"
+
+                    progress = f"{d.speed_kbps} KB/s"
+                    table.add_row(d.id[:8], status_str, d.title or "(extracting...)", progress)
+
+                console.print(table)
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            console.print("\n[muted]Stopped watching (downloads continue in background)[/muted]\n")
+
+    # ── cancel: Stop a download ────────────────────────────────────
+    elif subcmd == "cancel":
+        dl_id = getattr(args, "id", None)
+        if not dl_id:
+            console.print("[error]Usage: blackout media cancel <id>[/error]")
+            return
+
+        if manager.cancel_download(dl_id):
+            console.print(f"[success]✓ Cancelled media download[/success] ([dim]{dl_id}[/dim])")
+        else:
+            console.print(f"[error]✗ Media download not found: {dl_id}[/error]")
+
+    # ── clear: Remove completed ────────────────────────────────────
+    elif subcmd == "clear":
+        count = manager.clear_completed()
+        console.print(f"[success]✓ Removed {count} completed downloads[/success]")
+
+
+def cmd_torrent(args):
+    """Torrent downloader — Queue magnet and .torrent downloads with libtorrent."""
+    from .tools import torrent_manager
+    from rich.table import Table
+
+    subcmd = getattr(args, "torrent_command", None)
+
+    if not subcmd or subcmd == "help":
+        console.print(Panel(
+            "[bold]Torrent Manager[/bold] — Download torrents and magnets.\n\n"
+            "  [cyan]add <magnet|file>[/cyan]      — Queue a torrent download\n"
+            "  [cyan]list[/cyan]                   — Show torrent queue\n"
+            "  [cyan]watch [ID][/cyan]             — Live progress\n"
+            "  [cyan]cancel <id>[/cyan]            — Stop a torrent\n"
+            "  [cyan]seed <id> [--ratio R][/cyan]  — Set seed ratio (default: 1.0)\n"
+            "  [cyan]clear[/cyan]                  — Remove completed torrents\n\n"
+            "[dim]Options:[/dim]\n"
+            "  [cyan]--output DIR[/cyan]           — Save location (default: ~/Downloads/blackout-torrents)\n"
+            "  [cyan]--ratio R[/cyan]              — Seed ratio (1.0 = 1:1, default)\n\n"
+            "[dim]Examples:[/dim]\n"
+            "  blackout torrent add magnet:?xt=urn:btih:...\n"
+            "  blackout torrent list\n"
+            "  blackout torrent seed <id> --ratio 1.5",
+            title="Blackout Torrent Manager", border_style="cyan"
+        ))
+        return
+
+    manager = torrent_manager.get_torrent_manager()
+
+    # ── add: Queue a torrent ───────────────────────────────────────
+    if subcmd == "add":
+        magnet_or_file = getattr(args, "magnet_or_file", None)
+        output = getattr(args, "output", None)
+        seed_ratio = getattr(args, "ratio", 1.0)
+
+        if not magnet_or_file:
+            console.print("[error]Usage: blackout torrent add <magnet|.torrent-file> [--output DIR] [--ratio N][/error]")
+            return
+
+        try:
+            seed_ratio = float(seed_ratio)
+        except (ValueError, TypeError):
+            seed_ratio = 1.0
+
+        torrent_id = manager.add_torrent(magnet_or_file, output_dir=output, seed_ratio=seed_ratio)
+        console.print(f"[success]✓ Queued torrent[/success] ([dim]ID: {torrent_id}[/dim])")
+
+    # ── list: Show queue ───────────────────────────────────────────
+    elif subcmd == "list":
+        with manager.lock:
+            downloads = manager.downloads
+
+        if not downloads:
+            console.print("[muted]No torrents in queue.[/muted]")
+            return
+
+        table = make_table("Torrents", [
+            ("ID", "cyan"),
+            ("Status", "white"),
+            ("Progress", "white"),
+            ("Peers/Seeds", "white"),
+            ("Speed", "white"),
+        ], [])
+
+        for d in downloads:
+            status_str = d.status.value
+            if d.status == torrent_manager.TorrentStatus.DOWNLOADING:
+                status_str = f"[bold green]{status_str}[/bold green]"
+            elif d.status == torrent_manager.TorrentStatus.SEEDING:
+                status_str = f"[yellow]{status_str}[/yellow]"
+            elif d.status == torrent_manager.TorrentStatus.COMPLETED:
+                status_str = f"[bold green]{status_str}[/bold green]"
+            elif d.status == torrent_manager.TorrentStatus.FAILED:
+                status_str = f"[bold red]{status_str}[/bold red]"
+
+            if d.total_size > 0:
+                pct = int((d.downloaded / d.total_size) * 100)
+                progress = f"{pct}%"
+            else:
+                progress = "waiting"
+
+            peers_seeds = f"{d.peers}p/{d.seeds}s" if d.peers > 0 else "—"
+            speed = f"↓{d.download_rate_kbps}KB ↑{d.upload_rate_kbps}KB" if d.download_rate_kbps > 0 else "waiting"
+
+            table.add_row(d.id[:8], status_str, progress, peers_seeds, speed)
+
+        console.print(table)
+
+    # ── watch: Live progress ───────────────────────────────────────
+    elif subcmd == "watch":
+        watch_id = getattr(args, "id", None)
+
+        try:
+            while True:
+                with manager.lock:
+                    downloads = manager.downloads
+
+                if watch_id:
+                    downloads = [d for d in downloads if d.id.startswith(watch_id)]
+
+                if not downloads:
+                    console.print("[muted]No torrents to watch.[/muted]")
+                    break
+
+                console.clear()
+                console.print("[bold cyan]Torrents — Live[/bold cyan]\n")
+
+                table = make_table("Status", [
+                    ("ID", "cyan"),
+                    ("Status", "white"),
+                    ("Progress", "white"),
+                    ("Peers", "white"),
+                    ("Download", "white"),
+                    ("Upload", "white"),
+                ], [])
+
+                for d in downloads:
+                    status_str = d.status.value
+                    if d.status == torrent_manager.TorrentStatus.SEEDING:
+                        status_str = f"[yellow]{status_str}[/yellow]"
+
+                    if d.total_size > 0:
+                        pct = int((d.downloaded / d.total_size) * 100)
+                        progress = f"{pct}%"
+                    else:
+                        progress = "—"
+
+                    peers = f"{d.peers}p/{d.seeds}s" if d.peers > 0 else "—"
+                    dl_speed = f"{d.download_rate_kbps}KB/s"
+                    ul_speed = f"{d.upload_rate_kbps}KB/s"
+
+                    table.add_row(d.id[:8], status_str, progress, peers, dl_speed, ul_speed)
+
+                console.print(table)
+                time.sleep(1)
+
+        except KeyboardInterrupt:
+            console.print("\n[muted]Stopped watching (torrents continue in background)[/muted]\n")
+
+    # ── cancel: Stop a torrent ─────────────────────────────────────
+    elif subcmd == "cancel":
+        torrent_id = getattr(args, "id", None)
+        if not torrent_id:
+            console.print("[error]Usage: blackout torrent cancel <id>[/error]")
+            return
+
+        if manager.cancel_download(torrent_id):
+            console.print(f"[success]✓ Cancelled torrent[/success] ([dim]{torrent_id}[/dim])")
+        else:
+            console.print(f"[error]✗ Torrent not found: {torrent_id}[/error]")
+
+    # ── seed: Set seed ratio ───────────────────────────────────────
+    elif subcmd == "seed":
+        torrent_id = getattr(args, "id", None)
+        seed_ratio = getattr(args, "ratio", 1.0)
+
+        if not torrent_id:
+            console.print("[error]Usage: blackout torrent seed <id> [--ratio R][/error]")
+            return
+
+        try:
+            seed_ratio = float(seed_ratio)
+        except (ValueError, TypeError):
+            seed_ratio = 1.0
+
+        if manager.set_seed_ratio(torrent_id, seed_ratio):
+            console.print(f"[success]✓ Set seed ratio to {seed_ratio}[/success]")
+        else:
+            console.print(f"[error]✗ Torrent not found: {torrent_id}[/error]")
+
+    # ── clear: Remove completed ────────────────────────────────────
+    elif subcmd == "clear":
+        count = manager.clear_completed()
+        console.print(f"[success]✓ Removed {count} completed torrents[/success]")
 
 
 def cmd_help(args):

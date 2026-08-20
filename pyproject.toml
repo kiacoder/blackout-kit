@@ -26,6 +26,8 @@ dependencies = [
     "Pillow>=10.0.0",
     "customtkinter>=5.2.2",
     "scapy>=2.5.0",
+    "yt-dlp>=2024.01.01",
+    "python-libtorrent>=1.2.19",
 ]
 
 [project.scripts]

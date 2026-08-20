@@ -59,15 +59,15 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 
 | Feature | What it does | Why it matters |
 |---|---|---|
-| Download manager | Multi-threaded downloads with resume, queue, and speed limits | Everyone needs this |
-| Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | Clean CLI downloading |
-| Torrent/Magnet support | Lightweight terminal-based torrent client | No need for heavy GUI apps |
-| Traffic shaper | QoS rules — prioritize/govern specific apps or protocols | "Make my games faster, slow down background updates" |
-| Bandwidth caps | Set daily/monthly limits per interface | Data caps are real, especially on cellular |
-| Traffic logging | Persistent log of network usage by app/protocol/time | "Where did my 50GB go this month?" |
-| Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | Clean browsing without browser extensions |
-| Setup export/import | Share your exact config, DNS, and engine state via one string | "Send your perfect bypass setup to a friend" |
-| LAN IP Cache sharing | Share a 40ms Cloudflare IP with neighbors over LAN | Skip the 2-minute scan |
+| Download manager | Multi-threaded downloads with resume, queue, and speed limits | **Done** — `blackout download add/list/start/cancel/watch` |
+| Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | **Done** — `blackout media add/list/watch/cancel/clear` (yt-dlp wrapper, format selection, ~/Downloads/blackout-media) |
+| Torrent/Magnet support | Lightweight terminal-based torrent client | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` (libtorrent wrapper, seed ratio control, peer tracking, ~/Downloads/blackout-torrents) |
+| Traffic shaper | QoS rules — prioritize/govern specific apps or protocols | **Done** — `blackout tools qos rules/stats/mode/violations` (per-app/protocol/port rules, active WinDivert shaping, priority 0-100, monitor/enforce modes). **WinDivert auto-installation verified ✅** |
+| Bandwidth caps | Set daily/monthly limits per interface | **Done** — `blackout tools bandwidth-cap set/list/stats/remove` (daily/monthly quotas with % alert threshold) |
+| Traffic logging | Persistent log of network usage by app/protocol/time | **Done** — `blackout tools traffic-log list/stats/hourly/clear/prune/info` (JSONL audit trail, per-app/protocol aggregation) |
+| Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | **Done** — `blackout tools adblock sources/custom/whitelist/status/stats/log/update` (blocklist management, domain blocking, query logging) |
+| Setup export/import | Share your exact config, DNS, and engine state via one string | **Done** — `blackout config export` / `blackout config import-setup <string>` |
+| LAN IP Cache sharing | Share a 40ms Cloudflare IP with neighbors over LAN | **Done** — `blackout neighbor cache-list/refresh/clear` (auto-used by `connect` and `discover`) |
 
 ### Phase 3: Antivirus & security hardening (1.5.x)
 

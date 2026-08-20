@@ -431,6 +431,36 @@ def cfg_decrypt():
     args.config_command = "decrypt"
     cmd_config(args)
 
+@config_app.command("export")
+def cfg_export(
+    output: str = typer.Option(None, "--output", "-o", help="Save to file (default: print to console)")
+):
+    """Export setup (configs + settings) as a portable string"""
+    from .cli import cmd_config
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.config_command = "export"
+    args.output = output
+    cmd_config(args)
+
+@config_app.command("import-setup")
+def cfg_import_setup(
+    setup_string: str = typer.Argument(None, help="Base64-encoded setup string"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt")
+):
+    """Import setup (configs + settings) from a portable string"""
+    from .cli import cmd_config
+
+    setup_string = setup_string or ask_text("Enter the setup string")
+    if not setup_string:
+        return
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.config_command = "import-setup"
+    args.setup_string = setup_string
+    args.force = force
+    cmd_config(args)
+
 # ── TOOLS GROUP ──
 tools_app = typer.Typer(help="Network diagnostics, DNS, hotspot, and more", no_args_is_help=True)
 app.add_typer(tools_app, name="tools")
@@ -676,6 +706,117 @@ def tools_bandwidth(
     args = DummyArgs()
     args.tools_command = "bandwidth"
     args.interval = interval
+    cmd_tools(args)
+
+@tools_app.command("bandwidth-cap")
+def tools_bandwidth_cap(
+    subcmd: str = typer.Argument("list", help="set|list|stats|remove"),
+    interface: str = typer.Option(None, "--interface", "-i", help="Interface name (e.g. eth0, wlan0)"),
+    daily_mb: int = typer.Option(None, "--daily", "-d", help="Daily limit in MB"),
+    monthly_mb: int = typer.Option(None, "--monthly", "-m", help="Monthly limit in MB"),
+):
+    """Set and monitor daily/monthly bandwidth limits per interface."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "bandwidth-cap"
+    args.bandwidth_cap_subcmd = subcmd
+    args.interface = interface
+    args.daily_mb = daily_mb
+    args.monthly_mb = monthly_mb
+    cmd_tools(args)
+
+@tools_app.command("traffic-log")
+def tools_traffic_log(
+    subcmd: str = typer.Argument("list", help="list|stats|hourly|clear|prune|info"),
+    app: str = typer.Option(None, "--app", "-a", help="Filter by process name"),
+    protocol: str = typer.Option(None, "--protocol", "-p", help="Filter by protocol (TCP/UDP)"),
+    hours: int = typer.Option(24, "--hours", "-h", help="Last N hours to query"),
+    limit: int = typer.Option(50, "--limit", "-l", help="Max entries to show in list"),
+    older_than: int = typer.Option(30, "--older-than", help="Prune entries older than N days"),
+):
+    """Query network traffic audit trail, aggregate stats, and manage logs."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "traffic-log"
+    args.traffic_log_subcmd = subcmd
+    args.app = app
+    args.protocol = protocol
+    args.hours = hours
+    args.limit = limit
+    args.older_than = older_than
+    cmd_tools(args)
+
+@tools_app.command("adblock")
+def tools_adblock(
+    subcmd: str = typer.Argument("status", help="sources|sources-add|sources-remove|custom-add|custom-remove|whitelist-add|whitelist-remove|status|stats|log|update"),
+    name: str = typer.Option(None, "--name", "-n", help="Blocklist name (for sources-add/remove)"),
+    url: str = typer.Option(None, "--url", "-u", help="Blocklist URL (for sources-add)"),
+    domain: str = typer.Option(None, "--domain", "-d", help="Domain (for custom-add/remove/whitelist commands)"),
+    blocked_only: bool = typer.Option(False, "--blocked-only", help="Show only blocked queries in log"),
+    hours: int = typer.Option(24, "--hours", "-h", help="Last N hours to query"),
+    limit: int = typer.Option(100, "--limit", "-l", help="Max log entries to show"),
+):
+    """Manage ad and tracker blocking via blocklists, custom rules, and whitelist."""
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "adblock"
+    args.adblock_subcmd = subcmd
+    args.name = name
+    args.url = url
+    args.domain = domain
+    args.blocked_only = blocked_only
+    args.hours = hours
+    args.limit = limit
+    cmd_tools(args)
+
+@tools_app.command("qos")
+def tools_qos(
+    subcmd: str = typer.Argument("rules", help="rules|stats|mode|violations"),
+    action: str = typer.Argument(None, help="For 'rules': list|add|remove|enable|disable"),
+    name: str = typer.Option(None, "--name", "-n", help="Rule name (for add)"),
+    rule_type: str = typer.Option(None, "--type", "-t", help="Rule type: app|protocol|port|interface"),
+    target: str = typer.Option(None, "--target", help="Target: process name, protocol, port, or interface"),
+    priority: int = typer.Option(50, "--priority", "-p", help="Priority 0-100 (default 50)"),
+    rate_limit: int = typer.Option(0, "--rate-limit", "-r", help="Rate limit in kbps (0=unlimited)"),
+    rule_id: str = typer.Option(None, "--id", help="Rule ID (for remove/enable/disable)"),
+    mode: str = typer.Option(None, help="For 'mode': off|monitor|enforce"),
+    hours: int = typer.Option(24, "--hours", "-h", help="Last N hours to query"),
+    limit: int = typer.Option(50, "--limit", "-l", help="Max entries to show"),
+):
+    """Quality of Service (QoS) - traffic shaping and prioritization rules.
+
+    Subcommands:
+      rules [list|add|remove|enable|disable]  - Manage QoS rules
+      stats                                   - View QoS statistics
+      mode [off|monitor|enforce]              - Set enforcement mode
+      violations                              - View recent violations
+
+    Examples:
+      blackout tools qos rules list
+      blackout tools qos rules add --type app --target chrome.exe --name chrome_limit
+      blackout tools qos rules remove --id rule_001
+      blackout tools qos stats
+      blackout tools qos mode enforce
+      blackout tools qos violations --hours 24
+    """
+    from .cli import cmd_tools
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.tools_command = "qos"
+    args.qos_subcmd = subcmd
+    args.qos_show_cmd = action or "list"  # Default to "list" if action is None
+    args.name = name
+    args.rule_type = rule_type
+    args.target = target
+    args.priority = priority
+    args.rate_limit = rate_limit
+    args.rule_id = rule_id
+    args.mode = mode
+    args.hours = hours
+    args.limit = limit
     cmd_tools(args)
 
 @tools_app.command("capture")
@@ -931,6 +1072,222 @@ def neighbor_share():
     args = DummyArgs()
     args.neighbor_command = "share"
     cmd_neighbor(args)
+
+@neighbor_app.command("cache-list")
+def neighbor_cache_list():
+    """List cached LAN neighbors"""
+    from .cli import cmd_neighbor
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.neighbor_command = "cache-list"
+    cmd_neighbor(args)
+
+@neighbor_app.command("cache-refresh")
+def neighbor_cache_refresh():
+    """Force neighbor discovery and refresh cache"""
+    from .cli import cmd_neighbor
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.neighbor_command = "cache-refresh"
+    cmd_neighbor(args)
+
+@neighbor_app.command("cache-clear")
+def neighbor_cache_clear(force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt")):
+    """Clear all cached neighbors"""
+    from .cli import cmd_neighbor
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.neighbor_command = "cache-clear"
+    args.force = force
+    cmd_neighbor(args)
+
+# ── DOWNLOAD GROUP ──
+download_app = typer.Typer(help="Download manager with queue, resume, and speed limiting", no_args_is_help=True)
+app.add_typer(download_app, name="download")
+
+@download_app.command("add")
+def download_add(url: str = typer.Argument(..., help="HTTP(S) URL to download"), output: str = typer.Option(None, "--output", "-o", help="Save to file"), speed_limit: int = typer.Option(0, "--speed-limit", "-s", help="Max speed in KBps (0=unlimited)")):
+    """Queue a download"""
+    from .cli import cmd_download
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.download_command = "add"
+    args.url = url
+    args.output = output
+    args.speed_limit = speed_limit
+    cmd_download(args)
+
+@download_app.command("list")
+def download_list(status: str = typer.Option(None, "--status", "-s", help="Filter by status (pending|downloading|completed|failed)")):
+    """Show download queue and progress"""
+    from .cli import cmd_download
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.download_command = "list"
+    args.status = status
+    cmd_download(args)
+
+@download_app.command("start")
+def download_start(ids: list[str] = typer.Argument(None, help="Download IDs to start"), all: bool = typer.Option(False, "--all", "-a", help="Start all pending downloads")):
+    """Start queued downloads"""
+    from .cli import cmd_download
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.download_command = "start"
+    args.ids = ids or []
+    args.all = all
+    cmd_download(args)
+
+@download_app.command("cancel")
+def download_cancel(ids: list[str] = typer.Argument(None, help="Download IDs to cancel"), all: bool = typer.Option(False, "--all", "-a", help="Cancel all active downloads")):
+    """Pause downloads (keep partial files for resume)"""
+    from .cli import cmd_download
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.download_command = "cancel"
+    args.ids = ids or []
+    args.all = all
+    cmd_download(args)
+
+@download_app.command("clear")
+def download_clear(scope: str = typer.Option("completed", "--scope", "-s", help="Clear completed|failed|all")):
+    """Remove downloads from queue"""
+    from .cli import cmd_download
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.download_command = "clear"
+    args.scope = scope
+    cmd_download(args)
+
+@download_app.command("watch")
+def download_watch(id: str = typer.Option(None, "--id", "-i", help="Watch specific download (default: all active)")):
+    """Live progress for active downloads"""
+    from .cli import cmd_download
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.download_command = "watch"
+    args.id = id
+    cmd_download(args)
+
+# ── MEDIA GROUP ──
+media_app = typer.Typer(help="Download videos from YouTube and similar platforms", no_args_is_help=True)
+app.add_typer(media_app, name="media")
+
+@media_app.command("add")
+def media_add(url: str = typer.Argument(..., help="YouTube or similar video URL"), format: str = typer.Option(None, "--format", "-f", help="yt-dlp format (e.g., best[ext=mp4])"), best_audio_video: bool = typer.Option(False, "--best-audio-video", "-b", help="Download best audio + video"), output: str = typer.Option(None, "--output", "-o", help="Save to directory")):
+    """Queue a media download"""
+    from .cli import cmd_media
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.media_command = "add"
+    args.url = url
+    args.format = format
+    args.best_audio_video = best_audio_video
+    args.output = output
+    cmd_media(args)
+
+@media_app.command("list")
+def media_list():
+    """Show media download queue"""
+    from .cli import cmd_media
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.media_command = "list"
+    cmd_media(args)
+
+@media_app.command("watch")
+def media_watch(id: str = typer.Option(None, "--id", "-i", help="Watch specific download (default: all active)")):
+    """Live progress for active downloads"""
+    from .cli import cmd_media
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.media_command = "watch"
+    args.id = id
+    cmd_media(args)
+
+@media_app.command("cancel")
+def media_cancel(id: str = typer.Argument(..., help="Download ID to cancel")):
+    """Stop a media download"""
+    from .cli import cmd_media
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.media_command = "cancel"
+    args.id = id
+    cmd_media(args)
+
+@media_app.command("clear")
+def media_clear():
+    """Remove completed downloads"""
+    from .cli import cmd_media
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.media_command = "clear"
+    cmd_media(args)
+
+# ── TORRENT GROUP ──
+torrent_app = typer.Typer(help="Download torrents and magnets with libtorrent", no_args_is_help=True)
+app.add_typer(torrent_app, name="torrent")
+
+@torrent_app.command("add")
+def torrent_add(magnet_or_file: str = typer.Argument(..., help="Magnet link or .torrent file path"), output: str = typer.Option(None, "--output", "-o", help="Save to directory"), ratio: float = typer.Option(1.0, "--ratio", "-r", help="Seed ratio (1.0 = 1:1, default)")):
+    """Queue a torrent download"""
+    from .cli import cmd_torrent
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.torrent_command = "add"
+    args.magnet_or_file = magnet_or_file
+    args.output = output
+    args.ratio = ratio
+    cmd_torrent(args)
+
+@torrent_app.command("list")
+def torrent_list():
+    """Show torrent queue"""
+    from .cli import cmd_torrent
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.torrent_command = "list"
+    cmd_torrent(args)
+
+@torrent_app.command("watch")
+def torrent_watch(id: str = typer.Option(None, "--id", "-i", help="Watch specific torrent (default: all active)")):
+    """Live progress for active torrents"""
+    from .cli import cmd_torrent
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.torrent_command = "watch"
+    args.id = id
+    cmd_torrent(args)
+
+@torrent_app.command("cancel")
+def torrent_cancel(id: str = typer.Argument(..., help="Torrent ID to cancel")):
+    """Stop a torrent"""
+    from .cli import cmd_torrent
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.torrent_command = "cancel"
+    args.id = id
+    cmd_torrent(args)
+
+@torrent_app.command("seed")
+def torrent_seed(id: str = typer.Argument(..., help="Torrent ID"), ratio: float = typer.Option(1.0, "--ratio", "-r", help="Seed ratio")):
+    """Set seed ratio for a torrent"""
+    from .cli import cmd_torrent
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.torrent_command = "seed"
+    args.id = id
+    args.ratio = ratio
+    cmd_torrent(args)
+
+@torrent_app.command("clear")
+def torrent_clear():
+    """Remove completed torrents"""
+    from .cli import cmd_torrent
+    class DummyArgs: pass
+    args = DummyArgs()
+    args.torrent_command = "clear"
+    cmd_torrent(args)
 
 # ── SETTINGS GROUP ──
 settings_app = typer.Typer(help="View and change all settings", no_args_is_help=True)
