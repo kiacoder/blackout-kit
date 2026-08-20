@@ -163,7 +163,10 @@ def scan_sync(ips: list[str], port: int = 443, concurrency: int = 100, timeout: 
     if not c_res_str:
         return []
 
-    result_str = c_res_str.decode("utf-8")
+    try:
+        result_str = c_res_str.decode("utf-8")
+    except UnicodeDecodeError:
+        return []
     if not result_str:
         return []
 

@@ -651,7 +651,10 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             restart_count += 1
 
             if s.get("config_rotation", True):
-                current_offset = int(os.environ.get("BLACKOUT_CONFIG_OFFSET", "0"))
+                try:
+                    current_offset = int(os.environ.get("BLACKOUT_CONFIG_OFFSET", "0"))
+                except ValueError:
+                    current_offset = 0
                 os.environ["BLACKOUT_CONFIG_OFFSET"] = str(current_offset + 1)
                 log.info(
                     "Config rotation: trying next saved config (offset %d → %d).",
