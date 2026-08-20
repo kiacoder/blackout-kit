@@ -9,6 +9,7 @@ import logging.handlers
 import os
 import sys
 import subprocess
+import tempfile
 import threading as _threading
 import time
 from pathlib import Path
@@ -111,31 +112,56 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            PID_FILE.write_text(str(process.pid), encoding="utf-8")
-            STATE_FILE.write_text(
-                json.dumps({
-                    "engine": engine_name,
-                    "pid": process.pid,
-                    "started": time.strftime("%Y-%m-%d %H:%M:%S"),
-                }),
-                encoding="utf-8",
-            )
+            # Atomic write of PID file
+            fd, tmp_path = tempfile.mkstemp(dir=APP_DATA_DIR, text=True)
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    f.write(str(process.pid))
+                os.replace(tmp_path, str(PID_FILE))
+            except Exception:
+                os.unlink(tmp_path)
+
+            # Atomic write of STATE file
+            fd, tmp_path = tempfile.mkstemp(dir=APP_DATA_DIR, text=True)
+            try:
+                with os.fdopen(fd, 'w') as f:
+                    json.dump({
+                        "engine": engine_name,
+                        "pid": process.pid,
+                        "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+                    }, f)
+                os.replace(tmp_path, str(STATE_FILE))
+            except Exception:
+                os.unlink(tmp_path)
             return process.pid
 
         ADMIN_REQUIRED_ENGINES = {"gdpi", "warp", "tun"}
         verb_clause = "-Verb RunAs " if engine_name in ADMIN_REQUIRED_ENGINES else ""
 
-        args_ps = ", ".join(f"'{a}'" for a in cmd[1:])
+        # Build safe environment variables instead of string interpolation
+        env_for_ps = {
+            **os.environ,
+            "BLACKOUT_EXE": cmd[0],
+            "BLACKOUT_ARGS": json.dumps(cmd[1:]),
+            "BLACKOUT_WORKDIR": os.getcwd(),
+            "BLACKOUT_ENGINE": engine_name,
+            "BLACKOUT_PID_FILE": str(PID_FILE),
+            "BLACKOUT_STATE_FILE": str(STATE_FILE),
+        }
+
         ps_cmd = (
-            f"$p = Start-Process -FilePath '{cmd[0]}' "
-            f"-ArgumentList @({args_ps}) -WorkingDirectory '{os.getcwd()}' {verb_clause}-WindowStyle Hidden -PassThru; "
-            f"if ($p) {{ $p.Id | Out-File -FilePath '{PID_FILE}' -Encoding UTF8; "
-            f"'{{\"engine\":\"{engine_name}\",\"pid\":' + $p.Id.ToString() + ',\"started\":\"' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss') + '\"}}' | Out-File -FilePath '{STATE_FILE}' -Encoding UTF8 }}"
+            "$p = Start-Process -FilePath $env:BLACKOUT_EXE "
+            "-ArgumentList @([System.Text.Json.JsonDocument]::Parse($env:BLACKOUT_ARGS).RootElement | "
+            "ForEach-Object { $_.GetString() }) -WorkingDirectory $env:BLACKOUT_WORKDIR " + verb_clause +
+            "-WindowStyle Hidden -PassThru; "
+            "if ($p) { $p.Id | Out-File -FilePath $env:BLACKOUT_PID_FILE -Encoding UTF8; "
+            "@{engine=$env:BLACKOUT_ENGINE;pid=$p.Id;started=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')} | ConvertTo-Json | Out-File -FilePath $env:BLACKOUT_STATE_FILE -Encoding UTF8 }"
         )
 
         subprocess.run(
             ["powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", ps_cmd],
             creationflags=0x08000000,
+            env=env_for_ps,
         )
 
         # Wait for PID_FILE (give user time to click UAC)

@@ -117,6 +117,20 @@ class NeighborConnectEngine(Engine):
         self._running  = False
         self._thread: threading.Thread | None = None
 
+        # Try cache first if no peer specified
+        if not peer_host and not peer_port:
+            from ..scanner import neighbor_cache
+            cached = neighbor_cache.load_neighbor_cache(max_age_minutes=10)
+            if cached:
+                # Use first cached neighbor (can be extended to smarter selection)
+                for n in cached:
+                    if not n.get("is_self"):
+                        self.peer_host = n.get("ip", "")
+                        self.peer_port = n.get("port", 0)
+                        if self.peer_host and self.peer_port:
+                            self._log.info("Using cached neighbor: %s:%d", self.peer_host, self.peer_port)
+                            break
+
     # ── Discovery ─────────────────────────────────────────────────
 
     @staticmethod
@@ -156,6 +170,29 @@ class NeighborConnectEngine(Engine):
                 pass
         return None
 
+    @staticmethod
+    def discover_with_cache(timeout: float = DISCOVERY_TIMEOUT) -> tuple[str, int] | None:
+        """
+        Discover a neighbor, trying cache first (if fresh) before multicast discovery.
+        Returns (host_ip, proxy_port) on success, None if no neighbor found.
+        """
+        try:
+            from ..scanner import neighbor_cache
+            cached = neighbor_cache.load_neighbor_cache(max_age_minutes=10)
+            if cached:
+                # Prefer non-self neighbors
+                for n in cached:
+                    if not n.get("is_self"):
+                        ip = n.get("ip", "")
+                        port = n.get("port", 0)
+                        if ip and port:
+                            return ip, port
+        except Exception:
+            pass
+
+        # Fall back to live multicast discovery
+        return NeighborConnectEngine.discover(timeout=timeout)
+
     # ── Heartbeat ─────────────────────────────────────────────────
 
     def _heartbeat_loop(self):
@@ -182,6 +219,13 @@ class NeighborConnectEngine(Engine):
                 pass
         except Exception:
             return False
+
+        # Cache this successful neighbor for next time
+        try:
+            from ..scanner import neighbor_cache
+            neighbor_cache.add_neighbor(self.peer_host, self.peer_port)
+        except Exception:
+            pass
 
         self._running = True
         self._thread  = threading.Thread(target=self._heartbeat_loop, daemon=True)

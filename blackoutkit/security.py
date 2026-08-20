@@ -462,12 +462,14 @@ def add_defender_exclusion(path: Path | None = None) -> bool:
     os.close(fd)
     marker = Path(path)
     ps_elevated = (
-        f'Add-MpPreference -ExclusionPath "{target}"; '
-        f'Write-Output "OK" | Out-File -FilePath "{marker}" -Encoding UTF8'
+        'Add-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; '
+        'Write-Output "OK" | Out-File -FilePath $env:BLACKOUT_MARKER_PATH -Encoding UTF8'
     )
+    env = {**os.environ, "BLACKOUT_EXCL_PATH": target, "BLACKOUT_MARKER_PATH": str(marker)}
     handle, pid = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_elevated],
+        env=env,
     )
     if handle is None:
         return False
@@ -497,12 +499,14 @@ def remove_defender_exclusion(path: Path | None = None) -> bool:
     os.close(fd)
     marker = Path(path)
     ps_elevated = (
-        f'Remove-MpPreference -ExclusionPath "{target}"; '
-        f'Write-Output "OK" | Out-File -FilePath "{marker}" -Encoding UTF8'
+        'Remove-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; '
+        'Write-Output "OK" | Out-File -FilePath $env:BLACKOUT_MARKER_PATH -Encoding UTF8'
     )
+    env = {**os.environ, "BLACKOUT_EXCL_PATH": target, "BLACKOUT_MARKER_PATH": str(marker)}
     handle, pid = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_elevated],
+        env=env,
     )
     if handle is None:
         return False

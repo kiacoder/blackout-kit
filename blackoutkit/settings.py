@@ -122,6 +122,8 @@ DEFAULTS = {
     # Neighbor (LAN peer sharing)
     "neighbor_proxy_port":  10809,
     "neighbor_bind_lan":    False,
+    "lan_neighbor_cache_ttl_minutes": 10,     # How long to trust cached neighbors
+    "lan_neighbor_cache_max_size": 50,        # Max neighbors to store in cache
 
     # Google Apps Script relay
     "gas_proxy_port":       8087,
@@ -149,6 +151,35 @@ DEFAULTS = {
     # Packet capture
     "capture_default_iface": "",        # Empty = pass no --iface, let scapy pick / require explicit choice
     "capture_max_packets":  2000,       # In-memory ring buffer cap feeding the live view + summary
+
+    # Download manager
+    "download_speed_limit_kbps": 0,     # Global speed limit (0 = unlimited)
+    "download_max_parallel": 2,         # Max concurrent downloads (default 2)
+    "download_auto_resume": True,       # Auto-resume on daemon startup
+
+    # Bandwidth caps
+    "bandwidth_caps_enabled": False,    # Enable bandwidth cap tracking and alerts
+    "bandwidth_alert_threshold": 80,    # Alert when usage exceeds this % of limit
+
+    # Traffic logging
+    "traffic_logging_enabled": False,   # Enable per-connection audit trail (privacy concern)
+    "traffic_log_max_entries": 100000,  # Max entries before auto-pruning (roughly 30 days at 1Hz)
+    "traffic_log_retention_days": 30,   # Auto-prune entries older than this
+    "traffic_log_sample_interval_sec": 10,  # Snapshot connections every N seconds
+
+    # Ad blocking
+    "adblock_enabled": False,           # Enable network-level ad/tracker blocking
+    "adblock_block_mode": "null",       # null (0.0.0.0) or sinkhole (custom IP)
+    "adblock_sinkhole_ip": "0.0.0.0",   # IP to serve for blocked domains
+    "adblock_auto_update_interval_hours": 24,  # Auto-update blocklists every N hours
+    "adblock_query_log_enabled": False,  # Log all DNS queries (privacy concern)
+
+    # QoS (Quality of Service)
+    "qos_enabled": False,               # Enable QoS traffic shaping rules
+    "qos_enforcement_mode": "monitor",  # off / monitor (alerts only) / enforce (active shaping)
+    "qos_default_priority": 50,         # Default priority for new rules (0-100)
+    "qos_alert_threshold_pct": 110,     # Alert when rule throughput exceeds limit by N% (e.g. 110 = 10% over)
+    "qos_rate_limit_precision_ms": 100, # Token bucket granularity in milliseconds
 }
 
 
@@ -207,6 +238,14 @@ _VALIDATORS: dict[str, tuple] = {
     "engine_order":       (list,  lambda v: len(v) > 0 and all(e in _ENGINE_CHOICES for e in v),
                             "must be a non-empty list of valid engines: " + ", ".join(_ENGINE_CHOICES)),
     "capture_max_packets": (int,  lambda v: 100 <= v <= 100000, "must be 100–100000"),
+    "download_speed_limit_kbps": (int, lambda v: v >= 0, "must be 0 (unlimited) or > 0"),
+    "download_max_parallel": (int, lambda v: 1 <= v <= 32, "must be 1–32"),
+    "download_auto_resume": (bool, lambda v: True, "must be true or false"),
+    "qos_enabled": (bool, lambda v: True, "must be true or false"),
+    "qos_enforcement_mode": (str, lambda v: v in ("off", "monitor", "enforce"), "must be: off / monitor / enforce"),
+    "qos_default_priority": (int, lambda v: 0 <= v <= 100, "must be 0–100"),
+    "qos_alert_threshold_pct": (int, lambda v: 100 <= v <= 500, "must be 100–500"),
+    "qos_rate_limit_precision_ms": (int, lambda v: 10 <= v <= 1000, "must be 10–1000"),
 }
 
 # ──────────────────────────── Env overrides ───────────────────────
@@ -479,6 +518,8 @@ def describe(key: str) -> str:
         "softether_password": "SoftEther account password",
         "neighbor_proxy_port":"Proxy port to share with nearby LAN devices",
         "neighbor_bind_lan":  "Bind proxy to 0.0.0.0 so LAN devices can reach it",
+        "lan_neighbor_cache_ttl_minutes": "How long (in minutes) to trust cached LAN neighbor IPs before requiring fresh discovery",
+        "lan_neighbor_cache_max_size": "Maximum number of neighbors to keep in the local cache file",
         "gas_proxy_port":     "Local port for Google Apps Script HTTP relay proxy",
         "country":            "Country profile code (IR/RU/US/GB/CN/IQ/EU). Empty = auto-detect from ISP.",
         "xray_fragment":      "XRay TLS record fragment: empty disables it, otherwise range,range (e.g. 10-50,10-50)",

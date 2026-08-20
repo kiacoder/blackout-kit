@@ -293,3 +293,54 @@ def import_and_merge(url: str) -> tuple[int, int]:
     merged = existing + added
     save_configs(merged)
     return len(added), len(merged)
+
+
+# ─────────────────────────── Export/Import Setup ──────────────────────────
+
+def serialize_setup() -> dict:
+    """Pack all configs + exportable settings into a portable dict."""
+    from .. import settings as cfg
+
+    configs = load_configs()
+    current_settings = cfg.load()
+
+    exportable_keys = {
+        "selected_engine",
+        "security_mode",
+        "xray_fingerprint",
+        "xray_mux_enabled",
+        "gdpi_backend",
+        "xray_doh_dns",
+    }
+
+    filtered_settings = {
+        k: v for k, v in current_settings.items()
+        if k in exportable_keys
+    }
+
+    return {
+        "configs": [c.raw_uri for c in configs if c.raw_uri],
+        "settings": filtered_settings,
+    }
+
+
+def deserialize_setup(data: dict) -> tuple[list[ProxyConfig], dict]:
+    """Unpack a setup dict and return (configs, settings)."""
+    if not isinstance(data, dict):
+        raise ValueError("Setup data must be a dict")
+
+    configs_raw = data.get("configs", [])
+    if not isinstance(configs_raw, list):
+        raise ValueError("'configs' must be a list of URIs")
+
+    configs = []
+    for uri in configs_raw:
+        c = parse_v2ray_uri(uri)
+        if c:
+            configs.append(c)
+
+    settings_data = data.get("settings", {})
+    if not isinstance(settings_data, dict):
+        raise ValueError("'settings' must be a dict")
+
+    return configs, settings_data

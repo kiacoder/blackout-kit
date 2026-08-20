@@ -243,11 +243,14 @@ class MediaDownloadManager:
 
 # Singleton instance
 _manager: Optional[MediaDownloadManager] = None
+_manager_lock = threading.Lock()
 
 
 def get_media_manager() -> MediaDownloadManager:
-    """Get or create the media download manager singleton."""
+    """Get or create the media download manager singleton (thread-safe)."""
     global _manager
     if _manager is None:
-        _manager = MediaDownloadManager()
+        with _manager_lock:
+            if _manager is None:  # Double-check locking pattern
+                _manager = MediaDownloadManager()
     return _manager

@@ -35,13 +35,15 @@ def _run_elevated(cmd: list[str], timeout_ms: int = 30000) -> bool:
     Launches powershell.exe elevated, which runs the command with -Wait.
     """
     ps_script = (
-        f"$p = Start-Process -FilePath '{cmd[0]}' "
-        f"-ArgumentList '{subprocess.list2cmdline(cmd[1:])}' "
-        f"-NoNewWindow -Wait -PassThru; exit $p.ExitCode"
+        "$p = Start-Process -FilePath $env:BLACKOUT_CMD_0 "
+        "-ArgumentList $env:BLACKOUT_CMD_ARGS "
+        "-NoNewWindow -Wait -PassThru; exit $p.ExitCode"
     )
+    env = {**os.environ, "BLACKOUT_CMD_0": cmd[0], "BLACKOUT_CMD_ARGS": subprocess.list2cmdline(cmd[1:])}
     handle, pid = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_script],
+        env=env,
     )
     if handle is None:
         return False
@@ -56,17 +58,23 @@ def _run_elevated(cmd: list[str], timeout_ms: int = 30000) -> bool:
 
 def _run_elevated_multi(commands: list[list[str]], timeout_ms: int = 60000) -> bool:
     """Run multiple admin commands in one elevated PowerShell session."""
+    env = os.environ.copy()
     blocks = []
-    for cmd in commands:
+    for i, cmd in enumerate(commands):
+        env_key_exe = f"BLACKOUT_CMD_{i}_EXE"
+        env_key_args = f"BLACKOUT_CMD_{i}_ARGS"
+        env[env_key_exe] = cmd[0]
+        env[env_key_args] = subprocess.list2cmdline(cmd[1:])
         blocks.append(
-            f"$p = Start-Process -FilePath '{cmd[0]}' "
-            f"-ArgumentList '{subprocess.list2cmdline(cmd[1:])}' "
+            f"$p = Start-Process -FilePath $env:{env_key_exe} "
+            f"-ArgumentList $env:{env_key_args} "
             f"-NoNewWindow -Wait -PassThru; if ($p.ExitCode -ne 0) {{ exit $p.ExitCode }}"
         )
     ps_script = "& { " + "; ".join(blocks) + " }"
     handle, _ = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_script],
+        env=env,
     )
     if handle is None:
         return False

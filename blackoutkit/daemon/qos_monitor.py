@@ -1,0 +1,207 @@
+"""
+Blackout Kit - QoS Monitor Daemon.
+Monitors per-rule throughput and alerts on violations.
+
+Features:
+  - Periodic throughput checking
+  - Violation detection and logging
+  - Alert generation
+  - Stats aggregation for CLI display
+"""
+import logging
+import threading
+import time
+from typing import Callable, Optional
+
+_log = logging.getLogger(__name__)
+
+
+class QosMonitor:
+    """
+    Background monitor for QoS rule violations.
+    Periodically checks throughput against rate limits and alerts.
+    """
+
+    def __init__(self, check_interval: int = 5):
+        """
+        Initialize the QoS monitor.
+
+        Args:
+            check_interval: Seconds between throughput checks (default 5)
+        """
+        self.check_interval = check_interval
+        self.active = False
+        self.alert_callback: Optional[Callable[[dict], None]] = None
+        self._monitor_thread = None
+        self._should_stop = False
+        self.last_violations = {}  # rule_id -> {type, ts, details}
+
+    def set_alert_callback(self, callback: Callable[[dict], None]) -> None:
+        """
+        Set a callback function to be called when a violation is detected.
+        Callback receives dict with: rule_id, violation_type, details.
+        """
+        self.alert_callback = callback
+
+    def start(self) -> bool:
+        """
+        Start the QoS monitor daemon.
+
+        Returns:
+            True if started successfully
+        """
+        if self.active:
+            return True
+
+        try:
+            self._should_stop = False
+
+            self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
+            self._monitor_thread.start()
+
+            self.active = True
+            _log.info("QoS Monitor started")
+
+            return True
+
+        except Exception as e:
+            _log.error(f"Failed to start QoS Monitor: {e}")
+            return False
+
+    def stop(self) -> bool:
+        """
+        Stop the QoS monitor daemon.
+
+        Returns:
+            True if stopped successfully
+        """
+        if not self.active:
+            return True
+
+        try:
+            self._should_stop = True
+
+            if self._monitor_thread:
+                self._monitor_thread.join(timeout=5)
+                self._monitor_thread = None
+
+            self.active = False
+            _log.info("QoS Monitor stopped")
+
+            return True
+
+        except Exception as e:
+            _log.error(f"Error stopping QoS Monitor: {e}")
+            return False
+
+    def _monitor_loop(self) -> None:
+        """
+        Background loop that periodically checks QoS rule violations.
+        """
+        _log.debug(f"QoS Monitor loop started (interval={self.check_interval}s)")
+
+        while not self._should_stop:
+            try:
+                self._check_violations()
+                time.sleep(self.check_interval)
+
+            except Exception as e:
+                _log.warning(f"Error in QoS Monitor loop: {e}")
+                time.sleep(self.check_interval)
+
+    def _check_violations(self) -> None:
+        """
+        Check current throughput for all enabled QoS rules.
+        Alert if any rule's throughput exceeds its limit.
+        """
+        # Import here to avoid circular dependencies
+        from ..tools.qos import (
+            load_qos_rules,
+            calculate_rule_throughput,
+            log_violation,
+        )
+
+        rules = load_qos_rules()
+        enabled_rules = [r for r in rules if r.get("enabled", True)]
+
+        for rule in enabled_rules:
+            rule_id = rule.get("id")
+            rate_limit = rule.get("rate_limit_kbps", 0)
+
+            if rate_limit <= 0:
+                # No limit, skip
+                continue
+
+            rx_kbps, tx_kbps, over_limit = calculate_rule_throughput(rule_id)
+            total_kbps = rx_kbps + tx_kbps
+
+            if over_limit and total_kbps > rate_limit:
+                # Violation detected
+                violation = {
+                    "rule_id": rule_id,
+                    "name": rule.get("name"),
+                    "type": rule.get("type"),
+                    "rate_limit": rate_limit,
+                    "actual_throughput": total_kbps,
+                    "violation_pct": int((total_kbps / rate_limit) * 100),
+                    "ts": time.time(),
+                }
+
+                # Check if this is a new violation (not already alerted recently)
+                last_violation = self.last_violations.get(rule_id)
+                time_since_last = time.time() - (last_violation.get("ts", 0) if last_violation else 0)
+
+                # Alert if first violation or 60+ seconds since last alert
+                if not last_violation or time_since_last > 60:
+                    details = f"{violation['violation_pct']}% of limit ({total_kbps:.1f} kbps vs {rate_limit} kbps)"
+
+                    log_violation(rule_id, "rate_limit_exceeded", details)
+
+                    if self.alert_callback:
+                        self.alert_callback(violation)
+
+                    _log.warning(f"QoS Violation: {rule.get('name')} - {details}")
+
+                    self.last_violations[rule_id] = violation
+
+
+# ──────────────────────────── Module-level Singleton ──────────────────────────
+
+_monitor_instance: Optional[QosMonitor] = None
+_monitor_lock = threading.Lock()
+
+
+def get_monitor(check_interval: int = 5) -> QosMonitor:
+    """Get or create the singleton QoS monitor instance."""
+    global _monitor_instance
+
+    if _monitor_instance is None:
+        with _monitor_lock:
+            if _monitor_instance is None:
+                _monitor_instance = QosMonitor(check_interval=check_interval)
+
+    return _monitor_instance
+
+
+def start_qos_monitor() -> bool:
+    """Start the global QoS monitor."""
+    monitor = get_monitor()
+    return monitor.start()
+
+
+def stop_qos_monitor() -> bool:
+    """Stop the global QoS monitor."""
+    monitor = get_monitor()
+    return monitor.stop()
+
+
+def is_qos_monitor_running() -> bool:
+    """Check if QoS monitor is running."""
+    monitor = get_monitor()
+    return monitor.is_running()
+
+
+def set_monitor_alert_callback(callback: Callable[[dict], None]) -> None:
+    """Set the alert callback for the monitor."""
+    monitor = get_monitor()
+    monitor.set_alert_callback(callback)

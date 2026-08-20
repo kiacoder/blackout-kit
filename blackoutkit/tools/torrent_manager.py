@@ -309,11 +309,14 @@ class TorrentDownloadManager:
 
 # Singleton instance
 _manager: Optional[TorrentDownloadManager] = None
+_manager_lock = threading.Lock()
 
 
 def get_torrent_manager() -> TorrentDownloadManager:
-    """Get or create the torrent download manager singleton."""
+    """Get or create the torrent download manager singleton (thread-safe)."""
     global _manager
     if _manager is None:
-        _manager = TorrentDownloadManager()
+        with _manager_lock:
+            if _manager is None:  # Double-check locking pattern
+                _manager = TorrentDownloadManager()
     return _manager
