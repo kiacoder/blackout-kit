@@ -62,7 +62,7 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | Download manager | Multi-threaded downloads with resume, queue, and speed limits | **Done** — `blackout download add/list/start/cancel/watch` |
 | Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | **Done** — `blackout media add/list/watch/cancel/clear` (yt-dlp wrapper, format selection, ~/Downloads/blackout-media) |
 | Torrent/Magnet support | Lightweight terminal-based torrent client | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` (libtorrent wrapper, seed ratio control, peer tracking, ~/Downloads/blackout-torrents) |
-| Traffic shaper | QoS rules — prioritize/govern specific apps or protocols | **Done** — `blackout tools qos rules/stats/mode/violations` (per-app/protocol/port rules, active WinDivert shaping, priority 0-100, monitor/enforce modes). **WinDivert auto-installation verified ✅** |
+| Monitor-only QoS | Persist and inspect app/protocol/port/interface rule metadata | **Done** — `blackout tools qos rules/stats/mode/violations` stores matching, priority, and optional rate-limit metadata; it provides zero-value placeholder statistics and stored violation inspection. It does not control live traffic or activate WinDivert. |
 | Bandwidth caps | Set daily/monthly limits per interface | **Done** — `blackout tools bandwidth-cap set/list/stats/remove` (daily/monthly quotas with % alert threshold) |
 | Traffic logging | Persistent log of network usage by app/protocol/time | **Done** — `blackout tools traffic-log list/stats/hourly/clear/prune/info` (JSONL audit trail, per-app/protocol aggregation) |
 | Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | **Done** — `blackout tools adblock sources/custom/whitelist/status/stats/log/update` (blocklist management, domain blocking, query logging) |
@@ -73,8 +73,9 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 
 | Feature | What it does | Why it matters |
 |---|---|---|
-| File scanner | Scan files with Windows Defender / ClamAV from the CLI | "Scan this download before I open it" |
-| VirusTotal integration | Calculate file hash and check 70+ AV engines via API | Zero-execution malware check |
+| File scanner | Scan files with the installed Windows Defender CLI | **Done** — `blackout tools scan-file <path>` scans one explicit local file without remediation; ClamAV remains out of scope |
+| Local SHA-256 fingerprint | Stream a local file and report a stable cryptographic fingerprint | **Done** — `blackout tools file-hash <path>` verifies a download without sending it anywhere; no upload, lookup, API key, or network action |
+| VirusTotal integration | Upload or look up a file hash through a remote AV service | **Not planned** — Blackout Kit remains local-only and does not contact VirusTotal |
 | MAC Address Spoofer | Randomize Wi-Fi MAC to avoid tracking on public networks | Airport/Cafe privacy |
 | Public Wi-Fi Honeypot | Open a fake port to detect if someone on the cafe Wi-Fi is scanning you | "192.168.1.14 is scanning your computer" |
 | Malware network detection | Alert on suspicious outbound connections (C2 patterns, mining pools) | Catch malware by its network behavior |
@@ -125,8 +126,8 @@ Before adding new features, the foundation must be reinforced:
 | 1.1.x | VPN/bypass engines, stabilization, docs | Shipped |
 | 1.2.x | Russia support: RU profile, presets, XHTTP, AmneziaWG, smart rotation, diagnostics | Shipped |
 | 1.3.x | Network analysis: subnet calc, connection table, port scanner, LAN discovery, DNS inspector, speedtest history, latency monitor, bandwidth monitor, packet capture — Phase 1 fully shipped | Shipped |
-| 1.4.x | Traffic & downloads: download manager, traffic shaper, ad blocking, usage logging | Planned |
-| 1.5.x | Antivirus & security: file scanner, malware detection, phishing protection, hardening audit | Planned |
+| 1.4.x | Traffic & downloads: download manager, monitor-only QoS, ad blocking, usage logging | Shipped |
+| 1.5.x | Antivirus & security: Defender-only local file scanner and local SHA-256 fingerprint shipped; broader malware detection, phishing protection, and hardening audit remain planned | In progress |
 | 1.6.x+ | Pro: PCAP export, automation, REST API, web dashboard | Future |
 
 ---

@@ -215,6 +215,36 @@ def test_file_hash_forwards_path_to_legacy_dispatcher():
     assert args.path == "C:/safe/sample.bin"
 
 
+def test_qos_help_advertises_only_monitor_only_contract():
+    result = runner.invoke(typer_cli.app, ["tools", "qos", "--help"])
+    output = result.output.lower()
+
+    assert result.exit_code == 0, result.output
+    assert "off|monitor" in output
+    assert "stored rate-limit metadata" in output
+    assert "enforce" not in output
+    assert "traffic shaping" not in output
+
+
+def test_qos_cli_rejects_retired_mode_with_supported_modes(monkeypatch):
+    from blackoutkit import cli
+    from blackoutkit.tools import qos
+
+    printed = []
+    monkeypatch.setattr(qos, "set_enforcement_mode", lambda _mode: False)
+    monkeypatch.setattr(cli.console, "print", lambda message: printed.append(str(message)))
+
+    cli.cmd_tools(type("Args", (), {
+        "tools_command": "qos",
+        "qos_subcmd": "mode",
+        "mode": "enforce",
+    })())
+
+    assert printed == [
+        "[error]Invalid mode: enforce. Supported modes: off, monitor.[/error]"
+    ]
+
+
 def test_country_set_forwards_code():
     with patch("blackoutkit.cli.cmd_country") as cmd_country:
         typer_cli.country_set("RU")
@@ -311,3 +341,20 @@ def test_shield_enables_linux_kill_switch_only_on_success(monkeypatch):
     enable_kill_switch.assert_called_once()
     set_value.assert_called_once_with("kill_switch", True)
     assert any("Linux kill switch enabled" in message for message in printed)
+
+
+def test_panic_uses_public_daemon_stop_without_system_side_effects():
+    from blackoutkit import cli
+
+    with patch("blackoutkit.daemon.stop") as stop, \
+         patch("blackoutkit.proxy_manager.clear_system_proxy") as clear_proxy, \
+         patch("blackoutkit.security.disable_kill_switch") as disable_kill_switch, \
+         patch("blackoutkit.settings.set_value") as set_value, \
+         patch("blackoutkit.tools.flush_dns") as flush_dns:
+        cli.cmd_panic(object())
+
+    stop.assert_called_once_with()
+    clear_proxy.assert_called_once_with()
+    disable_kill_switch.assert_called_once_with()
+    set_value.assert_called_once_with("kill_switch", False)
+    flush_dns.assert_called_once_with()

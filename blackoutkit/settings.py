@@ -176,12 +176,12 @@ DEFAULTS = {
     "adblock_auto_update_interval_hours": 24,  # Auto-update blocklists every N hours
     "adblock_query_log_enabled": False,  # Log all DNS queries (privacy concern)
 
-    # QoS (Quality of Service)
-    "qos_enabled": False,               # Enable QoS traffic shaping rules
-    "qos_enforcement_mode": "monitor",  # off / monitor (alerts only) / enforce (active shaping)
-    "qos_default_priority": 50,         # Default priority for new rules (0-100)
-    "qos_alert_threshold_pct": 110,     # Alert when rule throughput exceeds limit by N% (e.g. 110 = 10% over)
-    "qos_rate_limit_precision_ms": 100, # Token bucket granularity in milliseconds
+    # QoS (monitor-only local configuration and inspection)
+    "qos_enabled": False,               # Enable persisted QoS rule metadata
+    "qos_enforcement_mode": "monitor", # off / monitor
+    "qos_default_priority": 50,         # Default priority metadata for new rules (0-100)
+    "qos_alert_threshold_pct": 110,     # Stored threshold metadata for violation inspection
+    "qos_rate_limit_precision_ms": 100, # Stored compatibility metadata
 }
 
 
@@ -244,7 +244,7 @@ _VALIDATORS: dict[str, tuple] = {
     "download_max_parallel": (int, lambda v: 1 <= v <= 32, "must be 1–32"),
     "download_auto_resume": (bool, lambda v: True, "must be true or false"),
     "qos_enabled": (bool, lambda v: True, "must be true or false"),
-    "qos_enforcement_mode": (str, lambda v: v in ("off", "monitor", "enforce"), "must be: off / monitor / enforce"),
+    "qos_enforcement_mode": (str, lambda v: v in ("off", "monitor"), "must be: off / monitor"),
     "qos_default_priority": (int, lambda v: 0 <= v <= 100, "must be 0–100"),
     "qos_alert_threshold_pct": (int, lambda v: 100 <= v <= 500, "must be 100–500"),
     "qos_rate_limit_precision_ms": (int, lambda v: 10 <= v <= 1000, "must be 10–1000"),
@@ -254,6 +254,18 @@ _VALIDATORS: dict[str, tuple] = {
 # Any setting can be overridden via environment:
 #   BLACKOUT_XRay_HTTP_PORT=9999  →  xray_http_port = 9999
 _ENV_PREFIX = "BLACKOUT_"
+_QOS_ENFORCEMENT_MODES = frozenset({"off", "monitor"})
+
+
+def _normalize_qos_enforcement_mode(value) -> str:
+    return value if value in _QOS_ENFORCEMENT_MODES else "monitor"
+
+
+def _normalize_qos_settings(settings: dict) -> dict:
+    settings["qos_enforcement_mode"] = _normalize_qos_enforcement_mode(
+        settings.get("qos_enforcement_mode")
+    )
+    return settings
 
 
 def _apply_env_overrides(settings: dict) -> dict:
@@ -276,7 +288,7 @@ def _apply_env_overrides(settings: dict) -> dict:
                 settings[key] = env_raw
         except (ValueError, TypeError):
             pass   # Bad env value → ignore silently, keep file value
-    return settings
+    return _normalize_qos_settings(settings)
 
 
 # ──────────────────────────── Public API ─────────────────────────
@@ -288,7 +300,7 @@ def _load_plain_settings() -> dict:
         saved = json.loads(SETTINGS_FILE.read_text())
         merged = dict(DEFAULTS)
         merged.update(saved)
-        return merged
+        return _normalize_qos_settings(merged)
     except Exception as exc:
         _log.warning("Settings file '%s' is corrupted (%s). Falling back to defaults.", SETTINGS_FILE, exc)
         return dict(DEFAULTS)
@@ -326,7 +338,7 @@ def _write_plain_settings(settings: dict) -> None:
 def save(settings: dict):
     """Persist settings atomically while preserving activated secret vault storage (thread-safe)."""
     with _settings_lock:
-        stored = dict(settings)
+        stored = _normalize_qos_settings(dict(settings))
         if stored.get("secrets_vault_enabled", False):
             vault.read_secrets()
             vault.write_secrets(stored)

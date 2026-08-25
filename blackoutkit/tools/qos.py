@@ -1,13 +1,13 @@
 """
-Blackout Kit - Quality of Service (QoS) / Traffic Shaping.
-Define and monitor per-app, per-protocol, and per-interface traffic rules.
+Blackout Kit - monitor-only Quality of Service (QoS) configuration.
+Persist and inspect per-app, per-protocol, per-port, and per-interface rule metadata.
 
-Core features:
+Supported features:
   - Rule types: app, protocol, port, interface
-  - Priority-based rate limiting (0-100 scale)
-  - Per-rule throughput monitoring and alerting
-  - Active WinDivert packet interception (Phase 2)
-  - Real-time stats and violations tracking
+  - Stored priority and rate-limit metadata (0-100 priority scale)
+  - Rule matching and stored violation inspection
+  - Placeholder zero-throughput statistics
+  - Off and monitor modes only
 """
 import json
 import logging
@@ -40,10 +40,26 @@ class RuleType(str, Enum):
 
 
 class EnforcementMode(str, Enum):
-    """QoS enforcement modes."""
+    """Supported QoS monitoring modes."""
     OFF = "off"
     MONITOR = "monitor"
-    ENFORCE = "enforce"
+
+
+_DEFAULT_GLOBAL_SETTINGS = {
+    "qos_enabled": False,
+    "default_priority": 50,
+    "enforcement_mode": "monitor",
+}
+_SUPPORTED_ENFORCEMENT_MODES = frozenset(mode.value for mode in EnforcementMode)
+
+
+def _normalize_global_settings(settings: Optional[dict]) -> dict:
+    normalized = dict(_DEFAULT_GLOBAL_SETTINGS)
+    if isinstance(settings, dict):
+        normalized.update(settings)
+    if normalized.get("enforcement_mode") not in _SUPPORTED_ENFORCEMENT_MODES:
+        normalized["enforcement_mode"] = EnforcementMode.MONITOR.value
+    return normalized
 
 
 # ──────────────────────────── Storage & Persistence ──────────────────────────
@@ -51,7 +67,7 @@ class EnforcementMode(str, Enum):
 def _load_rules_unsafe() -> dict:
     """Load QoS rules from JSON (internal, no error handling)."""
     if not QOS_RULES_FILE.exists():
-        return {"rules": [], "global_settings": {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"}}
+        return {"rules": [], "global_settings": dict(_DEFAULT_GLOBAL_SETTINGS)}
     return json.loads(QOS_RULES_FILE.read_text())
 
 
@@ -78,7 +94,7 @@ def save_qos_rules(rules: list[dict], settings: Optional[dict] = None) -> None:
 
         data = {
             "rules": rules,
-            "global_settings": settings or {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"},
+            "global_settings": _normalize_global_settings(settings),
         }
 
         try:
@@ -93,18 +109,18 @@ def save_qos_rules(rules: list[dict], settings: Optional[dict] = None) -> None:
                 except Exception:
                     pass
                 raise
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.warning("Failed to save QoS rules: %s", exc)
 
 
 def _get_global_settings() -> dict:
-    """Get global QoS settings (thread-safe)."""
+    """Get normalized monitor-only QoS settings (thread-safe)."""
     with _qos_lock:
         try:
             data = _load_rules_unsafe()
-            return data.get("global_settings", {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"})
-    except Exception:
-        return {"qos_enabled": False, "default_priority": 50, "enforcement_mode": "monitor"}
+            return _normalize_global_settings(data.get("global_settings"))
+        except Exception:
+            return dict(_DEFAULT_GLOBAL_SETTINGS)
 
 
 # ──────────────────────────── Rule Management ──────────────────────────
@@ -128,8 +144,8 @@ def add_rule(
         rule_type: "app", "protocol", "port", or "interface"
         target: Process name (app), protocol (TCP/UDP), port list, or interface name
         priority: 0-100 (0=lowest, 100=highest)
-        rate_limit_kbps: 0 = no limit, >0 = throttle to this rate
-        burst_kb: Burst size for token bucket
+        rate_limit_kbps: Stored rate-limit metadata (0 = unset)
+        burst_kb: Stored rule metadata retained for existing rule files
         port_filter: Comma-separated port list (for port type)
         interface: Interface scope (eth0, wlan0, etc.)
     """
@@ -289,13 +305,7 @@ _rule_throughput_lock = __import__('threading').Lock()
 
 
 def calculate_rule_throughput(rule_id: str, since_ts: Optional[float] = None) -> tuple[float, float, bool]:
-    """
-    Calculate real-time throughput for a rule.
-    Returns: (rx_kbps, tx_kbps, over_limit)
-
-    This is a placeholder that uses stored state.
-    In production, this would integrate with WinDivert counters or traffic logs.
-    """
+    """Return placeholder zero-throughput statistics for one stored rule."""
     global _rule_throughput_state
 
     rule = get_rule(rule_id)
@@ -307,8 +317,7 @@ def calculate_rule_throughput(rule_id: str, since_ts: Optional[float] = None) ->
     with _rule_throughput_lock:
         state = _rule_throughput_state.get(rule_id, {"rx": 0, "tx": 0, "ts": time.time()})
 
-    # In a real implementation, this would query WinDivert or read from traffic logs
-    # For now, return zero throughput
+    # Monitor-only QoS does not collect or enforce live traffic throughput.
     rx_kbps = 0.0
     tx_kbps = 0.0
     over_limit = (rx_kbps + tx_kbps) > rate_limit if rate_limit > 0 else False
@@ -374,8 +383,8 @@ def compile_qos_rules_for_shaper() -> list[dict]:
 
 def get_qos_stats(rule_id: Optional[str] = None) -> dict:
     """
-    Get QoS statistics and status.
-    If rule_id is specified, return stats for that rule only.
+    Get stored QoS configuration and placeholder statistics.
+    If rule_id is specified, return the stored metadata for that rule.
     Returns dict with: total_rules, enabled_rules, enforcement_mode, per_rule_stats[].
     """
     rules = load_qos_rules()
@@ -419,7 +428,7 @@ def get_qos_stats(rule_id: Optional[str] = None) -> dict:
         return {
             "total_rules": len(rules),
             "enabled_rules": len(enabled_rules),
-            "enforcement_mode": settings.get("enforcement_mode", "monitor"),
+            "enforcement_mode": _normalize_global_settings(settings)["enforcement_mode"],
             "per_rule_stats": per_rule,
         }
 
@@ -445,8 +454,8 @@ def log_violation(rule_id: str, violation_type: str, details: str) -> None:
     try:
         with open(QOS_VIOLATIONS_FILE, 'a') as f:
             f.write(entry_json + '\n')
-    except Exception:
-        pass
+    except OSError as exc:
+        _log.warning("Failed to record QoS violation: %s", exc)
 
 
 def get_violations(since_ts: Optional[float] = None, limit: int = 100) -> list[dict]:
@@ -493,8 +502,8 @@ def set_global_qos_enabled(enabled: bool) -> None:
 
 
 def set_enforcement_mode(mode: str) -> bool:
-    """Set enforcement mode: 'off', 'monitor', or 'enforce'. Returns True if valid."""
-    if mode not in ["off", "monitor", "enforce"]:
+    """Set the monitor-only QoS mode. Returns True for 'off' or 'monitor'."""
+    if mode not in _SUPPORTED_ENFORCEMENT_MODES:
         return False
 
     rules = load_qos_rules()
@@ -506,6 +515,5 @@ def set_enforcement_mode(mode: str) -> bool:
 
 
 def get_enforcement_mode() -> str:
-    """Get current enforcement mode."""
-    settings = _get_global_settings()
-    return settings.get("enforcement_mode", "monitor")
+    """Get the current monitor-only QoS mode."""
+    return _get_global_settings()["enforcement_mode"]

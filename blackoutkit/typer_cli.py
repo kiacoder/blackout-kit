@@ -779,27 +779,32 @@ def tools_qos(
     name: str = typer.Option(None, "--name", "-n", help="Rule name (for add)"),
     rule_type: str = typer.Option(None, "--type", "-t", help="Rule type: app|protocol|port|interface"),
     target: str = typer.Option(None, "--target", help="Target: process name, protocol, port, or interface"),
-    priority: int = typer.Option(50, "--priority", "-p", help="Priority 0-100 (default 50)"),
-    rate_limit: int = typer.Option(0, "--rate-limit", "-r", help="Rate limit in kbps (0=unlimited)"),
+    priority: int = typer.Option(50, "--priority", "-p", help="Stored priority metadata 0-100 (default 50)"),
+    rate_limit: int = typer.Option(0, "--rate-limit", "-r", help="Stored rate-limit metadata in kbps (0=unset)"),
     rule_id: str = typer.Option(None, "--id", help="Rule ID (for remove/enable/disable)"),
-    mode: str = typer.Option(None, help="For 'mode': off|monitor|enforce"),
+    mode: str = typer.Option(None, help="For 'mode': off|monitor"),
     hours: int = typer.Option(24, "--hours", "-h", help="Last N hours to query"),
     limit: int = typer.Option(50, "--limit", "-l", help="Max entries to show"),
 ):
-    """Quality of Service (QoS) - traffic shaping and prioritization rules.
+    """Manage monitor-only QoS rule metadata and stored inspection records.
+
+    Rules persist app, protocol, port, and interface metadata. Priority and
+    rate-limit fields are stored configuration only; they do not control live
+    traffic. Statistics intentionally report zero-value placeholders because
+    this command does not measure or control throughput.
 
     Subcommands:
-      rules [list|add|remove|enable|disable]  - Manage QoS rules
-      stats                                   - View QoS statistics
-      mode [off|monitor|enforce]              - Set enforcement mode
-      violations                              - View recent violations
+      rules [list|add|remove|enable|disable]  - Manage stored QoS rules
+      stats                                   - Inspect stored rules and placeholders
+      mode [off|monitor]                      - Set monitoring mode
+      violations                              - View stored violation records
 
     Examples:
       blackout tools qos rules list
-      blackout tools qos rules add --type app --target chrome.exe --name chrome_limit
+      blackout tools qos rules add --type app --target chrome.exe --name chrome_metadata
       blackout tools qos rules remove --id rule_001
       blackout tools qos stats
-      blackout tools qos mode enforce
+      blackout tools qos mode monitor
       blackout tools qos violations --hours 24
     """
     from .cli import cmd_tools

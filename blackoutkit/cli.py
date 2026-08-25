@@ -2247,7 +2247,7 @@ def cmd_tools(args):
         from .tools.qos import (
             load_qos_rules, add_rule, remove_rule, enable_rule, disable_rule,
             list_rules, get_qos_stats, set_enforcement_mode, get_enforcement_mode,
-            compile_qos_rules_for_shaper, get_violations
+            get_violations
         )
         from rich.table import Table
 
@@ -2267,13 +2267,13 @@ def cmd_tools(args):
                 table.add_column("Name", style="white")
                 table.add_column("Type", style="yellow")
                 table.add_column("Target", style="green")
-                table.add_column("Priority", style="magenta")
-                table.add_column("Rate (kbps)", style="blue")
+                table.add_column("Stored Priority", style="magenta")
+                table.add_column("Stored Rate (kbps)", style="blue")
                 table.add_column("Status", style="")
 
                 for rule in rules:
                     enabled = "[green]●[/green]" if rule.get("enabled", True) else "[dim]○[/dim]"
-                    rate = f"{rule.get('rate_limit_kbps', 0)}" if rule.get("rate_limit_kbps", 0) > 0 else "unlimited"
+                    rate = f"{rule.get('rate_limit_kbps', 0)}" if rule.get("rate_limit_kbps", 0) > 0 else "unset"
                     table.add_row(
                         rule["id"][:8],
                         rule["name"],
@@ -2343,37 +2343,35 @@ def cmd_tools(args):
             stats = get_qos_stats(rule_id)
 
             if rule_id:
-                console.print(f"\n[bold cyan]QoS Rule Stats: {stats.get('name')}[/bold cyan]")
+                console.print(f"\n[bold cyan]QoS Rule Metadata: {stats.get('name')}[/bold cyan]")
                 console.print(f"  Type: {stats.get('type')}")
-                console.print(f"  Priority: {stats.get('priority')}/100")
-                console.print(f"  Rate Limit: {stats.get('rate_limit_kbps', 0)} kbps")
+                console.print(f"  Stored Priority: {stats.get('priority')}/100")
+                console.print(f"  Stored Rate Metadata: {stats.get('rate_limit_kbps', 0)} kbps (0 = unset)")
                 console.print(f"  Status: {'[green]enabled[/green]' if stats.get('enabled') else '[dim]disabled[/dim]'}")
-                console.print(f"  Current RX: {stats.get('current_rx_kbps', 0):.1f} kbps")
-                console.print(f"  Current TX: {stats.get('current_tx_kbps', 0):.1f} kbps")
-                console.print(f"  Over limit: {'[warning]Yes[/warning]' if stats.get('over_limit') else '[green]No[/green]'}")
+                console.print("  RX Placeholder: 0.0 kbps (no live measurement)")
+                console.print("  TX Placeholder: 0.0 kbps (no live measurement)")
+                console.print("  Live enforcement: not supported")
             else:
-                console.print(f"\n[bold cyan]QoS Statistics[/bold cyan]")
+                console.print(f"\n[bold cyan]QoS Stored Configuration[/bold cyan]")
                 console.print(f"  Total rules: {stats.get('total_rules')}")
                 console.print(f"  Enabled: {stats.get('enabled_rules')}")
-                console.print(f"  Mode: {stats.get('enforcement_mode').upper()}")
+                console.print(f"  Monitoring mode: {stats.get('enforcement_mode').upper()}")
+                console.print("  Throughput values below are intentional zero-value placeholders.")
 
                 per_rule = stats.get('per_rule_stats', [])
                 if per_rule:
-                    table = Table(title="Per-Rule Stats")
+                    table = Table(title="Per-Rule Placeholder Statistics")
                     table.add_column("Rule", style="cyan")
-                    table.add_column("Priority", style="magenta")
-                    table.add_column("RX (kbps)", style="blue")
-                    table.add_column("TX (kbps)", style="blue")
-                    table.add_column("Over Limit", style="")
+                    table.add_column("Stored Priority", style="magenta")
+                    table.add_column("RX Placeholder (kbps)", style="blue")
+                    table.add_column("TX Placeholder (kbps)", style="blue")
 
                     for item in per_rule:
-                        over = "[warning]●[/warning]" if item.get('over_limit') else "[green]–[/green]"
                         table.add_row(
                             item['name'],
                             str(item['priority']),
                             f"{item.get('rx_kbps', 0):.1f}",
                             f"{item.get('tx_kbps', 0):.1f}",
-                            over
                         )
 
                     console.print(table)
@@ -2383,15 +2381,17 @@ def cmd_tools(args):
 
             if not new_mode:
                 current = get_enforcement_mode()
-                console.print(f"\n[bold cyan]QoS Enforcement Mode[/bold cyan]")
+                console.print(f"\n[bold cyan]QoS Monitoring Mode[/bold cyan]")
                 console.print(f"  Current: [bold]{current.upper()}[/bold]")
-                console.print(f"  Options: off, monitor, enforce")
+                console.print("  Options: off, monitor")
                 return
 
             if set_enforcement_mode(new_mode):
-                console.print(f"[success]✓ QoS mode set to: {new_mode.upper()}[/success]")
+                console.print(f"[success]✓ QoS monitoring mode set to: {new_mode.upper()}[/success]")
             else:
-                console.print(f"[error]Invalid mode: {new_mode}[/error]")
+                console.print(
+                    f"[error]Invalid mode: {new_mode}. Supported modes: off, monitor.[/error]"
+                )
 
         elif subcmd == "violations":
             hours = getattr(args, "hours", 24)
