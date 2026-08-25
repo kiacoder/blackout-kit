@@ -1073,6 +1073,24 @@ def _format_bps(bps: float) -> str:
     return f"{bps:.1f} TB/s"
 
 
+MAX_BANDWIDTH_HISTORY = 300
+MAX_BANDWIDTH_INTERFACES = 32
+
+
+def _record_bandwidth_history(history: dict[str, list[float]], rates: dict[str, dict]) -> None:
+    """Record bounded download-rate samples for the most recently observed interfaces."""
+    for name, rate in rates.items():
+        samples = history.pop(name, None)
+        if samples is None:
+            if len(history) >= MAX_BANDWIDTH_INTERFACES:
+                del history[next(iter(history))]
+            samples = []
+        history[name] = samples
+        samples.append(rate["rx_bps"])
+        if len(samples) > MAX_BANDWIDTH_HISTORY:
+            samples.pop(0)
+
+
 def _latency_monitor_panel(host: str, history: list[float | None], window: int = 60) -> Panel:
     display = history[-window:]
     stats = net_tools.ping_stats(display) if display else {"avg": None, "min": None, "max": None, "jitter": None, "loss_pct": 0.0}
@@ -1852,11 +1870,14 @@ def cmd_tools(args):
             with Live(_latency_monitor_panel(host, history), console=console, refresh_per_second=4) as live:
                 while True:
                     history.append(net_tools.ping_once(host))
+        MAX_HISTORY = 300  # ~5 minutes at 1Hz sampling
                     live.update(_latency_monitor_panel(host, history))
                     time.sleep(interval)
         except KeyboardInterrupt:
             console.print("\n[muted]Latency monitor stopped.[/muted]")
 
+                    if len(history) > MAX_HISTORY:
+                        history.pop(0)
     elif args.tools_command == "bandwidth":
         interval = getattr(args, "interval", 1.0)
         history: dict[str, list[float]] = {}
@@ -1869,8 +1890,7 @@ def cmd_tools(args):
                     curr = net_tools.get_interface_io_counters()
                     rates = net_tools.compute_bandwidth_rates(prev, curr, interval)
                     prev = curr
-                    for name, r in rates.items():
-                        history.setdefault(name, []).append(r["rx_bps"])
+                    _record_bandwidth_history(history, rates)
                     live.update(_bandwidth_panel(rates, history))
         except KeyboardInterrupt:
             console.print("\n[muted]Bandwidth monitor stopped.[/muted]")
@@ -2731,7 +2751,7 @@ def cmd_panic(args):
     # 1. Stop daemon
     console.print("[dim]→ Stopping daemon & all engines...[/dim]")
     from . import daemon
-    daemon.send_command("stop")
+    daemon.stop()
     
     # 2. Clear System Proxy
     console.print("[dim]→ Clearing Windows system proxy...[/dim]")

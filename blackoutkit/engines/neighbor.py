@@ -116,6 +116,7 @@ class NeighborConnectEngine(Engine):
         self.peer_port = peer_port
         self._running  = False
         self._thread: threading.Thread | None = None
+        self._stop_event = threading.Event()
 
         # Try cache first if no peer specified
         if not peer_host and not peer_port:
@@ -164,16 +165,19 @@ class NeighborConnectEngine(Engine):
                             pass
                 except socket.timeout:
                     pass
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as e:
+                    import logging
+                    logging.debug("Neighbor discovery socket error: %s", e)
+        except Exception as e:
+            import logging
+            logging.debug("Neighbor discovery exception: %s", e)
         finally:
             if sock is not None:
                 try:
                     sock.close()
-                except Exception:
-                    pass
+                except Exception as close_e:
+                    import logging
+                    logging.debug("Failed to close neighbor discovery socket: %s", close_e)
         return None
 
     @staticmethod
@@ -203,21 +207,26 @@ class NeighborConnectEngine(Engine):
 
     def _heartbeat_loop(self):
         """Keep checking that the peer proxy is reachable."""
-        while self._running:
-            try:
-                with socket.create_connection((self.peer_host, self.peer_port), timeout=5):
-                    pass
-                time.sleep(10)
-            except Exception:
-                # Peer went offline
-                self._running = False
-                break
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    with socket.create_connection((self.peer_host, self.peer_port), timeout=5):
+                        pass
+                except OSError:
+                    self._running = False
+                    break
+                if self._stop_event.wait(10):
+                    break
+        finally:
+            self._running = False
 
     # ── Engine interface ─────────────────────────────────────────
 
     def start(self) -> bool:
         if not self.peer_host or not self.peer_port:
             return False
+        if self._thread and self._thread.is_alive():
+            return True
 
         # Verify the peer is reachable before claiming success
         try:
@@ -230,18 +239,24 @@ class NeighborConnectEngine(Engine):
         try:
             from ..scanner import neighbor_cache
             neighbor_cache.add_neighbor(self.peer_host, self.peer_port)
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log.warning("Failed to persist neighbor cache: %s", exc)
 
+        self._stop_event.clear()
         self._running = True
         self._thread  = threading.Thread(target=self._heartbeat_loop, daemon=True)
         self._thread.start()
         return True
 
     def stop(self):
+        thread = self._thread
         self._running = False
-        if self._thread:
-            self._thread.join(timeout=5)
+        self._stop_event.set()
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=5)
+        if thread and thread.is_alive():
+            self._log.warning("Neighbor heartbeat did not stop within 5 seconds")
+        else:
             self._thread = None
         super().stop()
 

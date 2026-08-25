@@ -20,37 +20,49 @@ class TrafficMonitor:
         self.sample_interval = sample_interval_sec
         self.running = False
         self.thread = None
+        self._stop_event = threading.Event()
         self._known_connections = {}  # Track known conn states to detect lifecycle
 
     def start(self) -> None:
         """Start the traffic monitor thread."""
-        if self.running:
+        if self.thread and self.thread.is_alive():
             return
 
+        self._stop_event.clear()
         self.running = True
         self.thread = threading.Thread(target=self._monitor_loop, daemon=True)
         self.thread.start()
-        _log.debug(f"TrafficMonitor started (interval={self.sample_interval}s)")
+        _log.debug("TrafficMonitor started (interval=%ss)", self.sample_interval)
 
     def stop(self) -> None:
         """Stop the traffic monitor thread."""
+        thread = self.thread
+        self._stop_event.set()
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=5)
+        if thread and thread.is_alive():
+            _log.warning("TrafficMonitor did not stop within 5 seconds")
+            return
         self.running = False
-        if self.thread:
-            self.thread.join(timeout=5)
+        self.thread = None
         _log.debug("TrafficMonitor stopped")
+
+    def is_running(self) -> bool:
+        """Return whether the monitor has an active live worker thread."""
+        return self.running and self.thread is not None and self.thread.is_alive()
 
     def _monitor_loop(self) -> None:
         """Background loop that periodically snapshots connections."""
-        from ..tools.tools import get_active_connections
-        from ..tools.traffic_log import append_connection_log
-
-        while self.running:
-            try:
-                self._snapshot_connections()
-                time.sleep(self.sample_interval)
-            except Exception as e:
-                _log.error(f"TrafficMonitor error: {e}", exc_info=False)
-                time.sleep(self.sample_interval)
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    self._snapshot_connections()
+                except Exception as exc:
+                    _log.error("TrafficMonitor error: %s", exc, exc_info=False)
+                if self._stop_event.wait(self.sample_interval):
+                    break
+        finally:
+            self.running = False
 
     def _snapshot_connections(self) -> None:
         """Capture current connections and log them."""

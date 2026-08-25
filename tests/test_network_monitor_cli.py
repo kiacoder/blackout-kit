@@ -120,3 +120,27 @@ def test_capture_summary_table_no_talkers_omits_section():
     }
     text = _render(cli._capture_summary_table(summary))
     assert "Top talkers" not in text
+
+
+def test_bandwidth_history_caps_samples_per_interface():
+    history = {}
+    for sample in range(cli.MAX_BANDWIDTH_HISTORY + 1):
+        cli._record_bandwidth_history(history, {"eth0": {"rx_bps": float(sample)}})
+
+    assert len(history["eth0"]) == cli.MAX_BANDWIDTH_HISTORY
+    assert history["eth0"][0] == 1.0
+    assert history["eth0"][-1] == float(cli.MAX_BANDWIDTH_HISTORY)
+
+
+def test_bandwidth_history_evicts_oldest_interface_and_refreshes_recency():
+    history = {}
+    for index in range(cli.MAX_BANDWIDTH_INTERFACES):
+        cli._record_bandwidth_history(history, {f"iface-{index}": {"rx_bps": float(index)}})
+
+    cli._record_bandwidth_history(history, {"iface-0": {"rx_bps": 99.0}})
+    cli._record_bandwidth_history(history, {"iface-new": {"rx_bps": 100.0}})
+
+    assert len(history) == cli.MAX_BANDWIDTH_INTERFACES
+    assert "iface-0" in history
+    assert "iface-1" not in history
+    assert "iface-new" in history

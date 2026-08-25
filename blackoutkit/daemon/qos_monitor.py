@@ -34,6 +34,7 @@ class QosMonitor:
         self.alert_callback: Optional[Callable[[dict], None]] = None
         self._monitor_thread = None
         self._should_stop = False
+        self._stop_event = threading.Event()
         self.last_violations = {}  # rule_id -> {type, ts, details}
 
     def set_alert_callback(self, callback: Callable[[dict], None]) -> None:
@@ -44,70 +45,60 @@ class QosMonitor:
         self.alert_callback = callback
 
     def start(self) -> bool:
-        """
-        Start the QoS monitor daemon.
-
-        Returns:
-            True if started successfully
-        """
-        if self.active:
+        """Start the QoS monitor daemon."""
+        if self.is_running():
             return True
 
         try:
             self._should_stop = False
-
+            self._stop_event.clear()
+            self.active = True
             self._monitor_thread = threading.Thread(target=self._monitor_loop, daemon=True)
             self._monitor_thread.start()
-
-            self.active = True
             _log.info("QoS Monitor started")
-
             return True
-
-        except Exception as e:
-            _log.error(f"Failed to start QoS Monitor: {e}")
+        except Exception as exc:
+            self.active = False
+            self._monitor_thread = None
+            _log.error("Failed to start QoS Monitor: %s", exc)
             return False
 
     def stop(self) -> bool:
-        """
-        Stop the QoS monitor daemon.
-
-        Returns:
-            True if stopped successfully
-        """
-        if not self.active:
+        """Stop the QoS monitor daemon."""
+        thread = self._monitor_thread
+        if not self.active and (thread is None or not thread.is_alive()):
             return True
 
-        try:
-            self._should_stop = True
-
-            if self._monitor_thread:
-                self._monitor_thread.join(timeout=5)
-                self._monitor_thread = None
-
-            self.active = False
-            _log.info("QoS Monitor stopped")
-
-            return True
-
-        except Exception as e:
-            _log.error(f"Error stopping QoS Monitor: {e}")
+        self._should_stop = True
+        self._stop_event.set()
+        if thread and thread is not threading.current_thread():
+            thread.join(timeout=5)
+        if thread and thread.is_alive():
+            _log.warning("QoS Monitor did not stop within 5 seconds")
             return False
 
+        self.active = False
+        self._monitor_thread = None
+        _log.info("QoS Monitor stopped")
+        return True
+
+    def is_running(self) -> bool:
+        """Return whether the monitor has an active live worker thread."""
+        return self.active and self._monitor_thread is not None and self._monitor_thread.is_alive()
+
     def _monitor_loop(self) -> None:
-        """
-        Background loop that periodically checks QoS rule violations.
-        """
-        _log.debug(f"QoS Monitor loop started (interval={self.check_interval}s)")
-
-        while not self._should_stop:
-            try:
-                self._check_violations()
-                time.sleep(self.check_interval)
-
-            except Exception as e:
-                _log.warning(f"Error in QoS Monitor loop: {e}")
-                time.sleep(self.check_interval)
+        """Background loop that periodically checks QoS rule violations."""
+        _log.debug("QoS Monitor loop started (interval=%ss)", self.check_interval)
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    self._check_violations()
+                except Exception as exc:
+                    _log.warning("Error in QoS Monitor loop: %s", exc)
+                if self._stop_event.wait(self.check_interval):
+                    break
+        finally:
+            self.active = False
 
     def _check_violations(self) -> None:
         """

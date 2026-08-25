@@ -1,7 +1,11 @@
-import pytest
-import tempfile
+import logging
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
+
 from blackoutkit.engines.base import Engine
 
 class DummyEngine(Engine):
@@ -52,3 +56,47 @@ def test_engine_health_check_addr():
     engine = DummyEngine()
     engine._health_check_addr = ("127.0.0.1", 8080)
     assert engine._health_check_addr[1] == 8080
+
+
+def test_graceful_process_stop_cleans_config_dir_and_clears_process(monkeypatch):
+    class NoSuchProcess(Exception):
+        pass
+
+    child = MagicMock(pid=456)
+    parent = MagicMock()
+    parent.children.return_value = [child]
+    process = MagicMock(pid=123)
+    engine = DummyEngine()
+    config_dir = engine._config_dir
+    engine._process = process
+    fake_psutil = SimpleNamespace(
+        Process=lambda pid: parent,
+        NoSuchProcess=NoSuchProcess,
+    )
+    monkeypatch.setitem(sys.modules, "psutil", fake_psutil)
+
+    engine.stop()
+
+    assert config_dir.exists() is False
+    assert engine._process is None
+    parent.terminate.assert_called_once_with()
+    child.terminate.assert_called_once_with()
+    process.wait.assert_called_once_with(timeout=3.0)
+    parent.kill.assert_not_called()
+    child.kill.assert_not_called()
+
+
+def test_config_directory_cleanup_failure_is_logged(caplog, monkeypatch):
+    engine = DummyEngine()
+    config_dir = engine._config_dir
+    monkeypatch.setattr(
+        "blackoutkit.engines.base.shutil.rmtree",
+        lambda _path: (_ for _ in ()).throw(OSError("permission denied")),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="blackoutkit.engine"):
+        engine._cleanup_config_dir()
+
+    assert config_dir.exists()
+    assert "Failed to clean up config directory" in caplog.text
+    assert "permission denied" in caplog.text

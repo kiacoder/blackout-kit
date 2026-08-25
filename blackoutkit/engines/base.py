@@ -46,60 +46,51 @@ class Engine(ABC):
         Gives the process 3 seconds to exit gracefully, then force-kills.
         Also cleans up the per-engine config directory.
         """
-        if self._dll_stop_func:
-            try:
-                self._dll_stop_func()
-            except Exception as e:
-                self._log.error("Error stopping via DLL: %s", e)
-            self._dll_stop_func = None
-            self._cleanup_config_dir()
-            return
-
-        if self._process is None:
-            self._cleanup_config_dir()
-            return
         try:
-            try:
-                import psutil
-                parent = psutil.Process(self._process.pid)
-                # Graceful terminate — children first, then parent
-                for child in parent.children(recursive=True):
-                    try:
-                        child.terminate()
-                    except psutil.NoSuchProcess:
-                        pass
-                parent.terminate()
-                # Wait up to 3 seconds for clean exit
+            if self._dll_stop_func:
                 try:
-                    self._process.wait(timeout=3.0)
-                    self._log.debug("Engine stopped gracefully.")
-                    return
-                except subprocess.TimeoutExpired:
-                    self._log.warning("Engine did not exit in 3s — force-killing.")
-                # Force-kill anything still alive
-                for child in parent.children(recursive=True):
-                    try:
-                        child.kill()
-                    except psutil.NoSuchProcess:
-                        pass
-                parent.kill()
-            except ImportError:
-                # psutil not available — plain terminate + wait + kill
-                self._process.terminate()
+                    self._dll_stop_func()
+                except Exception as exc:
+                    self._log.error("Error stopping via DLL: %s", exc)
+            elif self._process is not None:
                 try:
-                    self._process.wait(timeout=3.0)
-                except subprocess.TimeoutExpired:
-                    self._process.kill()
-        except Exception as exc:
-            self._log.debug("Stop error (non-fatal): %s", exc)
-            try:
-                self._process.kill()
-            except Exception:
-                pass
+                    import psutil
+                    parent = psutil.Process(self._process.pid)
+                    for child in parent.children(recursive=True):
+                        try:
+                            child.terminate()
+                        except psutil.NoSuchProcess:
+                            self._log.debug("Child process %d already terminated", child.pid)
+                    parent.terminate()
+                    try:
+                        self._process.wait(timeout=3.0)
+                        self._log.debug("Engine stopped gracefully.")
+                    except subprocess.TimeoutExpired:
+                        self._log.warning("Engine did not exit in 3s — force-killing.")
+                        for child in parent.children(recursive=True):
+                            try:
+                                child.kill()
+                            except psutil.NoSuchProcess:
+                                self._log.debug("Child process %d already gone during force-kill", child.pid)
+                        parent.kill()
+                except ImportError:
+                    self._process.terminate()
+                    try:
+                        self._process.wait(timeout=3.0)
+                        self._log.debug("Engine stopped gracefully.")
+                    except subprocess.TimeoutExpired:
+                        self._log.warning("Engine did not exit in 3s — force-killing.")
+                        self._process.kill()
+                except Exception as exc:
+                    self._log.warning("Engine stop encountered an error: %s", exc)
+                    try:
+                        self._process.kill()
+                    except Exception as kill_exc:
+                        self._log.warning("Could not kill engine during cleanup: %s", kill_exc)
         finally:
+            self._dll_stop_func = None
             self._process = None
-
-        self._cleanup_config_dir()
+            self._cleanup_config_dir()
 
     def is_running(self) -> bool:
         """Return True if the engine is alive (subprocess or DLL)."""
@@ -134,9 +125,9 @@ class Engine(ABC):
         """Remove the per-engine config directory. Called by stop()."""
         if self._config_dir and self._config_dir.exists():
             try:
-                shutil.rmtree(self._config_dir, ignore_errors=True)
-            except Exception:
-                pass
+                shutil.rmtree(self._config_dir)
+            except OSError as exc:
+                self._log.warning("Failed to clean up config directory %s: %s", self._config_dir, exc)
 
     # ──────────────────────────── Helpers ────────────────────────
 

@@ -217,7 +217,13 @@ class SNIEngine(Engine):
         table = Table(title="[bold]SNI Auto-Scan Results (HTTP GET Speed Test)[/bold]", border_style="dim")
         table.add_column("Cloudflare IP", style="cyan")
         for host in test_hosts:
-            name = host.split(".")[1] if "www" in host else host.split(".")[0]
+            parts = host.split(".")
+            if "www" in host and len(parts) > 1:
+                name = parts[1]
+            elif len(parts) > 0:
+                name = parts[0]
+            else:
+                name = host
             table.add_column(name.capitalize(), justify="right")
         table.add_column("Score", justify="right", style="bold green")
         

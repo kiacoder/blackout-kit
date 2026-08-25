@@ -178,7 +178,8 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
                 timeout=120,
             )
         except subprocess.TimeoutExpired:
-            pass
+            import logging
+            logging.warning("Daemon startup via PowerShell timed out (120s) — UAC prompt may still be pending")
 
         # Wait for PID_FILE (give user time to click UAC)
         for _ in range(600):
@@ -220,8 +221,9 @@ def stop() -> bool:
                 if not ipc_file.exists():
                     return True
                 time.sleep(0.1)
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.debug("Graceful daemon shutdown via IPC failed: %s", e)
 
     # Create a shutdown request file as fallback
     (APP_DATA_DIR / "daemon.stop.request").touch(exist_ok=True)
@@ -232,8 +234,9 @@ def stop() -> bool:
         for child in parent.children(recursive=True):
             try:
                 child.terminate()
-            except Exception:
-                pass
+            except Exception as e:
+                import logging
+                logging.debug("Failed to terminate child process %s: %s", child.pid, e)
         parent.terminate()
         # Wait a bit for it to cleanup
         try:
@@ -242,18 +245,25 @@ def stop() -> bool:
             for child in parent.children(recursive=True):
                 try:
                     child.kill()
-                except Exception:
-                    pass
+                except Exception as e:
+                    import logging
+                    logging.debug("Failed to kill child process %s: %s", child.pid, e)
             parent.kill()
     except ImportError:
         import ctypes
+        import logging
         PROCESS_TERMINATE = 1
         handle = ctypes.windll.kernel32.OpenProcess(PROCESS_TERMINATE, False, pid)
         if handle:
-            ctypes.windll.kernel32.TerminateProcess(handle, -1)
+            result = ctypes.windll.kernel32.TerminateProcess(handle, -1)
+            if not result:
+                logging.warning("TerminateProcess returned false for PID %d", pid)
             ctypes.windll.kernel32.CloseHandle(handle)
-    except Exception:
-        pass
+        else:
+            logging.warning("Could not open process handle for PID %d (may be already terminated)", pid)
+    except Exception as e:
+        import logging
+        logging.debug("Process cleanup exception for PID %d: %s", pid, e)
 
     time.sleep(1)
     PID_FILE.unlink(missing_ok=True)
@@ -394,8 +404,9 @@ def _write_daemon_state(
         temporary = STATE_FILE.with_suffix(".tmp")
         temporary.write_text(json.dumps(state), encoding="utf-8")
         os.replace(temporary, STATE_FILE)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.warning("Failed to write daemon state file: %s", e)
 
 
 def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
@@ -421,12 +432,14 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         devnull = open(os.devnull, "w")
         sys.stdout = devnull
         sys.stderr = devnull
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.debug("Failed to redirect stdout/stderr to devnull: %s", e)
         if devnull is not None:
             try:
                 devnull.close()
-            except Exception:
-                pass
+            except Exception as close_e:
+                logging.debug("Failed to close devnull file: %s", close_e)
 
     from .engines.xray import XRayEngine
     from .engines.tun import TUNEngine
@@ -562,8 +575,8 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             for already_started in started:
                 try:
                     already_started.stop()
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.error("Failed to stop engine %s during rollback: %s", already_started.name, e)
             if linux_kill_switch:
                 sec.disable_kill_switch()
                 sec.clear_linux_kill_switch_endpoint(name)
@@ -643,8 +656,8 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         for eng in active:
             try:
                 eng.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                log.error("Failed to stop engine %s: %s", eng.name, e)
         active = []
 
     def _reconnect(failure_reason: str) -> bool:
@@ -750,10 +763,12 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                             io = p.io_counters()
                             rx += io.read_bytes
                             tx += io.write_bytes
-                        except Exception:
-                            pass
+                        except (psutil.NoSuchProcess, psutil.ProcessError) as e:
+                            log.debug("Could not get IO counters for engine PID %d: %s", engine.pid, e)
+                        except Exception as e:
+                            log.warning("Unexpected error getting IO counters for engine %s (PID %d): %s", engine.name, engine.pid, e)
             except ImportError:
-                pass
+                log.debug("psutil not available for IO counter collection")
 
             with cfg_lock:
                 proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
@@ -765,8 +780,8 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 latency = test_tcp_port(proxy_host, proxy_port)
                 try:
                     sec.record_latency(active_engine_name, latency)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.debug("Failed to record latency for %s: %s", active_engine_name, e)
                 if latency is None:
                     log.warning("Proxy port closed — engine may have crashed.")
                     if not _reconnect("Proxy port closed."):
@@ -812,7 +827,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             )
 
     except KeyboardInterrupt:
-        pass
+        log.info("Daemon received CTRL+C interrupt, initiating graceful shutdown.")
     finally:
         if (APP_DATA_DIR / "daemon.stop.request").exists():
             (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
@@ -823,8 +838,8 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 sec.disable_kill_switch()
                 sec.clear_linux_kill_switch_endpoint()
                 log.info("Kill switch disabled.")
-            except Exception:
-                pass
+            except Exception as e:
+                log.error("Failed to disable kill switch during shutdown: %s", e)
         if s.get("auto_set_proxy", True):
             clear_system_proxy()
             log.info("System proxy cleared.")

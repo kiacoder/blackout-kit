@@ -334,3 +334,46 @@ def test_test_http_get_fail():
     with patch("socket.create_connection", side_effect=Exception("conn err")):
         lat = engine._test_http_get("google.com")
         assert lat is None
+
+
+@patch("time.sleep", return_value=None)
+@patch("asyncio.new_event_loop")
+@patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
+@patch("blackoutkit.scanner.ip_scanner.generate_cloudflare_ips")
+@patch("blackoutkit.settings.get")
+@patch("blackoutkit.settings.load")
+def test_run_auto_scan_accepts_single_label_custom_host(
+    mock_load,
+    mock_get,
+    _mock_generate,
+    _mock_scan,
+    mock_loop,
+    _mock_sleep,
+    tmp_path,
+):
+    mock_load.return_value = {
+        "sni_connect_ip": "auto",
+        "sni_fake_sni": "google.com",
+        "sni_listen_port": 1234,
+    }
+    mock_get.side_effect = lambda key, default=None: {
+        "scan_ip_count": 5,
+        "scan_concurrency": 5,
+        "scan_timeout": 1.0,
+        "sni_always_test_all_ips": False,
+        "sni_custom_ips": [],
+        "sni_custom_fakes": ["www"],
+    }.get(key, default)
+    mock_loop_instance = MagicMock()
+    mock_loop.return_value = mock_loop_instance
+    mock_loop_instance.run_until_complete.side_effect = [[], [("2.2.2.2", 120.0)]]
+
+    engine = SNIEngine()
+    engine._config_dir = tmp_path
+    mock_dll = MagicMock()
+    mock_dll.StartSNIC.return_value = 0
+
+    with patch.object(engine, "_test_http_get", return_value=50.0):
+        winner = engine._run_auto_scan(mock_dll, tmp_path / "config.json")
+
+    assert winner == "2.2.2.2"

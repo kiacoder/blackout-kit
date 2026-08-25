@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -198,26 +200,43 @@ def test_reconnect_delay_settings_are_bounded():
     assert settings.validate("reconnect_max_delay", 60) == (True, "")
 
 
-def test_start_appends_env_overrides_to_background_command(monkeypatch, tmp_path):
-    commands = []
+def test_start_serializes_env_overrides_as_a_windows_command_line(monkeypatch, tmp_path):
+    launch_commands = []
+    launch_environments = []
+    overrides = {
+        "BLACKOUT_COUNTRY": "RU West",
+        "BLACKOUT_LABEL": 'A "quoted" value with spaces\\',
+    }
     monkeypatch.setattr(daemon, "APP_DATA_DIR", tmp_path)
     monkeypatch.setattr(daemon, "PID_FILE", tmp_path / "daemon.pid")
     monkeypatch.setattr(daemon, "STATE_FILE", tmp_path / "daemon_state.json")
     monkeypatch.setattr(daemon, "get_pid", lambda: 4242 if (tmp_path / "daemon.pid").exists() else None)
     monkeypatch.setattr(daemon.time, "sleep", lambda *_args: None)
 
-    def fake_run(cmd, **_kwargs):
-        commands.append(cmd)
+    def fake_run(command, **kwargs):
+        launch_commands.append(command)
+        launch_environments.append(kwargs["env"])
         (tmp_path / "daemon.pid").write_text("4242", encoding="utf-8")
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(daemon.subprocess, "run", fake_run)
     monkeypatch.setattr(daemon, "is_process_alive", lambda pid: pid == 4242)
 
-    pid = daemon.start("xray", env_overrides={"BLACKOUT_COUNTRY": "RU"})
+    pid = daemon.start("xray", env_overrides=overrides)
 
+    expected_child_args = [
+        str(Path(daemon.__file__).parent.parent.parent / "blackout.py"),
+        "_daemon_run",
+        "--engine",
+        "xray",
+        "--env-overrides-json",
+        json.dumps(overrides, separators=(",", ":")),
+    ]
+    power_shell_command = launch_commands[0][-1]
     assert pid == 4242
-    assert any("--env-overrides-json" in part for part in commands[0])
+    assert launch_environments[0]["BLACKOUT_ARGS"] == subprocess.list2cmdline(expected_child_args)
+    assert "-ArgumentList $env:BLACKOUT_ARGS" in power_shell_command
+    assert "JsonDocument" not in power_shell_command
 
 
 def test_xray_fragment_accepts_empty_string():
@@ -247,3 +266,17 @@ def test_config_rotation_resets_on_success(monkeypatch, tmp_path):
 
     # After successful reconnect, offset should be cleared
     assert "BLACKOUT_CONFIG_OFFSET" not in os.environ
+
+
+def test_daemon_package_exposes_canonical_manager_api():
+    assert daemon.__file__.replace("\\", "/").endswith("blackoutkit/daemon/__init__.py")
+    for name in (
+        "start",
+        "stop",
+        "get_pid",
+        "get_state",
+        "read_logs",
+        "get_recent_events",
+        "run_daemon_loop",
+    ):
+        assert callable(getattr(daemon, name))
