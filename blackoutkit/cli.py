@@ -1533,11 +1533,9 @@ def cmd_tools(args):
             "  [cyan]bandwidth-cap[/cyan]            — Set and monitor bandwidth limits\n"
             "  [cyan]traffic-log[/cyan]              — Query network traffic audit trail\n"
             "  [cyan]adblock[/cyan]                  — Manage ad/tracker blocklists\n"
-            "  [cyan]qos[/cyan]                      — Quality of Service (QoS) traffic shaping\n"
-            "  [cyan]scan-file <path>[/cyan]          — Scan one local file with Windows Defender
-"
-            "  [cyan]file-hash <path>[/cyan]          — Calculate a local SHA-256 fingerprint
-"
+            "  [cyan]qos[/cyan]                      — Monitor-only QoS configuration and inspection\n"
+            "  [cyan]scan-file <path>[/cyan]          — Scan one local file with Windows Defender\n"
+            "  [cyan]file-hash <path>[/cyan]          — Calculate a local SHA-256 fingerprint\n"
             "  [cyan]cert-check <host[:port]>[/cyan] — TLS certificate check\n"
             "  [cyan]netfix[/cyan]                   — Targeted Blackout network recovery\n"
             "  [cyan]arp-flush[/cyan]                — Explicitly flush local ARP/neighbor cache\n",
@@ -1869,19 +1867,19 @@ def cmd_tools(args):
         host = getattr(args, "host", "8.8.8.8")
         interval = getattr(args, "interval", 1.0)
         history: list[float | None] = []
+        MAX_HISTORY = 300  # ~5 minutes at 1Hz sampling
         console.print()
         try:
             with Live(_latency_monitor_panel(host, history), console=console, refresh_per_second=4) as live:
                 while True:
                     history.append(net_tools.ping_once(host))
-        MAX_HISTORY = 300  # ~5 minutes at 1Hz sampling
+                    if len(history) > MAX_HISTORY:
+                        history.pop(0)
                     live.update(_latency_monitor_panel(host, history))
                     time.sleep(interval)
         except KeyboardInterrupt:
             console.print("\n[muted]Latency monitor stopped.[/muted]")
 
-                    if len(history) > MAX_HISTORY:
-                        history.pop(0)
     elif args.tools_command == "bandwidth":
         interval = getattr(args, "interval", 1.0)
         history: dict[str, list[float]] = {}
