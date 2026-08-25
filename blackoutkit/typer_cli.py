@@ -840,6 +840,38 @@ def tools_capture(
     args.host = host
     cmd_tools(args)
 
+@tools_app.command("scan-file")
+def tools_scan_file(
+    path: str = typer.Argument(..., help="Existing local file to scan"),
+):
+    """Scan one local file with installed Windows Defender."""
+    from .cli import cmd_tools
+
+    class DummyArgs:
+        pass
+
+    args = DummyArgs()
+    args.tools_command = "scan-file"
+    args.path = path
+    cmd_tools(args)
+
+
+@tools_app.command("file-hash")
+def tools_file_hash(
+    path: str = typer.Argument(..., help="Existing local file to fingerprint"),
+):
+    """Calculate a local SHA-256 fingerprint for one file."""
+    from .cli import cmd_tools
+
+    class DummyArgs:
+        pass
+
+    args = DummyArgs()
+    args.tools_command = "file-hash"
+    args.path = path
+    cmd_tools(args)
+
+
 @tools_app.command("cert-check")
 def tools_cert_check(
     host: str = typer.Argument(None, help="Host to check"),

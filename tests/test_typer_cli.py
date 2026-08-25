@@ -183,6 +183,38 @@ def test_certificate_check_forwards_allow_flag():
     assert args.allow is True
 
 
+def test_scan_file_command_is_registered():
+    result = runner.invoke(typer_cli.app, ["tools", "scan-file", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Existing local file to scan" in result.output
+
+
+def test_scan_file_forwards_path_to_legacy_dispatcher():
+    with patch("blackoutkit.cli.cmd_tools") as cmd_tools:
+        typer_cli.tools_scan_file(path="C:/safe/sample.bin")
+
+    args = cmd_tools.call_args.args[0]
+    assert args.tools_command == "scan-file"
+    assert args.path == "C:/safe/sample.bin"
+
+
+def test_file_hash_command_is_registered():
+    result = runner.invoke(typer_cli.app, ["tools", "file-hash", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "Existing local file to fingerprint" in result.output
+
+
+def test_file_hash_forwards_path_to_legacy_dispatcher():
+    with patch("blackoutkit.cli.cmd_tools") as cmd_tools:
+        typer_cli.tools_file_hash(path="C:/safe/sample.bin")
+
+    args = cmd_tools.call_args.args[0]
+    assert args.tools_command == "file-hash"
+    assert args.path == "C:/safe/sample.bin"
+
+
 def test_country_set_forwards_code():
     with patch("blackoutkit.cli.cmd_country") as cmd_country:
         typer_cli.country_set("RU")

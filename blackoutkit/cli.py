@@ -1534,6 +1534,10 @@ def cmd_tools(args):
             "  [cyan]traffic-log[/cyan]              — Query network traffic audit trail\n"
             "  [cyan]adblock[/cyan]                  — Manage ad/tracker blocklists\n"
             "  [cyan]qos[/cyan]                      — Quality of Service (QoS) traffic shaping\n"
+            "  [cyan]scan-file <path>[/cyan]          — Scan one local file with Windows Defender
+"
+            "  [cyan]file-hash <path>[/cyan]          — Calculate a local SHA-256 fingerprint
+"
             "  [cyan]cert-check <host[:port]>[/cyan] — TLS certificate check\n"
             "  [cyan]netfix[/cyan]                   — Targeted Blackout network recovery\n"
             "  [cyan]arp-flush[/cyan]                — Explicitly flush local ARP/neighbor cache\n",
@@ -2525,6 +2529,43 @@ def cmd_tools(args):
                     )
         else:
             console.print("[error]Failed — run as administrator.[/error]")
+
+    elif args.tools_command == "scan-file":
+        from .tools.file_scanner import scan_file
+
+        result = scan_file(getattr(args, "path", ""))
+        status = result["status"]
+        target = result["target"] or "the supplied path"
+        detail = result.get("detail")
+        if status == "clean":
+            console.print(f"[success]✓ No threats reported for {target}.[/success]")
+        elif status == "detected":
+            console.print(f"[warning]⚠ Windows Defender reported a threat in {target}.[/warning]")
+        elif status == "indeterminate":
+            console.print(f"[warning]Scan result for {target} is indeterminate.[/warning]")
+        else:
+            console.print(f"[error]File scan could not complete for {target}: {detail}[/error]")
+        if detail and status in {"detected", "indeterminate", "scanner-error"}:
+            console.print(f"[muted]{detail}[/muted]")
+
+    elif args.tools_command == "file-hash":
+        from .tools.file_fingerprint import fingerprint_file
+
+        result = fingerprint_file(getattr(args, "path", ""))
+        status = result["status"]
+        target = result["target"] or "the supplied path"
+        if status == "fingerprinted":
+            console.print(f"[success]SHA-256 for {target}:[/success]")
+            console.print(f"  [bold]{result['sha256']}[/bold]")
+            console.print(f"  [muted]{result['bytes']:,} bytes[/muted]")
+        elif status == "changed-during-read":
+            console.print(
+                f"[warning]File changed while it was being read; no stable SHA-256 was produced for {target}.[/warning]"
+            )
+            console.print(f"[muted]{result['detail']}[/muted]")
+        else:
+            detail = result.get("detail") or "Unknown file hashing error."
+            console.print(f"[error]File hash could not complete for {target}: {detail}[/error]")
 
     elif args.tools_command == "cert-check":
         from . import cert_bypass as cb

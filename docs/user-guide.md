@@ -468,10 +468,28 @@ python blackout.py tools dns-bench
 python blackout.py tools dns-set cloudflare
 python blackout.py tools dns-flush
 python blackout.py tools traceroute google.com
+python blackout.py tools scan-file C:\\Downloads\\example.exe
+python blackout.py tools file-hash C:\\Downloads\\example.exe
 python blackout.py tools cert-check example.com
 ```
 
 These help you debug local conditions, but they are not a substitute for understanding your upstream tunnel path.
+
+### Scan one local file on Windows
+
+```cmd
+python blackout.py tools scan-file C:\\Downloads\\example.exe
+```
+
+This command accepts one existing regular file and uses the already-installed Windows Defender scanner with remediation disabled. It does not scan folders, download signatures, install or update Defender, change Defender exclusions, or alter firewall, proxy, DNS, routing, or other system security settings. A result is shown as a detection only when Defender's captured output confirms it; otherwise an ambiguous native result stays indeterminate.
+
+### Fingerprint one local file
+
+```cmd
+python blackout.py tools file-hash C:\\Downloads\\example.exe
+```
+
+This calculates a SHA-256 digest locally for one existing regular file. It reads in bounded chunks and withholds the digest when the file changes during the read. It does not scan for malware, upload the file or its hash, contact VirusTotal or another service, use an API key, or alter any system security or network setting.
 
 ---
 

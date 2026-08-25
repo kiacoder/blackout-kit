@@ -108,6 +108,7 @@ Blackout Kit 1.1.1 currently includes:
 - **Linux endpoint-scoped kill switch** with nftables or iptables fallback
 - **Country profiles** for Iran, Russia, China, Iraq, United Kingdom, United States, and Europe
 - **In-app help system** for terminal users
+- **Local SHA-256 fingerprints** for one explicitly supplied file, with no upload or remote lookup
 
 ---
 
@@ -342,6 +343,8 @@ blackout tools dns-bench
 blackout tools dns-set <server>
 blackout tools dns-flush
 blackout tools traceroute [host]
+blackout tools scan-file <path>
+blackout tools file-hash <path>
 blackout tools cert-check <host[:port]>
 blackout tools cert-check <host> --allow
 blackout tools hotspot
@@ -394,6 +397,8 @@ Country and transport presets such as `--iran` and `--russia` are temporary loca
 - local encrypted storage for saved proxy URIs and supported VPN secrets
 - Linux endpoint-scoped firewall protection when enabled and valid
 - targeted cleanup of Blackout-owned network state after a crash
+- Windows Defender-only scanning of one explicitly supplied local file without remediation
+- local SHA-256 fingerprinting of one explicitly supplied file, with no upload or remote lookup
 
 ### What it does not guarantee
 
@@ -411,6 +416,14 @@ Country and transport presets such as `--iran` and `--russia` are temporary loca
 - `legend` — stricter handling for known-bad **normal TLS** certificates
 
 REALITY is handled separately by XRay’s configured REALITY handshake and does not use the normal TLS certificate policy.
+
+### File scan scope
+
+`blackout tools scan-file <path>` scans exactly one existing regular file with the already-installed Windows Defender command-line scanner. It does not scan directories, download signatures, install or update a scanner, alter Defender exclusions, or change firewall, proxy, DNS, routing, or other security settings. Scans use Defender's non-remediating mode; a nonzero result is reported as a detection only when Defender's captured output independently confirms one.
+
+### File hash scope
+
+`blackout tools file-hash <path>` calculates a SHA-256 fingerprint for one existing regular file locally. It streams the file in bounded chunks and refuses to present a digest when its before/after file snapshot changes during reading. It does not upload the file or its hash, contact VirusTotal or any other service, use an API key, scan for malware, or alter security or network settings.
 
 ### Kill switch scope
 

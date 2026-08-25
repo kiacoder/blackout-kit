@@ -14,6 +14,10 @@ import subprocess
 import sys
 import time
 import urllib.request
+from pathlib import Path
+
+# Expose standalone specialist modules stored beside this legacy toolkit module.
+__path__ = [str(Path(__file__).with_name("tools"))]
 
 _log = logging.getLogger(__name__)
 
