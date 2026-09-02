@@ -496,7 +496,7 @@ class _JsonTyperGroup(TyperGroup):
     """Keep parser failures machine-readable only for explicit JSON requests."""
 
     _usage_error_types = (click.UsageError, typer_exceptions.UsageError)
-    _exit_type = typer_exceptions.Exit
+    _exit_type = click.exceptions.Exit
 
     def _emit_parser_error(
         self,

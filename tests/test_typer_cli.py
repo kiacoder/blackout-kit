@@ -1,5 +1,6 @@
 from unittest.mock import Mock, patch
 
+import click
 import pytest
 from typer.testing import CliRunner
 
@@ -7,6 +8,10 @@ from blackoutkit import typer_cli
 
 
 runner = CliRunner()
+
+
+def test_json_typer_group_uses_stable_click_exit_type():
+    assert typer_cli._JsonTyperGroup._exit_type is click.exceptions.Exit
 
 
 def test_documented_commands_are_registered():
