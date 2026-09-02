@@ -16,6 +16,11 @@ import typer
 import typer._click.exceptions as typer_exceptions
 from typer.core import TyperGroup
 
+if not sys.stdout.isatty():
+    import typer.rich_utils as _typer_rich_utils
+
+    _typer_rich_utils.FORCE_TERMINAL = False
+
 from . import __version__
 from .cli_output import (
     OptionalDependencyError,

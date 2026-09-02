@@ -15,6 +15,13 @@ def test_json_typer_group_uses_stable_click_exit_type():
     assert typer_cli._JsonTyperGroup._exit_type is click.exceptions.Exit
 
 
+def test_rich_help_does_not_force_terminal_for_captured_output():
+    import typer.rich_utils as rich_utils
+
+    if not typer_cli.sys.stdout.isatty():
+        assert rich_utils.FORCE_TERMINAL is False
+
+
 def test_documented_commands_are_registered():
     result = runner.invoke(typer_cli.app, ["--help"])
 
