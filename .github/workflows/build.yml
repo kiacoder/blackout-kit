@@ -89,7 +89,7 @@ jobs:
 
     - name: Run startup benchmark
       run: |
-        python scripts/benchmark_startup.py --json --runs 5 > startup-benchmark.json
+        /tmp/blackout-core/bin/python scripts/benchmark_startup.py --installed --json --runs 5 > startup-benchmark.json
 
     - name: Upload package and benchmark artifacts
       uses: actions/upload-artifact@v4

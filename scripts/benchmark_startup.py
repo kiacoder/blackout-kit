@@ -12,11 +12,13 @@ import sys
 import time
 
 
-COMMANDS = {
-    "import": [sys.executable, "-c", "import blackoutkit"],
-    "help": [sys.executable, "-m", "blackoutkit.typer_cli", "--help"],
-    "json-version": [sys.executable, "-m", "blackoutkit.typer_cli", "--json", "version"],
-}
+def commands(*, installed: bool = False) -> dict[str, list[str]]:
+    prefix = [sys.executable, "-I"] if installed else [sys.executable]
+    return {
+        "import": [*prefix, "-c", "import blackoutkit"],
+        "help": [*prefix, "-m", "blackoutkit.typer_cli", "--help"],
+        "json-version": [*prefix, "-m", "blackoutkit.typer_cli", "--json", "version"],
+    }
 
 
 def measure(command: list[str], runs: int) -> list[float]:
@@ -50,12 +52,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--runs", type=int, default=7, help="Fresh subprocesses per command")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable results")
+    parser.add_argument("--installed", action="store_true", help="Run isolated subprocesses against an installed package")
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
 
     results = {}
-    for name, command in COMMANDS.items():
+    for name, command in commands(installed=args.installed).items():
         samples = measure(command, args.runs)
         results[name] = {
             "runs": args.runs,

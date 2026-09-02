@@ -1,5 +1,8 @@
+import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from blackoutkit.engines.singbox_proxy import Hysteria2Engine
 
@@ -18,6 +21,7 @@ def make_proxy_config():
     )
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows native DLL test")
 def test_hysteria2_passes_config_directly_to_core_dll(tmp_path):
     engine = Hysteria2Engine(proxy_config=make_proxy_config(), socks_port=10808)
     engine._config_dir = tmp_path

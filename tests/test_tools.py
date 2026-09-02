@@ -1,4 +1,5 @@
 import pytest
+import sys
 from unittest.mock import MagicMock, patch
 
 from blackoutkit import tools
@@ -206,6 +207,7 @@ def test_stale_blackout_proxy_is_cleared(mock_clear_proxy, mock_status):
     mock_clear_proxy.assert_called_once()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows network recovery test")
 @patch("blackoutkit.tools._run_recovery_script", return_value=True)
 @patch("blackoutkit.tools.clear_stale_blackout_proxy", return_value=(True, "Removed stale Blackout proxy: 127.0.0.1:10809"))
 @patch("blackoutkit.daemon.get_state", return_value=None)
@@ -240,6 +242,7 @@ def test_recovery_runs_targeted_repairs_without_full_route_flush(
     assert len(mock_script.call_args_list) == 1
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows network recovery test")
 @patch("blackoutkit.tools._run_recovery_script")
 @patch("blackoutkit.tools.clear_stale_blackout_proxy")
 @patch("blackoutkit.daemon.get_state", return_value={"engine": "tun"})
@@ -264,6 +267,7 @@ def test_recovery_preserves_live_daemon_proxy_and_adapter(
     mock_script.assert_not_called()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows network recovery test")
 @patch("blackoutkit.tools._run_recovery_script", return_value=True)
 @patch("blackoutkit.tools.clear_stale_blackout_proxy", return_value=(True, "No system proxy configured"))
 @patch("blackoutkit.daemon.get_state", return_value=None)
@@ -276,6 +280,7 @@ def test_full_route_reset_requires_explicit_opt_in(
     assert any("route.exe '-f'" in call.args[0] for call in mock_script.call_args_list)
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows network recovery test")
 @patch("blackoutkit.tools._run_recovery_script", return_value=True)
 @patch("blackoutkit.tools.clear_stale_blackout_proxy", return_value=(True, "No system proxy configured"))
 @patch("blackoutkit.daemon.get_state", return_value=None)
@@ -291,6 +296,7 @@ def test_full_stack_reset_requires_explicit_opt_in(
     assert "ipconfig.exe '/release'" in script
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows network recovery test")
 @patch("blackoutkit.tools._run_recovery_script", return_value=True)
 @patch("blackoutkit.tools.clear_stale_blackout_proxy")
 @patch("blackoutkit.daemon.get_state", return_value={"engine": "xray", "pid": 4242})
@@ -313,6 +319,7 @@ def test_daemon_recovery_preserves_proxy_and_never_resets_full_routes(
     }
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows network recovery test")
 @patch("blackoutkit.tools._run_recovery_script", return_value=False)
 @patch("blackoutkit.tools.clear_stale_blackout_proxy", return_value=(False, "Could not clear stale Blackout proxy"))
 @patch("blackoutkit.daemon.get_state", return_value=None)

@@ -185,10 +185,11 @@ def test_add_defender_exclusion_success(mock_run):
     mock_run.return_value = MagicMock(stdout="OK")
     assert sec.add_defender_exclusion(Path("C:\\bins")) is True
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows elevation test")
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
 @patch("blackoutkit.elevate.launch_elevated")
-@patch("ctypes.windll.kernel32")
+@patch("ctypes.windll.kernel32", create=True)
 def test_add_defender_exclusion_elevate(mock_kernel, mock_elevate, mock_run):
     mock_run.return_value = MagicMock(stdout="")
     mock_elevate.return_value = (123, 456)

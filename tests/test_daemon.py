@@ -1,7 +1,10 @@
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -240,6 +243,7 @@ def test_reconnect_delay_settings_are_bounded():
     assert settings.validate("reconnect_max_delay", 60) == (True, "")
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows daemon launch test")
 def test_start_serializes_env_overrides_as_a_windows_command_line(monkeypatch, tmp_path):
     launch_commands = []
     launch_environments = []

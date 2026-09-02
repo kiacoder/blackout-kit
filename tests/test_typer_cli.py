@@ -1,3 +1,4 @@
+import sys
 from unittest.mock import Mock, patch
 
 import click
@@ -477,6 +478,7 @@ def test_bins_update_forwards_to_legacy_dispatcher():
     assert cmd_bins.call_args.args[0].bins_command == "update"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows network recovery CLI test")
 def test_fix_forwards_explicit_network_reset_flags_without_legacy_dispatch(monkeypatch):
     plan = [{"name": "Clear system proxy", "ok": True, "detail": "No system proxy configured"}]
     planned = Mock(return_value=plan)

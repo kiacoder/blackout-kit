@@ -5,6 +5,10 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+if sys.platform != "win32":
+    sys.modules.setdefault("winreg", MagicMock())
+
+
 import blackoutkit.doctor as doc
 from blackoutkit.doctor import CheckResult
 
@@ -349,6 +353,7 @@ def test_run_all_checks_includes_optional_capture_checks_when_requested(monkeypa
     assert scapy in results
     assert npcap in results
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy test")
 @patch("sys.platform", "win32")
 @patch("blackoutkit.settings.load", return_value={})
 @patch("winreg.OpenKey")
