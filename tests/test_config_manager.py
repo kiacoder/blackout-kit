@@ -1,5 +1,61 @@
 import pytest
-from blackoutkit.config.manager import ProxyConfig
+from unittest.mock import patch
+
+from blackoutkit.config.manager import ProxyConfig, replace_config
+
+
+@pytest.fixture
+def sample_configs():
+    return [
+        ProxyConfig(
+            protocol="vless",
+            address="old.example",
+            port=443,
+            raw_uri="vless://old@example.com:443",
+            name="old",
+        ),
+    ]
+
+
+def test_replace_config_validates_before_saving(sample_configs):
+    with patch("blackoutkit.config.manager.load_configs", return_value=sample_configs), \
+         patch("blackoutkit.config.manager.save_configs") as save:
+        replacement = replace_config(0, "vless://new@example.com:443")
+
+    assert replacement.raw_uri == "vless://new@example.com:443"
+    save.assert_called_once()
+    assert save.call_args.args[0][0].raw_uri == replacement.raw_uri
+
+
+def test_replace_config_rejects_invalid_uri_without_saving(sample_configs):
+    with patch("blackoutkit.config.manager.load_configs", return_value=sample_configs), \
+         patch("blackoutkit.config.manager.save_configs") as save:
+        with pytest.raises(ValueError, match="Invalid V2Ray URI"):
+            replace_config(0, "not-a-uri")
+
+    save.assert_not_called()
+
+
+def test_replace_config_rejects_duplicate_uri_without_saving():
+    configs = [
+        ProxyConfig(protocol="vless", address="a.example", port=443, raw_uri="vless://a@a.example:443"),
+        ProxyConfig(protocol="vless", address="b.example", port=443, raw_uri="vless://b@b.example:443"),
+    ]
+    with patch("blackoutkit.config.manager.load_configs", return_value=configs), \
+         patch("blackoutkit.config.manager.save_configs") as save:
+        with pytest.raises(ValueError, match="already saved"):
+            replace_config(0, "vless://b@b.example:443")
+
+    save.assert_not_called()
+
+
+def test_replace_config_rejects_bad_index_without_saving(sample_configs):
+    with patch("blackoutkit.config.manager.load_configs", return_value=sample_configs), \
+         patch("blackoutkit.config.manager.save_configs") as save:
+        with pytest.raises(IndexError):
+            replace_config(1, "vless://new@example.com:443")
+
+    save.assert_not_called()
 
 def test_is_sni_compatible_true():
     # 127.0.0.1 and port 40443

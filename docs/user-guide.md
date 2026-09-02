@@ -62,25 +62,98 @@ Linux does **not** support the Windows SNI path, GoodbyeDPI, the desktop GUI, or
 2. Run it.
 3. If Windows asks for permission for specific engines or maintenance actions, review the prompt and allow only what you intend.
 
-## Windows source install
+## Windows source or package install
+
+The core package installs the Typer CLI, local diagnostics, configuration management, and core runtime dependencies. GUI, packet capture, media, and torrent support are optional:
 
 ```cmd
 git clone https://github.com/kiacoder/blackout-kit.git
 cd blackout-kit
-pip install -r requirements.txt
-python blackout.py version
+python -m pip install .
+blackout version
 ```
 
-## Linux source install
+Install only the features you need:
+
+```cmd
+python -m pip install .[gui]
+python -m pip install .[capture]
+python -m pip install .[media]
+python -m pip install .[torrent]
+python -m pip install .[all]
+```
+
+PyPI does not provide the native `python-libtorrent` package for Windows, so `[all]` skips that dependency on Windows; torrent commands remain unavailable until the package is installed in a supported Linux environment. `requirements.txt` is the portable all-feature development and executable-build environment.
+
+The portable development requirements can be installed from any directory:
+
+```cmd
+python -m pip install -r C:\path\to\blackout-kit\requirements.txt
+```
+
+
+## Linux source or package install
 
 ```bash
-python3 -m pip install -r requirements.txt
+python3 -m pip install .
 mkdir -p bins
 chmod +x bins/blackout-engine
-python3 blackout.py version
+blackout version
 ```
 
+On Linux, the managed runtime asset must exist in `bins/blackout-engine`. Add `.[capture]` only when packet capture is required; Scapy also needs libpcap on the host.
+
+The core install does not pull in the Windows GUI, Scapy, yt-dlp, or python-libtorrent.
+
+## Optional feature matrix
+
+| Extra | Enables | Additional prerequisite |
+|---|---|---|
+| `gui` | Windows desktop app and tray support | Windows desktop session |
+| `capture` | `tools capture` through Scapy | Npcap on Windows or libpcap on Linux |
+| `media` | queued media execution | `yt-dlp` executable from the extra |
+| `torrent` | queued torrent execution | `python-libtorrent` and platform support |
+| `all` | all optional Python features | platform prerequisites still apply |
+
+A missing optional feature produces an actionable installation message instead of a raw import traceback.
+
 On Linux, the managed runtime asset must exist in `bins/blackout-engine`.
+
+---
+
+## Machine-readable output and shell completion
+
+Supported structured commands accept the global `--json` option:
+
+```cmd
+blackout --json version
+blackout --json status
+blackout --json config validate
+blackout --json settings list
+```
+
+Successful output has the form `{"schema_version":1,"ok":true,"data":...}`. Errors use the same schema with `ok:false` and an `error` object. Output is compact one-line JSON, omits credentials and raw proxy URIs, and never contains terminal styling. Unsupported delegated commands reject `--json` before they run. Watch/streaming commands use one JSON object per line.
+
+Typer completion is built in:
+
+```cmd
+blackout --install-completion
+blackout --show-completion
+```
+
+The local startup benchmark uses fresh subprocesses and performs no network or system changes:
+
+```cmd
+python scripts/benchmark_startup.py --json
+```
+
+`blackout doctor` is core-only by default. Add `--include-optional` to inspect Scapy and Npcap/libpcap prerequisites:
+
+```cmd
+blackout doctor --include-optional
+```
+
+---
 
 ---
 
@@ -283,11 +356,72 @@ Use it when you want a cleaner Russia-oriented starting point for mixed VLESS, T
 
 ## Config management
 
+## Keyboard config manager
+
+Run `blackout config` with no subcommand in an interactive terminal to open the keyboard-only config manager. It lets you list safe summaries, add or replace a URI, remove a saved config, import a subscription, export/import setup data, and encrypt or decrypt saved data.
+
+- **↑ / ↓** move through the current menu; **Enter**, **Space**, or **→** select.
+- **← / Esc** go back; **Ctrl+C** quits.
+- Long config lists use a bounded keyboard viewport that follows the selected row.
+- Mouse scrolling and mouse clicks do not select or move anything.
+- Raw URIs and credentials are not shown in selectable config labels. Replacing a URI opens an empty editor rather than displaying the old URI.
+
+```cmd
+python blackout.py config
+python blackout.py config edit
+```
+
 ## List saved configs
 
 ```cmd
 python blackout.py config list
 ```
+
+The explicit command prints the existing safe summary table and does not open an editor.
+
+## Replace one config
+
+```cmd
+python blackout.py config replace <number> <uri>
+```
+
+This validates the replacement before saving it and rejects duplicate URIs.
+
+## Keyboard settings editor
+
+Run `blackout settings` with no subcommand in an interactive terminal to browse settings by category and edit them with the keyboard. Boolean and enumerated values use menus; text, numbers, and lists use the keyboard editor. Values are validated before they are saved, and supported secret values remain masked.
+
+```cmd
+python blackout.py settings
+python blackout.py settings edit
+```
+
+The explicit `list`, `get`, `set`, and `reset` commands remain available for scripts and automation. In a non-interactive terminal, bare `settings` and `config` print usage instead of waiting for input.
+
+## List settings
+
+```cmd
+python blackout.py settings list
+```
+
+The explicit command prints all settings without opening an editor.
+
+## Get or set one setting
+
+```cmd
+python blackout.py settings get <key>
+python blackout.py settings set <key> <value>
+```
+
+These explicit forms use the same validation and persistence rules as the keyboard editor.
+
+## Reset settings
+
+```cmd
+python blackout.py settings reset
+```
+
+Use the keyboard editor's **Reset all settings** action only after its confirmation prompt.
 
 ## Add one config
 
@@ -295,17 +429,43 @@ python blackout.py config list
 python blackout.py config add <uri>
 ```
 
+The keyboard manager's **Add URI** action uses the same parser and persistence boundary.
+
 ## Import a subscription
 
 ```cmd
 python blackout.py config import <url>
 ```
 
+The keyboard manager reports counts only and does not display imported credentials.
+
 ## Remove one config
 
 ```cmd
 python blackout.py config remove <n>
 ```
+
+The keyboard manager requires an explicit keyboard confirmation before removal.
+
+## Protect saved config data
+
+```cmd
+python blackout.py config encrypt
+python blackout.py config decrypt
+```
+
+The keyboard manager exposes these actions with confirmation and preserves the existing machine-bound vault behavior.
+
+## Export or import setup
+
+```cmd
+python blackout.py config export
+python blackout.py config import-setup <string>
+```
+
+The keyboard export screen warns that setup strings are not encrypted. Setup imports are decoded and validated before either configs or settings are written.
+
+---
 
 ## Analyze configs locally
 
@@ -470,6 +630,9 @@ python blackout.py tools dns-flush
 python blackout.py tools traceroute google.com
 python blackout.py tools scan-file C:\\Downloads\\example.exe
 python blackout.py tools file-hash C:\\Downloads\\example.exe
+python blackout.py tools mac status
+python blackout.py tools mac randomize
+python blackout.py tools mac restore
 python blackout.py tools cert-check example.com
 ```
 
@@ -490,6 +653,28 @@ python blackout.py tools file-hash C:\\Downloads\\example.exe
 ```
 
 This calculates a SHA-256 digest locally for one existing regular file. It reads in bounded chunks and withholds the digest when the file changes during the read. It does not scan for malware, upload the file or its hash, contact VirusTotal or another service, use an API key, or alter any system security or network setting.
+
+### Use a private Wi-Fi MAC on public networks
+
+This Windows-only tool changes a MAC only when you explicitly ask it to. It selects the active physical Wi-Fi adapter by default.
+
+```cmd
+python blackout.py tools mac status
+python blackout.py tools mac randomize
+python blackout.py tools mac restore
+```
+
+`randomize` makes a fresh locally administered, unicast address every time unless you set `mac_custom_private_address`. The command shows the adapter and target address, then asks for confirmation because Wi-Fi disconnects briefly while that one adapter restarts. In scripts or other non-interactive use, add `--force`; it skips only the confirmation, not safety checks.
+
+```cmd
+python blackout.py tools mac randomize --adapter "Wi-Fi" --force
+python blackout.py settings set mac_randomization_prefix 06
+python blackout.py settings set mac_custom_private_address 02:AA:BB:CC:DD:EE
+```
+
+`mac_preferred_adapter` can choose a default adapter when more than one physical Wi-Fi adapter is active. Prefixes and custom MACs must be locally administered and unicast, so the tool will not use a vendor identity or a multicast address.
+
+Before the first change, Blackout Kit saves the prior `NetworkAddress` driver override. `restore` puts that exact setting back; if no override existed, it removes only the override so Windows returns to the adapter's hardware default. It does not automatically rotate addresses and never changes DNS, firewall, proxy, routes, VPNs, or another adapter. A driver that does not support software MAC overrides will be reported instead of treated as a success.
 
 ---
 
@@ -553,13 +738,22 @@ The old Windows Firewall kill-switch design is intentionally not supported. Blac
 
 ## GUI and MCP
 
+## Zero-argument terminal launcher
+
+Running `blackout` with no arguments opens a keyboard-navigable terminal chooser: **Terminal CLI**, **Windows App**, or **Exit**.
+
+- **↑ / ↓** move the selection; **Space**, **Enter**, or **→** select it; **←** or **Esc** go back; **Ctrl+C** quits.
+- A control legend is always visible at the bottom of the menu.
+- **Terminal CLI** opens the arrow-key-navigable action menu (Connect, Engine, Status, Tools, Settings, …). Backing out of it (Left/Escape) returns to this chooser rather than exiting.
+- **Windows App** opens the desktop GUI described below; it is only offered on Windows.
+
 ## Start the GUI
 
 ```cmd
 python blackout.py gui
 ```
 
-The GUI is Windows-only.
+The GUI is Windows-only. It is also reachable as the **Windows App** option in the zero-argument terminal chooser above.
 
 ## Start the MCP server
 

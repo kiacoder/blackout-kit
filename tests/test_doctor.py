@@ -16,22 +16,99 @@ def test_check_result():
     assert r.fixable is True
     assert r.fix() == "fixed"
 
-@patch("blackoutkit.doctor.PROJECT_ROOT")
-def test_check_data_files(mock_root, tmp_path):
-    mock_root.__truediv__.return_value = tmp_path / "mocked"
-    res = doc.check_data_files()
-    assert len(res) == 3
-    assert not res[0].ok
-    res[0].fix()
-    
-    (tmp_path / "mocked").write_text("")
-    res2 = doc.check_data_files()
-    assert not res2[0].ok
-    res2[0].fix()
-    
-    (tmp_path / "mocked").write_text("ok")
-    res3 = doc.check_data_files()
-    assert res3[0].ok
+def test_check_data_files_does_not_repair_immutable_resources(tmp_path):
+    mocked = tmp_path / "mocked"
+    with patch("blackoutkit.doctor._data_file_path", return_value=mocked):
+        results = doc.check_data_files()
+
+    assert len(results) == 3
+    assert results[0].ok is False
+    assert results[0].fixable is False
+    assert results[0].fix is None
+
+
+def test_check_data_files_reports_empty_immutable_resource_without_repair(tmp_path):
+    bundled = tmp_path / "bundled.txt"
+    bundled.write_text("", encoding="utf-8")
+
+    def resolve(relative):
+        return tmp_path / "configs.txt" if relative == "data/configs.txt" else bundled
+
+    with patch("blackoutkit.doctor._data_file_path", side_effect=resolve):
+        results = doc.check_data_files()
+
+    assert results[0].ok is False
+    assert results[0].fixable is False
+    assert results[0].fix is None
+
+
+def test_check_data_files_repairs_only_mutable_configs(tmp_path):
+    configs = tmp_path / "configs.txt"
+
+    def resolve(relative):
+        return configs if relative == "data/configs.txt" else tmp_path / relative.rsplit("/", 1)[-1]
+
+    with patch("blackoutkit.doctor._data_file_path", side_effect=resolve):
+        results = doc.check_data_files()
+
+    assert results[2].fixable is True
+    assert results[2].fix is not None
+    results[2].fix()
+    assert configs.read_text(encoding="utf-8").startswith("# V2Ray configs")
+
+
+
+def test_check_data_files_reports_existing_immutable_resource(tmp_path):
+    bundled = tmp_path / "bundled.txt"
+    bundled.write_text("ok", encoding="utf-8")
+    configs = tmp_path / "configs.txt"
+
+    def resolve(relative):
+        return configs if relative == "data/configs.txt" else bundled
+
+    with patch("blackoutkit.doctor._data_file_path", side_effect=resolve):
+        results = doc.check_data_files()
+
+    assert results[0].ok is True
+    assert results[1].ok is True
+    assert results[2].ok is False
+    assert results[2].fixable is True
+
+
+
+def test_check_data_files_uses_source_resource_path_for_immutable_files(monkeypatch, tmp_path):
+    bundled = tmp_path / "fake_snis.txt"
+    bundled.write_text("www.example.com\n", encoding="utf-8")
+
+    def resolve(relative):
+        if relative == "data/configs.txt":
+            return tmp_path / "configs.txt"
+        return bundled
+
+    monkeypatch.setattr(doc, "_data_file_path", resolve)
+    results = doc.check_data_files()
+
+    assert all(result.ok is True for result in results[:2])
+    assert results[2].fixable is True
+    assert not (tmp_path / "configs.txt").exists()
+
+
+
+def test_check_data_files_fixes_missing_mutable_configs_in_data_dir(monkeypatch, tmp_path):
+    configs = tmp_path / "configs.txt"
+
+    def resolve(relative):
+        if relative == "data/configs.txt":
+            return configs
+        return tmp_path / relative.rsplit("/", 1)[-1]
+
+    monkeypatch.setattr(doc, "_data_file_path", resolve)
+    results = doc.check_data_files()
+    results[2].fix()
+    assert configs.read_text(encoding="utf-8").startswith("# V2Ray configs")
+    assert results[2].fixable is True
+    assert configs.exists()
+
 
 @patch("blackoutkit.settings.load")
 @patch("blackoutkit.settings.DEFAULTS", {"a": 1})
@@ -250,6 +327,27 @@ def test_run_all_checks(*mocks):
     mocks[0].return_value = doc.CheckResult("test", False, "msg", fixable=True, fix=lambda: None)
     res = doc.run_all_checks(auto_fix=True)
     assert res[0].ok is True
+
+
+def test_run_all_checks_excludes_optional_capture_checks_by_default(monkeypatch):
+    monkeypatch.setattr(doc, "check_scapy", lambda: (_ for _ in ()).throw(AssertionError("unexpected")))
+    monkeypatch.setattr(doc, "check_npcap", lambda: (_ for _ in ()).throw(AssertionError("unexpected")))
+
+    results = doc.run_all_checks()
+
+    assert results
+
+
+def test_run_all_checks_includes_optional_capture_checks_when_requested(monkeypatch):
+    scapy = doc.CheckResult("scapy", True, "Installed")
+    npcap = doc.CheckResult("npcap", True, "Found")
+    monkeypatch.setattr(doc, "check_scapy", lambda: scapy)
+    monkeypatch.setattr(doc, "check_npcap", lambda: npcap)
+
+    results = doc.run_all_checks(include_optional=True)
+
+    assert scapy in results
+    assert npcap in results
 
 @patch("sys.platform", "win32")
 @patch("blackoutkit.settings.load", return_value={})

@@ -1,0 +1,10 @@
+include README.md
+include blackout.py
+include LICENSE
+include SECURITY.md
+include data/cloudflare_ips.txt
+include data/fake_snis.txt
+include data/gas_ids.txt
+exclude data/configs.txt
+include assets/*
+recursive-include blackoutkit/resources data/*.txt assets/*

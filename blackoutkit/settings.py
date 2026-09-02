@@ -9,6 +9,7 @@ Features:
 import json
 import logging
 import os
+import re
 import sys
 import tempfile
 import threading
@@ -27,6 +28,9 @@ SENSITIVE_KEYS = frozenset({
     "ikev2_psk",
     "softether_password",
 })
+
+SETTINGS_SCHEMA_VERSION = 1
+_SETTINGS_SCHEMA_KEY = "_schema_version"
 
 
 def display_value(key: str, value):
@@ -182,7 +186,77 @@ DEFAULTS = {
     "qos_default_priority": 50,         # Default priority metadata for new rules (0-100)
     "qos_alert_threshold_pct": 110,     # Stored threshold metadata for violation inspection
     "qos_rate_limit_precision_ms": 100, # Stored compatibility metadata
+
+    # Wi-Fi MAC privacy (applied only by explicit tools mac commands)
+    "mac_preferred_adapter": "",       # Optional active physical Wi-Fi adapter name
+    "mac_randomization_prefix": "02",  # Locally administered + unicast first octet
+    "mac_custom_private_address": "",  # Optional locally administered + unicast MAC
 }
+
+
+SETTING_GROUPS = {
+    "Network Ports": (
+        "sni_listen_port", "sni_connect_port", "xray_socks_port", "xray_http_port",
+        "psiphon_http_port", "psiphon_socks_port", "proxy_port", "neighbor_proxy_port",
+        "gas_proxy_port", "softether_port",
+    ),
+    "SNI Engine": (
+        "sni_connect_ip", "sni_custom_fakes", "sni_fake_sni", "sni_always_test_all_ips",
+        "sni_custom_ips", "sni_arvancloud_sni",
+    ),
+    "XRay": ("xray_log_level", "xray_mux_enabled", "xray_fingerprint", "xray_fragment"),
+    "GoodbyeDPI": ("gdpi_backend", "gdpi_flags", "gdpi_always_test_all"),
+    "Psiphon": ("psiphon_country",),
+    "MHRV": ("mhrv_direct",),
+    "System Proxy": ("auto_set_proxy", "proxy_host"),
+    "Scanning": ("scan_concurrency", "scan_timeout", "scan_ip_count"),
+    "Reconnect": ("engine_order", "retry_interval", "max_retries", "reconnect_initial_delay", "reconnect_max_delay"),
+    "Daemon": ("daemon_log_lines",),
+    "User Interface": ("show_banner", "show_disclaimer", "show_first_run", "color_theme", "terminal_theme"),
+    "Security": ("security_mode", "kill_switch", "secrets_vault_enabled"),
+    "IKEv2 / L2TP": ("ikev2_server", "ikev2_username", "ikev2_password", "ikev2_psk", "ikev2_tunnel_type"),
+    "WireGuard": ("wg_config_file", "wg_interface"),
+    "OpenVPN": ("openvpn_config",),
+    "SoftEther": ("softether_host", "softether_hub", "softether_username", "softether_password"),
+    "Neighbor Sharing": ("neighbor_bind_lan", "lan_neighbor_cache_ttl_minutes", "lan_neighbor_cache_max_size"),
+    "Country and Routing": ("country", "xray_split_tunnel", "xray_doh_dns"),
+    "Engine Selection": ("selected_engine", "config_rotation"),
+    "AmneziaWG": ("awg_config_file",),
+    "Packet Capture": ("capture_default_iface", "capture_max_packets"),
+    "Downloads": ("download_speed_limit_kbps", "download_max_parallel", "download_auto_resume"),
+    "Bandwidth Caps": ("bandwidth_caps_enabled", "bandwidth_alert_threshold"),
+    "Traffic Logging": ("traffic_logging_enabled", "traffic_log_max_entries", "traffic_log_retention_days", "traffic_log_sample_interval_sec"),
+    "Ad Blocking": ("adblock_enabled", "adblock_block_mode", "adblock_sinkhole_ip", "adblock_auto_update_interval_hours", "adblock_query_log_enabled"),
+    "QoS": ("qos_enabled", "qos_enforcement_mode", "qos_default_priority", "qos_alert_threshold_pct", "qos_rate_limit_precision_ms"),
+    "Wi-Fi MAC Privacy": ("mac_preferred_adapter", "mac_randomization_prefix", "mac_custom_private_address"),
+}
+
+SETTING_CHOICES = {
+    "gdpi_backend": ("legacy", "native"),
+    "xray_log_level": ("debug", "info", "warning", "error", "none"),
+    "xray_fingerprint": ("chrome", "firefox", "safari", "random"),
+    "security_mode": ("speed", "private", "legend"),
+    "ikev2_tunnel_type": ("IKEv2", "L2tp", "Sstp", "Pptp"),
+    "color_theme": ("red", "blue", "green", "purple"),
+    "terminal_theme": ("dark", "light"),
+    "selected_engine": (
+        "auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
+        "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
+        "tuic", "awg", "legend",
+    ),
+    "qos_enforcement_mode": ("off", "monitor"),
+    "adblock_block_mode": ("null", "sinkhole"),
+}
+
+
+def iter_setting_groups() -> list[tuple[str, list[str]]]:
+    """Return ordered setting groups, including any newly added keys."""
+    assigned = {key for keys in SETTING_GROUPS.values() for key in keys}
+    groups = [(name, [key for key in keys if key in DEFAULTS]) for name, keys in SETTING_GROUPS.items()]
+    other = [key for key in DEFAULTS if key not in assigned]
+    if other:
+        groups.append(("Other", other))
+    return [(name, keys) for name, keys in groups if keys]
 
 
 # ──────────────────────────── Validation ─────────────────────────
@@ -196,6 +270,22 @@ _ENGINE_CHOICES = [
     "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
     "tuic", "awg", "legend",
 ]
+
+
+def _valid_mac_prefix(value: str) -> bool:
+    if not re.fullmatch(r"[0-9A-Fa-f]{2}", value.strip()):
+        return False
+    return (int(value.strip(), 16) & 0x03) == 0x02
+
+
+def _valid_private_mac_or_empty(value: str) -> bool:
+    compact = value.replace(":", "").replace("-", "").strip()
+    if not compact:
+        return True
+    if not re.fullmatch(r"[0-9A-Fa-f]{12}", compact):
+        return False
+    return (int(compact[:2], 16) & 0x03) == 0x02
+
 
 _VALIDATORS: dict[str, tuple] = {
     "gdpi_backend":      (str,   lambda v: v in ("legacy", "native"), "must be: legacy / native"),
@@ -248,6 +338,9 @@ _VALIDATORS: dict[str, tuple] = {
     "qos_default_priority": (int, lambda v: 0 <= v <= 100, "must be 0–100"),
     "qos_alert_threshold_pct": (int, lambda v: 100 <= v <= 500, "must be 100–500"),
     "qos_rate_limit_precision_ms": (int, lambda v: 10 <= v <= 1000, "must be 10–1000"),
+    "mac_preferred_adapter": (str, lambda v: True, "must be an adapter name or empty"),
+    "mac_randomization_prefix": (str, lambda v: _valid_mac_prefix(v), "must be a locally administered unicast octet, such as 02"),
+    "mac_custom_private_address": (str, lambda v: _valid_private_mac_or_empty(v), "must be empty or a locally administered unicast MAC address"),
 }
 
 # ──────────────────────────── Env overrides ───────────────────────
@@ -293,11 +386,25 @@ def _apply_env_overrides(settings: dict) -> dict:
 
 # ──────────────────────────── Public API ─────────────────────────
 
+def _normalize_saved_settings(saved: dict) -> dict:
+    if not isinstance(saved, dict):
+        raise ValueError("settings data must be an object")
+    schema_version = saved.get(_SETTINGS_SCHEMA_KEY, 0)
+    if not isinstance(schema_version, int) or schema_version < 0 or schema_version > SETTINGS_SCHEMA_VERSION:
+        raise ValueError(f"unsupported settings schema version: {schema_version!r}")
+    normalized = {
+        key: value
+        for key, value in saved.items()
+        if key != _SETTINGS_SCHEMA_KEY
+    }
+    return normalized
+
+
 def _load_plain_settings() -> dict:
     if not SETTINGS_FILE.exists():
         return dict(DEFAULTS)
     try:
-        saved = json.loads(SETTINGS_FILE.read_text())
+        saved = _normalize_saved_settings(json.loads(SETTINGS_FILE.read_text()))
         merged = dict(DEFAULTS)
         merged.update(saved)
         return _normalize_qos_settings(merged)
@@ -321,7 +428,9 @@ def load() -> dict:
 
 def _write_plain_settings(settings: dict) -> None:
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    data = json.dumps(settings, indent=2).encode()
+    stored = dict(settings)
+    stored[_SETTINGS_SCHEMA_KEY] = SETTINGS_SCHEMA_VERSION
+    data = json.dumps(stored, indent=2).encode()
     fd, tmp = tempfile.mkstemp(dir=APP_DATA_DIR, prefix=".tmp_settings_")
     try:
         with os.fdopen(fd, "wb") as handle:
@@ -478,6 +587,24 @@ def set_value(key: str, value):
     save(settings)
 
 
+def validate_updates(values: dict) -> dict:
+    """Coerce and validate a complete settings update before persistence."""
+    if not isinstance(values, dict):
+        raise ValueError("Settings update must be a dict")
+    normalized = {}
+    for key, value in values.items():
+        if key not in DEFAULTS:
+            raise ValueError(f"Unknown setting: {key}")
+        typed = coerce_value(key, value)
+        if key == "kill_switch" and typed and not sys.platform.startswith("linux"):
+            raise ValueError("The kill switch is available only on Linux")
+        ok, reason = validate(key, typed)
+        if not ok:
+            raise ValueError(f"Invalid setting {key}: {reason}")
+        normalized[key] = typed
+    return normalized
+
+
 def reset():
     """Reset all settings to factory defaults."""
     save(dict(DEFAULTS))
@@ -545,6 +672,9 @@ def describe(key: str) -> str:
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
         "config_rotation":    "When enabled, the daemon rotates to the next saved config on reconnect failure (blocked IP)",
         "awg_config_file":    "Full path to your AmneziaWG .conf file",
+        "mac_preferred_adapter": "Optional active physical Wi-Fi adapter for explicit MAC privacy commands",
+        "mac_randomization_prefix": "Locally administered unicast first octet for fresh private Wi-Fi MACs (default: 02)",
+        "mac_custom_private_address": "Optional locally administered unicast MAC used only by explicit tools mac randomize",
     }
     return descriptions.get(key, "No description available.")
 

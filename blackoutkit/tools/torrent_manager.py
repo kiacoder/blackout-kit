@@ -143,8 +143,10 @@ class TorrentDownloadManager:
             settings.user_agent = f"Blackout-Kit/{__version__}"
             self.session = lt.session(settings)
             _log.info("Initialized libtorrent session")
-        except ImportError:
-            raise RuntimeError("python-libtorrent not installed. Install with: pip install python-libtorrent")
+        except ImportError as exc:
+            raise RuntimeError(
+                "torrent support is unavailable; install blackout-kit[torrent] (python-libtorrent)"
+            ) from exc
 
     def add_torrent(self, magnet_or_file: str, output_dir: Optional[Path] = None, seed_ratio: float = 1.0) -> str:
         """Queue a new torrent download. Returns download ID."""

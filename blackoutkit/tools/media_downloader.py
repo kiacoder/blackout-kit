@@ -13,8 +13,12 @@ Core features:
 import json
 import logging
 import os
+import shutil
 import subprocess
 import tempfile
+
+
+MEDIA_INSTALL_HINT = "media support is unavailable; install blackout-kit[media] (yt-dlp)"
 import threading
 import time
 import uuid
@@ -32,6 +36,16 @@ from .. import APP_DATA_DIR, __version__
 MEDIA_QUEUE_FILE = APP_DATA_DIR / "media_downloads.json"
 MEDIA_MAX_HISTORY = 1000
 _DOWNLOAD_TIMEOUT = 3600  # 1 hour max per video
+
+
+def ensure_media_available() -> str:
+    """Return the yt-dlp executable path or raise a feature-specific error."""
+    executable = shutil.which("yt-dlp")
+    if not executable:
+        from ..cli_output import OptionalDependencyError
+
+        raise OptionalDependencyError("media", "yt-dlp")
+    return executable
 
 
 class MediaDownloadStatus(str, Enum):
@@ -200,8 +214,9 @@ class MediaDownloadManager:
             format_spec = download.format_spec or "best[ext=mp4]"
             output_template = str(download.destination / "%(title)s.%(ext)s")
 
+            yt_dlp = ensure_media_available()
             cmd = [
-                "yt-dlp",
+                yt_dlp,
                 "-f", format_spec,
                 "-o", output_template,
                 download.url

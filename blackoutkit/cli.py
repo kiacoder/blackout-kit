@@ -12,6 +12,7 @@ import os
 import sys
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from rich.panel import Panel
@@ -22,9 +23,11 @@ from rich.progress import (
 from rich.table import Table
 from rich.live import Live
 from rich import box
+from rich.markup import escape
 
 from . import __version__
 from .theme import console, print_banner, make_table, latency_color, refresh_console_theme, is_interactive, ask_choice, confirm
+from .terminal_menu import MenuItem, run_menu
 from . import settings as cfg
 from . import daemon
 
@@ -157,7 +160,7 @@ def _get_engine_classes(name: str) -> tuple:
         return (TuicEngine,)
     elif name == "awg":
         from .engines.amneziawg import AmneziaWGEngine
-        return (AmneziaWGEngine(),)
+        return (AmneziaWGEngine,)
     elif name == "legend":
         from .engines.tor import TorEngine
         from .engines.sni import SNIEngine
@@ -343,18 +346,20 @@ def _print_preset_panel(title: str, changes: list[str], footer: str | None) -> N
     console.print(success_panel(body, title=title))
 
 
-def _start_engine_stack(name: str):
+def _start_engine_stack(name: str, *, emit: bool = True):
     """Instantiate and start all engines in a stack. Returns running list."""
     from . import downloader as dl
 
     platform_error = _platform_engine_error(name)
     if platform_error:
-        console.print(f"[error]{platform_error}[/error]")
+        if emit:
+            console.print(f"[error]{platform_error}[/error]")
         return []
 
     missing_linux = _linux_missing_dependencies(name)
     if missing_linux:
-        console.print(f"[error]✗ {_linux_dependency_hint()}[/error]")
+        if emit:
+            console.print(f"[error]✗ {_linux_dependency_hint()}[/error]")
         return []
 
     deps = _linux_dependencies(name)
@@ -373,9 +378,11 @@ def _start_engine_stack(name: str):
                         manual_only.append(info)
 
             if manual_only:
-                console.print(f"\n[error]✗ Missing manual-install binaries required for [bold]{name}[/bold]:[/error]")
+                if emit:
+                    console.print(f"\n[error]✗ Missing manual-install binaries required for [bold]{name}[/bold]:[/error]")
                 for info in manual_only:
-                    console.print(
+                    if emit:
+                        console.print(
                         f"\n  [bold yellow]{info.display_name}[/bold yellow]\n"
                         f"  Please download from: [cyan]{info.manual_url}[/cyan]\n"
                         f"  Note: {info.manual_note or 'Extract to bins/ folder'}\n"
@@ -383,9 +390,11 @@ def _start_engine_stack(name: str):
                 return []
 
             if auto_downloadable:
-                console.print(f"\n[warning]⚠️ Required binaries for [bold]{name}[/bold] are missing.[/warning]")
+                if emit:
+                    console.print(f"\n[warning]⚠️ Required binaries for [bold]{name}[/bold] are missing.[/warning]")
                 for k, info in auto_downloadable:
-                    console.print(f"  • {info.display_name}")
+                    if emit:
+                        console.print(f"  • {info.display_name}")
                 try:
                     ans = console.input("\n[bold cyan]Would you like to download and install them now? (y/n):[/bold cyan] ").strip().lower()
                 except (KeyboardInterrupt, EOFError):
@@ -426,37 +435,110 @@ def _start_engine_stack(name: str):
                     f"[bold cyan]Starting {self.eng_name}...[/bold cyan]\n  [dim]→ {msg}[/dim]"
                 )
 
-    with console.status(f"[bold cyan]Starting stack: {name}...[/bold cyan]") as status:
+    status_context = console.status(f"[bold cyan]Starting stack: {name}...[/bold cyan]") if emit else nullcontext()
+    with status_context as status:
         for cls in classes:
             eng = cls()
-            
-            # Attach handler to this specific engine's logger
-            handler = EngineStatusHandler(status, eng.name)
-            eng._log.addHandler(handler)
-            # Ensure the logger passes DEBUG messages to our handler
+
+            handler = EngineStatusHandler(status, eng.name) if emit else None
+            if handler is not None:
+                eng._log.addHandler(handler)
             old_level = eng._log.level
             eng._log.setLevel(logging.DEBUG)
-            
+
             try:
                 success = eng.start()
             finally:
-                eng._log.removeHandler(handler)
+                if handler is not None:
+                    eng._log.removeHandler(handler)
                 eng._log.setLevel(old_level)
-                
+
             if success:
                 running.append(eng)
             else:
-                console.print(f"  [warning]⚠ {eng.name} failed to start (check logs for details)[/warning]")
-                # Rollback: stop all already started engines in this stack
+                if emit:
+                    console.print(f"  [warning]⚠ {eng.name} failed to start (check logs for details)[/warning]")
                 for r in running:
                     try:
                         r.stop()
                     except Exception:
                         pass
                 return []
-                
+
     return running
 
+
+
+def _connection_service_for_legacy():
+    from .connection_service import ConnectionService
+
+    return ConnectionService(
+        readiness_gate=_ensure_ready,
+        start_engine_stack=_start_engine_stack,
+        recommended_engine=_recommended_engine_name,
+        active_profile=_get_active_profile,
+        route_candidates=_routing_candidates,
+        choose_engine=lambda prompt: ask_choice(prompt, ALL_ENGINE_CHOICES, default="auto"),
+        choose_connection=lambda prompt, choices, default: ask_choice(prompt, choices, default=default),
+        scan_sni_ip=_legacy_scan_missing_sni_ip,
+        emit=lambda event: _render_connection_event(event),
+        emit_output=True,
+    )
+
+
+def _legacy_scan_missing_sni_ip(_settings):
+    ips = generate_cloudflare_ips(10)
+    with Progress(
+        SpinnerColumn(style="bold red"),
+        TextColumn("{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        progress.add_task("Scanning Cloudflare IPs...")
+        results = asyncio.run(scan_ips(ips, concurrency=10, timeout=3.0))
+    if results:
+        console.print(f"[success]✓ Best IP found: {results[0][0]} ({results[0][1]:.0f}ms)[/success]")
+    else:
+        console.print("[warning]No reachable Cloudflare IPs. Proceeding anyway...[/warning]")
+    return results[0] if results else None
+
+
+def _render_connection_event(event: dict[str, object]) -> None:
+    event_type = event.get("type")
+    if event_type == "preset":
+        preset = event.get("preset") or {}
+        _print_preset_panel(preset.get("title"), preset.get("changes", []), preset.get("footer"))
+    elif event_type == "profile":
+        profile = event.get("profile") or {}
+        console.print(f"  [dim]Detected: {profile.get('name')} ({profile.get('censorship_level')}) — {profile.get('recommended_engine')} recommended[/dim]")
+    elif event_type == "warning":
+        console.print(f"[warning]{event.get('message', '')}[/warning]")
+    elif event_type == "engine_started":
+        console.print(f"  [success]✓ {event.get('name')}[/success] running (PID {event.get('pid')})")
+    elif event_type == "proxy" and event.get("configured"):
+        console.print(f"  [success]✓ System proxy set[/success]")
+    elif event_type == "network_engine":
+        console.print("  [info]Network-level engine — no system proxy needed[/info]")
+    elif event_type == "proxy_warning":
+        console.print(f"\n[warning]⚠ {event.get('message')}[/warning]")
+    elif event_type == "stopping":
+        console.print("\n[warning]Stopping...[/warning]")
+
+
+
+def _legacy_connection_result(args, operation: str):
+    from .connection_service import ConnectionRequest
+
+    request = ConnectionRequest(
+        operation=operation,
+        pos_engine=getattr(args, "pos_engine", None),
+        engine=getattr(args, "engine", None),
+        background=bool(getattr(args, "background", False)),
+        iran=bool(getattr(args, "iran", False)),
+        russia=bool(getattr(args, "russia", False)),
+    )
+    service = _connection_service_for_legacy()
+    return service.connect(request) if operation == "connect" else service.start(request)
 
 
 # ──────────────────────────── Country profile helper ─────────────
@@ -547,7 +629,9 @@ def cmd_scan(args):
 
 
 def _scan_fake_snis():
-    sni_file = Path(__file__).parent.parent / "data" / "fake_snis.txt"
+    from . import resource_path
+
+    sni_file = resource_path("data/fake_snis.txt")
     if not sni_file.exists():
         console.print("[warning]data/fake_snis.txt not found[/warning]")
         return
@@ -704,179 +788,13 @@ def _health_check_target(proxy_info):
 
 
 def cmd_start(args):
-    requested_engine = _resolve_engine_name(args)
-    engine_name = _linux_default_engine(requested_engine)
-    background = getattr(args, "background", False)
-    iran = getattr(args, "iran", False)
-    russia = getattr(args, "russia", False)
+    """Compatibility adapter for the shared connection service."""
+    return _legacy_connection_result(args, "start")
 
-    if iran and russia:
-        console.print("[error]Choose only one preset: --iran or --russia.[/error]")
-        return
 
-    preset_name = "iran" if iran else "russia" if russia else None
-    preset_title = None
-    preset_changes: list[str] = []
-    preset_footer = None
-    env_overrides: dict[str, str] = {}
-    base_settings = cfg.load()
-
-    if preset_name:
-        if preset_name == "iran":
-            engine_name = "legend"
-            if requested_engine not in {"auto", "sni", "xray", "legend", "tor"}:
-                console.print("[yellow]Iran preset is tuned for the Tor + SNI + XRay stack and related local settings.[/yellow]")
-        preset_title, env_overrides, preset_changes, preset_footer = _preset_payload(
-            preset_name,
-            base_settings,
-            direct_start=True,
-        )
-
-    effective_engine_name = engine_name
-    with _temporary_env_overrides(env_overrides):
-        platform_error = _platform_engine_error(effective_engine_name)
-        if platform_error:
-            console.print(f"[error]{platform_error}[/error]")
-            return
-        if not _ensure_ready(effective_engine_name):
-            return
-
-        if preset_title:
-            _print_preset_panel(preset_title, preset_changes, preset_footer)
-
-        s = cfg.load()
-        proxy_info = None
-        health_target = None
-
-        import ctypes
-        is_admin = False
-        try:
-            is_admin = ctypes.windll.shell32.IsUserAnAdmin() != 0
-        except Exception:
-            pass
-
-        if background:
-            try:
-                pid = daemon.start(effective_engine_name, env_overrides=env_overrides)
-                console.print(Panel(
-                    f"[success]Engine:[/success]  [bold]{effective_engine_name}[/bold]\n"
-                    f"[success]PID:[/success]     [bold]{pid}[/bold]\n"
-                    f"[success]Log:[/success]     [dim]{daemon.LOG_FILE}[/dim]\n\n"
-                    f"[muted]Run [bold]blackout status[/bold] to monitor.[/muted]\n"
-                    f"[muted]Run [bold]blackout stop[/bold] to stop.[/muted]",
-                    title="[bold green]✓ Blackout Kit — Background[/bold green]",
-                    border_style="green",
-                ))
-            except RuntimeError as e:
-                console.print(f"[error]{e}[/error]")
-            return
-
-        if sys.platform == "win32" and not is_admin and effective_engine_name in EXTRA_ADMIN_ENGINES:
-            console.print("[warning]Elevating to Administrator... Please accept the UAC prompt.[/warning]")
-            try:
-                pid = daemon.start(effective_engine_name, env_overrides=env_overrides)
-                if not pid:
-                    console.print("[error]Failed to start daemon (UAC prompt declined or timed out).[/error]")
-                    return
-                console.print(f"  [success]✓ {effective_engine_name}[/success] running in background (PID {pid})")
-                console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
-                try:
-                    # Wait for log file to be created (daemon might not have created it yet)
-                    for _ in range(100):  # Wait up to 10 seconds
-                        if daemon.LOG_FILE.exists():
-                            break
-                        time.sleep(0.1)
-                    if not daemon.LOG_FILE.exists():
-                        console.print("[warning]⚠ Daemon log file not created (may be disabled). Stopping...[/warning]")
-                        daemon.stop()
-                        return
-                    with open(daemon.LOG_FILE, "r", encoding="utf-8") as f:
-                        f.seek(0, 2)
-                        try:
-                            while daemon.get_pid() is not None:
-                                line = f.readline()
-                                if not line:
-                                    time.sleep(0.1)
-                                    continue
-                                if "[ERROR]" in line:
-                                    console.print(f"[red]{line.strip()}[/red]")
-                                elif "[WARNING]" in line:
-                                    console.print(f"[yellow]{line.strip()}[/yellow]")
-                                elif "[success]" in line:
-                                    console.print(f"[green]{line.strip()}[/green]")
-                                else:
-                                    console.print(f"[dim]{line.strip()}[/dim]")
-                        except KeyboardInterrupt:
-                            pass
-                        finally:
-                            console.print("\n[warning]Stopping...[/warning]")
-                            daemon.stop()
-                except FileNotFoundError:
-                    console.print("[warning]⚠ Failed to open daemon log file. Stopping...[/warning]")
-                    daemon.stop()
-                return
-            except RuntimeError as e:
-                console.print(f"[error]{e}[/error]")
-                return
-
-        kill_switch_enabled = False
-        if sys.platform.startswith("linux") and s.get("kill_switch", False):
-            if not sec.prepare_linux_kill_switch(effective_engine_name):
-                console.print("[error]Could not resolve a safe Linux kill-switch endpoint; refusing to start.[/error]")
-                return
-            if not sec.enable_kill_switch(effective_engine_name):
-                console.print("[error]Linux kill switch could not be enabled; refusing to start the system tunnel.[/error]")
-                return
-            kill_switch_enabled = True
-
-        engines = _start_engine_stack(effective_engine_name)
-        if not engines:
-            if kill_switch_enabled:
-                sec.disable_kill_switch()
-                sec.clear_linux_kill_switch_endpoint(effective_engine_name)
-            console.print("[error]No engines could start. Make sure binaries are in bins/.[/error]")
-            return
-
-        for eng in engines:
-            console.print(f"  [success]✓ {eng.name}[/success] running (PID {eng.pid})")
-
-        if s.get("auto_set_proxy"):
-            proxy_info = cfg.get_engine_proxy_details(effective_engine_name, s)
-            if proxy_info:
-                p_host, p_port = proxy_info
-                if set_system_proxy(p_host, p_port):
-                    console.print(f"  [success]✓ System proxy set[/success] → {p_host}:{p_port}")
-                health_target = _health_check_target(proxy_info)
-            else:
-                console.print("  [info]Network-level engine — no system proxy needed[/info]")
-
-        console.print("\n[muted]Press Ctrl+C to stop.[/muted]\n")
-        try:
-            last_check = time.monotonic()
-            while all(e.is_running() for e in engines):
-                time.sleep(1)
-                now = time.monotonic()
-                if now - last_check > 10.0:
-                    last_check = now
-                    if s.get("auto_set_proxy") and health_target:
-                        import socket
-                        try:
-                            with socket.create_connection(health_target, timeout=2.0):
-                                pass
-                        except Exception:
-                            console.print("\n[warning]⚠ Proxy port stopped responding. Check your internet connection.[/warning]")
-        except KeyboardInterrupt:
-            pass
-        finally:
-            console.print("\n[warning]Stopping...[/warning]")
-            for eng in engines:
-                eng.stop()
-            if s.get("auto_set_proxy"):
-                clear_system_proxy()
-            if kill_switch_enabled:
-                sec.disable_kill_switch()
-                sec.clear_linux_kill_switch_endpoint(effective_engine_name)
-            console.print("[success]Stopped. System proxy cleared.[/success]")
+def cmd_connect(args):
+    """Compatibility adapter for the shared connection service."""
+    return _legacy_connection_result(args, "connect")
 
 
 def cmd_stop(args):
@@ -1305,7 +1223,10 @@ def cmd_route(args):
             candidate.evidence,
             ", ".join(candidate.blockers) or "—",
         )
-    recommended = next((candidate for candidate in candidates if candidate.ready), candidates[0])
+    recommended = next((candidate for candidate in candidates if candidate.ready), candidates[0] if candidates else None)
+    if not recommended:
+        console.print("[error]Error: No routing candidates available. Please install at least one engine.[/error]")
+        return None
     console.print(Panel(table, title=f"[heading]Smart Routing · recommends {recommended.engine}[/heading]", border_style="panel.border"))
     console.print("[muted]Recommendations use local settings, a pinned country profile when set, installed components, and saved health history only. They do not probe nodes or change connectivity.[/muted]")
     return recommended
@@ -1439,22 +1360,41 @@ def cmd_config(args):
                 console.print("[error]No setup string provided.[/error]")
                 return
 
-            blob = base64.b64decode(setup_string.encode("ascii"))
+            blob = base64.b64decode("".join(setup_string.split()).encode("ascii"), validate=True)
             setup_data = json.loads(blob.decode("utf-8"))
             configs, settings_data = deserialize_setup(setup_data)
+            settings_data = cfg.validate_updates(settings_data)
+            seen_uris = set()
+            for config in configs:
+                if not config.raw_uri or config.raw_uri in seen_uris:
+                    raise ValueError("Setup contains an invalid or duplicate config URI")
+                seen_uris.add(config.raw_uri)
 
             console.print(f"[info]Setup contains {len(configs)} config(s) + {len(settings_data)} setting(s)[/info]")
 
-            if not getattr(args, "force", False):
+            force = getattr(args, "force", False)
+            if not force and not is_interactive():
+                console.print("[error]Refusing setup import without --force in non-interactive mode.[/error]")
+                return
+            if not force:
                 resp = console.input("[warning]Import will overwrite existing configs and settings. Continue? [y/N]:[/warning] ")
                 if resp.lower() != "y":
                     console.print("[muted]Import cancelled.[/muted]")
                     return
 
-            save_configs(configs)
-            current = cfg.load()
-            current.update(settings_data)
-            cfg.save(current)
+            old_configs = load_configs()
+            old_settings = cfg.load()
+            try:
+                save_configs(configs)
+                updated = dict(old_settings)
+                updated.update(settings_data)
+                cfg.save(updated)
+            except Exception:
+                try:
+                    save_configs(old_configs)
+                except Exception:
+                    pass
+                raise
             console.print("[success]✓ Setup imported successfully[/success]")
         except (base64.binascii.Error, json.JSONDecodeError, ValueError) as e:
             console.print(f"[error]Invalid setup string: {e}[/error]")
@@ -1522,6 +1462,7 @@ def cmd_tools(args):
             "  [cyan]speedtest-history[/cyan]        — Show speedtest trend over time\n"
             "  [cyan]mtu [host][/cyan]               — Detect path MTU\n"
             "  [cyan]adapters[/cyan]                 — List network adapters\n"
+            "  [cyan]mac status|randomize|restore[/cyan] — Manage an explicit private Wi-Fi MAC\n"
             "  [cyan]traceroute <host>[/cyan]        — Traceroute\n"
             "  [cyan]subnet <ip/cidr>[/cyan]         — Calculate subnet details\n"
             "  [cyan]connections[/cyan]              — Live TCP/UDP connection table\n"
@@ -1674,6 +1615,96 @@ def cmd_tools(args):
                     status_markup = f"[dim]{raw_status}[/dim]"
                 table.add_row(a["name"], status_markup, a.get("ipv4", "-"), a.get("ipv6", "-"))
         console.print(table)
+
+    elif args.tools_command == "mac":
+        from .tools import mac_spoofer
+
+        action = getattr(args, "mac_action", "status") or "status"
+        adapter_name = getattr(args, "adapter", None)
+        force = getattr(args, "force", False)
+        if action == "status":
+            result = mac_spoofer.plan_status(adapter_name)
+            if result["status"] == "ready":
+                adapter = result["adapter"]
+                override = adapter["network_address"]
+                try:
+                    override_display = mac_spoofer.format_mac(override) if override else "hardware default"
+                except ValueError:
+                    override_display = f"unsupported legacy value ({escape(str(override))})"
+                try:
+                    effective_display = mac_spoofer.format_mac(adapter["effective_mac"])
+                except ValueError:
+                    effective_display = f"unsupported value ({escape(str(adapter['effective_mac']))})"
+                recovery = "available" if result["recovery_available"] else "not needed"
+                console.print(Panel(
+                    f"  [muted]Adapter:[/muted]       [bold]{adapter['name']}[/bold]\n"
+                    f"  [muted]Effective MAC:[/muted] {effective_display}\n"
+                    f"  [muted]Driver override:[/muted] {override_display}\n"
+                    f"  [muted]Recovery:[/muted]      {recovery}",
+                    title="[bold]Wi-Fi MAC Privacy[/bold]",
+                    border_style="cyan",
+                ))
+            else:
+                console.print(f"[warning]{result.get('detail', 'Wi-Fi MAC status is unavailable.')}[/warning]")
+            return
+
+        if action not in {"randomize", "restore"}:
+            console.print("[error]Invalid MAC action. Use: status, randomize, or restore.[/error]")
+            return
+
+        plan = (
+            mac_spoofer.plan_randomize(adapter_name)
+            if action == "randomize"
+            else mac_spoofer.plan_restore(adapter_name)
+        )
+        if plan["status"] != "ready":
+            console.print(f"[warning]{plan.get('detail', 'Wi-Fi MAC operation is unavailable.')}[/warning]")
+            return
+
+        adapter = plan["adapter"]
+        if action == "randomize":
+            target = mac_spoofer.format_mac(plan["target_mac"])
+            source = "your custom private MAC" if plan["source"] == "custom" else "a fresh private random MAC"
+            action_text = f"change {adapter['name']} to {target} ({source})"
+        else:
+            if plan["network_address_present"]:
+                try:
+                    target = mac_spoofer.format_mac(plan["target_network_address"])
+                except ValueError:
+                    target = f"the prior driver value ({escape(str(plan['target_network_address']))})"
+            else:
+                target = "the hardware default"
+            action_text = f"restore {adapter['name']} to {target}"
+
+        if not force:
+            if not is_interactive():
+                console.print("[error]Refusing to change the Wi-Fi MAC without --force in non-interactive mode.[/error]")
+                return
+            console.print(Panel(
+                f"[bold yellow]Wi-Fi will disconnect briefly.[/bold yellow]\n\n"
+                f"  [muted]Adapter:[/muted] {adapter['name']}\n"
+                f"  [muted]Action:[/muted]  {action_text}\n\n"
+                "[dim]Only this physical Wi-Fi adapter and its NetworkAddress driver override will be changed.[/dim]",
+                title="[bold]Confirm Wi-Fi MAC Change[/bold]",
+                border_style="yellow",
+            ))
+            if not confirm("Continue?"):
+                console.print("[muted]Wi-Fi MAC change cancelled.[/muted]")
+                return
+
+        result = mac_spoofer.execute(plan)
+        status = result["status"]
+        if status == "randomized":
+            console.print(
+                f"[success]✓ Wi-Fi MAC changed to {mac_spoofer.format_mac(result['target_mac'])}. "
+                "Run blackout tools mac restore to return to the prior setting.[/success]"
+            )
+        elif status == "restored":
+            console.print("[success]✓ Prior Wi-Fi MAC setting restored.[/success]")
+        elif status == "restored-state-retained":
+            console.print(f"[warning]{result['detail']}[/warning]")
+        else:
+            console.print(f"[error]{result.get('detail', 'Wi-Fi MAC operation failed.')}[/error]")
 
     elif args.tools_command == "traceroute":
         host = getattr(args, "host", "8.8.8.8")
@@ -2421,6 +2452,13 @@ def cmd_tools(args):
 
     elif args.tools_command == "capture":
         from .proxy_manager import is_admin
+        from .tools import CAPTURE_INSTALL_HINT
+
+        try:
+            import scapy.all  # noqa: F401
+        except (ImportError, ModuleNotFoundError):
+            console.print(f"[error]{CAPTURE_INSTALL_HINT}[/error]")
+            return
 
         iface = getattr(args, "iface", None)
         count = getattr(args, "count", 0) or 0
@@ -3254,6 +3292,16 @@ def cmd_media(args):
         ))
         return
 
+    if subcmd == "start":
+        try:
+            media_downloader.ensure_media_available()
+        except RuntimeError as exc:
+            console.print(f"[error]{exc}[/error]")
+            return
+        media_downloader.get_media_manager().start_downloads()
+        console.print("[success]✓ Media downloads started.[/success]")
+        return
+
     manager = media_downloader.get_media_manager()
 
     # ── add: Queue a media download ────────────────────────────────
@@ -3395,6 +3443,17 @@ def cmd_torrent(args):
             "  blackout torrent seed <id> --ratio 1.5",
             title="Blackout Torrent Manager", border_style="cyan"
         ))
+        return
+
+    if subcmd == "start":
+        manager = torrent_manager.get_torrent_manager()
+        try:
+            manager._init_session()
+        except RuntimeError as exc:
+            console.print(f"[error]{exc}[/error]")
+            return
+        manager.start_downloads()
+        console.print("[success]✓ Torrent downloads started.[/success]")
         return
 
     manager = torrent_manager.get_torrent_manager()
@@ -3569,7 +3628,10 @@ def cmd_doctor(args):
         console.print("[yellow]Running checks and auto-fixing where possible...[/yellow]")
     else:
         console.print("[info]Running diagnostic checks...[/info]")
-    results = doc.run_all_checks(auto_fix=auto_fix)
+    results = doc.run_all_checks(
+        auto_fix=auto_fix,
+        include_optional=getattr(args, "include_optional", False),
+    )
     doc.print_report(results, auto_fixed=auto_fix)
 
 
@@ -4049,98 +4111,6 @@ def _ensure_ready(engine_name: str) -> bool:
     return False
 
 
-def cmd_connect(args):
-    """Smart connect — auto-preps and starts the best locally-ready engine."""
-    requested_engine = getattr(args, "pos_engine", None) or getattr(args, "engine", None)
-    background = getattr(args, "background", False)
-    iran_mode = getattr(args, "iran", False)
-    russia_mode = getattr(args, "russia", False)
-
-    if iran_mode and russia_mode:
-        console.print("[error]Choose only one preset: --iran or --russia.[/error]")
-        return
-
-    preset_name = "iran" if iran_mode else "russia" if russia_mode else None
-    env_overrides: dict[str, str] = {}
-    connect_profile = None
-    base_settings = cfg.load()
-
-    if preset_name:
-        _title, env_overrides, _changes, _footer = _preset_payload(preset_name, base_settings, direct_start=False)
-
-    with _temporary_env_overrides(env_overrides):
-        recommended = _recommended_engine_name()
-        connect_profile = _get_active_profile()
-
-    engine_name = recommended if requested_engine in (None, "auto") else requested_engine
-
-    if requested_engine is None and is_interactive() and not background:
-        choice = ask_choice(
-            f"Recommended engine: {recommended}. Continue or choose manually?",
-            ["recommended", "manual", "cancel"],
-            default="recommended",
-        )
-        if choice == "cancel":
-            console.print("[muted]Connection cancelled.[/muted]")
-            return
-        if choice == "manual":
-            with _temporary_env_overrides(env_overrides):
-                cmd_route(args)
-                choices = [candidate.engine for candidate in _routing_candidates()]
-            engine_name = ask_choice("Choose an engine", choices, default=recommended)
-            if not engine_name:
-                console.print("[muted]Connection cancelled.[/muted]")
-                return
-
-    if connect_profile:
-        rec = connect_profile.engine_order[0] if connect_profile.engine_order else engine_name
-        console.print(
-            f"  [dim]Detected: {connect_profile.name} "
-            f"({connect_profile.censorship_level}) — {rec} recommended[/dim]"
-        )
-        if connect_profile.code == "CN" and engine_name in ("sni",):
-            console.print(
-                "[yellow]Note:[/yellow] SNI spoofing is largely ineffective against "
-                "China's Great Firewall (GFW blocks IPs + SNI).\n"
-                "  Suggested engine: [bold]blackout connect --engine xray[/bold]"
-            )
-        if connect_profile.code == "RU" and engine_name in ("sni", "gdpi"):
-            console.print(
-                "[yellow]Note:[/yellow] Russia's preset currently favors XRay and QUIC-capable paths first.\n"
-                "  Suggested engines: [bold]blackout connect --engine xray[/bold], "
-                "[bold]blackout connect --engine hysteria2[/bold], or [bold]blackout connect --engine tuic[/bold]"
-            )
-
-    s = cfg.load()
-    if not sys.platform.startswith("linux") and engine_name in ("sni", "auto") and not s.get("sni_connect_ip"):
-        console.print("[yellow]No saved Cloudflare IP — running quick scan (10 IPs)...[/yellow]")
-        ips = generate_cloudflare_ips(10)
-        with Progress(
-            SpinnerColumn(style="bold red"),
-            TextColumn("[progress.description]{task.description}"),
-            console=console, transient=True,
-        ) as p:
-            p.add_task("Scanning Cloudflare IPs...")
-            results = asyncio.run(scan_ips(ips, concurrency=10, timeout=3.0))
-
-        if results:
-            best_ip = results[0][0]
-            cfg.set_value("sni_connect_ip", best_ip)
-            console.print(f"[success]✓ Best IP found: {best_ip} ({results[0][1]:.0f}ms)[/success]")
-        else:
-            console.print("[warning]No reachable Cloudflare IPs. Proceeding anyway...[/warning]")
-
-    class _FakeArgs:
-        pass
-
-    fake = _FakeArgs()
-    fake.engine = engine_name if engine_name != "auto" else "sni"
-    fake.background = background
-    fake.iran = iran_mode
-    fake.russia = russia_mode
-    cmd_start(fake)
-
-
 def _recovery_table(steps: list[dict], *, preview: bool = False):
     table = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan", padding=(0, 2))
     table.add_column("Step", style="white", width=30)
@@ -4237,23 +4207,13 @@ def cmd_fix(args):
 # ──────────────────── Interactive Zero-Flag menu ─────────────────
 
 def _make_fake_args(**kwargs):
-    """Build a fake argparse Namespace for calling cmd_ functions from the menu."""
-    class _Fake:
-        pass
-    obj = _Fake()
-    for k, v in kwargs.items():
-        setattr(obj, k, v)
-    return obj
+    """Build the legacy dispatcher namespace used by the interactive menu."""
+    return argparse.Namespace(**kwargs)
 
 
 def cmd_menu_select_engine():
     s = cfg.load()
     current = s.get("selected_engine", "auto")
-
-    t = Table(box=box.SIMPLE, show_header=True, header_style="bold cyan")
-    t.add_column("#", style="dim", width=4)
-    t.add_column("Key", style="bold white", width=14)
-    t.add_column("Description", style="dim")
 
     options = [
         ("auto",       "Smart Auto-Select (recommended, uses country profile)"),
@@ -4274,191 +4234,151 @@ def cmd_menu_select_engine():
         ("softether",  "SoftEther SSL-VPN"),
     ]
 
-    # Start interactive menu instead of prompt
-    selected_idx = 0
+    items = [
+        MenuItem(
+            key,
+            key,
+            f"{desc} [success]● active[/success]" if key == current else desc,
+        )
+        for key, desc in options
+    ]
 
-    def generate_menu(idx):
-        t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
-        t.add_column("Marker", style="bold cyan", width=2)
-        t.add_column("Engine", style="bold white", width=14)
-        t.add_column("Description", style="dim")
-        for i, (key, desc) in enumerate(options):
-            active_marker = "[success]● active[/success]" if key == current else ""
-            if i == idx:
-                t.add_row(">", f"[cyan]{key}[/cyan]", f"[cyan]{desc}[/cyan] {active_marker}")
-            else:
-                t.add_row(" ", key, f"{desc} {active_marker}")
-        
-        t.add_row(" ", "", "")
-        if idx == len(options):
-            t.add_row(">", "[red]Cancel[/red]", "[dim]Return to main menu[/dim]")
-        else:
-            t.add_row(" ", "[red]Cancel[/red]", "[dim]Return to main menu[/dim]")
-            
-        return Panel(t, title="[bold]Select Bypass Strategy (Manual Engine Selection)[/bold]", border_style="cyan")
-
-    if sys.platform != "win32":
-        console.print(generate_menu(-1))
-        try:
-            choice = console.input("\n[bold cyan]Choose option [0-12]:[/bold cyan] ").strip()
-        except (KeyboardInterrupt, EOFError):
-            return
-        if not choice or choice == "0": return
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(options):
-                selected_key = options[idx][0]
-                cfg.set_value("selected_engine", selected_key)
-                console.print(f"\n[success]✓ Preferred engine set to [bold]{selected_key}[/bold]![/success]")
-                console.print("[info]Engine selected. You can now use the 'Connect' option from the main menu.[/info]\n")
-        except ValueError:
-            pass
+    choice = run_menu("Select Bypass Strategy (Manual Engine Selection)", items)
+    if choice is None:
         return
 
-    while True:
-        with Live(generate_menu(selected_idx), console=console, auto_refresh=False, transient=True) as live:
-            while True:
-                live.update(generate_menu(selected_idx), refresh=True)
-                ch = msvcrt.getch()
-                if ch in (b'\x00', b'\xe0'):
-                    arrow = msvcrt.getch()
-                    if arrow == b'H': # UP
-                        selected_idx = (selected_idx - 1) % (len(options) + 1)
-                    elif arrow == b'P': # DOWN
-                        selected_idx = (selected_idx + 1) % (len(options) + 1)
-                elif ch == b'\r':
-                    break
-                elif ch == b'\x03': # Ctrl+C
-                    return
-                else:
-                    decoded = ch.decode('utf-8', 'ignore')
-                    if decoded == '0':
-                        selected_idx = len(options)
-                        break
+    cfg.set_value("selected_engine", choice)
+    console.print(f"\n[success]✓ Preferred engine set to [bold]{choice}[/bold]![/success]")
+    console.print("[info]Engine selected. You can now use the 'Connect' option from the main menu.[/info]\n")
 
-        if selected_idx == len(options):
-            return
-            
-        selected_key = options[selected_idx][0]
-        cfg.set_value("selected_engine", selected_key)
-        console.print(f"\n[success]✓ Preferred engine set to [bold]{selected_key}[/bold]![/success]")
-        console.print("[info]Engine selected. You can now use the 'Connect' option from the main menu.[/info]\n")
-        break
 
+
+def _run_settings_menu():
+    from .interactive import run_settings_menu
+    run_settings_menu()
+
+
+def _run_config_menu():
+    from .interactive import run_config_menu
+    run_config_menu()
+
+
+def _run_native_fix_from_menu():
+    from . import typer_cli
+    import typer
+
+    try:
+        typer_cli.fix(
+            full_route_reset=False,
+            full_stack_reset=False,
+            flush_arp=False,
+            preview=False,
+            history=False,
+            history_lines=20,
+            ctx=None,
+        )
+    except typer.Exit:
+        return
 
 
 def _interactive_menu():
-    """Display an interactive menu navigable with arrow keys when blackout is run with no arguments."""
+    """
+    Display the main action menu, navigable with arrow keys/Space.
+
+    Returns True if the user chose to quit Blackout Kit entirely, or False
+    if they backed out (Escape/Left) to the launcher chooser.
+    """
     menu_items = [
-        ("🚀 Connect",   "Start bypass — smart/preferred engine", "1"),
-        ("⚡ Emergency",  "Try locally supported candidates", "2"),
-        ("🔌 Engine",     "Select manual bypass engine (sni/psiphon/warp...)", "3"),
-        ("🌍 Country",    "Show or set country profile (IR/RU/CN/…)", "4"),
-        ("📊 Status",    "Check daemon + connection health", "5"),
-        ("📡 Live Status", "Watch local connection state", "W"),
-        ("🧭 Routing",   "Rank local engine readiness", "R"),
-        ("🎨 Theme",     "Set Blackout Kit terminal palette", "T"),
-        ("🔍 Scan",      "Scan Cloudflare IPs + SNI domains", "6"),
-        ("🏥 Doctor",    "Self-diagnose and auto-repair", "7"),
-        ("🔧 Fix",       "Auto-fix DNS / Winsock / TCP/IP", "8"),
-        ("🌐 Tools",     "Network toolkit (ping, speedtest…)", "9"),
-        ("⚙  Settings",  "View and change settings", "S"),
-        ("❌ Exit",      "", "0"),
+        MenuItem("connect",     "🚀 Connect",      "Start bypass — smart/preferred engine"),
+        MenuItem("emergency",   "⚡ Emergency",     "Try locally supported candidates"),
+        MenuItem("engine",      "🔌 Engine",        "Select manual bypass engine (sni/psiphon/warp...)"),
+        MenuItem("country",     "🌍 Country",       "Show or set country profile (IR/RU/CN/…)"),
+        MenuItem("status",      "📊 Status",        "Check daemon + connection health"),
+        MenuItem("live_status", "📡 Live Status",   "Watch local connection state"),
+        MenuItem("routing",     "🧭 Routing",       "Rank local engine readiness"),
+        MenuItem("theme",       "🎨 Theme",         "Set Blackout Kit terminal palette"),
+        MenuItem("scan",        "🔍 Scan",          "Scan Cloudflare IPs + SNI domains"),
+        MenuItem("doctor",      "🏥 Doctor",        "Self-diagnose and auto-repair"),
+        MenuItem("fix",         "🔧 Fix",           "Auto-fix DNS / Winsock / TCP/IP"),
+        MenuItem("tools",       "🌐 Tools",         "Network toolkit (ping, speedtest…)"),
+        MenuItem("settings",    "⚙  Settings",      "View and change settings"),
+        MenuItem("config",      "🗂  Config",        "Add, edit, and protect saved proxy configs"),
+        MenuItem("exit",        "❌ Exit",          "Quit Blackout Kit"),
+        MenuItem("back",        "←  Back",          "Return to the launcher chooser"),
     ]
 
-    _EXIT = object()
     _dispatch = {
-        "1": lambda: cmd_connect(_make_fake_args(engine=None, background=False, iran=False)),
-        "2": lambda: cmd_emergency(_make_fake_args(background=False)),
-        "3": cmd_menu_select_engine,
-        "4": lambda: cmd_country(_make_fake_args(country_command=None)),
-        "5": lambda: cmd_status(_make_fake_args(watch=False, interval=2.0)),
-        "W": lambda: cmd_status(_make_fake_args(watch=True, interval=2.0)),
-        "w": lambda: cmd_status(_make_fake_args(watch=True, interval=2.0)),
-        "R": lambda: cmd_route(_make_fake_args()),
-        "r": lambda: cmd_route(_make_fake_args()),
-        "T": lambda: cmd_theme(_make_fake_args(palette=ask_choice("Choose terminal palette", ["dark", "light"], default=cfg.load().get("terminal_theme", "dark")))),
-        "t": lambda: cmd_theme(_make_fake_args(palette=ask_choice("Choose terminal palette", ["dark", "light"], default=cfg.load().get("terminal_theme", "dark")))),
-        "6": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
-        "7": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
-        "8": lambda: cmd_fix(_make_fake_args()),
-        "9": lambda: cmd_tools(_make_fake_args(tools_command=None)),
-        "S": lambda: cmd_settings(_make_fake_args(settings_command=None)),
-        "s": lambda: cmd_settings(_make_fake_args(settings_command=None)),
-        "0": _EXIT,
+        "connect": lambda: cmd_connect(_make_fake_args(engine=None, background=False, iran=False)),
+        "emergency": lambda: cmd_emergency(_make_fake_args(background=False)),
+        "engine": cmd_menu_select_engine,
+        "country": lambda: cmd_country(_make_fake_args(country_command=None)),
+        "status": lambda: cmd_status(_make_fake_args(watch=False, interval=2.0)),
+        "live_status": lambda: cmd_status(_make_fake_args(watch=True, interval=2.0)),
+        "routing": lambda: cmd_route(_make_fake_args()),
+        "theme": lambda: cmd_theme(_make_fake_args(palette=ask_choice("Choose terminal palette", ["dark", "light"], default=cfg.load().get("terminal_theme", "dark")))),
+        "scan": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
+        "doctor": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
+        "fix": _run_native_fix_from_menu,
+        "tools": lambda: cmd_tools(_make_fake_args(tools_command=None)),
+        "settings": _run_settings_menu,
+        "config": _run_config_menu,
     }
 
-    selected_idx = 0
+    while True:
+        choice = run_menu("Blackout Kit — Terminal CLI", menu_items)
+        if choice is None:
+            return False
 
-    def generate_menu(idx):
-        t = Table(box=box.SIMPLE, show_header=False, padding=(0, 1))
-        t.add_column("Marker", style="bold cyan", width=2)
-        t.add_column("Action", style="bold white", width=18)
-        t.add_column("Description", style="dim")
-        for i, (action, desc, key) in enumerate(menu_items):
-            if i == idx:
-                t.add_row(">", f"[cyan]{action}[/cyan]", f"[cyan]{desc}[/cyan]")
-            else:
-                t.add_row(" ", action, desc)
-        return Panel(t, title="[bold]Use Arrow Keys to Navigate[/bold]", border_style="cyan")
+        if choice == "exit":
+            console.print("[muted]Bye![/muted]")
+            return True
+        if choice == "back":
+            return False
 
-    if sys.platform != "win32":
-        # Fallback to simple input for non-Windows (or write a proper Unix getch)
-        console.print(generate_menu(-1))
-        try:
-            choice = console.input("\n[bold cyan]Enter choice [0-9, S]:[/bold cyan] ").strip()
-        except (KeyboardInterrupt, EOFError):
-            console.print("\n[muted]Bye![/muted]")
-            return
-        handler = _dispatch.get(choice.upper())
-        if handler is _EXIT: return
-        if handler: handler()
-        return
+        handler = _dispatch.get(choice)
+        if handler is None:
+            continue
 
-    import msvcrt
+        console.print()
+        handler()
+        console.print()
+
+        # Don't pause if the user just started a foreground engine, because
+        # they already hit Ctrl+C to stop it.
+        if choice not in ("connect", "emergency", "live_status"):
+            run_menu(
+                "Action complete",
+                [MenuItem("continue", "Continue", "Return to the terminal menu")],
+            )
+            console.print()
+
+
+def _show_launcher_menu():
+    """
+    The zero-argument entry point: choose Terminal CLI, Windows App, or Exit.
+
+    Loops back to this chooser whenever a sub-screen is backed out of, so
+    the user can move forward into either interface and back again.
+    """
+    from . import launcher as _launcher
+
+    items = [
+        MenuItem("cli", "💻 Terminal CLI", "Navigate Blackout Kit entirely from this terminal"),
+        MenuItem("gui", "🪟 Windows App", "Open the desktop launcher window", enabled=(sys.platform == "win32")),
+        MenuItem("exit", "❌ Exit", "Quit Blackout Kit"),
+    ]
 
     while True:
-        with Live(generate_menu(selected_idx), console=console, auto_refresh=False, transient=True) as live:
-            while True:
-                live.update(generate_menu(selected_idx), refresh=True)
-                ch = msvcrt.getch()
-                if ch in (b'\x00', b'\xe0'):
-                    arrow = msvcrt.getch()
-                    if arrow == b'H': # UP
-                        selected_idx = (selected_idx - 1) % len(menu_items)
-                    elif arrow == b'P': # DOWN
-                        selected_idx = (selected_idx + 1) % len(menu_items)
-                elif ch == b'\r':
-                    break
-                elif ch == b'\x03': # Ctrl+C
-                    console.print("\n[muted]Bye![/muted]")
-                    return
-                else:
-                    # Allow quick select via numbers
-                    decoded = ch.decode('utf-8', 'ignore').upper()
-                    for i, (_, _, key) in enumerate(menu_items):
-                        if key.upper() == decoded:
-                            selected_idx = i
-                            break
-
-        action_key = menu_items[selected_idx][2]
-        handler = _dispatch.get(action_key.upper())
-        if handler is _EXIT:
+        choice = run_menu("Blackout Kit — Choose How to Launch", items)
+        if choice in (None, "exit"):
             console.print("[muted]Bye![/muted]")
             return
-        elif handler:
-            console.print()
-            handler()
-            console.print()
-            
-            # Don't pause if the user just started the engine (foreground), 
-            # because they already hit Ctrl+C to stop it.
-            if action_key not in ("1", "2", "W"):
-                console.print("[dim]Press any key to return to menu...[/dim]")
-                msvcrt.getch()
-                console.print()
-        else:
-            return
+
+        if choice == "cli":
+            if _interactive_menu():
+                return
+        elif choice == "gui":
+            _launcher.start_launcher()
 
 
 def cmd_daemon_run(args):

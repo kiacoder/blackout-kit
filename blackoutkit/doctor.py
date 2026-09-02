@@ -21,9 +21,17 @@ from rich.panel import Panel
 from rich.table import Table
 from rich import box
 
-from . import PROJECT_ROOT, APP_DATA_DIR, BINS_DIR, DATA_DIR
+from . import APP_DATA_DIR, BINS_DIR, DATA_DIR, PROJECT_ROOT, resource_path
+
+
+def _data_file_path(relative_path: str) -> Path:
+    if relative_path == "data/configs.txt":
+        return DATA_DIR / "configs.txt"
+    return resource_path(relative_path)
+
 
 # ──────────────────────────── Defaults ───────────────────────────
+
 
 def _default_cf_ips() -> str:
     return (
@@ -53,36 +61,47 @@ def _default_configs() -> str:
 
 class CheckResult:
     def __init__(self, name: str, ok: bool, message: str, fixable: bool = False, fix=None):
-        self.name     = name
-        self.ok       = ok
-        self.message  = message
-        self.fixable  = fixable
-        self.fix      = fix   # callable that attempts auto-fix
+        self.name = name
+        self.ok = ok
+        self.message = message
+        self.fixable = fixable
+        self.fix = fix
 
 
 def check_data_files() -> list[CheckResult]:
     results = []
-    # Defined here to avoid forward-reference issues at module level
     defaults = {
         "data/cloudflare_ips.txt": _default_cf_ips,
-        "data/fake_snis.txt":      _default_snis,
-        "data/configs.txt":        _default_configs,
+        "data/fake_snis.txt": _default_snis,
+        "data/configs.txt": _default_configs,
     }
     for rel_path, default_fn in defaults.items():
-        full = PROJECT_ROOT / rel_path
+        full = _data_file_path(rel_path)
+        mutable = rel_path == "data/configs.txt"
         if full.exists() and full.stat().st_size > 0:
             results.append(CheckResult(rel_path, True, "OK"))
         elif full.exists():
             results.append(CheckResult(
-                rel_path, False, "File is empty",
-                fixable=True,
-                fix=lambda p=full, fn=default_fn: p.write_text(fn()),
+                rel_path,
+                False,
+                "File is empty",
+                fixable=mutable,
+                fix=(lambda p=full, fn=default_fn: p.write_text(fn())) if mutable else None,
             ))
         else:
             results.append(CheckResult(
-                rel_path, False, "File missing",
-                fixable=True,
-                fix=lambda p=full, fn=default_fn: (p.parent.mkdir(parents=True, exist_ok=True), p.write_text(fn())),
+                rel_path,
+                False,
+                "File missing — reinstall Blackout Kit to restore bundled resources"
+                if not mutable else "File missing",
+                fixable=mutable,
+                fix=(
+                    (lambda p=full, fn=default_fn: (
+                        p.parent.mkdir(parents=True, exist_ok=True),
+                        p.write_text(fn()),
+                    ))
+                    if mutable else None
+                ),
             ))
     return results
 
@@ -950,8 +969,8 @@ def check_firewall_exclusion() -> CheckResult:
 
 # ──────────────────────────── Runner ─────────────────────────────
 
-def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
-    checks = (
+def run_all_checks(auto_fix: bool = False, include_optional: bool = False) -> list[CheckResult]:
+    checks = [
         check_bins_dir(),
         check_app_data_dir(),
         check_settings(),
@@ -960,8 +979,6 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_country_profile(),   # Country profile (informational)
         check_network_driver(),
         check_windivert(),
-        check_scapy(),
-        check_npcap(),
         check_system_path(),
         check_config_security(),
         check_process_conflicts(),
@@ -972,7 +989,9 @@ def run_all_checks(auto_fix: bool = False) -> list[CheckResult]:
         check_ports_in_use(),
         check_admin_privileges(),
         check_stale_proxy(),
-    )
+    ]
+    if include_optional:
+        checks.extend((check_scapy(), check_npcap()))
     all_results = list(checks)
     all_results.extend(check_data_files())
     all_results.extend(check_python_deps())

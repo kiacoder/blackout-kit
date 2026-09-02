@@ -4,6 +4,7 @@ Parses vless://, trojan://, and vmess:// URIs.
 Loads/saves configs and imports from subscription URLs.
 """
 import base64
+import hashlib
 import json
 import os
 import urllib.parse
@@ -13,6 +14,14 @@ from pathlib import Path
 
 from .. import DATA_DIR, vault
 CONFIGS_FILE = DATA_DIR / "configs.txt"
+SETUP_SCHEMA_VERSION = 1
+SUBSCRIPTION_MAX_BYTES = 2 * 1024 * 1024
+SUBSCRIPTION_MAX_LINES = 10_000
+SUBSCRIPTION_MAX_REDIRECTS = 3
+
+
+class SubscriptionError(ValueError):
+    """Raised when a subscription cannot be safely fetched or parsed."""
 
 
 @dataclass
@@ -286,62 +295,137 @@ def remove_config(index: int):
     save_configs(configs)
 
 
+def replace_config(index: int, uri: str) -> ProxyConfig:
+    """Replace one saved URI after validating it and checking duplicates."""
+    replacement = parse_v2ray_uri(uri)
+    if not replacement:
+        raise ValueError("Invalid V2Ray URI")
+
+    configs = load_configs()
+    if not 0 <= index < len(configs):
+        raise IndexError(f"Config index {index} out of range")
+    if any(
+        existing.raw_uri == replacement.raw_uri
+        for position, existing in enumerate(configs)
+        if position != index
+    ):
+        raise ValueError("A config with this URI is already saved")
+
+    configs[index] = replacement
+    save_configs(configs)
+    return replacement
+
+
 # ─────────────────────────── Import ─────────────────────────────
 
+def _validate_subscription_url(url: str) -> str:
+    parsed = urllib.parse.urlsplit((url or "").strip())
+    if parsed.scheme.lower() != "https":
+        raise SubscriptionError("subscription URL must use HTTPS")
+    if parsed.username or parsed.password:
+        raise SubscriptionError("subscription URL must not contain credentials")
+    if not parsed.hostname:
+        raise SubscriptionError("subscription URL must include a host")
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
+        raise SubscriptionError("subscription URL host is not allowed")
+    if hostname.startswith(("127.", "10.", "192.168.", "169.254.")) or hostname == "0.0.0.0":
+        raise SubscriptionError("subscription URL host is not allowed")
+    return urllib.parse.urlunsplit(("https", hostname, parsed.path, parsed.query, ""))
+
+
+class _ValidatedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            validated = _validate_subscription_url(newurl)
+        except SubscriptionError as exc:
+            raise urllib.error.URLError(str(exc)) from exc
+        return super().redirect_request(req, fp, code, msg, headers, validated)
+
+
+def _read_subscription_body(response, *, limit: int = SUBSCRIPTION_MAX_BYTES) -> bytes:
+    declared = response.headers.get("Content-Length") if hasattr(response, "headers") else None
+    if declared is not None:
+        try:
+            declared_bytes = int(declared)
+        except (TypeError, ValueError):
+            declared_bytes = None
+        if declared_bytes is not None and declared_bytes > limit:
+            raise SubscriptionError("subscription response exceeds the size limit")
+    raw = response.read(limit + 1)
+    if len(raw) > limit:
+        raise SubscriptionError("subscription response exceeds the size limit")
+    return raw
+
+
 def import_from_subscription(url: str) -> list[ProxyConfig]:
-    """
-    Fetch a V2Ray subscription URL and parse all configs.
-    Subscription content may be plain-text or base64-encoded.
-    Returns empty list on network error or parse failure.
-    """
+    """Fetch and parse a bounded HTTPS V2Ray subscription response."""
+    validated_url = _validate_subscription_url(url)
+    opener = urllib.request.build_opener(_ValidatedRedirectHandler())
+    request = urllib.request.Request(
+        validated_url,
+        headers={"User-Agent": "v2rayN/6.0"},
+    )
     try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "v2rayN/6.0"},
-        )
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read()
-    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as e:
-        import logging
-        logging.error(f"Failed to fetch subscription from {url}: {e}")
-        return []
+        with opener.open(request, timeout=15) as response:
+            raw = _read_subscription_body(response)
+    except SubscriptionError:
+        raise
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as exc:
+        raise SubscriptionError("subscription could not be fetched") from exc
 
-    # Attempt base64 decode (standard subscription format)
     try:
-        decoded = base64.b64decode(raw + b"==").decode("utf-8", errors="ignore")
-    except Exception:
-        decoded = raw.decode("utf-8", errors="ignore")
+        decoded = base64.b64decode(raw + b"==", validate=False).decode("utf-8", errors="strict")
+    except (ValueError, UnicodeDecodeError):
+        decoded = raw.decode("utf-8", errors="strict")
 
+    lines = decoded.splitlines()
+    if len(lines) > SUBSCRIPTION_MAX_LINES:
+        raise SubscriptionError("subscription contains too many lines")
     configs = []
-    for line in decoded.splitlines():
-        c = parse_v2ray_uri(line.strip())
-        if c:
-            configs.append(c)
+    for line in lines:
+        if len(configs) >= SUBSCRIPTION_MAX_LINES:
+            raise SubscriptionError("subscription contains too many configs")
+        config = parse_v2ray_uri(line.strip())
+        if config:
+            configs.append(config)
     return configs
 
 
 def import_and_merge(url: str) -> tuple[int, int]:
-    """
-    Import configs from URL and merge with existing.
-    Returns (new_count, total_count).
-    Returns (0, total_count) on import failure.
-    """
-    try:
-        new = import_from_subscription(url)
-        existing = load_configs()
-        existing_uris = {c.raw_uri for c in existing}
-        added = [c for c in new if c.raw_uri not in existing_uris]
-        merged = existing + added
-        save_configs(merged)
-        return len(added), len(merged)
-    except Exception as e:
-        import logging
-        logging.error(f"import_and_merge failed: {e}")
-        existing = load_configs()
-        return 0, len(existing)
+    """Fetch a subscription and atomically merge new configs."""
+    new = import_from_subscription(url)
+    existing = load_configs()
+    existing_uris = {config.raw_uri for config in existing}
+    added = [config for config in new if config.raw_uri not in existing_uris]
+    save_configs(existing + added)
+    return len(added), len(existing) + len(added)
 
 
 # ─────────────────────────── Export/Import Setup ──────────────────────────
+
+def validate_configs(configs: list[ProxyConfig] | None = None) -> list[dict]:
+    """Return safe local validation findings for saved proxy configs."""
+    records = load_configs() if configs is None else configs
+    findings = []
+    for index, config in enumerate(records, 1):
+        error = config.reality_validation_error()
+        if error:
+            findings.append({"index": index, "ok": False, "error": error})
+        else:
+            findings.append({"index": index, "ok": True, "protocol": config.protocol, "transport": config.transport_label()})
+    return findings
+
+
+def duplicate_config_indexes(configs: list[ProxyConfig] | None = None) -> list[list[int]]:
+    """Return one-based index groups sharing an identical saved URI."""
+    records = load_configs() if configs is None else configs
+    indexes: dict[str, list[int]] = {}
+    for index, config in enumerate(records, 1):
+        if config.raw_uri:
+            indexes.setdefault(config.raw_uri, []).append(index)
+    return [positions for positions in indexes.values() if len(positions) > 1]
+
 
 def serialize_setup() -> dict:
     """Pack all configs + exportable settings into a portable dict."""
@@ -365,25 +449,34 @@ def serialize_setup() -> dict:
     }
 
     return {
+        "schema_version": SETUP_SCHEMA_VERSION,
         "configs": [c.raw_uri for c in configs if c.raw_uri],
         "settings": filtered_settings,
     }
 
 
 def deserialize_setup(data: dict) -> tuple[list[ProxyConfig], dict]:
-    """Unpack a setup dict and return (configs, settings)."""
+    """Unpack a versioned or legacy setup dict and return (configs, settings)."""
     if not isinstance(data, dict):
         raise ValueError("Setup data must be a dict")
 
+    schema_version = data.get("schema_version", 0)
+    if not isinstance(schema_version, int) or schema_version < 0 or schema_version > SETUP_SCHEMA_VERSION:
+        raise ValueError(f"Unsupported setup schema version: {schema_version!r}")
+
     configs_raw = data.get("configs", [])
+
     if not isinstance(configs_raw, list):
         raise ValueError("'configs' must be a list of URIs")
 
     configs = []
     for uri in configs_raw:
+        if not isinstance(uri, str):
+            raise ValueError("'configs' must contain only URI strings")
         c = parse_v2ray_uri(uri)
-        if c:
-            configs.append(c)
+        if not c:
+            raise ValueError("'configs' contains an invalid V2Ray URI")
+        configs.append(c)
 
     settings_data = data.get("settings", {})
     if not isinstance(settings_data, dict):

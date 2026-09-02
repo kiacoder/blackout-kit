@@ -10,7 +10,17 @@ a = Analysis(
     ['blackout.py'],
     pathex=[],
     binaries=[] + binaries_ctk + binaries_typer,
-    datas=[("bins/*.dll", "bins"), ("bins/icon.png", "bins"), ("assets/*", "assets"), ("data/*", "data")] + datas_ctk + datas_typer,
+    datas=[
+        ("bins/*.dll", "bins"),
+        ("bins/icon.png", "bins"),
+        ("assets/*", "assets"),
+        ("data/cloudflare_ips.txt", "data"),
+        ("data/fake_snis.txt", "data"),
+        ("data/gas_ids.txt", "data"),
+        # User configs are mutable and may contain credentials; never bundle them.
+        ("blackoutkit/resources/data/*.txt", "blackoutkit/resources/data"),
+        ("blackoutkit/resources/assets/*", "blackoutkit/resources/assets"),
+    ] + datas_ctk + datas_typer,
     hiddenimports=["_overlapped", "asyncio"] + hiddenimports_ctk + hiddenimports_typer + hiddenimports_blackout,
     hookspath=[],
     hooksconfig={},

@@ -23,6 +23,9 @@ from .manager import (
     save_configs,
     add_config,
     remove_config,
+    replace_config,
+    validate_configs,
+    duplicate_config_indexes,
     import_from_subscription,
     import_and_merge,
 )
@@ -58,6 +61,9 @@ __all__ = [
     "save_configs",
     "add_config",
     "remove_config",
+    "replace_config",
+    "validate_configs",
+    "duplicate_config_indexes",
     "import_from_subscription",
     "import_and_merge",
     # Package-level helpers

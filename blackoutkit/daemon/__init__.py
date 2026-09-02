@@ -54,6 +54,13 @@ def get_pid() -> int | None:
         return None
 
 
+def _watchdog_command(pid: int) -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "_watchdog", str(pid)]
+    watchdog_script = Path(__file__).parent.parent / "watchdog.py"
+    return [sys.executable, str(watchdog_script), str(pid)]
+
+
 def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
     """
     Launch a background daemon process for the given engine.
@@ -102,7 +109,10 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
             exe_w = exe.replace("python.exe", "pythonw.exe")
             if os.path.exists(exe_w):
                 exe = exe_w
-            cmd = [exe, str(entry), "_daemon_run", "--engine", engine_name]
+            if entry.exists():
+                cmd = [exe, str(entry), "_daemon_run", "--engine", engine_name]
+            else:
+                cmd = [exe, "-m", "blackoutkit.typer_cli", "_daemon_run", "--engine", engine_name]
         if env_overrides:
             cmd.extend(["--env-overrides-json", json.dumps(env_overrides, separators=(",", ":"))])
 
@@ -481,7 +491,6 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
 
     # Spawn the watchdog process to handle forceful termination (End Task).
     try:
-        watchdog_script = Path(__file__).parent.parent / "watchdog.py"
         watchdog_kwargs = {
             "close_fds": True,
             "stdout": subprocess.DEVNULL,
@@ -491,10 +500,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             watchdog_kwargs["creationflags"] = 0x08000000 | 0x00000008
         else:
             watchdog_kwargs["start_new_session"] = True
-        subprocess.Popen(
-            [sys.executable, str(watchdog_script), str(os.getpid())],
-            **watchdog_kwargs,
-        )
+        subprocess.Popen(_watchdog_command(os.getpid()), **watchdog_kwargs)
         log.info("Watchdog process spawned for proxy safety.")
     except Exception as e:
         log.warning(f"Failed to spawn watchdog: {e}")

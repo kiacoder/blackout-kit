@@ -113,8 +113,15 @@ def _first_run_hint():
 
 # ──────────────────────────── Main ───────────────────────────────────────────
 
+
+def _machine_output_requested(argv: list[str] | None = None) -> bool:
+    """Return whether this invocation requested the machine-readable contract."""
+    return "--json" in (sys.argv[1:] if argv is None else argv)
+
+
 if __name__ == "__main__":
     import os
+    machine_output = _machine_output_requested()
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w")
     if sys.stderr is None:
@@ -148,7 +155,8 @@ if __name__ == "__main__":
                         pass
 
     # 2. First-run nudge (only if no settings file yet)
-    _first_run_hint()
+    if not machine_output:
+        _first_run_hint()
 
     # 3. Run the Typer CLI (its no-argument callback opens the launcher).
     try:
@@ -172,9 +180,23 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except Exception as exc:
-        try:
-            from blackoutkit.theme import print_friendly_error
-            print_friendly_error(exc)
-        except Exception:
-            print("Blackout Kit could not complete that action. Try: blackout doctor", file=sys.stderr)
+        if machine_output:
+            try:
+                from blackoutkit.cli_output import emit_error
+                from blackoutkit.theme import console
+
+                emit_error(
+                    "internal_error",
+                    "Blackout Kit could not complete that action",
+                    console=console,
+                    json_output=True,
+                )
+            except Exception:
+                print('{"schema_version":1,"ok":false,"error":{"code":"internal_error","message":"Blackout Kit could not complete that action"}}')
+        else:
+            try:
+                from blackoutkit.theme import print_friendly_error
+                print_friendly_error(exc)
+            except Exception:
+                print("Blackout Kit could not complete that action. Try: blackout doctor", file=sys.stderr)
         sys.exit(1)

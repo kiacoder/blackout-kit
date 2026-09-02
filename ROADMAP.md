@@ -76,7 +76,7 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | File scanner | Scan files with the installed Windows Defender CLI | **Done** — `blackout tools scan-file <path>` scans one explicit local file without remediation; ClamAV remains out of scope |
 | Local SHA-256 fingerprint | Stream a local file and report a stable cryptographic fingerprint | **Done** — `blackout tools file-hash <path>` verifies a download without sending it anywhere; no upload, lookup, API key, or network action |
 | VirusTotal integration | Upload or look up a file hash through a remote AV service | **Not planned** — Blackout Kit remains local-only and does not contact VirusTotal |
-| MAC Address Spoofer | Randomize Wi-Fi MAC to avoid tracking on public networks | Airport/Cafe privacy |
+| MAC Address Spoofer | Explicitly inspect, randomize, and restore an active physical Wi-Fi MAC | **Done** — `blackout tools mac status/randomize/restore`; Windows-only, confirmation-first, locally administered/unicast only, and restores the exact prior driver override |
 | Public Wi-Fi Honeypot | Open a fake port to detect if someone on the cafe Wi-Fi is scanning you | "192.168.1.14 is scanning your computer" |
 | Malware network detection | Alert on suspicious outbound connections (C2 patterns, mining pools) | Catch malware by its network behavior |
 | Phishing protection | DNS-level blocking of known phishing domains | Stop phishing before it reaches the browser |
@@ -127,7 +127,7 @@ Before adding new features, the foundation must be reinforced:
 | 1.2.x | Russia support: RU profile, presets, XHTTP, AmneziaWG, smart rotation, diagnostics | Shipped |
 | 1.3.x | Network analysis: subnet calc, connection table, port scanner, LAN discovery, DNS inspector, speedtest history, latency monitor, bandwidth monitor, packet capture — Phase 1 fully shipped | Shipped |
 | 1.4.x | Traffic & downloads: download manager, monitor-only QoS, ad blocking, usage logging | Shipped |
-| 1.5.x | Antivirus & security: Defender-only local file scanner and local SHA-256 fingerprint shipped; broader malware detection, phishing protection, and hardening audit remain planned | In progress |
+| 1.5.x | Antivirus & security: Defender-only local file scanner, local SHA-256 fingerprint, and explicit Windows Wi-Fi MAC privacy controls shipped; broader malware detection, phishing protection, and hardening audit remain planned | In progress |
 | 1.6.x+ | Pro: PCAP export, automation, REST API, web dashboard | Future |
 
 ---

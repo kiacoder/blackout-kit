@@ -190,11 +190,20 @@ Examples:
 [bold cyan]blackout settings[/bold cyan]
 View and change saved settings.
 
-Examples:
+Interactive keyboard editor:
+  blackout settings
+  blackout settings edit
+
+Use ↑/↓ to move, Enter/Space/→ to select, and ←/Esc to go back.
+Settings are grouped by category; long lists use a keyboard-only viewport.
+Mouse scrolling and clicks do not select settings.
+
+Explicit commands:
   blackout settings list
   blackout settings get security_mode
   blackout settings set gdpi_backend legacy
   blackout settings set kill_switch false
+  blackout settings reset
 
 Important settings to know:
   • gdpi_backend
@@ -216,16 +225,36 @@ Important settings to know:
 [bold cyan]blackout config[/bold cyan]
 Manage saved proxy URIs and encrypted local storage.
 
-Examples:
+Interactive keyboard manager:
+  blackout config
+  blackout config edit
+
+Use ↑/↓ to move, Enter/Space/→ to select, and ←/Esc to go back.
+Long lists use a keyboard-only viewport; mouse scrolling and clicks do not select configs.
+Raw URI credentials are not shown in selectable labels.
+
+Explicit commands:
   blackout config list
   blackout config add <uri>
+  blackout config replace <n> <uri>
   blackout config import <url>
   blackout config remove <n>
+  blackout config export --output setup.txt --force
+  blackout config import-setup <string> --force
+  blackout config profile-export --output profile.bkpf --stdin
+  blackout config profile-import profile.bkpf --stdin --force
   blackout config encrypt
   blackout config decrypt
 
+Security and automation:
+  • plain setup exports contain credential-bearing URIs and require confirmation
+  • portable profiles are authenticated and encrypted with a passphrase
+  • use --prompt or --stdin for secrets; do not put them in command arguments
+  • --json emits compact versioned envelopes and omits raw URIs and credentials
+  • --json is rejected for delegated commands before they run
+
 Important notes:
-  • encryption is machine-bound
+  • machine-bound encryption protects local storage on the same machine
   • decrypt is a same-machine recovery action that restores plaintext files
   • test/list views should not be treated as remote reachability checks
 """,
@@ -412,7 +441,19 @@ Network analysis toolkit:
   • latency-monitor     Live ping graph with rolling avg/jitter/loss (Ctrl+C to stop)
   • bandwidth           Live per-interface upload/download throughput (Ctrl+C to stop)
   • capture <iface>     Live packet capture with a protocol/talkers summary (Ctrl+C to stop).
-                        Requires scapy + Npcap (Windows) / libpcap (Linux) — see `blackout doctor`.
+                        Requires `blackout-kit[capture]`, plus Npcap (Windows) or libpcap (Linux).
+  • qos                 Monitor-only stored rule metadata and inspection records
+  • bandwidth-cap       Track daily/monthly per-interface usage metadata
+  • traffic-log         Query the local JSONL traffic audit trail
+  • adblock             Manage local DNS blocklist metadata
+  • media / torrent     Optional queued download features
+
+Optional features:
+  • gui: customtkinter, Pillow, pystray
+  • capture: scapy plus the platform packet-capture driver
+  • media: yt-dlp
+  • torrent: python-libtorrent
+  • `blackout doctor` is core-only; add `--include-optional` for capture checks.
 
 [dim]Some tools change local network state; read the command output carefully.
 scan-ports, discover, and capture only probe/observe hosts and traffic you're authorized to test.[/dim]
@@ -436,8 +477,14 @@ Run environment checks and optionally auto-fix fixable local issues.
 
 Examples:
   blackout doctor
+  blackout doctor --include-optional
   blackout doctor --fix
   blackout doctor --fix-av
+  blackout --json doctor
+
+Doctor is core-only by default. Use --include-optional to inspect Scapy and
+Npcap/libpcap packet-capture prerequisites. JSON mode is read-only and returns
+one compact versioned object; --fix and --fix-av are rejected with --json.
 
 Doctor can inspect:
   • settings validity

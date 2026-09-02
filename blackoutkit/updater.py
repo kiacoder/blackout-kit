@@ -249,7 +249,8 @@ def run_preflight() -> list[PreflightResult]:
     Returns list of PreflightResult items.
     """
     results: list[PreflightResult] = []
-    bins_dir = PROJECT_ROOT / "bins"
+    from . import BINS_DIR
+    bins_dir = BINS_DIR
 
     from .downloader import BIN_REGISTRY, check_installed
     installed = check_installed()

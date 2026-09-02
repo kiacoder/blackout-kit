@@ -3,13 +3,20 @@ import subprocess
 from pathlib import Path
 import threading
 
+
+def _native_gui_command() -> list[str]:
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "gui"]
+    return [sys.executable, "-m", "blackoutkit.typer_cli", "gui"]
+
+
 def start_launcher():
     try:
         import customtkinter as ctk
     except ImportError as e:
         print(f"[!] customtkinter import failed: {e}")
         print("[!] Falling back to terminal mode.")
-        print("[!] Run: pip install customtkinter")
+        print("[!] Install the desktop feature with: pip install blackout-kit[gui]")
         return False
 
     ctk.set_appearance_mode("Dark")
@@ -127,9 +134,15 @@ def start_launcher():
         
     elif launch_config["env"] == "native":
         import subprocess, sys, os
-        cmd = [sys.executable, "gui"] if getattr(sys, 'frozen', False) else [sys.executable, sys.argv[0], "gui"]
+        cmd = _native_gui_command()
         try:
-            subprocess.Popen(cmd, creationflags=0x08000000 if os.name == 'nt' else 0, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) # CREATE_NO_WINDOW
+            subprocess.Popen(
+                cmd,
+                creationflags=0x08000000 if os.name == "nt" else 0,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
         except Exception:
             pass
         os._exit(0)

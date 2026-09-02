@@ -19,9 +19,12 @@ ENC_SECRETS_FILE = APP_DATA_DIR / "secrets.enc"
 SECRET_KEYS = ("ikev2_password", "ikev2_psk", "softether_password")
 
 _HEADER = b"BKVLT02:"
+_PROFILE_HEADER = b"BKPF01:"
 _LEGACY_AES_HEADER = b"BKAE01:"
 _PBKDF2_SALT = b"blackout-kit-aes256gcm-2026"
 _PBKDF2_ITERS = 100_000
+_PROFILE_PBKDF2_ITERS = 300_000
+PROFILE_MAX_BYTES = 4 * 1024 * 1024
 
 
 class VaultError(RuntimeError):
@@ -120,6 +123,81 @@ def decrypt_bytes(record: str, payload: bytes) -> bytes:
         return AESGCM(_aes_key()).decrypt(blob[:12], blob[12:], _aad(record))
     except Exception as exc:
         raise VaultError("Encrypted data cannot be authenticated on this machine") from exc
+
+
+def _profile_key(passphrase: str, salt: bytes, iterations: int) -> bytes:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+    if not isinstance(passphrase, str) or not passphrase:
+        raise VaultError("A profile passphrase is required")
+    if iterations != _PROFILE_PBKDF2_ITERS:
+        raise VaultError("Unsupported profile encryption parameters")
+    return PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=iterations,
+    ).derive(passphrase.encode("utf-8"))
+
+
+def encrypt_profile(data: dict, passphrase: str) -> bytes:
+    """Encrypt a portable profile using a passphrase-derived authenticated key."""
+    if not isinstance(data, dict):
+        raise VaultError("Profile data must be an object")
+    import secrets
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    salt = secrets.token_bytes(16)
+    nonce = secrets.token_bytes(12)
+    key = _profile_key(passphrase, salt, _PROFILE_PBKDF2_ITERS)
+    plaintext = json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ciphertext = AESGCM(key).encrypt(nonce, plaintext, b"blackout-kit/profile/v1")
+    envelope = {
+        "version": 1,
+        "kdf": "pbkdf2-sha256",
+        "iterations": _PROFILE_PBKDF2_ITERS,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "nonce": base64.b64encode(nonce).decode("ascii"),
+        "ciphertext": base64.b64encode(ciphertext).decode("ascii"),
+    }
+    payload = _PROFILE_HEADER + json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode("ascii")
+    if len(payload) > PROFILE_MAX_BYTES:
+        raise VaultError("Encrypted profile exceeds the size limit")
+    return payload
+
+
+def decrypt_profile(payload: bytes, passphrase: str) -> dict:
+    """Authenticate and decrypt a portable profile without exposing its contents."""
+    if not isinstance(payload, bytes) or len(payload) > PROFILE_MAX_BYTES:
+        raise VaultError("Encrypted profile exceeds the size limit")
+    if not payload.startswith(_PROFILE_HEADER):
+        raise VaultError("Encrypted profile has an unsupported format")
+    try:
+        envelope = json.loads(payload[len(_PROFILE_HEADER):].decode("ascii"))
+        if not isinstance(envelope, dict) or envelope.get("version") != 1 or envelope.get("kdf") != "pbkdf2-sha256":
+            raise ValueError("unsupported profile version")
+        if envelope.get("iterations") != _PROFILE_PBKDF2_ITERS:
+            raise ValueError("unsupported profile parameters")
+        salt = base64.b64decode(envelope["salt"], validate=True)
+        nonce = base64.b64decode(envelope["nonce"], validate=True)
+        ciphertext = base64.b64decode(envelope["ciphertext"], validate=True)
+        if len(salt) != 16 or len(nonce) != 12 or not ciphertext:
+            raise ValueError("invalid profile payload")
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        plaintext = AESGCM(_profile_key(passphrase, salt, envelope["iterations"])).decrypt(
+            nonce,
+            ciphertext,
+            b"blackout-kit/profile/v1",
+        )
+        data = json.loads(plaintext.decode("utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("profile data is not an object")
+        return data
+    except VaultError:
+        raise
+    except Exception as exc:
+        raise VaultError("Encrypted profile cannot be authenticated with this passphrase") from exc
 
 
 def _decrypt_legacy_config(payload: bytes) -> bytes:

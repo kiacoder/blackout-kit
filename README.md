@@ -42,6 +42,7 @@
 - [Engine map](#engine-map)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [Zero-argument launcher](#zero-argument-launcher)
 - [Command map](#command-map)
 - [Security, privacy, and safety boundaries](#security-privacy-and-safety-boundaries)
 - [Data and local state](#data-and-local-state)
@@ -109,6 +110,7 @@ Blackout Kit 1.1.1 currently includes:
 - **Country profiles** for Iran, Russia, China, Iraq, United Kingdom, United States, and Europe
 - **In-app help system** for terminal users
 - **Local SHA-256 fingerprints** for one explicitly supplied file, with no upload or remote lookup
+- **Manual Windows Wi-Fi MAC privacy controls** with private-address validation and exact prior-override restoration
 
 ---
 
@@ -194,14 +196,28 @@ Notes:
 - the packaged executable still relies on local runtime files after extraction
 - Windows admin prompts can still appear for engines or actions that require elevation
 
-### Option 2 — source install for contributors and advanced users
+### Option 2 — source or package install for contributors and advanced users
+
+The installable core keeps GUI, packet capture, media, and torrent dependencies optional:
 
 ```cmd
  git clone https://github.com/kiacoder/blackout-kit.git
  cd blackout-kit
- pip install -r requirements.txt
- python blackout.py version
+ python -m pip install .
+ blackout version
 ```
+
+Feature extras are available when needed:
+
+```cmd
+python -m pip install .[gui]
+python -m pip install .[capture]
+python -m pip install .[media]
+python -m pip install .[torrent]
+python -m pip install .[all]
+```
+
+PyPI does not provide the native `python-libtorrent` package for Windows, so the torrent extra is skipped by `[all]` on Windows and torrent commands report an actionable unavailable-feature message. Use a supported Linux environment for torrent execution. For contributor, test, and PyInstaller work, `requirements.txt` remains the portable all-feature development environment.
 
 Then install the runtimes you actually need:
 
@@ -212,7 +228,16 @@ python blackout.py bins download
 
 ### Linux source/runtime install
 
+Linux requires the `blackout-engine` runtime asset in `bins/`. Install the core package first; add `[capture]` only when packet capture is needed.
+
+```bash
+python3 -m pip install .
+```
+
+The core install does not pull in the Windows GUI, Scapy capture support, yt-dlp, or libtorrent.
+
 Linux requires the `blackout-engine` runtime asset in `bins/`.
+
 
 ```bash
 python3 -m pip install -r requirements.txt
@@ -279,6 +304,27 @@ sudo python3 blackout.py connect tun --background
 
 ---
 
+## Zero-argument launcher
+
+Running `blackout` with no arguments opens a keyboard-navigable terminal chooser instead of doing anything automatically:
+
+```text
+Blackout Kit — Choose How to Launch
+> 💻 Terminal CLI   Navigate Blackout Kit entirely from this terminal
+  🪟 Windows App    Open the desktop launcher window
+  ❌ Exit           Quit Blackout Kit
+
+↑↓ Move    →/Space/Enter Select    ←/Esc Back    Ctrl+C Quit
+```
+
+- **↑ / ↓** move the selection; **Space**, **Enter**, or **→** activate it; **←** or **Esc** go back to the previous screen; **Ctrl+C** quits immediately.
+- **Terminal CLI** opens the same arrow-key-navigable action menu (Connect, Engine, Status, Tools, Settings, …); backing out of it returns here instead of exiting.
+- **Windows App** opens the `CustomTkinter` desktop GUI described in [Desktop GUI](#desktop-gui); closing that window also returns here.
+- The control legend is always shown at the bottom of every menu screen.
+- **Windows App** is only offered on Windows, since the desktop GUI is Windows-only.
+
+---
+
 ## Command map
 
 ### Core connection flow
@@ -303,18 +349,83 @@ blackout ready [engine]
 ### Config and settings
 
 ```text
+blackout config                  # keyboard config manager
+blackout config edit             # keyboard config manager
 blackout config list
+blackout config validate
+blackout config check-duplicates
+blackout config compatibility
+blackout config diff <setup>
 blackout config add <uri>
+blackout config replace <n> <uri>
 blackout config import <url>
 blackout config remove <n>
 blackout config encrypt
 blackout config decrypt
+blackout config export --output setup.txt --force
+blackout config import-setup <string> --force
+blackout config profile-export --output profile.bkpf --stdin
+blackout config profile-import profile.bkpf --stdin --force
 
+blackout settings                # keyboard settings editor
+blackout settings edit           # keyboard settings editor
 blackout settings list
 blackout settings get <key>
 blackout settings set <key> <value>
 blackout settings reset
 ```
+
+The bare `settings` and `config` commands open keyboard-only editors in an interactive terminal. Use **↑/↓** to move, **Enter**, **Space**, or **→** to select, and **←/Esc** to go back. Long lists show a bounded viewport that follows the selected row; mouse-wheel and mouse clicks are not used for selection. Setting edits are validated and saved immediately through the same settings API as the explicit commands. Config replacement asks for a new URI without displaying the old URI, so credentials are not exposed in the menu.
+
+Plain setup exports contain credential-bearing URIs and require confirmation (or `--force` in automation). Portable profiles are authenticated and encrypted with a passphrase; use `--prompt` or `--stdin` so passphrases are never command-line arguments. Machine-readable output uses a versioned envelope, and supported read-only commands can be queried with `--json`.
+
+### Core and optional commands
+
+The core package includes the CLI, local status/readiness, settings, config management, and local diagnostics. Install feature extras only when needed:
+
+| Extra | Enables |
+|---|---|
+| `gui` | Windows desktop app and tray dependencies |
+| `capture` | Scapy packet capture; Windows also requires Npcap and Linux requires libpcap |
+| `media` | yt-dlp media queue execution |
+| `torrent` | python-libtorrent queue execution |
+| `all` | All optional Python features |
+
+Missing optional features return an actionable installation error instead of a traceback. `blackout doctor` is core-only by default; add `--include-optional` to inspect packet-capture prerequisites.
+
+### Machine-readable output and completion
+
+Use `--json` for supported structured commands:
+
+```cmd
+blackout --json version
+blackout --json status
+blackout --json config validate
+blackout --json settings list
+```
+
+Each success or error is one compact JSON object with `schema_version`, `ok`, and either `data` or `error`. Secrets, raw proxy URIs, and credentials are omitted. Unsupported delegated commands reject `--json` before running. Streaming/watch output uses one JSON object per line.
+
+Typer shell completion is built in:
+
+```cmd
+blackout --install-completion
+blackout --show-completion
+```
+
+The optional local startup benchmark measures fresh subprocess startup only and performs no network or system changes:
+
+```cmd
+python scripts/benchmark_startup.py --json
+```
+
+To include packet-capture checks in diagnostics:
+
+```cmd
+blackout doctor --include-optional
+```
+
+No network probe is implied by the core-only local checks.
 
 ### Diagnostics and recovery
 
@@ -345,6 +456,9 @@ blackout tools dns-flush
 blackout tools traceroute [host]
 blackout tools scan-file <path>
 blackout tools file-hash <path>
+blackout tools mac status
+blackout tools mac randomize [--adapter <name>] [--force]
+blackout tools mac restore [--adapter <name>] [--force]
 blackout tools cert-check <host[:port]>
 blackout tools cert-check <host> --allow
 blackout tools hotspot
@@ -424,6 +538,10 @@ REALITY is handled separately by XRay’s configured REALITY handshake and does 
 ### File hash scope
 
 `blackout tools file-hash <path>` calculates a SHA-256 fingerprint for one existing regular file locally. It streams the file in bounded chunks and refuses to present a digest when its before/after file snapshot changes during reading. It does not upload the file or its hash, contact VirusTotal or any other service, use an API key, scan for malware, or alter security or network settings.
+
+### Wi-Fi MAC privacy scope
+
+`blackout tools mac status` only inspects the currently active physical Wi-Fi adapter. `randomize` and `restore` are Windows-only, explicit actions that ask for confirmation before briefly restarting that one adapter; non-interactive use requires `--force`. Fresh addresses and optional custom addresses must be locally administered and unicast. Before Blackout Kit's first change, it saves the adapter's prior `NetworkAddress` driver override and `restore` reinstates that exact override—or removes it to return to the hardware default when no override existed. This feature never changes a MAC automatically and does not change firewall, DNS, proxy, routes, VPNs, or other adapters. Some Wi-Fi drivers do not support a software MAC override.
 
 ### Kill switch scope
 
@@ -511,7 +629,7 @@ blackout gui
 
 It is built with `CustomTkinter` and currently serves as a native desktop surface for the same general runtime, monitoring, and settings workflows.
 
-The zero-argument launcher path can also open the GUI first and fall back to the terminal menu when GUI dependencies are unavailable.
+Running `blackout` with no arguments always opens the terminal chooser first (see [Zero-argument launcher](#zero-argument-launcher)); picking **Windows App** from that chooser is what opens this GUI window.
 
 ---
 

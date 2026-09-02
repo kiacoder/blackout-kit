@@ -3,9 +3,49 @@ import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from blackoutkit import daemon
+
+
+def test_watchdog_command_uses_installed_script_when_not_frozen():
+    with patch.object(daemon.sys, "frozen", False, create=True):
+        command = daemon._watchdog_command(4242)
+
+    assert command == [
+        daemon.sys.executable,
+        str(Path(daemon.__file__).parent.parent / "watchdog.py"),
+        "4242",
+    ]
+
+
+def test_watchdog_command_uses_hidden_entrypoint_when_frozen():
+    with patch.object(daemon.sys, "frozen", True, create=True):
+        command = daemon._watchdog_command(4242)
+
+    assert command == [daemon.sys.executable, "_watchdog", "4242"]
+
+
+
+def test_native_gui_command_uses_module_entrypoint_when_installed():
+    from blackoutkit import launcher
+
+    with patch.object(launcher.sys, "frozen", False, create=True):
+        command = launcher._native_gui_command()
+
+    assert command == [launcher.sys.executable, "-m", "blackoutkit.typer_cli", "gui"]
+
+
+
+def test_native_gui_command_uses_hidden_entrypoint_when_frozen():
+    from blackoutkit import launcher
+
+    with patch.object(launcher.sys, "frozen", True, create=True):
+        command = launcher._native_gui_command()
+
+    assert command == [launcher.sys.executable, "gui"]
+
+
 
 
 class _FakeXRayEngine:

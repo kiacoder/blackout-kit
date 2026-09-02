@@ -1336,6 +1336,15 @@ def compute_bandwidth_rates(
 class CaptureUnavailable(Exception):
     """Raised when scapy (and/or its Npcap/libpcap driver) isn't available."""
 
+    def __init__(self, message: str = "packet capture is unavailable"):
+        super().__init__(message)
+
+
+CAPTURE_INSTALL_HINT = (
+    "Install packet capture support with `pip install blackout-kit[capture]`; "
+    "Windows also requires Npcap and Linux requires libpcap."
+)
+
 
 def parse_packet_summary(pkt) -> dict:
     """
@@ -1405,7 +1414,7 @@ def capture_packets(
     try:
         import scapy.all as scapy
     except Exception as exc:
-        raise CaptureUnavailable(str(exc)) from exc
+        raise CaptureUnavailable(CAPTURE_INSTALL_HINT) from exc
 
     def _prn(pkt):
         if on_packet:
@@ -1426,7 +1435,7 @@ def capture_packets(
     except CaptureUnavailable:
         raise
     except Exception as exc:
-        raise CaptureUnavailable(str(exc)) from exc
+        raise CaptureUnavailable(f"{CAPTURE_INSTALL_HINT} Capture failed to start.") from exc
 
 
 def summarize_capture_packets(packets: list[dict]) -> dict:
