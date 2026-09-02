@@ -217,7 +217,7 @@ python -m pip install .[torrent]
 python -m pip install .[all]
 ```
 
-PyPI does not provide the native `python-libtorrent` package for Windows, so the torrent extra is skipped by `[all]` on Windows and torrent commands report an actionable unavailable-feature message. Use a supported Linux environment for torrent execution. For contributor, test, and PyInstaller work, `requirements.txt` remains the portable all-feature development environment.
+The torrent extra uses the maintained `libtorrent` package on Linux Python 3.10–3.13 and is skipped on Windows and newer unsupported Python versions. Torrent commands report an actionable unavailable-feature message when the binding is unavailable. For contributor, test, and PyInstaller work, `requirements.txt` remains the portable all-feature development environment.
 
 Then install the runtimes you actually need:
 
@@ -388,7 +388,7 @@ The core package includes the CLI, local status/readiness, settings, config mana
 | `gui` | Windows desktop app and tray dependencies |
 | `capture` | Scapy packet capture; Windows also requires Npcap and Linux requires libpcap |
 | `media` | yt-dlp media queue execution |
-| `torrent` | python-libtorrent queue execution |
+| `torrent` | libtorrent queue execution on supported Linux Python versions |
 | `all` | All optional Python features |
 
 Missing optional features return an actionable installation error instead of a traceback. `blackout doctor` is core-only by default; add `--include-optional` to inspect packet-capture prerequisites.

@@ -83,7 +83,7 @@ python -m pip install .[torrent]
 python -m pip install .[all]
 ```
 
-PyPI does not provide the native `python-libtorrent` package for Windows, so `[all]` skips that dependency on Windows; torrent commands remain unavailable until the package is installed in a supported Linux environment. `requirements.txt` is the portable all-feature development and executable-build environment.
+The torrent extra uses the maintained `libtorrent` package on Linux Python 3.10–3.13 and is skipped on Windows and newer unsupported Python versions. Torrent commands remain unavailable when the binding is not installed. `requirements.txt` is the portable all-feature development and executable-build environment.
 
 The portable development requirements can be installed from any directory:
 
@@ -103,7 +103,7 @@ blackout version
 
 On Linux, the managed runtime asset must exist in `bins/blackout-engine`. Add `.[capture]` only when packet capture is required; Scapy also needs libpcap on the host.
 
-The core install does not pull in the Windows GUI, Scapy, yt-dlp, or python-libtorrent.
+The core install does not pull in the Windows GUI, Scapy, yt-dlp, or libtorrent.
 
 ## Optional feature matrix
 
@@ -112,7 +112,7 @@ The core install does not pull in the Windows GUI, Scapy, yt-dlp, or python-libt
 | `gui` | Windows desktop app and tray support | Windows desktop session |
 | `capture` | `tools capture` through Scapy | Npcap on Windows or libpcap on Linux |
 | `media` | queued media execution | `yt-dlp` executable from the extra |
-| `torrent` | queued torrent execution | `python-libtorrent` and platform support |
+| `torrent` | queued torrent execution | `libtorrent` on supported Linux Python versions |
 | `all` | all optional Python features | platform prerequisites still apply |
 
 A missing optional feature produces an actionable installation message instead of a raw import traceback.

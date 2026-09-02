@@ -61,7 +61,7 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 |---|---|---|
 | Download manager | Multi-threaded downloads with resume, queue, and speed limits | **Done** — `blackout download add/list/start/cancel/watch` |
 | Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | **Done** — `blackout media add/list/watch/cancel/clear` (yt-dlp wrapper, format selection, ~/Downloads/blackout-media) |
-| Torrent/Magnet support | Lightweight terminal-based torrent client | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` (libtorrent wrapper, seed ratio control, peer tracking, ~/Downloads/blackout-torrents) |
+| Torrent/Magnet support | Lightweight terminal-based torrent client | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` (libtorrent 2.0 wrapper, seed ratio control, peer tracking, ~/Downloads/blackout-torrents) |
 | Monitor-only QoS | Persist and inspect app/protocol/port/interface rule metadata | **Done** — `blackout tools qos rules/stats/mode/violations` stores matching, priority, and optional rate-limit metadata; it provides zero-value placeholder statistics and stored violation inspection. It does not control live traffic or activate WinDivert. |
 | Bandwidth caps | Set daily/monthly limits per interface | **Done** — `blackout tools bandwidth-cap set/list/stats/remove` (daily/monthly quotas with % alert threshold) |
 | Traffic logging | Persistent log of network usage by app/protocol/time | **Done** — `blackout tools traffic-log list/stats/hourly/clear/prune/info` (JSONL audit trail, per-app/protocol aggregation) |

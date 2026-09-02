@@ -6,18 +6,19 @@ import pytest
 from packaging.requirements import Requirement
 
 
-def test_all_feature_torrent_dependency_skips_unsupported_windows_python():
+def test_all_feature_torrent_dependency_targets_supported_platforms():
     import tomllib
 
     metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     torrent_requirements = metadata["project"]["optional-dependencies"]["all"]
-    requirement = next(item for item in torrent_requirements if item.startswith("python-libtorrent"))
+    requirement = next(item for item in torrent_requirements if item.startswith("libtorrent"))
 
     parsed = Requirement(requirement)
     assert parsed.marker is not None
     assert parsed.marker.evaluate({"sys_platform": "win32", "python_version": "3.12"}) is False
     assert parsed.marker.evaluate({"sys_platform": "win32", "python_version": "3.11"}) is False
     assert parsed.marker.evaluate({"sys_platform": "linux", "python_version": "3.12"}) is True
+    assert parsed.marker.evaluate({"sys_platform": "linux", "python_version": "3.14"}) is False
 
 
 from blackoutkit import settings

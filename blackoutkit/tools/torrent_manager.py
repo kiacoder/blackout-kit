@@ -1,6 +1,6 @@
 """
 Blackout Kit - Torrent Manager.
-Downloads torrents and magnets using python-libtorrent.
+Downloads torrents and magnets using libtorrent.
 
 Core features:
   - Persistent queue (survives daemon restart)
@@ -145,7 +145,7 @@ class TorrentDownloadManager:
             _log.info("Initialized libtorrent session")
         except ImportError as exc:
             raise RuntimeError(
-                "torrent support is unavailable; install blackout-kit[torrent] (python-libtorrent)"
+                "torrent support is unavailable; install blackout-kit[torrent] (libtorrent on Linux Python 3.10–3.13)"
             ) from exc
 
     def add_torrent(self, magnet_or_file: str, output_dir: Optional[Path] = None, seed_ratio: float = 1.0) -> str:

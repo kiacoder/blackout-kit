@@ -86,7 +86,7 @@ def check_data_files() -> list[CheckResult]:
                 False,
                 "File is empty",
                 fixable=mutable,
-                fix=(lambda p=full, fn=default_fn: p.write_text(fn())) if mutable else None,
+                fix=(lambda p=full, fn=default_fn: p.write_text(fn(), encoding="utf-8")) if mutable else None,
             ))
         else:
             results.append(CheckResult(
@@ -98,7 +98,7 @@ def check_data_files() -> list[CheckResult]:
                 fix=(
                     (lambda p=full, fn=default_fn: (
                         p.parent.mkdir(parents=True, exist_ok=True),
-                        p.write_text(fn()),
+                        p.write_text(fn(), encoding="utf-8"),
                     ))
                     if mutable else None
                 ),

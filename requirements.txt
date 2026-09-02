@@ -1,6 +1,6 @@
 # All-feature development dependencies from pyproject.toml.
 # This file is portable: pip can install it from any working directory.
-rich>=13.7.1
+rich>=13.7.1,<15
 httpx[socks,http2]>=0.27.0
 psutil>=6.0.0
 cryptography>=43.0.0
@@ -11,7 +11,8 @@ Pillow>=10.0.0
 pystray>=0.19.3
 scapy>=2.5.0
 yt-dlp>=2024.01.01
-python-libtorrent>=1.2.19; sys_platform == "linux"
+libtorrent==2.0.11; sys_platform == "linux" and python_version < "3.14"
 pytest>=8.0.0
+pytest-asyncio>=0.23.0
 build>=1.2.0
 pyinstaller>=6.0.0

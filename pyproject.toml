@@ -17,7 +17,7 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-    "rich>=13.7.1",
+    "rich>=13.7.1,<15",
     "httpx[socks,http2]>=0.27.0",
     "psutil>=6.0.0",
     "cryptography>=43.0.0",
@@ -38,7 +38,7 @@ media = [
     "yt-dlp>=2024.01.01",
 ]
 torrent = [
-    "python-libtorrent>=1.2.19; sys_platform == 'linux'",
+    "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
 ]
 all = [
     "customtkinter>=5.2.2",
@@ -46,16 +46,17 @@ all = [
     "pystray>=0.19.3",
     "scapy>=2.5.0",
     "yt-dlp>=2024.01.01",
-    "python-libtorrent>=1.2.19; sys_platform == 'linux'",
+    "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
 ]
-# python-libtorrent is distributed for supported Linux environments, not Windows.
-# The torrent command reports an actionable installation message when unavailable.
+# The torrent command reports an actionable installation message when the Linux binding is unavailable.
 test = [
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
 dev = [
     "build>=1.2.0",
     "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
     "pyinstaller>=6.0.0",
 ]
 

@@ -452,7 +452,7 @@ Optional features:
   • gui: customtkinter, Pillow, pystray
   • capture: scapy plus the platform packet-capture driver
   • media: yt-dlp
-  • torrent: python-libtorrent
+  • torrent: libtorrent (Linux Python 3.10–3.13)
   • `blackout doctor` is core-only; add `--include-optional` for capture checks.
 
 [dim]Some tools change local network state; read the command output carefully.
