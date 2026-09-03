@@ -57,17 +57,17 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 
 ### Phase 2: Traffic, downloads & sharing (1.4.x)
 
-| Feature | What it does | Why it matters |
-|---|---|---|
-| Download manager | Multi-threaded downloads with resume, queue, and speed limits | **Done** — `blackout download add/list/start/cancel/watch` |
-| Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | **Done** — `blackout media add/list/watch/cancel/clear` |
-| Torrent/Magnet support | Lightweight terminal-based torrent client | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` |
-| Monitor-only QoS | Persist and inspect app/protocol/port/interface rule metadata | **Done** — `blackout tools qos rules/stats/mode/violations` |
-| Bandwidth caps | Set daily/monthly limits per interface | **Done** — `blackout tools bandwidth-cap set/list/stats/remove` |
-| Traffic logging | Persistent log of network usage by app/protocol/time | **Done** — `blackout tools traffic-log list/stats/hourly/clear/prune/info` |
-| Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | **Done** — `blackout tools adblock sources/custom/whitelist/status/stats/log/update` |
-| Setup export/import | Share your exact config, DNS, and engine state via one string | **Done** — `blackout config export` / `blackout config import-setup <string>` |
-| LAN IP Cache sharing | Share a 40ms Cloudflare IP with neighbors over LAN | **Done** — `blackout neighbor cache-list/refresh/clear` |
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| Download manager | Multi-threaded downloads with resume, queue, and speed limits | Download queue & rate limits | **Done** — `blackout download add/list/start/cancel/watch` |
+| Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | Extract video & audio streams | **Done** — `blackout media add/list/watch/cancel/clear` |
+| Torrent/Magnet support | Lightweight terminal-based torrent client | Peer-to-peer torrent manager | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` |
+| Monitor-only QoS | Persist and inspect app/protocol/port/interface rule metadata | Traffic classification & rules | **Done** — `blackout tools qos rules/stats/mode/violations` |
+| Bandwidth caps | Set daily/monthly limits per interface | Quota alerts & usage management | **Done** — `blackout tools bandwidth-cap set/list/stats/remove` |
+| Traffic logging | Persistent log of network usage by app/protocol/time | Usage audit log | **Done** — `blackout tools traffic-log list/stats/hourly/clear/prune/info` |
+| Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | Domain blocklists & DNS sinkhole | **Done** — `blackout tools adblock sources/custom/whitelist/status/stats/log/update` |
+| Setup export/import | Share your exact config, DNS, and engine state via one string | Config sharing | **Done** — `blackout config export` / `blackout config import-setup <string>` |
+| LAN IP Cache sharing | Share a 40ms Cloudflare IP with neighbors over LAN | Peer-to-peer IP sharing | **Done** — `blackout neighbor cache-list/refresh/clear` |
 
 ### Phase 3: Antivirus & security hardening (1.5.x)
 
@@ -87,10 +87,10 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | Feature | What it does | Why it matters | Status |
 |---|---|---|---|
 | PCAP Export 🦈 | Export captured network packets to `.pcap` files | Interoperability with Wireshark | **Done** — `blackout tools capture --pcap <file>` |
-| AI Network Explainer | MCP tool: Claude reads your live network state to spot anomalies | "Claude, is any process acting suspicious?" | Planned |
-| SSH Vault & Manager | Built-in SSH client using the existing AES-256 vault | Replace Termius/PuTTY | Planned |
-| Scriptable automation | Python/TOML automation rules for network events | "When X happens, do Y automatically" | Planned |
-| REST API & Web dashboard | Local REST API and browser dashboard for network monitoring | Interoperability & remote control | Planned |
+| AI Network Explainer 🤖 | MCP tool & CLI: Claude reads live network state to spot anomalies | "Claude, is any process acting suspicious?" | **Done** — `blackout tools explain` & `blackout_explain_network` MCP tool |
+| SSH Vault & Manager 🔑 | Built-in SSH client using the existing AES-256 vault | Replace Termius/PuTTY | **Done** — `blackout ssh add/list/connect/remove` |
+| Local REST API & Web Dashboard 🌐 | Browser-based network monitoring UI & local REST API | Interoperability & remote control | **Done** — `blackout api start` |
+| Scriptable Automation ⚡ | Event-triggered automation rules for network events | "When X happens, do Y automatically" | **Done** — `blackout automation list/add/remove/trigger` |
 
 ---
 
