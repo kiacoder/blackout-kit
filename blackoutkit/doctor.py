@@ -969,6 +969,35 @@ def check_firewall_exclusion() -> CheckResult:
 
 # ──────────────────────────── Runner ─────────────────────────────
 
+def run_local_checks(include_optional: bool = False) -> list[CheckResult]:
+    """Run checks that inspect local files, settings, and OS state only."""
+    checks = [
+        check_bins_dir(),
+        check_app_data_dir(),
+        check_settings(),
+        check_disk_space(),
+        check_network_driver(),
+        check_windivert(),
+        check_system_path(),
+        check_config_security(),
+        check_process_conflicts(),
+        check_firewall_rules(),
+        check_firewall_exclusion(),
+        check_windows_compat(),
+        check_tun_adapter(),
+        check_ports_in_use(),
+        check_admin_privileges(),
+        check_stale_proxy(),
+    ]
+    if include_optional:
+        checks.extend((check_scapy(), check_npcap()))
+    all_results = list(checks)
+    all_results.extend(check_data_files())
+    all_results.extend(check_python_deps())
+    all_results.extend(check_bins_present())
+    return all_results
+
+
 def run_all_checks(auto_fix: bool = False, include_optional: bool = False) -> list[CheckResult]:
     checks = [
         check_bins_dir(),

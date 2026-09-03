@@ -83,6 +83,23 @@ def test_build_singbox_outbound_defaults_port_when_missing(tmp_path):
     assert outbound["server_port"] == 51820
 
 
+def test_awg_engine_initializes_base_engine_state(tmp_path, monkeypatch):
+    from blackoutkit.engines.amneziawg import AmneziaWGEngine
+
+    config = tmp_path / "awg.conf"
+    config.write_text(SAMPLE_CONF, encoding="utf-8")
+    monkeypatch.setattr(
+        "blackoutkit.engines.amneziawg.cfg.load",
+        lambda: {"awg_config_file": str(config), "xray_socks_port": 19080},
+    )
+
+    engine = AmneziaWGEngine()
+
+    assert engine._config_dir.exists()
+    engine.stop()
+    assert not engine._config_dir.exists()
+
+
 def test_awg_engine_registered_in_engine_registry():
     from blackoutkit.engines import ENGINE_REGISTRY, get_engine
 

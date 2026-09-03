@@ -104,12 +104,11 @@ class TUNEngine(Engine):
                 },
                 {"type": "direct", "tag": "direct"},
                 {"type": "block",  "tag": "block"},
-                {"type": "dns",    "tag": "dns-out"},
             ],
             "route": {
                 "auto_detect_interface": sys.platform.startswith("linux"),
                 "rules": [
-                    {"protocol": "dns", "outbound": "dns-out"},
+                    {"protocol": "dns", "action": "hijack-dns"},
                     {"ip_cidr":  self.bypass_ips, "outbound": "direct"},
                     {
                         "domain": [

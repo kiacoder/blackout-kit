@@ -20,8 +20,11 @@ import logging
 import sys
 from pathlib import Path
 
-from .singbox_proxy import SingBoxProxyEngine
+from .base import Engine
 from .xray import LINUX_RUNNER_NAMES
+
+
+# The bundled sing-box runtime does not register the AmneziaWG outbound type.
 from .. import settings as cfg
 
 _log = logging.getLogger(__name__)
@@ -104,17 +107,17 @@ def _build_singbox_outbound(fields: dict) -> dict:
     return outbound
 
 
-class AmneziaWGEngine(SingBoxProxyEngine):
+class AmneziaWGEngine(Engine):
     name = "awg"
     description = "AmneziaWG — obfuscated WireGuard via sing-box (experimental)"
     protocol = "awg"
 
     def __init__(self, config_file: str = "", socks_port: int | None = None):
+        super().__init__()
         s = cfg.load()
         self.config_file = config_file or s.get("awg_config_file", "")
         self.socks_port = socks_port or s["xray_socks_port"]
         self._health_check_addr = ("127.0.0.1", self.socks_port)
-        self._log = logging.getLogger(__name__).getChild(self.name)
         self.proxy_config = None
         self.requested_protocol = None
 
@@ -141,52 +144,8 @@ class AmneziaWGEngine(SingBoxProxyEngine):
         }
 
     def start(self) -> bool:
-        if not self.config_file:
-            self._log.error("AmneziaWG config file not set. Run: blackout settings set awg_config_file <path.conf>")
-            return False
-
-        conf_path = Path(self.config_file)
-        if not conf_path.exists():
-            self._log.error("AmneziaWG config file not found: %s", self.config_file)
-            return False
-
-        if not self.check_port_free(self.socks_port):
-            return False
-
-        self._log.info("Starting AmneziaWG  config=%s  socks_port=%d", conf_path.name, self.socks_port)
-
-        config_json = json.dumps(self._generate_config(), separators=(",", ":")).encode("utf-8")
-
-        if sys.platform.startswith("linux"):
-            runner = self.find_binary(LINUX_RUNNER_NAMES)
-            if not runner:
-                self._log.error("Linux AmneziaWG requires the managed blackout-engine runner.")
-                return False
-            config_path = self._config_dir / "amneziawg_config.json"
-            config_path.write_bytes(config_json)
-            if not self.start_process(self.binary_command(runner, "sing-box", "--config", str(config_path))):
-                return False
-            if not self.wait_for_port(self.socks_port, timeout=10.0):
-                self._log.error("AmneziaWG runner did not open SOCKS port %d.", self.socks_port)
-                self.stop()
-                return False
-            self._log.info("AmneziaWG ready via Linux runner  socks5://127.0.0.1:%d", self.socks_port)
-            return True
-
-        from ..core import get_core_dll
-        dll = get_core_dll()
-        if not dll:
-            self._log.error("Core DLL missing! AmneziaWG requires blackout_core.dll.")
-            return False
-
-        if dll.StartSingBoxC(config_json) == 0:
-            self._dll_stop_func = dll.StopSingBoxC
-            if not self.wait_for_port(self.socks_port, timeout=10.0):
-                self._log.error("AmneziaWG started via DLL but SOCKS port %d never opened.", self.socks_port)
-                self.stop()
-                return False
-            self._log.info("AmneziaWG ready  socks5://127.0.0.1:%d", self.socks_port)
-            return True
-
-        self._log.error("Native DLL StartSingBoxC failed for AmneziaWG")
+        self._log.error(
+            "AmneziaWG cannot start: the bundled sing-box runtime does not "
+            "support the amnezia-wireguard outbound type."
+        )
         return False

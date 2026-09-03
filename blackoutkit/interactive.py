@@ -195,10 +195,17 @@ def _edit_setting(
     menu_runner: Optional[MenuRunner],
     text_editor: Optional[TextEditor],
     confirm_runner: Optional[ConfirmRunner],
+    require_confirmation: bool = False,
 ) -> None:
     old_value = values.get(key, cfg.DEFAULTS[key])
     new_value = _setting_input(key, old_value, menu_runner, text_editor, confirm_runner)
     if new_value is None:
+        return
+    if require_confirmation and not _confirm(
+        f"Save {key}?",
+        menu_runner,
+        confirm_runner,
+    ):
         return
     try:
         cfg.set_value(key, new_value)
@@ -217,6 +224,7 @@ def run_settings_menu(
     menu_runner: Optional[MenuRunner] = None,
     text_editor: Optional[TextEditor] = None,
     confirm_runner: Optional[ConfirmRunner] = None,
+    require_confirmation: bool = False,
 ) -> None:
     """Open the keyboard settings editor."""
     while True:
@@ -261,6 +269,7 @@ def run_settings_menu(
                     menu_runner,
                     text_editor,
                     confirm_runner,
+                    require_confirmation=require_confirmation,
                 )
 
 
@@ -314,12 +323,20 @@ def _show_configs(
 def _add_config(
     text_editor: Optional[TextEditor],
     menu_runner: Optional[MenuRunner],
+    confirm_runner: Optional[ConfirmRunner] = None,
+    require_confirmation: bool = False,
 ) -> None:
     if text_editor is None:
         uri = edit_text("V2Ray URI")
     else:
         uri = text_editor("V2Ray URI", initial="", secret=False)
     if not uri:
+        return
+    if require_confirmation and not _confirm(
+        "Save this upstream configuration?",
+        menu_runner,
+        confirm_runner,
+    ):
         return
     try:
         config = manager.add_config(uri)
@@ -336,6 +353,8 @@ def _add_config(
 def _replace_config(
     text_editor: Optional[TextEditor],
     menu_runner: Optional[MenuRunner],
+    confirm_runner: Optional[ConfirmRunner] = None,
+    require_confirmation: bool = False,
 ) -> None:
     configs = manager.load_configs()
     if not configs:
@@ -350,6 +369,12 @@ def _replace_config(
     else:
         uri = text_editor("New V2Ray URI", initial="", secret=False)
     if not uri:
+        return
+    if require_confirmation and not _confirm(
+        f"Replace saved config #{index + 1}?",
+        menu_runner,
+        confirm_runner,
+    ):
         return
     try:
         replacement = manager.replace_config(index, uri)
@@ -388,12 +413,20 @@ def _remove_config(
 def _import_subscription(
     text_editor: Optional[TextEditor],
     menu_runner: Optional[MenuRunner],
+    confirm_runner: Optional[ConfirmRunner] = None,
+    require_confirmation: bool = False,
 ) -> None:
     if text_editor is None:
         url = edit_text("Subscription URL")
     else:
         url = text_editor("Subscription URL", initial="", secret=False)
     if not url:
+        return
+    if require_confirmation and not _confirm(
+        "Fetch and save configurations from this subscription?",
+        menu_runner,
+        confirm_runner,
+    ):
         return
     console.print("[info]Importing from subscription URL...[/info]")
     added, total = manager.import_and_merge(url)
@@ -545,6 +578,7 @@ def run_config_menu(
     menu_runner: Optional[MenuRunner] = None,
     text_editor: Optional[TextEditor] = None,
     confirm_runner: Optional[ConfirmRunner] = None,
+    require_confirmation: bool = False,
 ) -> None:
     """Open the keyboard manager for saved proxy configuration data."""
     root_items = [
@@ -566,13 +600,28 @@ def run_config_menu(
         if choice == "list":
             _show_configs(manager.load_configs(), menu_runner)
         elif choice == "add":
-            _add_config(text_editor, menu_runner)
+            _add_config(
+                text_editor,
+                menu_runner,
+                confirm_runner,
+                require_confirmation=require_confirmation,
+            )
         elif choice == "replace":
-            _replace_config(text_editor, menu_runner)
+            _replace_config(
+                text_editor,
+                menu_runner,
+                confirm_runner,
+                require_confirmation=require_confirmation,
+            )
         elif choice == "remove":
             _remove_config(menu_runner, confirm_runner)
         elif choice == "import":
-            _import_subscription(text_editor, menu_runner)
+            _import_subscription(
+                text_editor,
+                menu_runner,
+                confirm_runner,
+                require_confirmation=require_confirmation,
+            )
         elif choice == "export":
             _export_setup(text_editor, menu_runner, confirm_runner)
         elif choice == "import-setup":

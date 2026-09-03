@@ -126,6 +126,9 @@ class ConnectionService:
         daemon_log_file: Any = None,
         set_proxy: Callable[[str, int], bool] | None = None,
         clear_proxy: Callable[[], bool] | None = None,
+        get_proxy_status: Callable[[], dict] | None = None,
+        restore_proxy: Callable[[dict], bool] | None = None,
+        cleanup_proxy: Callable[[], bool] | None = None,
         proxy_details: Callable[[str, dict], tuple[str, int] | None] | None = None,
         kill_switch_prepare: Callable[[str], bool] | None = None,
         kill_switch_enable: Callable[[str], bool] | None = None,
@@ -160,6 +163,10 @@ class ConnectionService:
         self.daemon_log_file = daemon_log_file if daemon_log_file is not None else daemon_log_default()
         self.set_proxy = set_proxy or set_proxy_default
         self.clear_proxy = clear_proxy or clear_proxy_default
+        self._track_proxy_ownership = get_proxy_status is not None
+        self.get_proxy_status = get_proxy_status or get_proxy_status_default
+        self.restore_proxy = restore_proxy or restore_proxy_default
+        self.cleanup_proxy = cleanup_proxy or cleanup_proxy_default
         self.proxy_details = proxy_details or proxy_details_default
         self.kill_switch_prepare = kill_switch_prepare or kill_switch_prepare_default
         self.kill_switch_enable = kill_switch_enable or kill_switch_enable_default
@@ -438,7 +445,13 @@ class ConnectionService:
         kill_switch_enabled = False
         engines: list[Any] = []
         proxy_configured = False
+        proxy_changed = False
         settings = self.settings_load()
+        proxy_before = (
+            self.get_proxy_status()
+            if self._track_proxy_ownership and settings.get("auto_set_proxy")
+            else None
+        )
         try:
             if self.platform().startswith("linux") and settings.get("kill_switch", False):
                 if not self.kill_switch_prepare(engine_name):
@@ -488,6 +501,7 @@ class ConnectionService:
                 if proxy_info:
                     host, port = proxy_info
                     proxy_configured = bool(self.set_proxy(host, port))
+                    proxy_changed = proxy_configured
                     health_target = health_check_target(proxy_info)
                     self._event("proxy", configured=proxy_configured, host=host, port=port)
                 else:
@@ -521,9 +535,17 @@ class ConnectionService:
                         engine.stop()
                     except Exception as exc:
                         self._event("cleanup_error", detail=str(exc))
-            if engines and settings.get("auto_set_proxy"):
+            if self._track_proxy_ownership and settings.get("auto_set_proxy"):
                 try:
-                    self.clear_proxy()
+                    self.cleanup_proxy()
+                except Exception as exc:
+                    self._event("cleanup_error", detail=str(exc))
+            elif proxy_changed and settings.get("auto_set_proxy"):
+                try:
+                    if proxy_before and proxy_before.get("enabled") and proxy_before.get("server"):
+                        self.restore_proxy(proxy_before)
+                    else:
+                        self.clear_proxy()
                 except Exception as exc:
                     self._event("cleanup_error", detail=str(exc))
             if kill_switch_enabled:
@@ -954,6 +976,31 @@ def clear_proxy_default() -> bool:
     from .proxy_manager import clear_system_proxy
 
     return clear_system_proxy()
+
+
+def cleanup_proxy_default() -> bool:
+    from .proxy_manager import cleanup_owned_system_proxy
+
+    return cleanup_owned_system_proxy()
+
+
+def get_proxy_status_default() -> dict:
+    from .proxy_manager import get_proxy_status
+
+    return get_proxy_status()
+
+
+def restore_proxy_default(status: dict) -> bool:
+    from .proxy_manager import set_system_proxy
+
+    server = str(status.get("server", ""))
+    if not server:
+        return clear_proxy_default()
+    if server.startswith("socks="):
+        host, port = server[6:].rsplit(":", 1)
+        return set_system_proxy(host, int(port), protocol="socks")
+    host, port = server.rsplit(":", 1)
+    return set_system_proxy(host, int(port))
 
 
 def proxy_details_default(engine_name: str, settings: dict) -> tuple[str, int] | None:

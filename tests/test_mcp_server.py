@@ -42,19 +42,49 @@ def test_connect_reports_daemon_start_without_claiming_connection():
 
 
 def test_disconnect_cleans_only_blackout_managed_state(monkeypatch):
-    monkeypatch.setattr(mcp, "_is_blackout_proxy", lambda _proxy: True)
     with patch("blackoutkit.daemon.stop", return_value=True), \
          patch("blackoutkit.settings.load", return_value={"auto_set_proxy": True, "kill_switch": True}), \
          patch("blackoutkit.proxy_manager.get_proxy_status", return_value={"enabled": True, "server": "127.0.0.1:10809"}), \
-         patch("blackoutkit.proxy_manager.clear_system_proxy", return_value=True) as clear_proxy, \
+         patch("blackoutkit.proxy_manager.cleanup_owned_system_proxy", return_value=True) as cleanup_proxy, \
          patch("blackoutkit.security.disable_kill_switch", return_value=True) as disable_kill_switch:
         result = mcp.handle_tool_call("blackout_disconnect", {})
 
-    clear_proxy.assert_called_once()
+    cleanup_proxy.assert_called_once()
     disable_kill_switch.assert_called_once()
     assert "daemon stopped" in result
-    assert "Blackout-managed proxy cleared" in result
+    assert "Blackout-managed proxy restored" in result
     assert "kill switch disabled" in result
+
+
+def test_mcp_engine_schemas_include_awg():
+    manifest = {
+        tool["name"]: tool
+        for tool in mcp.TOOLS_MANIFEST
+    }
+
+    for tool_name in ("blackout_ready", "blackout_connect"):
+        assert "awg" in manifest[tool_name]["inputSchema"]["properties"]["engine"]["enum"]
+    assert "awg" in mcp._MCP_ENGINES
+
+
+def test_mcp_ready_returns_awg_check_payload(monkeypatch):
+    from blackoutkit import readiness
+
+    checks = [{
+        "name": "Capability limitation",
+        "ok": False,
+        "blocking": True,
+        "detail": "AmneziaWG outbound is unavailable in the bundled sing-box runtime",
+    }]
+    monkeypatch.setattr(readiness, "as_dicts", lambda _engine: checks)
+
+    result = mcp.handle_tool_call("blackout_ready", {"engine": "awg"})
+
+    assert json.loads(result) == {
+        "engine": "awg",
+        "ready": False,
+        "checks": checks,
+    }
 
 
 def test_blackout_proxy_detection_supports_linux_proxy_url(monkeypatch):

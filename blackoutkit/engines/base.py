@@ -3,6 +3,7 @@ Blackout Kit - Base engine class.
 All bypass engines inherit from this.
 """
 import logging
+import os
 import shutil
 import socket
 import subprocess
@@ -135,7 +136,10 @@ class Engine(ABC):
         """Return a managed binary, or an explicitly permitted system binary on Linux."""
         for name in names:
             path = BINS_DIR / name
-            if path.exists() and path.is_file():
+            if path.is_file() and (
+                not sys.platform.startswith("linux")
+                or os.access(path, os.X_OK)
+            ):
                 self._log.debug("Managed binary found: %s", path)
                 return path
 

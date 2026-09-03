@@ -76,6 +76,7 @@ class DoctorArgs:
     fix: bool = False
     fix_av: bool = False
     include_optional: bool = False
+    local_only: bool = False
 
 
 def _option_value(value, default=None):
@@ -375,28 +376,30 @@ def _apply_setup(configs: list, settings_data: dict) -> None:
 def _compatibility_payload(configs: list) -> dict:
     from . import settings as cfg
     from . import downloader
-    from .routing import BINARY_REQUIREMENTS, PROXY_PROTOCOLS, SETTING_REQUIREMENTS
-    from .cli import _routing_candidates
+    from .capabilities import build_capability_matrix
+    from .routing import recommend_routes
 
     settings = cfg.load()
     installed = downloader.check_installed()
-    protocols = sorted({config.protocol for config in configs})
+    protocols = sorted({str(config.protocol).lower() for config in configs})
+    candidates = recommend_routes(
+        settings,
+        installed=installed,
+        protocols=set(protocols),
+        configs=configs,
+        stability_scores={},
+    )
+    by_engine = {candidate.engine: candidate for candidate in candidates}
+    rows = build_capability_matrix(
+        settings=settings,
+        installed=installed,
+        configs=configs,
+    )
     engines = []
-    for candidate in _routing_candidates():
-        required_components = sorted({
-            component
-            for component in BINARY_REQUIREMENTS.get(candidate.engine, ())
-        })
-        required_settings = [
-            {
-                "key": key,
-                "configured": bool(settings.get(key)),
-            }
-            for key in SETTING_REQUIREMENTS.get(candidate.engine, ())
-        ]
-        compatible_protocols = sorted(PROXY_PROTOCOLS.get(candidate.engine, set()))
-        if candidate.engine in {"xray", "tun"} and sys.platform.startswith("linux"):
-            compatible_protocols = ["trojan", "vless"]
+    for row in rows:
+        candidate = by_engine.get(row["name"])
+        if candidate is None:
+            continue
         engines.append({
             "engine": candidate.engine,
             "score": candidate.score,
@@ -404,9 +407,17 @@ def _compatibility_payload(configs: list) -> dict:
             "evidence": candidate.evidence,
             "blockers": list(candidate.blockers),
             "stability": candidate.stability,
-            "compatible_protocols": compatible_protocols,
-            "required_components": required_components,
-            "required_settings": required_settings,
+            "compatible_protocols": row["compatible_protocols"],
+            "required_components": row["runtime_requirements"],
+            "required_settings": [
+                {
+                    "key": key,
+                    "configured": key not in row["blockers"] and not any(
+                        blocker == f"{key} not configured" for blocker in row["blockers"]
+                    ),
+                }
+                for key in row["required_settings"]
+            ],
         })
     return {
         "configs": _config_payload(configs)["configs"],
@@ -556,6 +567,154 @@ app = typer.Typer(
 )
 
 # We will gradually port commands from cli.py into here.
+
+
+def _capability_payload(engine: str | None = None) -> dict:
+    from .capabilities import build_capability_matrix
+    from . import settings as cfg
+    from .config.manager import load_configs
+    from .downloader import check_installed
+
+    rows = build_capability_matrix(
+        settings=cfg.load(),
+        installed=check_installed(),
+        configs=load_configs(),
+    )
+    if engine:
+        normalized = engine.strip().lower()
+        rows = [row for row in rows if row["name"] == normalized]
+    return {"engine_count": len(rows), "engines": rows}
+
+
+def _render_capabilities(payload: dict) -> None:
+    table = make_table(
+        "Capability Matrix",
+        [("Engine", "cyan"), ("Platform", ""), ("State", ""),
+         ("Upstream", "yellow"), ("Runtime", "dim"), ("Privilege", "dim")],
+        [],
+    )
+    for row in payload["engines"]:
+        state = row["state"]
+        state_text = "[success]ready[/success]" if state == "ready" else (
+            "[muted]unsupported[/muted]" if state == "unsupported" else "[warning]blocked[/warning]"
+        )
+        table.add_row(
+            row["name"],
+            ", ".join(row["platforms"]),
+            state_text,
+            row["upstream_requirement"],
+            ", ".join(row["runtime_requirements"]) or "-",
+            row["privilege"],
+        )
+    console.print(table)
+    console.print(
+        "[muted]Cataloged engines remain visible even when unavailable here. "
+        "Ready means local prerequisites only; it does not prove upstream reachability.[/muted]"
+    )
+
+
+@app.command()
+def capabilities(
+    engine: str = typer.Argument(None, help="Show one capability (omit to show the full catalog)"),
+    ctx: typer.Context = None,
+):
+    """Show the full engine capability matrix without starting anything."""
+    engine = _option_value(engine)
+    options = _output_options(ctx)
+    payload = _capability_payload(engine)
+    if engine and not payload["engines"]:
+        _fail_parameter(f"Unknown capability: '{engine}'", options=options)
+    if options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if not _is_quiet(options):
+        _render_capabilities(payload)
+
+
+@app.command()
+def demo(ctx: typer.Context = None):
+    """Show a read-only simulation of the local Blackout Kit workflow."""
+    from .demo import build_demo_report
+
+    options = _output_options(ctx)
+    report = build_demo_report()
+    if options.json_output:
+        _print_json_enveloped(report)
+        return
+    if not _is_quiet(options):
+        from rich.panel import Panel
+        console.print(Panel(
+            "[bold]SIMULATION ONLY[/bold]\n\n"
+            "This demonstration starts no engines, contacts no remote hosts, downloads nothing, "
+            "changes no system or network state, and terminates no processes.",
+            title="Blackout Kit Demo",
+            border_style="cyan",
+        ))
+        _render_capabilities({"engines": report["capabilities"]})
+        console.print("[bold]Golden path:[/bold] " + " → ".join(report["golden_path"]))
+        console.print("[muted]Use `blackout setup` for the guided path. A local green check is not remote reachability.[/muted]")
+
+
+@app.command()
+def setup(
+    connect: bool = typer.Option(False, "--connect", help="Ask for confirmation, then run the selected connection"),
+    ctx: typer.Context = None,
+):
+    """Run the beginner-friendly local setup checklist before connecting."""
+    from .onboarding import build_current_setup_plan, render_setup_plan, run_setup
+
+    options = _output_options(ctx)
+    connect = bool(_option_value(connect, False))
+    if connect and (options.json_output or _is_quiet(options) or not is_interactive()):
+        _print_cli_error(
+            "invalid_input",
+            "setup --connect requires an interactive terminal; the noninteractive checklist is read-only",
+            options=options,
+            exit_code=2,
+        )
+    if options.json_output or _is_quiet(options) or not is_interactive():
+        plan = build_current_setup_plan(read_only=True)
+        if options.json_output:
+            _print_json_enveloped(plan.payload())
+            if plan.blockers:
+                raise typer.Exit(code=1)
+            return
+        if not _is_quiet(options):
+            render_setup_plan(plan, console)
+        if plan.blockers:
+            raise typer.Exit(code=1)
+        if not connect:
+            if not _is_quiet(options):
+                console.print("[muted]Checklist complete. Run `blackout setup --connect` only when you are ready to start networking.[/muted]")
+            return
+    else:
+        plan = run_setup(console=console)
+        if plan.blockers:
+            console.print(
+                "[warning]Nothing was changed. Follow the blocker guidance, then run `blackout setup` again.[/warning]"
+            )
+            raise typer.Exit(code=1)
+        if not connect:
+            console.print("[muted]Checklist complete. Run `blackout setup --connect` only when you are ready to start networking.[/muted]")
+            return
+
+    if not confirm(
+        f"Start {plan.recommended_engine or 'the selected engine'} and allow its documented local network changes?",
+        default=False,
+    ):
+        console.print("[muted]Connection not started.[/muted]")
+        return
+    from .connection_service import ConnectionRequest
+    result = _connection_service(options).connect(ConnectionRequest(
+        operation="connect",
+        pos_engine=plan.recommended_engine,
+    ))
+    _render_connection_result(result, options)
+    if not result.ok:
+        raise typer.Exit(code=1)
+
+
+
 
 @app.command()
 def version(ctx: typer.Context = None):
@@ -1017,6 +1176,7 @@ def _bins_payload() -> dict:
 def doctor(
     fix: bool = typer.Option(False, "--fix", help="Auto-fix every repairable issue"),
     fix_av: bool = typer.Option(False, "--fix-av", help="Add Windows Defender exclusions"),
+    local_only: bool = typer.Option(False, "--local-only", help="Inspect local state only; never probe the internet or execute engines"),
     include_optional: bool = typer.Option(
         False,
         "--include-optional",
@@ -1030,7 +1190,15 @@ def doctor(
     options = _output_options(ctx)
     fix = bool(_option_value(fix, False))
     fix_av = bool(_option_value(fix_av, False))
+    local_only = bool(_option_value(local_only, False))
     include_optional = bool(_option_value(include_optional, False))
+    if local_only and (fix or fix_av):
+        _print_cli_error(
+            "invalid_input",
+            "--local-only cannot be combined with mutating doctor flags",
+            options=options,
+            exit_code=2,
+        )
     if options.json_output and (fix or fix_av):
         _print_cli_error(
             "invalid_input",
@@ -1043,11 +1211,14 @@ def doctor(
 
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            results = (
-                doctor_module.run_all_checks(include_optional=True)
-                if include_optional
-                else doctor_module.run_all_checks()
-            )
+            if local_only:
+                results = doctor_module.run_local_checks(include_optional=include_optional)
+            else:
+                results = (
+                    doctor_module.run_all_checks(include_optional=True)
+                    if include_optional
+                    else doctor_module.run_all_checks()
+                )
         payload = _doctor_payload(results)
         _print_json_enveloped(payload)
         if not payload["ok"]:
@@ -1056,7 +1227,12 @@ def doctor(
     if _is_quiet(options):
         return
     from .cli import cmd_doctor
-    args = DoctorArgs(fix=fix, fix_av=fix_av, include_optional=include_optional)
+    args = DoctorArgs(
+        fix=fix,
+        fix_av=fix_av,
+        include_optional=include_optional,
+        local_only=local_only,
+    )
     cmd_doctor(args)
 
 
@@ -1094,6 +1270,9 @@ def _connection_service(options: OutputOptions):
         daemon_log_file=daemon.LOG_FILE,
         set_proxy=proxy_manager.set_system_proxy,
         clear_proxy=proxy_manager.clear_system_proxy,
+        get_proxy_status=proxy_manager.get_proxy_status,
+        restore_proxy=proxy_manager.restore_system_proxy,
+        cleanup_proxy=proxy_manager.cleanup_owned_system_proxy,
         proxy_details=cfg.get_engine_proxy_details,
         kill_switch_prepare=security.prepare_linux_kill_switch,
         kill_switch_enable=security.enable_kill_switch,
@@ -1334,7 +1513,7 @@ def gui(ctx: typer.Context = None):
 
 _JSON_NATIVE_COMMANDS = frozenset({
     "version", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
-    "country", "bins",
+    "country", "bins", "capabilities", "demo", "setup",
 })
 _CONFIG_JSON_COMMANDS = frozenset({
     "list", "validate", "check-duplicates", "compatibility", "diff",
@@ -3012,19 +3191,24 @@ def bins_update():
 @app.command(name="_daemon_run", hidden=True)
 def daemon_run(
     engine: str = typer.Option(..., "--engine"),
+    generation: str = typer.Option(..., "--generation", hidden=True),
     env_overrides_json: str = typer.Option(None, "--env-overrides-json", hidden=True),
 ):
     from .cli import cmd_daemon_run
     args = _args()
     args.engine = engine
+    args.generation = generation
     args.env_overrides_json = env_overrides_json
     cmd_daemon_run(args)
 
 
 @app.command(name="_watchdog", hidden=True)
-def watchdog(pid: int = typer.Argument(...)):
+def watchdog(
+    pid: int = typer.Argument(...),
+    generation: str = typer.Argument(...),
+):
     from .watchdog import monitor
-    monitor(pid)
+    monitor(pid, generation)
 
 
 @app.command()
@@ -3089,6 +3273,9 @@ def app_callback(
                 options=ctx.obj["output"],
                 exit_code=2,
             )
+        if not quiet and is_interactive():
+            from .onboarding import render_first_run_welcome
+            render_first_run_welcome(console)
         from . import settings as cfg
         from .cli import print_banner, _show_launcher_menu
         s = cfg.load()

@@ -6,33 +6,93 @@ Rich-formatted detailed help for every command.
 TOPICS: dict[str, str] = {
 
 "quick_start": """
-[bold cyan]Quick Start[/bold cyan]
+[bold cyan]Quick Start — the golden path[/bold cyan]
 
-[bold]1. Inspect local prerequisites[/bold]
-  blackout doctor
+[bold]1. See the safe, read-only workflow[/bold]
+  blackout demo
 
-[bold]2. Check runtime status[/bold]
-  blackout bins
+[bold]2. Inspect local prerequisites only[/bold]
+  blackout doctor --local-only
 
-[bold]3. Download what Blackout Kit can install automatically[/bold]
-  blackout bins download
+[bold]3. See the full catalog and local state[/bold]
+  blackout capabilities
+  blackout route
 
-[bold]4. Add or import configs if your chosen engine needs them[/bold]
+[bold]4. Run the guided keyboard setup[/bold]
+  blackout setup
+
+[bold]5. Add or import an upstream only when the selected path needs one[/bold]
   blackout config add <uri>
   blackout config import <url>
 
-[bold]5. See what is locally ready[/bold]
-  blackout route
-  blackout ready xray
+[bold]6. Validate one engine locally[/bold]
+  blackout ready <engine>
 
-[bold]6. Connect[/bold]
+[bold]7. Connect only after the checklist passes[/bold]
   blackout connect
 
-[bold]7. Inspect local state[/bold]
+[bold]8. Inspect local state afterward[/bold]
   blackout status
 
-[dim]Important: route, ready, and status describe local state. They do not prove
-remote reachability or guarantee bypass success.[/dim]
+[dim]Important: capabilities, route, ready, and status describe local state.
+They do not prove remote reachability or guarantee bypass success.[/dim]
+""",
+
+"setup": """
+[bold cyan]blackout setup[/bold cyan]
+Run the beginner-friendly golden path from a keyboard-only menu.
+
+The workflow reads local settings, saved configs, installed runtimes, and platform
+facts. It can then offer explicit actions to:
+  • add or import an upstream configuration
+  • review local settings
+  • install only the selected engine's missing runtime
+  • re-run the checklist
+
+Every config write, runtime download, and connection requires an explicit action or
+confirmation. Setup never connects implicitly. In JSON, quiet, or non-interactive
+mode it is a read-only checklist; use [bold]blackout setup[/bold] in a terminal when
+you want the guided editor.
+
+To connect from the final interactive plan:
+  blackout setup --connect
+
+[dim]A locally ready result means local prerequisites passed. It is not proof that
+the upstream server or filtered network is reachable.[/dim]
+""",
+
+"demo": """
+[bold cyan]blackout demo[/bold cyan]
+Show a safe simulation of the local Blackout Kit workflow.
+
+Demo mode:
+  • starts no engine or daemon
+  • contacts no remote host
+  • downloads no files
+  • probes no ports
+  • changes no proxy, DNS, firewall, routes, or settings
+  • terminates no processes
+
+Use [bold]blackout demo[/bold] for a human overview or
+[bold]blackout --json demo[/bold] for the versioned machine-readable report.
+""",
+
+"capabilities": """
+[bold cyan]blackout capabilities[/bold cyan]
+Show the complete public engine catalog and local capability matrix.
+
+Each row separates:
+  • cataloged scope — the public target remains visible
+  • platform support — whether this platform has a runtime path
+  • local state — ready, blocked, or unsupported here
+  • runtime and setting requirements
+  • local listeners and documented system effects
+
+[bold]ready[/bold] means local checks passed. [bold]blocked[/bold] means a local
+requirement is missing. [bold]unsupported[/bold] means the platform has no shipped
+path. None of these states proves remote reachability.
+
+The matrix never prints passwords, raw proxy URIs, or user paths.
 """,
 
 "faq": """
@@ -648,7 +708,7 @@ success. Effectiveness depends on the network, server IP, and current filtering.
 }
 
 _CATEGORIES: dict[str, list[str]] = {
-    "Getting Started": ["quick_start", "faq", "countries", "russia", "bins", "network"],
+    "Getting Started": ["quick_start", "setup", "demo", "capabilities", "faq", "countries", "russia", "bins", "network"],
     "Core Commands": ["start", "stop", "scan", "connect", "fix", "status", "route", "theme", "emergency", "mode"],
     "Configuration": ["settings", "config", "split_tunnel"],
     "Engines": ["engines", "vpn", "warp", "neighbor"],
@@ -658,7 +718,10 @@ _CATEGORIES: dict[str, list[str]] = {
 }
 
 _SUMMARIES: dict[str, str] = {
-    "quick_start": "First-run order: doctor, bins, route, ready, connect, status",
+    "quick_start": "Golden path: demo, local doctor, capabilities, route, setup, ready, connect",
+    "setup": "Guided keyboard-only local setup with explicit confirmations",
+    "demo": "Safe simulation with no engines, probes, downloads, or mutations",
+    "capabilities": "Full catalog with platform, runtime, upstream, and local state",
     "faq": "Common questions and product-boundary answers",
     "start": "Start an explicit engine path",
     "stop": "Stop the daemon and clear Blackout-managed local proxy state",

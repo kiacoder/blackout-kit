@@ -269,7 +269,16 @@ def select_proxy_config(protocols: tuple[str, ...]) -> ProxyConfig | None:
     except ValueError:
         offset = 0
     configs = load_configs()
-    compatible = [c for c in configs if c.protocol in protocols]
+    compatible = [
+        c for c in configs
+        if c.protocol in protocols
+        and isinstance(c.address, str)
+        and c.address.strip()
+        and isinstance(c.port, int)
+        and not isinstance(c.port, bool)
+        and 1 <= c.port <= 65535
+        and c.reality_validation_error() is None
+    ]
     if not compatible:
         return None
     return compatible[offset % len(compatible)]

@@ -275,32 +275,50 @@ Current runtime expectations from code:
 
 ## Quick start
 
-### Fast path for Windows users
+### Golden path for Windows and Linux
 
-```cmd
-python blackout.py doctor
-python blackout.py bins download
-python blackout.py route
-python blackout.py connect
+Start with a safe overview, then let the local checklist identify what is needed:
+
+```text
+blackout demo
+blackout doctor --local-only
+blackout capabilities
+blackout route
+blackout setup
+blackout ready <engine>
+blackout connect
+blackout status
 ```
 
-### Fast path for Linux users
+`blackout setup` is the beginner-friendly keyboard workflow. It can offer config
+editing, settings review, and a download of only the selected engine's missing
+runtime; each write, download, and connection remains explicit. `blackout setup`
+is read-only in JSON, quiet, and other non-interactive modes. Use
+`blackout setup --connect` only from an interactive terminal, after reviewing the
+final plan.
+
+### What the local states mean
+
+`blackout capabilities` keeps the complete public engine catalog visible. Each
+engine is reported as `ready`, `blocked`, or `unsupported` for the current local
+platform:
+
+- **ready** — local prerequisites passed; upstream reachability is still unknown.
+- **blocked** — a local runtime, setting, permission, port, or saved config is missing.
+- **unsupported** — this platform has no shipped runtime path for that target.
+
+The catalog is intentionally broader than any one platform's runtime subset.
+
+### Linux direct path
+
+Linux users should supply the managed runtime and a compatible direct upstream
+configuration before running the final steps:
 
 ```bash
-python3 blackout.py doctor
-python3 blackout.py route
+python3 blackout.py setup
+python3 blackout.py ready xray
 sudo python3 blackout.py connect tun --background
 ```
-
-### Suggested first-run order
-
-1. `blackout doctor` — inspect local prerequisites
-2. `blackout bins` / `blackout bins download` — install downloadable runtimes
-3. `blackout config add ...` or `blackout config import ...` — add upstream configuration if needed
-4. `blackout route` — see locally ready candidates
-5. `blackout ready <engine>` — validate a selected engine locally
-6. `blackout connect` — connect using the local recommendation
-7. `blackout status` — inspect daemon/proxy/local-port state
 
 ---
 
@@ -342,8 +360,12 @@ blackout stop
 blackout disconnect
 blackout status
 blackout status --watch
+blackout demo
+blackout capabilities [engine]
 blackout route
 blackout ready [engine]
+blackout setup
+blackout setup --connect
 ```
 
 ### Config and settings
@@ -392,6 +414,26 @@ The core package includes the CLI, local status/readiness, settings, config mana
 | `all` | All optional Python features |
 
 Missing optional features return an actionable installation error instead of a traceback. `blackout doctor` is core-only by default; add `--include-optional` to inspect packet-capture prerequisites.
+
+### Runtime trust and provenance
+
+Automatic release downloads are staged and accepted only from approved HTTPS GitHub
+release hosts when release metadata includes a matching SHA-256 digest. Downloaded
+outputs are structurally checked before promotion, and verified output hashes are
+recorded in `bins/.provenance.json`; use the local integrity checks to detect later
+tampering. Existing binaries remain in place when verification fails.
+
+Some cataloged engines still require a user-supplied or manual runtime. Those paths
+remain visible in the catalog, but are labeled manual/unverified rather than being
+presented as automatically authenticated downloads. Never paste credentials or raw
+proxy URIs into routine machine-readable output.
+
+### Proxy ownership
+
+When Blackout Kit changes a local proxy, it records the exact target it owns. Cleanup
+restores or clears that state only while the current proxy still matches the recorded
+Blackout target. If another process changed the proxy afterward, Blackout Kit leaves
+that current state untouched.
 
 ### Machine-readable output and completion
 

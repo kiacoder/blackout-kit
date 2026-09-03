@@ -54,7 +54,7 @@ class SoftEtherEngine(Engine):
     def _find_client(self) -> Path | None:
         for name in SE_BIN_NAMES:
             p = BINS_DIR / name
-            if p.exists():
+            if p.is_file():
                 return p
         p = SYSTEM_SE_DIR / "vpnclient.exe"
         if p.exists():
@@ -64,7 +64,7 @@ class SoftEtherEngine(Engine):
     def _find_cmd(self) -> Path | None:
         for name in SE_CMD_NAMES:
             p = BINS_DIR / name
-            if p.exists():
+            if p.is_file():
                 return p
         p = SYSTEM_SE_DIR / "vpncmd.exe"
         if p.exists():

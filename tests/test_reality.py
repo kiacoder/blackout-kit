@@ -184,10 +184,64 @@ def test_normal_tls_vless_keeps_certificate_policy_and_websocket_stream():
 
     stream = outbound["streamSettings"]
     assert stream["security"] == "tls"
-    assert stream["tlsSettings"] == {"serverName": "cdn.example", "fingerprint": "chrome"}
+    assert stream["tlsSettings"] == {
+        "serverName": "cdn.example",
+        "fingerprint": "chrome",
+        "allowInsecure": False,
+    }
     assert stream["wsSettings"]["path"] == "/ws"
     assert "realitySettings" not in stream
     policy.assert_called_once_with("server.example", 443, "speed")
+
+
+def test_normal_tls_policy_allows_insecure_when_mode_policy_allows():
+    config = parse_v2ray_uri(
+        "vless://id@server.example:443?security=tls&sni=cdn.example&type=tcp"
+    )
+    engine = XRayEngine(proxy_config=config, socks_port=19080, http_port=19081)
+
+    with patch("blackoutkit.settings.load", return_value=_settings()), \
+         patch("blackoutkit.cert_bypass.should_allow_insecure", return_value=(True, "")), \
+         patch("blackoutkit.tools.resolve_doh", return_value=None):
+        outbound = engine._build_outbound(config)
+
+    assert outbound["streamSettings"]["tlsSettings"]["allowInsecure"] is True
+
+
+def test_vmess_builds_a_native_xray_outbound():
+    config = ProxyConfig(
+        protocol="vmess",
+        address="server.example",
+        port=443,
+        uuid="11111111-2222-3333-4444-555555555555",
+        sni="cdn.example",
+        host="cdn.example",
+        path="/ws",
+        transport="ws",
+        security="tls",
+    )
+    engine = XRayEngine(proxy_config=config, socks_port=19080, http_port=19081)
+
+    with patch("blackoutkit.settings.load", return_value=_settings()), \
+         patch("blackoutkit.cert_bypass.should_allow_insecure", return_value=(True, "")), \
+         patch("blackoutkit.tools.resolve_doh", return_value=None):
+        outbound = engine._build_outbound(config)
+
+    assert outbound["protocol"] == "vmess"
+    assert outbound["settings"]["vnext"][0] == {
+        "address": "server.example",
+        "port": 443,
+        "users": [{
+            "id": "11111111-2222-3333-4444-555555555555",
+            "alterId": 0,
+            "security": "auto",
+        }],
+    }
+    assert outbound["streamSettings"]["tlsSettings"]["allowInsecure"] is True
+    assert outbound["streamSettings"]["wsSettings"] == {
+        "path": "/ws",
+        "headers": {"Host": "cdn.example"},
+    }
 
 
 def test_cert_probe_supports_python_tls_enum_aliases():

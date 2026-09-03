@@ -241,6 +241,38 @@ If the device is already compromised, or if the user deliberately decrypts the s
 
 ## Supply-chain and build security
 
+### Capability claims and local readiness
+
+The public engine catalog is intentionally broader than any one platform's runtime
+subset. `blackout capabilities` reports each cataloged target as `ready`, `blocked`,
+or `unsupported` using local facts. A `ready` result covers local prerequisites only;
+it is not a reachability test, an upstream trust decision, or a guarantee of bypass
+success. Experimental and manual-only paths remain visible but must not be read as
+cryptographically authenticated or universally supported.
+
+### Runtime download verification
+
+Automatic release downloads are accepted only from approved HTTPS GitHub release
+hosts when the release asset includes a valid SHA-256 digest. Blackout Kit downloads
+to staging, verifies the digest and executable structure, and promotes outputs only
+after verification. Verified output hashes are recorded in the local versioned
+`bins/.provenance.json` manifest so later integrity checks can detect modification.
+Existing outputs are preserved when staging, verification, promotion, or provenance
+recording fails. Moving release assets without digest metadata are rejected rather
+than assigned an invented hash.
+
+Manual or user-supplied sources are deliberately outside that automatic trust path.
+They remain available for cataloged engines but are labeled manual/unverified and
+must be obtained and verified by the user through an appropriate trusted channel.
+
+### Proxy ownership and cleanup
+
+When Blackout Kit changes a system proxy, it snapshots the prior local state and
+records the exact Blackout target only after a successful change. Cleanup restores
+or clears that snapshot only if the current proxy still matches the recorded target.
+If another process changes the proxy, cleanup leaves the current value untouched;
+this rule applies to normal stop, cancellation, startup failure, and daemon exit.
+
 ### Repo-controlled artifacts
 
 This repository builds and tests:
