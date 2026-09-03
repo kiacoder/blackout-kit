@@ -1933,16 +1933,10 @@ def monitor_process_network() -> list[dict]:
 
 # ─────────────────────────── Public Wi-Fi Honeypot ───────────────────
 
-def run_honeypot_listener(
-    ports: list[int] | None = None,
-    duration: float = 60.0,
-    callback=None,
-    bind_host: str = "127.0.0.1",
-) -> list[dict]:
+def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0, callback=None) -> list[dict]:
     """
     🐝 Public Wi-Fi Honeypot & Port Scan Detector:
-    Binds decoy TCP sockets to specified ports (e.g. 80, 22, 445, 3389)
-    on a dedicated interface/address.
+    Binds decoy TCP sockets to specified ports (e.g. 80, 22, 445, 3389).
     When an external IP attempts to connect, logs the probe event and invokes optional callback.
     """
     if ports is None:
@@ -1956,7 +1950,7 @@ def run_honeypot_listener(
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.settimeout(1.0)
-            sock.bind((bind_host, port))
+            sock.bind(("0.0.0.0", port))
             sock.listen(5)
             active_sockets.append((port, sock))
         except Exception as exc:
@@ -2185,6 +2179,20 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                 self._send_json({"connections": conns[:50], "total": len(conns)})
             elif self.path == "/api/audit":
                 self._send_json(run_network_audit())
+            elif self.path == "/api/live-stream":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    for _ in range(5):
+                        payload = json.dumps({"timestamp": time.time(), "connections": len(get_active_connections(True))})
+                        self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                        time.sleep(0.5)
+                except Exception:
+                    pass
             elif self.path == "/":
                 html_dashboard = """<!DOCTYPE html>
 <html>
@@ -2320,3 +2328,151 @@ def trigger_automation_event(event_name: str) -> list[dict]:
         triggered_results.append(res)
 
     return triggered_results
+
+
+# ─────────────────────────── YARA Signature Rules Engine ───────────────────
+
+BUILTIN_YARA_SIGNATURES = {
+    "Webshell_Payload": [b"eval(base64_decode(", b"system($_POST[", b"shell_exec("],
+    "Suspicious_Executable": [b"MZ", b"PE\x00\x00"],
+    "EICAR_Test_File": [b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"],
+}
+
+def scan_file_yara(filepath: str) -> dict:
+    """
+    🔒 YARA Rules Engine:
+    Scans a local file against built-in byte signatures for web shells, test viruses, and suspicious payloads.
+    """
+    if not os.path.exists(filepath):
+        return {"ok": False, "error": f"File not found: {filepath}", "matches": []}
+
+    matches = []
+    try:
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        for rule_name, sigs in BUILTIN_YARA_SIGNATURES.items():
+            for sig in sigs:
+                if sig in content:
+                    matches.append({"rule": rule_name, "pattern": str(sig)})
+                    break
+
+        return {
+            "ok": True,
+            "filepath": filepath,
+            "matches_count": len(matches),
+            "matches": matches,
+            "clean": len(matches) == 0
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "matches": []}
+
+
+# ─────────────────────────── Network Simulation & Latency Injector ───────────────────
+
+def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float = 100.0, simulated_loss_pct: float = 10.0, samples: int = 5) -> dict:
+    """
+    ⚡ Network Simulation & Latency/Loss Injector:
+    Simulates high-latency / lossy network conditions on ping probes for DevOps & QA testing.
+    """
+    import random
+
+    raw_pings = ping(host, count=samples)
+    simulated_pings = []
+
+    for p in raw_pings:
+        # Simulate packet loss
+        if random.uniform(0, 100) < simulated_loss_pct:
+            simulated_pings.append(None)
+        elif p is not None:
+            simulated_pings.append(p + added_latency_ms)
+        else:
+            simulated_pings.append(None)
+
+    stats = ping_stats(simulated_pings)
+    return {
+        "host": host,
+        "added_latency_ms": added_latency_ms,
+        "simulated_loss_pct": simulated_loss_pct,
+        "stats": stats
+    }
+
+
+# ─────────────────────────── Phishing & Malicious Domain Check ───────────────────
+
+KNOWN_PHISHING_KEYWORDS = ["login-verify", "paypal-secure", "apple-id-update", "bank-security-fix", "crypto-airdrop-claim"]
+
+def check_phishing_domain(domain: str) -> dict:
+    """
+    🛡️ Phishing & Malicious Domain Check:
+    Checks if a domain contains suspicious typosquatting keywords or resolves to sinkhole IPs.
+    """
+    domain_lower = domain.lower()
+    suspicious = False
+    reasons = []
+
+    for kw in KNOWN_PHISHING_KEYWORDS:
+        if kw in domain_lower:
+            suspicious = True
+            reasons.append(f"Domain contains known phishing keyword: '{kw}'")
+
+    if domain_lower.count("-") >= 3:
+        suspicious = True
+        reasons.append("Domain contains excessive hyphens (typosquatting indicator)")
+
+    # Attempt resolution
+    ip = _system_resolve(domain)
+
+    return {
+        "domain": domain,
+        "ip": ip or "unresolved",
+        "suspicious": suspicious,
+        "reasons": reasons,
+        "safe": not suspicious
+    }
+
+
+# ─────────────────────────── Visual Traffic Bar Graph ───────────────────
+
+def generate_ascii_bandwidth_chart(rx_bps: float, tx_bps: float, max_bps: float = 10_000_000.0, bar_width: int = 30) -> str:
+    """
+    📊 Visual ASCII Bandwidth Bar Graph:
+    Generates colorful ASCII visual bars for rx/tx download/upload speeds.
+    """
+    rx_mbps = rx_bps / 1_000_000.0
+    tx_mbps = tx_bps / 1_000_000.0
+
+    rx_ratio = min(1.0, rx_bps / max_bps)
+    tx_ratio = min(1.0, tx_bps / max_bps)
+
+    rx_bar = "█" * int(rx_ratio * bar_width)
+    tx_bar = "█" * int(tx_ratio * bar_width)
+
+    return f"Download: {rx_mbps:6.2f} Mbps [{rx_bar:<{bar_width}}]\nUpload:   {tx_mbps:6.2f} Mbps [{tx_bar:<{bar_width}}]"
+
+
+# ─────────────────────────── Subnet ARP Guard & Spoofing Monitor ───────────────────
+
+def detect_arp_spoofing() -> dict:
+    """
+    🌐 Subnet ARP Guard & Anti-Spoofing Monitor:
+    Inspects local ARP table for duplicate MAC addresses across different IP addresses (MITM signal).
+    """
+    table = _arp_table()
+    mac_to_ips: dict[str, list[str]] = {}
+
+    for ip, mac in table.items():
+        if mac in ("ff:ff:ff:ff:ff:ff", "00:00:00:00:00:00", "-"):
+            continue
+        mac_to_ips.setdefault(mac, []).append(ip)
+
+    spoof_suspects = []
+    for mac, ips in mac_to_ips.items():
+        if len(ips) > 1:
+            spoof_suspects.append({"mac": mac, "ips": ips})
+
+    return {
+        "ok": len(spoof_suspects) == 0,
+        "total_hosts": len(table),
+        "spoof_suspects": spoof_suspects
+    }

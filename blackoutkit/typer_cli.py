@@ -3386,3 +3386,152 @@ def auto_remove(
         console.print(f"[success]✓ Removed automation rule '{name}'.[/success]")
     else:
         console.print(f"[error]Automation rule '{name}' not found.[/error]")
+
+
+@tools_app.command("scan-yara")
+def tools_scan_yara(
+    path: str = typer.Argument(..., help="Path to local file to scan with YARA rules engine"),
+):
+    """🔒 YARA Rules Engine (scan file against malware & webshell byte signatures)."""
+    from .tools import scan_file_yara
+    res = scan_file_yara(path)
+    if not res["ok"]:
+        console.print(f"[error]YARA scan error: {res.get('error')}[/error]")
+        return
+    if res["clean"]:
+        console.print(f"[success]✓ YARA Scan Clean: No signature threats found in {path}[/success]")
+    else:
+        console.print(f"[bold red]⚠️ YARA THREAT MATCHES DETECTED in {path}:[/bold red]")
+        for m in res["matches"]:
+            console.print(f"  • Matched Rule: [bold]{m['rule']}[/bold]")
+
+
+@tools_app.command("simulate")
+def tools_simulate(
+    host: str = typer.Argument("8.8.8.8", help="Target host to probe"),
+    latency: float = typer.Option(100.0, "--latency", "-l", help="Added latency in ms"),
+    loss: float = typer.Option(10.0, "--loss", help="Simulated packet loss percentage (0-100)"),
+):
+    """⚡ Network Simulation (simulate high latency and packet loss for DevOps/QA testing)."""
+    from .tools import simulate_network_conditions
+    res = simulate_network_conditions(host=host, added_latency_ms=latency, simulated_loss_pct=loss)
+    st = res["stats"]
+    console.print(f"[bold cyan]⚡ Network Simulation to {host}[/bold cyan] (+{latency}ms latency, {loss}% loss):\n")
+    console.print(f"Avg Latency: {st['avg']:.1f}ms | Loss Rate: {st['loss_pct']:.1f}%")
+
+
+@tools_app.command("phishing-check")
+def tools_phishing_check(
+    domain: str = typer.Argument(..., help="Domain name to check for phishing / typosquatting risks"),
+):
+    """🛡️ Phishing Domain Check (scans domain for typosquatting & phishing heuristics)."""
+    from .tools import check_phishing_domain
+    res = check_phishing_domain(domain)
+    if res["safe"]:
+        console.print(f"[success]✓ Domain '{domain}' ({res['ip']}) appears clean from common phishing keywords.[/success]")
+    else:
+        console.print(f"[bold red]⚠️ PHISHING / TYPOSQUATTING RISK DETECTED for '{domain}':[/bold red]")
+        for r in res["reasons"]:
+            console.print(f"  • {r}")
+
+
+@tools_app.command("traffic-graph")
+def tools_traffic_graph(
+    samples: int = typer.Option(5, "--samples", "-s", help="Number of samples to record"),
+    interval: float = typer.Option(1.0, "--interval", "-i", help="Interval between samples in seconds"),
+):
+    """📊 Live Visual Traffic Graph (displays real-time bandwidth bars)."""
+    from .tools import get_interface_io_counters, compute_bandwidth_rates, generate_ascii_bandwidth_chart
+    console.print(f"[bold cyan]📊 Live Traffic Visual Bar Graph ({samples} samples)...[/bold cyan]\n")
+
+    prev = get_interface_io_counters()
+    for _ in range(samples):
+        time.sleep(interval)
+        curr = get_interface_io_counters()
+        rates = compute_bandwidth_rates(prev, curr, interval)
+        prev = curr
+
+        tot_rx = sum(r["rx_bps"] for r in rates.values())
+        tot_tx = sum(r["tx_bps"] for r in rates.values())
+
+        chart = generate_ascii_bandwidth_chart(tot_rx, tot_tx)
+        console.print(chart + "\n")
+
+
+@tools_app.command("arp-guard")
+def tools_arp_guard():
+    """🌐 Subnet ARP Guard (detects duplicate MAC addresses indicating ARP poisoning / MITM)."""
+    from .tools import detect_arp_spoofing
+    res = detect_arp_spoofing()
+    if res["ok"]:
+        console.print(f"[success]✓ ARP Guard Clean: Checked {res['total_hosts']} hosts on local ARP table. No ARP spoofing detected.[/success]")
+    else:
+        console.print(f"[bold red]⚠️ SUSPECTED ARP POISONING / MITM ATTACK DETECTED:[/bold red]")
+        for s in res["spoof_suspects"]:
+            console.print(f"  • MAC [bold]{s['mac']}[/bold] is shared by multiple IPs: {', '.join(s['ips'])}")
+
+
+# ── VAULT MANAGEMENT GROUP ──
+vault_app = typer.Typer(help="Encrypted Vault Backup & Key Utility", no_args_is_help=False)
+app.add_typer(vault_app, name="vault")
+
+@vault_app.command("backup")
+def vault_backup(
+    output: str = typer.Option("blackout_vault_backup.json", "--output", "-o", help="Backup output path"),
+):
+    """Create an encrypted backup of the saved configs & settings vault."""
+    from . import settings as cfg
+    from .config.manager import load_configs, serialize_setup
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = Path(output).expanduser().resolve()
+    try:
+        setup_data = serialize_setup()
+        out_path.write_text(json.dumps(setup_data, indent=2), encoding="utf-8")
+        console.print(f"[success]✓ Vault backup written to: {out_path}[/success]")
+    except Exception as exc:
+        console.print(f"[error]Failed to write vault backup: {exc}[/error]")
+
+@vault_app.command("restore")
+def vault_restore(
+    path: str = typer.Argument(..., help="Path to backup file to restore"),
+):
+    """Restore vault configs & settings from a backup file."""
+    from .typer_cli import _decode_setup, _apply_setup
+    p = Path(path).expanduser().resolve()
+    if not p.exists():
+        console.print(f"[error]Backup file not found: {p}[/error]")
+        return
+    try:
+        content = p.read_text(encoding="utf-8")
+        setup_data = json.loads(content)
+        from .typer_cli import _validate_setup_data
+        configs, settings_data = _validate_setup_data(setup_data)
+        _apply_setup(configs, settings_data)
+        console.print(f"[success]✓ Vault restored successfully from {p} ({len(configs)} configs)![/success]")
+    except Exception as exc:
+        console.print(f"[error]Failed to restore vault backup: {exc}[/error]")
+
+
+@config_app.command("benchmark")
+def cfg_benchmark():
+    """📜 Interactive Proxy Config Benchmark (test all saved proxy records concurrently)."""
+    from .config.manager import load_configs
+    from .scanner.proxy_tester import test_tcp_port
+    configs = load_configs()
+    if not configs:
+        console.print("[muted]No saved configs to benchmark.[/muted]")
+        return
+    console.print(f"[bold cyan]📜 Benchmarking {len(configs)} saved proxy configs...[/bold cyan]\n")
+    table = make_table(
+        "Config Benchmark Results",
+        [("#", "dim"), ("Protocol", "cyan"), ("Transport", "yellow"), ("Server Endpoint", "bold white"), ("Latency", "green")],
+        [],
+    )
+    for idx, cfg in enumerate(configs, 1):
+        parsed = cfg.parsed_dict if hasattr(cfg, "parsed_dict") else {}
+        server = parsed.get("add") or parsed.get("host") or "unknown"
+        port = int(parsed.get("port") or 443)
+        lat = test_tcp_port(server, port)
+        lat_str = f"{int(lat)} ms" if lat is not None else "[red]Timeout[/red]"
+        table.add_row(str(idx), cfg.protocol, cfg.transport_label(), f"{server}:{port}", lat_str)
+    console.print(table)
