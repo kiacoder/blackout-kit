@@ -2049,3 +2049,176 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
         sock.close()
     except Exception:
         pass
+
+
+# ─────────────────────────── AI Network Explainer ───────────────────
+
+def explain_network_state() -> dict:
+    """
+    🤖 AI Network Explainer:
+    Aggregates active network connections, process sockets, DNS integrity,
+    and firewall posture into an anomaly diagnostic summary for AI agents / Claude.
+    """
+    audit = run_network_audit()
+    procs = monitor_process_network()
+    dns = inspect_dns()
+
+    anomalies = []
+
+    # Check for processes with excessive sockets
+    for p in procs:
+        if p.get("socket_count", 0) > 20:
+            anomalies.append(f"Process '{p['process']}' (PID {p['pid']}) has unusually high socket count: {p['socket_count']} sockets")
+
+    # Check for DNS tampering
+    for chk in dns.get("checks", []):
+        if chk.get("suspect"):
+            anomalies.append(f"DNS Poisoning Suspect: {chk['domain']} resolved to {chk['system_ip']} vs DoH {chk['trusted_ip']}")
+
+    # Check audit issues
+    for f in audit.get("findings", []):
+        if not f.get("ok"):
+            anomalies.append(f"Security Finding ({f['severity']}): {f['summary']}")
+
+    return {
+        "security_score": audit.get("score"),
+        "grade": audit.get("grade"),
+        "active_processes_count": len(procs),
+        "total_anomalies_detected": len(anomalies),
+        "anomalies": anomalies,
+        "raw_audit_summary": [f['summary'] for f in audit.get("findings", [])]
+    }
+
+
+# ─────────────────────────── SSH Vault & Manager ───────────────────
+
+SSH_VAULT_FILE = APP_DATA_DIR / "ssh_vault.json"
+
+def save_ssh_profile(name: str, host: str, user: str, port: int = 22, key_path: str = "") -> bool:
+    """Save or update an SSH connection profile in local storage."""
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        profiles = json.loads(SSH_VAULT_FILE.read_text()) if SSH_VAULT_FILE.exists() else {}
+    except Exception:
+        profiles = {}
+
+    profiles[name] = {
+        "name": name,
+        "host": host,
+        "user": user,
+        "port": port,
+        "key_path": key_path,
+        "created_at": time.time()
+    }
+
+    try:
+        SSH_VAULT_FILE.write_text(json.dumps(profiles, indent=2))
+        return True
+    except Exception as exc:
+        _log.error("Failed to save SSH profile %s: %s", name, exc)
+        return False
+
+def list_ssh_profiles() -> list[dict]:
+    """List all saved SSH connection profiles."""
+    try:
+        if not SSH_VAULT_FILE.exists():
+            return []
+        profiles = json.loads(SSH_VAULT_FILE.read_text())
+        return sorted(list(profiles.values()), key=lambda p: p["name"])
+    except Exception:
+        return []
+
+def remove_ssh_profile(name: str) -> bool:
+    """Remove a saved SSH profile by name."""
+    try:
+        if not SSH_VAULT_FILE.exists():
+            return False
+        profiles = json.loads(SSH_VAULT_FILE.read_text())
+        if name in profiles:
+            del profiles[name]
+            SSH_VAULT_FILE.write_text(json.dumps(profiles, indent=2))
+            return True
+        return False
+    except Exception:
+        return False
+
+
+# ─────────────────────────── Local REST API & Web Dashboard ───────────────────
+
+def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
+    """
+    🌐 Local REST API & Web Dashboard Server.
+    Exposes endpoints: /api/status, /api/connections, /api/audit, and serves HTML dashboard on /.
+    """
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class APIHandler(BaseHTTPRequestHandler):
+        def _send_json(self, data: dict):
+            body = json.dumps(data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_html(self, html: str):
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path == "/api/status":
+                from . import __version__
+                self._send_json({"ok": True, "app": "blackout-kit", "version": __version__})
+            elif self.path == "/api/connections":
+                conns = get_active_connections(established_only=True)
+                self._send_json({"connections": conns[:50], "total": len(conns)})
+            elif self.path == "/api/audit":
+                self._send_json(run_network_audit())
+            elif self.path == "/":
+                html_dashboard = """<!DOCTYPE html>
+<html>
+<head>
+    <title>Blackout Kit Dashboard</title>
+    <style>
+        body { font-family: -apple-system, monospace; background: #0f172a; color: #f8fafc; padding: 2rem; }
+        .card { background: #1e293b; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #334155; }
+        h1 { color: #38bdf8; }
+        .badge { background: #22c55e; color: #022c22; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Blackout Kit — Network Dashboard</h1>
+    <div class="card">
+        <h2>System Status <span class="badge">ONLINE</span></h2>
+        <p>Local REST API is active and servicing metrics.</p>
+    </div>
+    <div class="card">
+        <h2>Quick REST Endpoints</h2>
+        <ul>
+            <li><a href="/api/status" style="color:#38bdf8">GET /api/status</a></li>
+            <li><a href="/api/connections" style="color:#38bdf8">GET /api/connections</a></li>
+            <li><a href="/api/audit" style="color:#38bdf8">GET /api/audit</a></li>
+        </ul>
+    </div>
+</body>
+</html>"""
+                self._send_html(html_dashboard)
+            else:
+                self.send_error(404, "Endpoint Not Found")
+
+        def log_message(self, format, *args):
+            return  # Suppress routine log output
+
+    server = HTTPServer((host, port), APIHandler)
+    _log.info("Started Blackout Kit REST API & Dashboard on http://%s:%d", host, port)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()

@@ -3219,3 +3219,109 @@ def tools_dns_proxy(
         run_doh_proxy_server(host=host, port=port, upstream_doh=upstream)
     except KeyboardInterrupt:
         console.print("\n[muted]DoH DNS Proxy server stopped.[/muted]")
+
+
+@tools_app.command("explain")
+def tools_explain():
+    """🤖 AI Network Explainer (reads live network state and summarizes anomalies)."""
+    from .tools import explain_network_state
+
+    console.print("[bold cyan]🤖 AI Network State Analysis...[/bold cyan]\n")
+    report = explain_network_state()
+
+    console.print(f"Overall Security Score: [bold green]{report['security_score']}/100 ({report['grade']})[/bold green]")
+    console.print(f"Active Process Connections: {report['active_processes_count']}")
+    console.print(f"Anomalies Detected: [bold red]{report['total_anomalies_detected']}[/bold red]\n")
+
+    if report["anomalies"]:
+        console.print("[bold yellow]Detected Anomalies / Warnings:[/bold yellow]")
+        for a in report["anomalies"]:
+            console.print(f"  • {a}")
+    else:
+        console.print("[bold green]✓ No suspicious network anomalies detected.[/bold green]")
+
+
+# ── SSH GROUP ──
+ssh_app = typer.Typer(help="SSH Vault & Manager (manage and connect to SSH servers)", no_args_is_help=False)
+app.add_typer(ssh_app, name="ssh")
+
+@ssh_app.command("add")
+def ssh_add(
+    name: str = typer.Argument(..., help="Profile alias name (e.g. prod-server)"),
+    host: str = typer.Option(..., "--host", "-h", help="Hostname or IP address"),
+    user: str = typer.Option("root", "--user", "-u", help="SSH username (default: root)"),
+    port: int = typer.Option(22, "--port", "-p", help="SSH port (default: 22)"),
+    key: str = typer.Option("", "--key", "-k", help="Optional private key file path"),
+):
+    """Add or update an SSH connection profile in the vault."""
+    from .tools import save_ssh_profile
+    if save_ssh_profile(name, host, user, port, key):
+        console.print(f"[success]✓ SSH profile '{name}' saved to vault![/success]")
+    else:
+        console.print(f"[error]Failed to save SSH profile '{name}'[/error]")
+
+@ssh_app.command("list")
+def ssh_list():
+    """List all saved SSH profiles."""
+    from .tools import list_ssh_profiles
+    profiles = list_ssh_profiles()
+    if not profiles:
+        console.print("[muted]No SSH profiles saved in vault. Use `blackout ssh add` to add one.[/muted]")
+        return
+    table = make_table(
+        "Saved SSH Vault Profiles",
+        [("Name", "bold cyan"), ("User@Host", "bold white"), ("Port", "yellow"), ("Key Path", "dim")],
+        [],
+    )
+    for p in profiles:
+        table.add_row(p["name"], f"{p['user']}@{p['host']}", str(p["port"]), p.get("key_path") or "default")
+    console.print(table)
+
+@ssh_app.command("connect")
+def ssh_connect(
+    name: str = typer.Argument(..., help="SSH profile name to connect to"),
+):
+    """Connect to a saved SSH profile using system ssh client."""
+    import subprocess
+    from .tools import list_ssh_profiles
+    profiles = {p["name"]: p for p in list_ssh_profiles()}
+    if name not in profiles:
+        console.print(f"[error]SSH profile '{name}' not found in vault.[/error]")
+        return
+    p = profiles[name]
+    cmd = ["ssh", f"{p['user']}@{p['host']}", "-p", str(p["port"])]
+    if p.get("key_path"):
+        cmd.extend(["-i", p["key_path"]])
+    console.print(f"[info]Connecting to {p['name']} ({p['user']}@{p['host']}:{p['port']})...[/info]")
+    try:
+        subprocess.run(cmd)
+    except Exception as exc:
+        console.print(f"[error]Failed to launch SSH client: {exc}[/error]")
+
+@ssh_app.command("remove")
+def ssh_remove(
+    name: str = typer.Argument(..., help="SSH profile name to remove"),
+):
+    """Remove a saved SSH profile from vault."""
+    from .tools import remove_ssh_profile
+    if remove_ssh_profile(name):
+        console.print(f"[success]✓ Removed SSH profile '{name}' from vault.[/success]")
+    else:
+        console.print(f"[error]SSH profile '{name}' not found in vault.[/error]")
+
+
+# ── REST API / DASHBOARD GROUP ──
+api_app = typer.Typer(help="Local REST API & Web Dashboard", no_args_is_help=False)
+app.add_typer(api_app, name="api")
+
+@api_app.command("start")
+def api_start(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host IP to bind web server"),
+    port: int = typer.Option(8080, "--port", "-p", help="Port to bind web server"),
+):
+    """Start local REST API and browser-based Web Dashboard."""
+    from .tools import run_web_api_dashboard
+    console.print(f"[bold cyan]🌐 Starting Blackout Kit Web Dashboard & REST API...[/bold cyan]")
+    console.print(f"[success]✓ Open dashboard in your browser:[/success] [bold white]http://{host}:{port}/[/bold white]")
+    console.print("[dim]Press Ctrl+C to stop the REST API server...[/dim]\n")
+    run_web_api_dashboard(host=host, port=port)
