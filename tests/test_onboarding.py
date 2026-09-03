@@ -38,6 +38,7 @@ def test_read_only_setup_plan_uses_plain_settings_loader(monkeypatch):
     monkeypatch.setattr(cfg, "load", mutable_loader)
     monkeypatch.setattr(manager, "load_configs", lambda: [])
     monkeypatch.setattr(downloader, "check_installed", lambda: {"sni-spoofing": True})
+    monkeypatch.setattr(onboarding.sys, "platform", "win32")
 
     plan = onboarding.build_current_setup_plan(read_only=True)
 

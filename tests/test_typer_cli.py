@@ -879,21 +879,24 @@ def test_shield_enables_linux_kill_switch_only_on_success(monkeypatch):
     assert any("Linux kill switch enabled" in message for message in printed)
 
 
-def test_panic_uses_public_daemon_stop_without_system_side_effects():
+def test_panic_uses_public_panic_handler_once_without_duplicate_cleanup():
     from blackoutkit import cli
 
-    with patch("blackoutkit.daemon.stop") as stop, \
+    panic_results = [{"step": "cleanup", "ok": True, "detail": "mocked"}]
+    with patch("blackoutkit.tools.trigger_panic", return_value=panic_results) as trigger_panic, \
          patch("blackoutkit.proxy_manager.cleanup_owned_system_proxy") as cleanup_proxy, \
          patch("blackoutkit.security.disable_kill_switch") as disable_kill_switch, \
          patch("blackoutkit.settings.set_value") as set_value, \
          patch("blackoutkit.tools.flush_dns") as flush_dns:
         cli.cmd_panic(object())
 
-    stop.assert_called_once_with()
-    cleanup_proxy.assert_called_once_with()
-    disable_kill_switch.assert_called_once_with()
-    set_value.assert_called_once_with("kill_switch", False)
-    flush_dns.assert_called_once_with()
+    trigger_panic.assert_called_once_with(restore=False)
+    cleanup_proxy.assert_not_called()
+    disable_kill_switch.assert_not_called()
+    set_value.assert_not_called()
+    flush_dns.assert_not_called()
+
+
 
 
 def test_launcher_menu_terminal_cli_returns_to_chooser_on_back(monkeypatch):
