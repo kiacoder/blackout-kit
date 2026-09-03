@@ -883,14 +883,14 @@ def test_panic_uses_public_daemon_stop_without_system_side_effects():
     from blackoutkit import cli
 
     with patch("blackoutkit.daemon.stop") as stop, \
-         patch("blackoutkit.proxy_manager.clear_system_proxy") as clear_proxy, \
+         patch("blackoutkit.proxy_manager.cleanup_owned_system_proxy") as cleanup_proxy, \
          patch("blackoutkit.security.disable_kill_switch") as disable_kill_switch, \
          patch("blackoutkit.settings.set_value") as set_value, \
          patch("blackoutkit.tools.flush_dns") as flush_dns:
         cli.cmd_panic(object())
 
     stop.assert_called_once_with()
-    clear_proxy.assert_called_once_with()
+    cleanup_proxy.assert_called_once_with()
     disable_kill_switch.assert_called_once_with()
     set_value.assert_called_once_with("kill_switch", False)
     flush_dns.assert_called_once_with()

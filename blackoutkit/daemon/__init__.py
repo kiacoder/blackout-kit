@@ -12,7 +12,23 @@ import subprocess
 import tempfile
 import threading as _threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
+from typing import Callable
+
+from .ownership import (
+    OwnershipBusy,
+    acquire_start_lock,
+    lease_matches,
+    lifecycle_lock,
+    new_generation,
+    process_identity_state,
+    process_is_gone,
+    read_lease,
+    release_lease,
+    release_start_lock,
+    write_lease,
+)
 
 APP_DATA_DIR = Path.home() / ".blackout-kit"
 PID_FILE     = APP_DATA_DIR / "daemon.pid"
@@ -20,6 +36,40 @@ LOG_FILE     = APP_DATA_DIR / "daemon.log"
 CRASH_LOG    = APP_DATA_DIR / "daemon.out"
 STATE_FILE   = APP_DATA_DIR / "daemon_state.json"
 LOCK_FILE    = APP_DATA_DIR / "daemon.lock"
+LEASE_FILE   = APP_DATA_DIR / "daemon.lease.json"
+LIFECYCLE_LOCK_FILE = APP_DATA_DIR / "daemon.lifecycle.lock"
+
+
+def _lease_path() -> Path:
+    return APP_DATA_DIR / "daemon.lease.json"
+
+
+def _lifecycle_path() -> Path:
+    return APP_DATA_DIR / "daemon.lifecycle.lock"
+
+
+def _read_pid_file() -> int | None:
+    try:
+        pid = int(PID_FILE.read_text(encoding="utf-8-sig").replace("\x00", "").strip())
+    except (OSError, ValueError, TypeError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _active_lease(pid: int | None = None) -> dict | None:
+    lease = read_lease(_lease_path())
+    if lease is None or (pid is not None and lease["pid"] != pid):
+        return None
+    return lease if process_identity_state(lease["pid"], lease["create_time"]) is True else None
+
+
+def _register_lease(pid: int, generation: str) -> bool:
+    return write_lease(_lease_path(), _lifecycle_path(), generation, pid)
+
+
+def _lease_is_current(pid: int, generation: str) -> bool:
+    return lease_matches(_lease_path(), generation, pid)
+
 
 _shutdown_requested = False
 _shutdown_lock = _threading.Lock()
@@ -37,28 +87,97 @@ def is_process_alive(pid: int) -> bool:
 
 
 def get_pid() -> int | None:
-    """Return the daemon PID if it is alive, else None."""
-    if not PID_FILE.exists():
-        return None
+    """Return the daemon PID only when its lease identity is valid."""
     try:
-        raw = PID_FILE.read_text(encoding="utf-8-sig").strip()
-        raw = raw.replace("\x00", "").strip()
-        if not raw:
-            return None
-        pid = int(raw)
-        if is_process_alive(pid):
-            return pid
-        PID_FILE.unlink(missing_ok=True)
+        pid = int(PID_FILE.read_text(encoding="utf-8-sig").replace("\x00", "").strip())
+    except (OSError, ValueError, TypeError):
         return None
-    except Exception:
+    lease = read_lease(_lease_path())
+    if lease is None or lease["pid"] != pid:
         return None
+    return pid if process_identity_state(pid, lease["create_time"]) is True else None
 
 
-def _watchdog_command(pid: int) -> list[str]:
+def _watchdog_command(pid: int, generation: str | None = None) -> list[str]:
     if getattr(sys, "frozen", False):
-        return [sys.executable, "_watchdog", str(pid)]
-    watchdog_script = Path(__file__).parent.parent / "watchdog.py"
-    return [sys.executable, str(watchdog_script), str(pid)]
+        command = [sys.executable, "_watchdog", str(pid)]
+    else:
+        watchdog_script = Path(__file__).parent.parent / "watchdog.py"
+        command = [sys.executable, str(watchdog_script), str(pid)]
+    return command if generation is None else [*command, generation]
+
+
+def _write_pid_file(pid: int) -> None:
+    _ensure_dir()
+    fd, temporary = tempfile.mkstemp(dir=APP_DATA_DIR, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(str(pid))
+        os.replace(temporary, PID_FILE)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def _register_spawned_daemon(pid: int, generation: str) -> bool:
+    if not write_lease(_lease_path(), _lifecycle_path(), generation, pid):
+        return False
+    try:
+        _write_pid_file(pid)
+    except OSError:
+        release_lease(_lease_path(), _lifecycle_path(), generation, pid)
+        return False
+    return True
+
+
+def _release_spawned_daemon(pid: int, generation: str) -> bool:
+    return _clear_owned_metadata(pid, generation)
+
+
+def _clear_owned_metadata(
+    pid: int,
+    generation: str,
+    *,
+    expected_create_time: object | None = None,
+    require_gone: bool = False,
+) -> bool:
+    try:
+        with lifecycle_lock(_lifecycle_path()):
+            lease = read_lease(_lease_path())
+            if not lease or lease["pid"] != pid or lease["generation"] != generation:
+                return False
+            if expected_create_time is not None:
+                try:
+                    if float(lease["create_time"]) != float(expected_create_time):
+                        return False
+                except (TypeError, ValueError):
+                    return False
+            identity = process_identity_state(pid, lease["create_time"])
+            if require_gone:
+                if not process_is_gone(pid, lease["create_time"]):
+                    return False
+            elif identity is not True:
+                return False
+            _lease_path().unlink(missing_ok=True)
+            if _read_pid_file() == pid:
+                PID_FILE.unlink(missing_ok=True)
+            try:
+                state = json.loads(STATE_FILE.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError, TypeError):
+                state = None
+            if isinstance(state, dict) and state.get("pid") == pid and state.get("generation") == generation:
+                STATE_FILE.unlink(missing_ok=True)
+            return True
+    except (OSError, OwnershipBusy):
+        return False
+
+
+def _release_daemon_lease(pid: int, generation: str) -> bool:
+    return _clear_owned_metadata(pid, generation)
+
 
 
 def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
@@ -69,40 +188,32 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
     """
     _ensure_dir()
 
-    # Atomic lock creation
     lock_path = APP_DATA_DIR / "daemon.start.lock"
+    lock_token = acquire_start_lock(lock_path)
+    generation = new_generation()
     try:
-        try:
-            lock_path.mkdir(exist_ok=False)
-        except FileExistsError:
-            # If lock is old (e.g. 10s), assume it's stale and take it
-            try:
-                lock_mtime = lock_path.stat().st_mtime
-            except FileNotFoundError:
-                # Another process deleted it between the FileExistsError and stat() call
-                lock_mtime = 0
-            if time.time() - lock_mtime > 10:
-                try:
-                    lock_path.rmdir()
-                    lock_path.mkdir(exist_ok=False)
-                except Exception:
-                    # Someone else might have just taken it or deleted it
-                    pass
-            else:
-                # Still locked by another 'start' command
-                time.sleep(1)
-                # One retry
-                try:
-                    lock_path.mkdir(exist_ok=False)
-                except FileExistsError:
-                    raise RuntimeError("Another 'blackout start' is in progress. Try again in a moment.")
-
         existing = get_pid()
+        active_lease = _active_lease()
+        if active_lease:
+            raise RuntimeError(
+                f"Daemon already running (PID {active_lease['pid']}). Run 'blackout stop' first."
+            )
+        if not existing:
+            stale_pid = _read_pid_file()
+            if stale_pid and is_process_alive(stale_pid):
+                raise RuntimeError(
+                    f"Daemon PID {stale_pid} is active but its ownership cannot be verified; refusing to replace it."
+                )
         if existing:
             raise RuntimeError(f"Daemon already running (PID {existing}). Run 'blackout stop' first.")
+        if read_lease(_lease_path()) is not None:
+            raise RuntimeError("Daemon ownership is unreadable or stale; refusing to replace daemon state.")
+        (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
+        PID_FILE.unlink(missing_ok=True)
+        STATE_FILE.unlink(missing_ok=True)
 
         if getattr(sys, 'frozen', False):
-            cmd = [sys.executable, "_daemon_run", "--engine", engine_name]
+            cmd = [sys.executable, "_daemon_run", "--engine", engine_name, "--generation", generation]
         else:
             entry = Path(__file__).parent.parent.parent / "blackout.py"
             exe = sys.executable
@@ -110,15 +221,11 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
             if os.path.exists(exe_w):
                 exe = exe_w
             if entry.exists():
-                cmd = [exe, str(entry), "_daemon_run", "--engine", engine_name]
+                cmd = [exe, str(entry), "_daemon_run", "--engine", engine_name, "--generation", generation]
             else:
-                cmd = [exe, "-m", "blackoutkit.typer_cli", "_daemon_run", "--engine", engine_name]
+                cmd = [exe, "-m", "blackoutkit.typer_cli", "_daemon_run", "--engine", engine_name, "--generation", generation]
         if env_overrides:
             cmd.extend(["--env-overrides-json", json.dumps(env_overrides, separators=(",", ":"))])
-
-        PID_FILE.unlink(missing_ok=True)
-        STATE_FILE.unlink(missing_ok=True)
-        (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
 
         if sys.platform.startswith("linux"):
             process = subprocess.Popen(
@@ -128,45 +235,22 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            # Atomic write of PID file
-            fd, tmp_path = tempfile.mkstemp(dir=APP_DATA_DIR, text=True)
-            try:
-                with os.fdopen(fd, 'w') as f:
-                    f.write(str(process.pid))
-                os.replace(tmp_path, str(PID_FILE))
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
-
-            # Atomic write of STATE file
-            fd, tmp_path = tempfile.mkstemp(dir=APP_DATA_DIR, text=True)
-            try:
-                with os.fdopen(fd, 'w') as f:
-                    json.dump({
-                        "engine": engine_name,
-                        "pid": process.pid,
-                        "started": time.strftime("%Y-%m-%d %H:%M:%S"),
-                    }, f)
-                os.replace(tmp_path, str(STATE_FILE))
-            except Exception:
-                try:
-                    os.unlink(tmp_path)
-                except Exception:
-                    pass
+            if not _register_spawned_daemon(process.pid, generation):
+                if process.poll() is None:
+                    process.terminate()
+                raise RuntimeError("Could not establish daemon process ownership.")
             return process.pid
 
         ADMIN_REQUIRED_ENGINES = {"gdpi", "warp", "tun"}
         verb_clause = "-Verb RunAs " if engine_name in ADMIN_REQUIRED_ENGINES else ""
 
-        # Build safe environment variables instead of string interpolation
         env_for_ps = {
             **os.environ,
             "BLACKOUT_EXE": cmd[0],
             "BLACKOUT_ARGS": subprocess.list2cmdline(cmd[1:]),
             "BLACKOUT_WORKDIR": os.getcwd(),
             "BLACKOUT_ENGINE": engine_name,
+            "BLACKOUT_GENERATION": generation,
             "BLACKOUT_PID_FILE": str(PID_FILE),
             "BLACKOUT_STATE_FILE": str(STATE_FILE),
         }
@@ -176,7 +260,7 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
             "-ArgumentList $env:BLACKOUT_ARGS -WorkingDirectory $env:BLACKOUT_WORKDIR " + verb_clause +
             "-WindowStyle Hidden -PassThru; "
             "if ($p) { $p.Id | Out-File -FilePath $env:BLACKOUT_PID_FILE -Encoding UTF8; "
-            "@{engine=$env:BLACKOUT_ENGINE;pid=$p.Id;started=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')} | ConvertTo-Json | Out-File -FilePath $env:BLACKOUT_STATE_FILE -Encoding UTF8 }"
+            "@{engine=$env:BLACKOUT_ENGINE;pid=$p.Id;generation=$env:BLACKOUT_GENERATION;started=(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')} | ConvertTo-Json | Out-File -FilePath $env:BLACKOUT_STATE_FILE -Encoding UTF8 }"
         )
 
         try:
@@ -190,21 +274,24 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
             import logging
             logging.warning("Daemon startup via PowerShell timed out (120s) — UAC prompt may still be pending")
 
-        # Wait for PID_FILE (give user time to click UAC)
         for _ in range(600):
             if PID_FILE.exists():
                 break
             time.sleep(0.1)
 
-        pid = get_pid()
+        pid = _read_pid_file()
         if pid:
-            return pid
+            if _register_spawned_daemon(pid, generation):
+                return pid
+            try:
+                import psutil
+                if psutil.pid_exists(pid):
+                    psutil.Process(pid).terminate()
+            except Exception:
+                pass
         return 0
     finally:
-        try:
-            (APP_DATA_DIR / "daemon.start.lock").rmdir()
-        except Exception:
-            pass
+        release_start_lock(lock_path, lock_token)
 
 
 def stop() -> bool:
@@ -213,10 +300,25 @@ def stop() -> bool:
     Returns True if a daemon was stopped.
     """
     pid = get_pid()
-    if not pid:
-        # Check for orphan lock file just in case
-        LOCK_FILE.unlink(missing_ok=True)
+    lease = _active_lease(pid)
+    if not pid or lease is None:
         return False
+    generation = lease["generation"]
+    expected_create_time = lease["create_time"]
+    if process_identity_state(pid, expected_create_time) is not True:
+        return False
+
+    def still_owned() -> bool:
+        return (
+            lease_matches(_lease_path(), generation, pid)
+            and process_identity_state(pid, expected_create_time) is True
+        )
+
+    if not still_owned():
+        return False
+
+    # Check for orphan lock file only after ownership was verified.
+    LOCK_FILE.unlink(missing_ok=True)
 
     ipc_file = APP_DATA_DIR / "daemon.ipc"
     if ipc_file.exists():
@@ -228,18 +330,27 @@ def stop() -> bool:
             # Wait for graceful shutdown
             for _ in range(30):
                 if not ipc_file.exists():
-                    return True
+                    return _clear_owned_metadata(
+                        pid,
+                        generation,
+                        expected_create_time=expected_create_time,
+                        require_gone=True,
+                    )
                 time.sleep(0.1)
         except Exception as e:
             import logging
             logging.debug("Graceful daemon shutdown via IPC failed: %s", e)
 
-    # Create a shutdown request file as fallback
-    (APP_DATA_DIR / "daemon.stop.request").touch(exist_ok=True)
+    # Create a generation-scoped shutdown request as fallback.
+    (APP_DATA_DIR / "daemon.stop.request").write_text(generation, encoding="utf-8")
 
     try:
         import psutil
+        if not still_owned():
+            return False
         parent = psutil.Process(pid)
+        if not still_owned():
+            return False
         for child in parent.children(recursive=True):
             try:
                 child.terminate()
@@ -275,11 +386,29 @@ def stop() -> bool:
         logging.debug("Process cleanup exception for PID %d: %s", pid, e)
 
     time.sleep(1)
-    PID_FILE.unlink(missing_ok=True)
+    try:
+        from ..proxy_manager import cleanup_owned_system_proxy
+        cleanup_owned_system_proxy()
+    except Exception:
+        pass
+    try:
+        from .. import security as sec
+        sec.disable_kill_switch()
+        sec.clear_linux_kill_switch_endpoint()
+    except Exception:
+        pass
+    ret = _clear_owned_metadata(
+        pid,
+        generation,
+        expected_create_time=expected_create_time,
+        require_gone=True,
+    )
+    if not ret:
+        print("CLEAR METADATA FAILED")
+        return False
     LOCK_FILE.unlink(missing_ok=True)
-    STATE_FILE.unlink(missing_ok=True)
     ipc_file.unlink(missing_ok=True)
-    (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
+    _clear_shutdown_request(generation)
     return True
 
 
@@ -294,6 +423,9 @@ def get_state() -> dict | None:
         # and that it is still alive.
         active_pid = get_pid()
         if not active_pid or data.get("pid") != active_pid:
+            return None
+        lease = read_lease(_lease_path())
+        if lease and lease.get("generation") and data.get("generation") != lease.get("generation"):
             return None
         if data.get("engine") == "gdpi":
             try:
@@ -357,10 +489,20 @@ def _reconnect_delay(attempt: int, initial_delay: int, maximum_delay: int) -> in
     return min(initial_delay * (2 ** max(attempt - 1, 0)), maximum_delay)
 
 
-def _daemon_shutdown_requested(daemon_pid: int) -> bool:
+def _daemon_shutdown_requested(daemon_pid: int, generation: str | None = None) -> bool:
     """Return whether this daemon should stop without disturbing another daemon."""
+    if generation is not None and not _lease_is_current(daemon_pid, generation):
+        return True
     with _shutdown_lock:
-        if _shutdown_requested or (APP_DATA_DIR / "daemon.stop.request").exists():
+        if _shutdown_requested:
+            return True
+    stop_request = APP_DATA_DIR / "daemon.stop.request"
+    if stop_request.exists():
+        try:
+            requested_generation = stop_request.read_text(encoding="utf-8-sig").strip()
+        except OSError:
+            requested_generation = ""
+        if generation is None or not requested_generation or requested_generation == generation:
             return True
     try:
         if not PID_FILE.exists():
@@ -375,13 +517,58 @@ def _daemon_shutdown_requested(daemon_pid: int) -> bool:
         return False
 
 
-def _wait_for_daemon_delay(delay_seconds: int, daemon_pid: int) -> bool:
+def _cleanup_daemon_state(
+    pid: int,
+    generation: str,
+    cleanup_proxy: Callable[[], object] | None,
+    disable_kill_switch: Callable[[], object] | None,
+    clear_kill_switch_endpoint: Callable[[], object] | None,
+) -> None:
+    """Clean shared state only while this daemon still owns its lease."""
+    if not _lease_is_current(pid, generation):
+        return
+    try:
+        with lifecycle_lock(_lifecycle_path()):
+            lease = read_lease(_lease_path())
+            if not lease or lease["pid"] != pid or lease["generation"] != generation:
+                return
+            if cleanup_proxy:
+                cleanup_proxy()
+            if disable_kill_switch:
+                disable_kill_switch()
+            if clear_kill_switch_endpoint:
+                clear_kill_switch_endpoint()
+    except (OSError, OwnershipBusy):
+        return
+
+
+def _clear_shutdown_request(generation: str | None = None) -> None:
+    path = APP_DATA_DIR / "daemon.stop.request"
+    try:
+        if generation is None or path.read_text(encoding="utf-8-sig").strip() == generation:
+            path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def _wait_for_daemon_delay(
+    delay_seconds: int,
+    daemon_pid: int,
+    generation: str | None = None,
+) -> bool:
     """Wait in one-second increments; False means shutdown or PID ownership changed."""
+    def shutdown_requested() -> bool:
+        return (
+            _daemon_shutdown_requested(daemon_pid)
+            if generation is None
+            else _daemon_shutdown_requested(daemon_pid, generation)
+        )
+
     for _ in range(max(0, int(delay_seconds))):
-        if _daemon_shutdown_requested(daemon_pid):
+        if shutdown_requested():
             return False
         time.sleep(1)
-    return not _daemon_shutdown_requested(daemon_pid)
+    return not shutdown_requested()
 
 
 def _write_daemon_state(
@@ -395,30 +582,75 @@ def _write_daemon_state(
     next_retry_delay: int | None = None,
     started: str | None = None,
     io_bytes: tuple[int, int] | None = None,
+    generation: str | None = None,
 ) -> None:
     """Persist a state snapshot owned by the daemon, not an individual engine."""
     _ensure_dir()
-    state = {
-        "engine": _engine_state_payload_name(engine_name, cfg_module),
-        "pid": daemon_pid,
-        "started": started or time.strftime("%Y-%m-%d %H:%M:%S"),
-        "restarts": restarts,
-        "status": status,
-        "last_failure": last_failure,
-        "next_retry_delay": next_retry_delay,
-    }
-    if io_bytes is not None:
-        state["io_bytes"] = io_bytes
     try:
-        temporary = STATE_FILE.with_suffix(".tmp")
-        temporary.write_text(json.dumps(state), encoding="utf-8")
-        os.replace(temporary, STATE_FILE)
-    except Exception as e:
+        with lifecycle_lock(_lifecycle_path()):
+            if generation is not None and not _lease_is_current(daemon_pid, generation):
+                return
+            state = {
+                "engine": _engine_state_payload_name(engine_name, cfg_module),
+                "pid": daemon_pid,
+                "started": started or time.strftime("%Y-%m-%d %H:%M:%S"),
+                "restarts": restarts,
+                "status": status,
+                "last_failure": last_failure,
+                "next_retry_delay": next_retry_delay,
+            }
+            if generation is not None:
+                state["generation"] = generation
+            if io_bytes is not None:
+                state["io_bytes"] = io_bytes
+            temporary = STATE_FILE.with_suffix(".tmp")
+            temporary.write_text(json.dumps(state), encoding="utf-8")
+            os.replace(temporary, STATE_FILE)
+    except (OSError, OwnershipBusy) as e:
         import logging
         logging.warning("Failed to write daemon state file: %s", e)
 
 
-def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
+def run_daemon_loop(
+    engine_name: str,
+    env_overrides_json: str | None = None,
+    generation: str | None = None,
+):
+    """Claim generation-scoped ownership before running the daemon child."""
+    requested_generation = generation or os.environ.get("BLACKOUT_GENERATION")
+    direct_call = requested_generation is None
+    effective_generation = requested_generation or new_generation()
+    daemon_pid = os.getpid()
+    if not _register_lease(daemon_pid, effective_generation):
+        return False
+    try:
+        if not direct_call:
+            _write_pid_file(daemon_pid)
+        try:
+            return _run_daemon_loop(
+                engine_name,
+                env_overrides_json,
+                effective_generation,
+                None if direct_call else effective_generation,
+            )
+        finally:
+            if direct_call:
+                _release_daemon_lease(daemon_pid, effective_generation)
+                PID_FILE.unlink(missing_ok=True)
+            else:
+                _release_spawned_daemon(daemon_pid, effective_generation)
+    except Exception:
+        if not direct_call:
+            _release_spawned_daemon(daemon_pid, effective_generation)
+        raise
+
+
+def _run_daemon_loop(
+    engine_name: str,
+    env_overrides_json: str | None,
+    generation: str,
+    state_generation: str | None,
+):
     """
     Internal: runs inside the background process.
     Starts the requested engine(s) and monitors them.
@@ -471,7 +703,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         OpenVPNEngine = SoftEtherEngine = None
     from .. import settings as cfg
     from .. import security as sec
-    from ..proxy_manager import set_system_proxy, clear_system_proxy
+    from ..proxy_manager import set_system_proxy, cleanup_owned_system_proxy
 
     _ensure_dir()
 
@@ -500,7 +732,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             watchdog_kwargs["creationflags"] = 0x08000000 | 0x00000008
         else:
             watchdog_kwargs["start_new_session"] = True
-        subprocess.Popen(_watchdog_command(os.getpid()), **watchdog_kwargs)
+        subprocess.Popen(_watchdog_command(os.getpid(), generation), **watchdog_kwargs)
         log.info("Watchdog process spawned for proxy safety.")
     except Exception as e:
         log.warning(f"Failed to spawn watchdog: {e}")
@@ -513,7 +745,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         "gdpi":       lambda: (GoodbyeDPIEngine(),),
         "psiphon":    lambda: (PsiphonEngine(),),
         "warp":       lambda: (WARPEngine(),),
-        "tun":        lambda: (XRayEngine(), TUNEngine()) if sys.platform.startswith("linux") else (TUNEngine(),),
+        "tun":        lambda: (SNIEngine(), XRayEngine(), TUNEngine()) if sys.platform == "win32" else (XRayEngine(), TUNEngine()),
         "tor":        lambda: (TorEngine(),),
         "mhrv":       lambda: (MhrvEngine(),),
         "ikev2":      lambda: (IKEv2Engine(),),
@@ -653,6 +885,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         restarts=restart_count,
         status="connected",
         started=daemon_started,
+        generation=state_generation,
     )
 
     def _stop_active_engines() -> None:
@@ -667,7 +900,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     def _reconnect(failure_reason: str) -> bool:
         nonlocal active, restart_count
         while restart_count < max_restarts:
-            if _daemon_shutdown_requested(my_pid):
+            if _daemon_shutdown_requested(my_pid, generation):
                 return False
             _stop_active_engines()
             restart_count += 1
@@ -699,6 +932,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                     restarts=restart_count,
                     status="connected",
                     started=daemon_started,
+                    generation=state_generation,
                 )
                 log.info("Engine restarted successfully (attempt %d/%d).", restart_count, max_restarts)
                 return True
@@ -720,6 +954,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 last_failure=failure_reason,
                 next_retry_delay=next_delay,
                 started=daemon_started,
+                generation=state_generation,
             )
             log.warning("Restart attempt %d/%d failed; retrying in %ds.", restart_count, max_restarts, next_delay)
             if restart_count == 1:
@@ -729,7 +964,12 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                     log.info("Applied targeted daemon recovery after failed restart.")
                 except Exception as exc:
                     log.warning("Targeted daemon recovery failed: %s", exc)
-            if not _wait_for_daemon_delay(next_delay, my_pid):
+            waited = (
+                _wait_for_daemon_delay(next_delay, my_pid)
+                if state_generation is None
+                else _wait_for_daemon_delay(next_delay, my_pid, state_generation)
+            )
+            if not waited:
                 return False
 
         _write_daemon_state(
@@ -740,6 +980,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             status="failed",
             last_failure=failure_reason,
             started=daemon_started,
+            generation=state_generation,
         )
         log.error("Reconnect attempts exhausted after %d failure(s).", restart_count)
         return False
@@ -750,7 +991,11 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         accumulated_tx = 0
         data_phase_failures = 0
 
-        while _wait_for_daemon_delay(retry_interval, my_pid):
+        while (
+            _wait_for_daemon_delay(retry_interval, my_pid)
+            if state_generation is None
+            else _wait_for_daemon_delay(retry_interval, my_pid, state_generation)
+        ):
             alive = [engine for engine in active if engine.is_running()]
             if not alive:
                 if not _reconnect("All engines stopped unexpectedly."):
@@ -827,24 +1072,21 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 restarts=restart_count,
                 status="connected",
                 started=daemon_started,
-                io_bytes=(accumulated_rx + rx, accumulated_tx + tx)
+                io_bytes=(accumulated_rx + rx, accumulated_tx + tx),
+                generation=state_generation,
             )
 
     except KeyboardInterrupt:
         log.info("Daemon received CTRL+C interrupt, initiating graceful shutdown.")
     finally:
-        if (APP_DATA_DIR / "daemon.stop.request").exists():
-            (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
+        _clear_shutdown_request(generation)
         log.info("Daemon shutting down. Stopping engines...")
         _stop_active_engines()
-        if s.get("kill_switch", False):
-            try:
-                sec.disable_kill_switch()
-                sec.clear_linux_kill_switch_endpoint()
-                log.info("Kill switch disabled.")
-            except Exception as e:
-                log.error("Failed to disable kill switch during shutdown: %s", e)
-        if s.get("auto_set_proxy", True):
-            clear_system_proxy()
-            log.info("System proxy cleared.")
+        _cleanup_daemon_state(
+            my_pid,
+            generation,
+            cleanup_owned_system_proxy if s.get("auto_set_proxy", True) else None,
+            sec.disable_kill_switch if s.get("kill_switch", False) else None,
+            sec.clear_linux_kill_switch_endpoint if s.get("kill_switch", False) else None,
+        )
         log.info("Done.")

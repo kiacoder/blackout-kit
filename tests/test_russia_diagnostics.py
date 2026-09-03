@@ -61,6 +61,6 @@ def test_daemon_has_data_phase_counter():
     import inspect
     from blackoutkit import daemon
 
-    source = inspect.getsource(daemon.run_daemon_loop)
+    source = inspect.getsource(daemon._run_daemon_loop)
     assert "data_phase_failures" in source
     assert "Data-phase drop" in source

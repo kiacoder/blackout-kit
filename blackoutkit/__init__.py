@@ -45,11 +45,6 @@ else:
         BINS_DIR = APP_DATA_DIR / "bins"
         DATA_DIR = APP_DATA_DIR / "data"
 
-# Ensure persistent directories exist
-BINS_DIR.mkdir(parents=True, exist_ok=True)
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
 def resource_path(relative_path: str) -> Path:
     """Return a bundled or source resource path without exposing package internals."""
     relative = Path(relative_path)
@@ -101,6 +96,7 @@ def ensure_frozen_resources() -> None:
         destination = DATA_DIR / source.name
         if not destination.exists() or destination.stat().st_size != source.stat().st_size:
             try:
+                destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
             except OSError:
                 continue
@@ -123,8 +119,6 @@ def ensure_frozen_resources() -> None:
             except OSError:
                 continue
 
-
-ensure_frozen_resources()
 
 # ─────────────────────────── Version helpers ─────────────────────────────────
 

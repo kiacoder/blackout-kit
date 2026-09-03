@@ -273,11 +273,17 @@ jobs:
         name: blackout-linux-engine
         path: dist/
 
+    - name: Create source update asset
+      shell: bash
+      run: |
+        git archive --format=zip --prefix=blackout-kit/ -o dist/blackout-source.zip HEAD
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
         files: |
           dist/blackout.exe
           dist/blackout-engine-linux-amd64
+          dist/blackout-source.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -57,9 +57,20 @@ def clear_system_proxy(*args, **kwargs):
     from .proxy_manager import clear_system_proxy as _func
     return _func(*args, **kwargs)
 
+
+def cleanup_owned_system_proxy(*args, **kwargs):
+    from .proxy_manager import cleanup_owned_system_proxy as _func
+    return _func(*args, **kwargs)
+
 def get_proxy_status(*args, **kwargs):
     from .proxy_manager import get_proxy_status as _func
     return _func(*args, **kwargs)
+
+
+def restore_proxy(*args, **kwargs):
+    from .proxy_manager import restore_system_proxy as _func
+    return _func(*args, **kwargs)
+
 
 def generate_cloudflare_ips(*args, **kwargs):
     from .scanner.ip_scanner import generate_cloudflare_ips as _func
@@ -129,8 +140,10 @@ def _get_engine_classes(name: str) -> tuple:
         from .engines.warp import WARPEngine
         return (WARPEngine,)
     elif name == "tun":
+        from .engines.sni import SNIEngine
+        from .engines.xray import XRayEngine
         from .engines.tun import TUNEngine
-        return (TUNEngine,)
+        return (SNIEngine, XRayEngine, TUNEngine)
     elif name == "tor":
         from .engines.tor import TorEngine
         return (TorEngine,)
@@ -177,12 +190,12 @@ AUTO_DOWNLOAD_DEPENDENCIES = {
     "mhrv": ["mhrv"],
     "legend": ["xray", "sni-spoofing"],
     "wireguard": ["wireguard"],
-    "softether": ["softether"],
+    "softether": ["softether-client"],
     "tor": ["tor"],
     "openvpn": ["openvpn"],
     "warp": ["warp_dll"],
     "psiphon": ["warp_dll"],
-    "tun": ["sing-box"],
+    "tun": ["sni-spoofing"],
     "hysteria2": [],
     "tuic": [],
     "awg": [],
@@ -481,6 +494,9 @@ def _connection_service_for_legacy():
         choose_engine=lambda prompt: ask_choice(prompt, ALL_ENGINE_CHOICES, default="auto"),
         choose_connection=lambda prompt, choices, default: ask_choice(prompt, choices, default=default),
         scan_sni_ip=_legacy_scan_missing_sni_ip,
+        get_proxy_status=get_proxy_status,
+        restore_proxy=restore_proxy,
+        cleanup_proxy=cleanup_owned_system_proxy,
         emit=lambda event: _render_connection_event(event),
         emit_output=True,
     )
@@ -801,7 +817,7 @@ def cmd_stop(args):
     if daemon.stop():
         s = cfg.load()
         if s.get("auto_set_proxy"):
-            clear_system_proxy()
+            cleanup_owned_system_proxy()
         if s.get("kill_switch", False):
             try:
                 sec.disable_kill_switch()
@@ -901,7 +917,7 @@ def cmd_emergency(args):
         for eng in active:
             eng.stop()
         if s.get("auto_set_proxy"):
-            clear_system_proxy()
+            cleanup_owned_system_proxy()
         console.print("[success]Stopped.[/success]")
 
 
@@ -1196,11 +1212,13 @@ def _routing_candidates():
 
     settings = cfg.load()
     profile = _local_country_profile(settings)
+    configs = load_configs()
     return recommend_routes(
         settings,
         country_profile=profile,
         installed=downloader.check_installed(),
-        protocols={config.protocol for config in load_configs()},
+        protocols={config.protocol for config in configs},
+        configs=configs,
         stability_scores=sec.all_stability_scores(),
     )
 
@@ -2862,6 +2880,20 @@ def cmd_panic(args):
     for res in results:
         status_str = "[success]✓ OK[/success]" if res["ok"] else "[error]✗ Failed[/error]"
         table.add_row(res["step"], status_str, res["detail"])
+    # 2. Restore only a Blackout-owned system proxy
+    console.print("[dim]→ Restoring Blackout-managed system proxy...[/dim]")
+    cleanup_owned_system_proxy()
+    
+    # 3. Disable Kill Switch
+    console.print("[dim]→ Disabling kill switch firewall rules...[/dim]")
+    from . import security as sec
+    sec.disable_kill_switch()
+    cfg.set_value("kill_switch", False)
+    
+    # 4. Flush DNS
+    console.print("[dim]→ Flushing DNS cache...[/dim]")
+    from .tools import flush_dns
+    flush_dns()
     
     console.print(table)
     console.print("\n[bold green]✓ EMERGENCY PANIC ACTION COMPLETE. SYSTEM SECURED.[/bold green]")
@@ -2971,7 +3003,7 @@ def cmd_neighbor(args):
         finally:
             engine.stop()
             if s.get("auto_set_proxy"):
-                clear_system_proxy()
+                cleanup_owned_system_proxy()
             console.print("[success]Disconnected.[/success]")
 
     elif subcmd == "share":
@@ -3632,6 +3664,16 @@ def cmd_help(args):
 def cmd_doctor(args):
     auto_fix = getattr(args, "fix", False)
     fix_av   = getattr(args, "fix_av", False)
+    local_only = getattr(args, "local_only", False)
+
+    if local_only:
+        console.print("[info]Running local-only diagnostic checks...[/info]")
+        results = doc.run_local_checks(
+            include_optional=getattr(args, "include_optional", False),
+        )
+        doc.print_report(results, auto_fixed=False)
+        return
+
 
     if fix_av:
         console.print("[info]Adding bins/ folder to Windows Defender exclusions...[/info]")
@@ -4281,6 +4323,24 @@ def _run_config_menu():
     run_config_menu()
 
 
+def _run_capabilities_from_menu():
+    from . import typer_cli
+
+    typer_cli.capabilities(ctx=None)
+
+
+def _run_demo_from_menu():
+    from . import typer_cli
+
+    typer_cli.demo(ctx=None)
+
+
+def _run_setup_from_menu():
+    from . import typer_cli
+
+    typer_cli.setup(connect=False, ctx=None)
+
+
 def _run_native_fix_from_menu():
     from . import typer_cli
     import typer
@@ -4314,6 +4374,9 @@ def _interactive_menu():
         MenuItem("status",      "📊 Status",        "Check daemon + connection health"),
         MenuItem("live_status", "📡 Live Status",   "Watch local connection state"),
         MenuItem("routing",     "🧭 Routing",       "Rank local engine readiness"),
+        MenuItem("capabilities", "🧩 Capabilities", "View the full engine capability matrix"),
+        MenuItem("demo",        "▶  Demo",          "See a safe read-only simulation"),
+        MenuItem("setup",       "🛠  Guided Setup",  "Walk through the golden path"),
         MenuItem("theme",       "🎨 Theme",         "Set Blackout Kit terminal palette"),
         MenuItem("scan",        "🔍 Scan",          "Scan Cloudflare IPs + SNI domains"),
         MenuItem("doctor",      "🏥 Doctor",        "Self-diagnose and auto-repair"),
@@ -4333,6 +4396,9 @@ def _interactive_menu():
         "status": lambda: cmd_status(_make_fake_args(watch=False, interval=2.0)),
         "live_status": lambda: cmd_status(_make_fake_args(watch=True, interval=2.0)),
         "routing": lambda: cmd_route(_make_fake_args()),
+        "capabilities": _run_capabilities_from_menu,
+        "demo": _run_demo_from_menu,
+        "setup": _run_setup_from_menu,
         "theme": lambda: cmd_theme(_make_fake_args(palette=ask_choice("Choose terminal palette", ["dark", "light"], default=cfg.load().get("terminal_theme", "dark")))),
         "scan": lambda: cmd_scan(_make_fake_args(ips=False, sni=False, count=None)),
         "doctor": lambda: cmd_doctor(_make_fake_args(fix=False, fix_av=False)),
@@ -4401,7 +4467,11 @@ def _show_launcher_menu():
 
 def cmd_daemon_run(args):
     """Hidden command — runs inside the background daemon process."""
-    daemon.run_daemon_loop(args.engine, getattr(args, "env_overrides_json", None))
+    daemon.run_daemon_loop(
+        args.engine,
+        getattr(args, "env_overrides_json", None),
+        getattr(args, "generation", None),
+    )
 
 
 def main():

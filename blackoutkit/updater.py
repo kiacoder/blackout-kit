@@ -27,6 +27,12 @@ from . import PROJECT_ROOT, APP_DATA_DIR
 GITHUB_REPO   = "kiacoder/blackout-kit"
 RELEASES_API  = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 UPDATE_TIMEOUT = 10  # seconds
+_UPDATE_TRUSTED_HOSTS = frozenset({
+    "github.com",
+    "api.github.com",
+    "objects.githubusercontent.com",
+    "raw.githubusercontent.com",
+})
 
 
 # ─────────────────────────── Version helpers ────────────────────
@@ -62,175 +68,173 @@ def check_for_update() -> dict | None:
     if latest_ver <= current:
         return None  # Already up-to-date
 
-    # Find the source zip asset
-    zipball = data.get("zipball_url", "")
+    assets = data.get("assets", [])
+    source_asset = next(
+        (
+            asset for asset in assets
+            if isinstance(asset, dict)
+            and str(asset.get("name", "")).lower() == "blackout-source.zip"
+        ),
+        None,
+    )
 
     return {
-        "version":     latest_tag,
-        "body":        data.get("body", "No release notes."),
-        "zipball_url": zipball,
-        "html_url":    data.get("html_url", ""),
-        "assets":      data.get("assets", []),
+        "version": latest_tag,
+        "body": data.get("body", "No release notes."),
+        "zipball_url": source_asset.get("browser_download_url", "") if source_asset else "",
+        "source_asset": source_asset,
+        "html_url": data.get("html_url", ""),
+        "assets": assets,
     }
 
 
+def _asset_digest(asset: dict | None) -> str | None:
+    value = asset.get("digest") if isinstance(asset, dict) else None
+    if not isinstance(value, str):
+        return None
+    algorithm, separator, digest = value.partition(":")
+    digest = digest.strip().lower()
+    if separator != ":" or algorithm.lower() != "sha256" or len(digest) != 64:
+        return None
+    if any(char not in "0123456789abcdef" for char in digest):
+        return None
+    return digest
+
+
+def _trusted_update_url(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(str(url or ""))
+    return parsed.scheme == "https" and parsed.hostname in _UPDATE_TRUSTED_HOSTS
+
+
+def _release_update_asset(release: dict, *, frozen: bool) -> tuple[str | None, dict | None, str]:
+    if frozen:
+        asset = next(
+            (
+                item for item in release.get("assets", [])
+                if isinstance(item, dict) and str(item.get("name", "")).lower() == "blackout.exe"
+            ),
+            None,
+        )
+        return (asset.get("browser_download_url") if asset else None, asset, ".exe")
+    url = release.get("zipball_url", "")
+    asset = release.get("source_asset")
+    return (str(url) if url else None, asset if isinstance(asset, dict) else None, ".zip")
+
+
 def download_and_apply(release: dict) -> bool:
-    """
-    Stream-download the release zip (or .exe if frozen),
-    verify integrity, and replace the source (or swap the .exe).
-    """
+    """Download and apply an update only after trusted digest verification."""
     from .theme import console
     import os
     import subprocess
 
     is_frozen = getattr(sys, "frozen", False)
-    
-    if is_frozen:
-        # Looking for the blackout.exe asset
-        url = None
-        for asset in release.get("assets", []):
-            if asset.get("name", "").lower() == "blackout.exe":
-                url = asset.get("browser_download_url")
-                break
-        if not url:
-            console.print("[error]No blackout.exe found in the latest release assets.[/error]")
-            return False
-        suffix = ".exe"
-    else:
-        url = release.get("zipball_url", "")
-        suffix = ".zip"
-
-    if not url:
+    url, asset, suffix = _release_update_asset(release, frozen=is_frozen)
+    if not url or not _trusted_update_url(url):
+        console.print("[error]Update source is not an approved HTTPS GitHub URL.[/error]")
+        return False
+    expected_digest = _asset_digest(asset)
+    if expected_digest is None:
+        console.print("[error]Update rejected: trusted SHA-256 digest metadata is missing.[/error]")
         return False
 
     tmp_path: Path | None = None
-
     try:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp_path = Path(tmp.name)
 
-        req = urllib.request.Request(
-            url, headers={"User-Agent": f"blackout-kit/{__version__}"}
-        )
-
+        req = urllib.request.Request(url, headers={"User-Agent": f"blackout-kit/{__version__}"})
         hasher = hashlib.sha256()
-
         with urllib.request.urlopen(req, timeout=120) as resp:
             content_length = int(resp.headers.get("Content-Length", 0) or 0)
-
             from .theme import create_download_progress
             with create_download_progress() as progress:
                 task = progress.add_task(
                     f"Downloading update ({suffix})...",
                     total=content_length if content_length > 0 else None,
                 )
-                chunks: list[bytes] = []
-                while True:
-                    chunk = resp.read(8192)
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-                    hasher.update(chunk)
-                    progress.advance(task, len(chunk))
+                with tmp_path.open("wb") as stream:
+                    while True:
+                        chunk = resp.read(8192)
+                        if not chunk:
+                            break
+                        stream.write(chunk)
+                        hasher.update(chunk)
+                        progress.advance(task, len(chunk))
 
-        data       = b"".join(chunks)
-        sha256_hex = hasher.hexdigest()
-        tmp_path.write_bytes(data)
-
-        console.print(f"  [dim]SHA256:  {sha256_hex}[/dim]")
+        actual_digest = hasher.hexdigest()
+        if actual_digest != expected_digest:
+            console.print("[error]Update rejected: SHA-256 does not match trusted metadata.[/error]")
+            return False
 
         if is_frozen:
-            # ── Binary Executable Hot-Swap ──
+            from .downloader import verify_binary
+
+            valid, detail = verify_binary(tmp_path)
+            if not valid:
+                console.print(f"[error]Update rejected: invalid executable structure ({detail}).[/error]")
+                return False
             current_exe = Path(sys.executable)
             old_exe = current_exe.with_name(current_exe.name + ".old")
-            
-            console.print("  [dim]Hot-swapping executable...[/dim]")
-            # Remove previous old exe if exists
             if old_exe.exists():
-                try:
-                    old_exe.unlink()
-                except Exception:
-                    pass
-            
-            # Windows allows renaming a running executable!
+                old_exe.unlink()
             os.rename(current_exe, old_exe)
-            
-            # Move the newly downloaded exe to the original path
             shutil.move(str(tmp_path), current_exe)
-            
             console.print("  [bold green]Update applied successfully![/bold green]")
-            console.print("  [dim]Restarting application...[/dim]")
-            
-            # Restart the app
-            subprocess.Popen([str(current_exe)] + sys.argv[1:], creationflags=0x00000008) # CREATE_NO_WINDOW
+            subprocess.Popen([str(current_exe)] + sys.argv[1:], creationflags=0x00000008)
             sys.exit(0)
 
-        else:
-            # ── Source Zip Update ──
-            console.print("  [dim]Verifying archive integrity...[/dim]")
-            try:
-                with zipfile.ZipFile(tmp_path) as zf:
-                    bad_file = zf.testzip()
-                    if bad_file:
-                        console.print(f"  [error]Corrupt archive entry: {bad_file}[/error]")
-                        return False
-            except zipfile.BadZipFile:
-                console.print("  [error]Downloaded file is not a valid ZIP archive.[/error]")
+        with zipfile.ZipFile(tmp_path) as zf:
+            bad_file = zf.testzip()
+            if bad_file:
+                console.print(f"[error]Corrupt archive entry: {bad_file}[/error]")
                 return False
-
-            console.print("  [dim]Archive OK — applying update...[/dim]")
-
-            with zipfile.ZipFile(tmp_path) as zf:
-                names  = zf.namelist()
-                if not names:
-                    console.print("  [error]Archive is empty (no files).[/error]")
-                    return False
-                prefix = names[0].split("/")[0] + "/"
-
-                backup_dir = APP_DATA_DIR / "backup_src"
-                if backup_dir.exists():
-                    shutil.rmtree(backup_dir)
-                shutil.copytree(PROJECT_ROOT / "blackoutkit", backup_dir)
-
-                for member in names:
-                    if not member.startswith(prefix + "blackoutkit/"):
-                        continue
-                    relative = member[len(prefix):]
-                    dest     = PROJECT_ROOT / relative
-                    
-                    resolved_dest = dest.resolve()
-                    if not resolved_dest.is_relative_to((PROJECT_ROOT / "blackoutkit").resolve()):
-                        raise Exception("Path traversal attempt detected!")
-
-                    if member.endswith("/"):
-                        dest.mkdir(parents=True, exist_ok=True)
-                    else:
-                        dest.parent.mkdir(parents=True, exist_ok=True)
-                        dest.write_bytes(zf.read(member))
-
-            tmp_path.unlink(missing_ok=True)
-            return True
-
-    except Exception as e:
-        console.print(f"[error]Update failed: {e}[/error]")
+            names = zf.namelist()
+            if not names:
+                console.print("[error]Archive is empty (no files).[/error]")
+                return False
+            prefix = names[0].split("/")[0] + "/"
+            backup_dir = APP_DATA_DIR / "backup_src"
+            if backup_dir.exists():
+                shutil.rmtree(backup_dir)
+            backup_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(PROJECT_ROOT / "blackoutkit", backup_dir)
+            for member in names:
+                if not member.startswith(prefix + "blackoutkit/"):
+                    continue
+                relative = member[len(prefix):]
+                dest = PROJECT_ROOT / relative
+                if not dest.resolve().is_relative_to((PROJECT_ROOT / "blackoutkit").resolve()):
+                    raise ValueError("Path traversal attempt detected")
+                if member.endswith("/"):
+                    dest.mkdir(parents=True, exist_ok=True)
+                else:
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(zf.read(member))
+        return True
+    except zipfile.BadZipFile:
+        console.print("[error]Downloaded file is not a valid ZIP archive.[/error]")
+        return False
+    except Exception as exc:
+        console.print(f"[error]Update failed: {exc}[/error]")
         if not is_frozen:
             backup = APP_DATA_DIR / "backup_src"
             if backup.exists():
                 try:
                     failed_dir = PROJECT_ROOT / f"blackoutkit_failed_{int(time.time())}"
                     if (PROJECT_ROOT / "blackoutkit").exists():
-                        import os
                         os.rename(PROJECT_ROOT / "blackoutkit", failed_dir)
-                    import os
                     os.rename(backup, PROJECT_ROOT / "blackoutkit")
                 except Exception:
                     pass
+        return False
+    finally:
         if tmp_path:
             try:
                 tmp_path.unlink(missing_ok=True)
-            except Exception:
+            except OSError:
                 pass
-        return False
 
 
 # ─────────────────────────── Preflight check ────────────────────

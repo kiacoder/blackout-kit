@@ -11,7 +11,9 @@ Epic features:
   - Graceful handling: rate limits, 404s, bad zips, missing members — all surfaced as (False, msg)
 """
 import fnmatch
+import hashlib
 import json
+import os
 import tempfile
 import threading
 import sys
@@ -26,6 +28,9 @@ from typing import Callable
 from . import __version__
 
 from . import PROJECT_ROOT, BINS_DIR
+
+_PROVENANCE_FILE = BINS_DIR / ".provenance.json"
+_DOWNLOAD_LOCK = threading.Lock()
 
 _GITHUB_RELEASES_API = "https://api.github.com/repos/{repo}/releases/latest"
 _API_TIMEOUT         = 10    # seconds — GitHub API lookup
@@ -95,8 +100,8 @@ BIN_REGISTRY: dict[str, BinInfo] = {
 
     "softether": BinInfo(
         key           = "softether",
-        display_name  = "SoftEther VPN Client",
-        description   = "SoftEther VPN — powerful SSL-VPN protocol",
+        display_name  = "SoftEther VPN installer",
+        description   = "SoftEther VPN installer (not the client runtime)",
         github_repo   = "SoftEtherVPN/SoftEtherVPN_Stable",
         asset_pattern = None,
         asset_exclude = None,
@@ -104,7 +109,21 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         output_bins   = ["softether-installer.exe"],
         required      = False,
         manual_url    = "https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases",
-        manual_note   = "Downloads installer — run bins/softether-installer.exe, then copy vpnclient.exe to bins/",
+        manual_note   = "Run the installer, then make vpnclient.exe and vpncmd.exe available before connecting.",
+    ),
+
+    "softether-client": BinInfo(
+        key           = "softether-client",
+        display_name  = "SoftEther VPN client runtime",
+        description   = "vpnclient.exe and vpncmd.exe required for SoftEther connections",
+        github_repo   = None,
+        asset_pattern   = None,
+        asset_exclude   = None,
+        extract_map     = {},
+        output_bins     = ["vpnclient.exe", "vpncmd.exe"],
+        required        = False,
+        manual_url      = "https://www.softether.org/5-download",
+        manual_note     = "Install SoftEther VPN Client or place both client executables in bins/.",
     ),
 
     "wireguard": BinInfo(
@@ -294,7 +313,11 @@ def _find_asset(assets: list[dict], pattern: str, exclude: str | None) -> dict |
     return None
 
 
-def _extract_from_zip(zip_path: Path, extract_map: dict[str, str]) -> tuple[bool, str]:
+def _extract_from_zip(
+    zip_path: Path,
+    extract_map: dict[str, str],
+    destination: Path | None = None,
+) -> tuple[bool, str]:
     """
     Extract files from zip_path according to extract_map.
     extract_map: {fnmatch_pattern_for_zip_member: output_filename_in_bins/}
@@ -302,7 +325,8 @@ def _extract_from_zip(zip_path: Path, extract_map: dict[str, str]) -> tuple[bool
     Tries case-sensitive match first, then case-insensitive fallback.
     Returns (True, "") on success or (False, missing_pattern) on first missing file.
     """
-    BINS_DIR.mkdir(parents=True, exist_ok=True)
+    output_dir = destination or BINS_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         with zipfile.ZipFile(zip_path) as zf:
@@ -323,7 +347,10 @@ def _extract_from_zip(zip_path: Path, extract_map: dict[str, str]) -> tuple[bool
                     return False, pattern
 
                 try:
-                    dest = BINS_DIR / out_name
+                    dest = output_dir / out_name
+                    resolved = dest.resolve()
+                    if not resolved.is_relative_to(output_dir.resolve()):
+                        return False, "unsafe_output_path"
                     dest.write_bytes(zf.read(matched))
                 except (OSError, IOError) as exc:
                     return False, f"write_error: {exc}"
@@ -351,7 +378,7 @@ def verify_binary(path: Path) -> tuple[bool, str]:
 
     Returns (True, "") or (False, reason).
     """
-    if not path.exists():
+    if not path.is_file():
         return False, "File not found"
 
     size = path.stat().st_size
@@ -382,34 +409,155 @@ def verify_binary(path: Path) -> tuple[bool, str]:
     return True, ""
 
 
-def verify_bins_integrity() -> dict[str, str]:
-    """
-    Verify ALL binary files in the bins/ directory.
-    Returns {filename: "OK" or error_reason}.
-    """
-    if not BINS_DIR.exists():
-        return {}
-    results = {}
-    for f in BINS_DIR.iterdir():
-        if f.is_file() and not f.name.endswith(".json"):
-            ok, msg = verify_binary(f)
-            results[f.name] = "OK" if ok else msg
-    return results
+def sha256_file(path: Path) -> str:
+    """Return the SHA-256 digest of one local file in bounded chunks."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        while chunk := stream.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _asset_sha256(asset: dict) -> str | None:
+    value = asset.get("digest")
+    if not isinstance(value, str):
+        return None
+    algorithm, separator, digest = value.partition(":")
+    if separator != ":" or algorithm.lower() != "sha256":
+        return None
+    normalized = digest.strip().lower()
+    if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+        return None
+    return normalized
+
+
+def _verify_download_digest(path: Path, asset: dict) -> tuple[bool, str]:
+    expected = _asset_sha256(asset)
+    if expected is None:
+        return False, "Trusted SHA-256 digest metadata is missing for this release asset"
+    actual = sha256_file(path)
+    if actual != expected:
+        return False, "Downloaded release asset SHA-256 does not match trusted metadata"
+    return True, ""
+
+
+def _promote_staged_outputs(
+    staged_dir: Path,
+    output_names: list[str],
+    provenance: list[dict[str, str]] | None = None,
+) -> tuple[bool, str]:
+    """Promote verified outputs and provenance as one recoverable transaction."""
+    import os
+    import shutil
+
+    BINS_DIR.mkdir(parents=True, exist_ok=True)
+    bins_root = BINS_DIR.resolve()
+    backup_dir = Path(tempfile.mkdtemp(prefix=".blackout-backup-", dir=BINS_DIR))
+    backups: dict[str, Path] = {}
+    promoted: list[Path] = []
+    provenance_backup = backup_dir / ".provenance.json"
+    provenance_existed = _PROVENANCE_FILE.is_file()
+    try:
+        if provenance_existed:
+            shutil.copy2(_PROVENANCE_FILE, provenance_backup)
+
+        for name in output_names:
+            source = staged_dir / name
+            destination = BINS_DIR / name
+            if not source.is_file():
+                return False, f"Expected staged output is missing: {name}"
+            resolved = destination.resolve()
+            if not resolved.is_relative_to(bins_root):
+                return False, "unsafe_output_path"
+            if destination.exists():
+                backup = backup_dir / name
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(destination, backup)
+                backups[name] = backup
+
+        for name in output_names:
+            destination = BINS_DIR / name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged_dir / name, destination)
+            promoted.append(destination)
+
+        if provenance is not None:
+            _merge_provenance(provenance)
+        return True, ""
+    except Exception as exc:
+        for destination in promoted:
+            try:
+                destination.unlink(missing_ok=True)
+            except OSError:
+                pass
+        for name, backup in backups.items():
+            try:
+                os.replace(backup, BINS_DIR / name)
+            except OSError:
+                pass
+        try:
+            if provenance_existed:
+                os.replace(provenance_backup, _PROVENANCE_FILE)
+            else:
+                _PROVENANCE_FILE.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False, f"Could not install verified outputs: {exc}"
+    finally:
+        shutil.rmtree(backup_dir, ignore_errors=True)
 
 
 # ──────────────────────────── Public API ─────────────────────────
 
+def _artifact_status(info: BinInfo) -> str:
+    outputs = [BINS_DIR / name for name in info.output_bins]
+    if not all(path.is_file() for path in outputs):
+        return "missing"
+    provenance = {
+        record.get("output"): record
+        for record in _read_provenance()
+        if record.get("output")
+    }
+    for path in outputs:
+        valid, _detail = verify_binary(path)
+        if not valid:
+            return "invalid"
+        if (
+            sys.platform.startswith("linux")
+            and path.name == "blackout-engine"
+            and not os.access(path, os.X_OK)
+        ):
+            return "invalid"
+        record = provenance.get(path.name)
+        if record is not None:
+            expected = record.get("output_sha256") or record.get("sha256", "")
+            if not expected or sha256_file(path) != expected.lower():
+                return "invalid"
+    return "verified" if all(path.name in provenance for path in outputs) else "manual_unverified"
+
+
+def artifact_status() -> dict[str, str]:
+    """Return safe installation states for each registered artifact."""
+    status = {key: _artifact_status(info) for key, info in BIN_REGISTRY.items()}
+    softether_dir = Path("C:/Program Files/SoftEther VPN Client")
+    client_files = [BINS_DIR / name for name in ("vpnclient.exe", "vpncmd.exe")]
+    system_files = [softether_dir / name for name in ("vpnclient.exe", "vpncmd.exe")]
+    status["softether-client"] = (
+        "manual_unverified"
+        if all(path.is_file() for path in client_files)
+        or (sys.platform == "win32" and all(path.is_file() for path in system_files))
+        else "missing"
+    )
+    return status
+
+
 def check_installed() -> dict[str, bool]:
-    """Return {key: True/False} — True when all expected output_bins files exist in bins/."""
-    global _check_installed_cache
+    """Return {key: True/False} for current structurally valid artifacts."""
     with _check_installed_lock:
-        if _check_installed_cache is not None:
-            return _check_installed_cache.copy()
-        status = {}
-        for key, info in BIN_REGISTRY.items():
-            status[key] = all((BINS_DIR / b).exists() for b in info.output_bins)
-        _check_installed_cache = status
-        return status.copy()
+        return {
+            key: state in {"verified", "manual_unverified"}
+            for key, state in artifact_status().items()
+        }
 
 
 def get_latest_version(key: str) -> str | None:
@@ -426,207 +574,280 @@ def list_available() -> list[BinInfo]:
     return list(BIN_REGISTRY.values())
 
 
+def _download_stream(
+    url: str,
+    destination: Path,
+    *,
+    expected_size: int = 0,
+    progress_callback: Callable[[int, int], None] | None = None,
+    total_size: int = 0,
+    downloaded_so_far: int = 0,
+) -> tuple[bool, str, int]:
+    """Download one asset to a staging file and return its byte count."""
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": f"blackout-kit/{__version__}"},
+    )
+    downloaded = 0
+    with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+        with destination.open("wb") as stream:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                stream.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback:
+                    progress_callback(downloaded_so_far + downloaded, total_size)
+    if expected_size > 0 and downloaded != expected_size:
+        return False, "Downloaded file size mismatch (truncated or corrupted)", downloaded
+    return True, "", downloaded
+
+
 def download_binary(
     key: str,
     progress_callback: Callable[[int, int], None] | None = None,
 ) -> tuple[bool, str]:
-    """
-    Download and install a single binary by registry key.
+    return _download_verified_binary(key, progress_callback)
 
-    progress_callback(bytes_downloaded, total_bytes):
-        Called during streaming download. total_bytes may be 0 if Content-Length is absent.
 
-    Returns (True, success_message) or (False, error_message).
-    """
+def _trusted_download_url(url: str) -> bool:
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(str(url or ""))
+    return parsed.scheme == "https" and parsed.hostname in {
+        "github.com",
+        "objects.githubusercontent.com",
+        "raw.githubusercontent.com",
+    }
+
+
+def _read_provenance() -> list[dict[str, str]]:
+    try:
+        payload = json.loads(_PROVENANCE_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return []
+    records = payload.get("artifacts") if isinstance(payload, dict) else None
+    if not isinstance(records, list):
+        return []
+    return [
+        {str(key): str(value) for key, value in record.items()}
+        for record in records
+        if isinstance(record, dict)
+    ]
+
+
+def _write_provenance(records: list[dict[str, str]]) -> None:
+    payload = {"schema_version": 1, "artifacts": records}
+    BINS_DIR.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(dir=BINS_DIR, prefix=".provenance-", text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, sort_keys=True, separators=(",", ":"))
+        Path(temporary).replace(_PROVENANCE_FILE)
+    except Exception:
+        try:
+            Path(temporary).unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def _merge_provenance(records: list[dict[str, str]]) -> None:
+    merged = _read_provenance()
+    by_output = {
+        record.get("output") or record.get("key"): record
+        for record in merged
+        if record.get("output") or record.get("key")
+    }
+    for record in records:
+        identity = record.get("output") or record.get("key")
+        if identity:
+            by_output[identity] = record
+    _write_provenance(list(by_output.values()))
+
+
+def verify_provenance() -> dict[str, str]:
+    """Compare installed artifact hashes with recorded verified provenance."""
+    results: dict[str, str] = {}
+    for record in _read_provenance():
+        output = record.get("output")
+        expected = (record.get("output_sha256") or record.get("sha256", "")).lower()
+        if not output:
+            continue
+        path = BINS_DIR / output
+        if not path.is_file():
+            results[output] = "missing"
+            continue
+        if expected and sha256_file(path) == expected:
+            results[output] = "OK"
+        else:
+            results[output] = "modified"
+    return results
+
+
+def verify_bins_integrity() -> dict[str, str]:
+    """Verify structure and, when available, recorded artifact hashes."""
+    results = {}
+    if BINS_DIR.exists():
+        for path in BINS_DIR.iterdir():
+            if path.is_file() and not path.name.endswith(".json"):
+                ok, message = verify_binary(path)
+                results[path.name] = "OK" if ok else message
+    for name, status in verify_provenance().items():
+        if status != "OK":
+            results[name] = f"Provenance {status}"
+    return results
+
+
+def _download_verified_binary(
+    key: str,
+    progress_callback: Callable[[int, int], None] | None = None,
+) -> tuple[bool, str]:
+    """Download one release only after digest and structural verification."""
     global _check_installed_cache
-    with _check_installed_lock:
-        _check_installed_cache = None
-    
-    info = BIN_REGISTRY.get(key)
-    if not info:
-        return False, f"Unknown binary key: '{key}'. Valid keys: {', '.join(BIN_REGISTRY)}"
+    with _DOWNLOAD_LOCK:
+        with _check_installed_lock:
+            _check_installed_cache = None
 
-    if not info.github_repo:
-        if key == "tor":
-            return _download_tor_binary(progress_callback)
-        elif key == "openvpn":
-            return _download_openvpn_binary(progress_callback)
-        elif key == "psiphon":
-            return _download_psiphon_binary(progress_callback)
-        note = f"  Note: {info.manual_note}" if info.manual_note else ""
-        return False, f"Manual download required.\n  Visit: {info.manual_url}{note}"
+        info = BIN_REGISTRY.get(key)
+        if not info:
+            return False, f"Unknown binary key: '{key}'. Valid keys: {', '.join(BIN_REGISTRY)}"
+        if not info.github_repo:
+            note = f"  Note: {info.manual_note}" if info.manual_note else ""
+            return False, f"Manual download required; Blackout Kit cannot verify this source automatically.\n  Visit: {info.manual_url}{note}"
 
-    # ── Fetch release metadata ────────────────────────────────────
-    release = _fetch_release(info.github_repo)
-    if not release:
-        return False, (
-            "GitHub API unavailable — check your internet connection.\n"
-            f"  Manual fallback: {info.manual_url}"
+        release = _fetch_release(info.github_repo)
+        if not release:
+            return False, (
+                "GitHub API unavailable — check your internet connection.\n"
+                f"  Manual fallback: {info.manual_url}"
+            )
+        if release.get("message"):
+            message = str(release["message"])
+            if "rate limit" in message.lower():
+                return False, "GitHub API rate limit hit (60 req/hr unauthenticated) — retry in a few minutes."
+            return False, f"GitHub API error: {message}"
+
+        tag = str(release.get("tag_name", "unknown"))
+        assets = release.get("assets", [])
+        asset = _find_asset(assets, info.asset_pattern, info.asset_exclude) if info.asset_pattern else None
+        asset_name = str(asset.get("name", "")) if asset else ""
+        is_zip_mode = asset_name.lower().endswith(".zip") or bool(
+            info.asset_pattern and info.asset_pattern.lower().endswith(".zip")
         )
 
-    # GitHub rate-limit check
-    if release.get("message"):
-        msg = release["message"]
-        if "rate limit" in msg.lower():
-            return False, "GitHub API rate limit hit (60 req/hr unauthenticated) — retry in a few minutes."
-        return False, f"GitHub API error: {msg}"
-
-    tag    = release.get("tag_name", "unknown")
-    assets = release.get("assets", [])
-
-    asset = _find_asset(assets, info.asset_pattern, info.asset_exclude) if info.asset_pattern else None
-    asset_name = asset.get("name", "") if asset else ""
-    is_zip_mode = asset_name.lower().endswith(".zip") or (info.asset_pattern and info.asset_pattern.lower().endswith(".zip"))
-
-    if is_zip_mode:
-        asset = _find_asset(assets, info.asset_pattern, info.asset_exclude)
-        if not asset:
-            return False, (
-                f"No asset matching '{info.asset_pattern}' in release {tag}.\n"
-                f"  This may be a repo rename or restructure — check: {info.manual_url}"
-            )
-        assets_to_download = [(asset, None)]
-    else:
-        assets_to_download = []
-        for pattern, out_name in info.extract_map.items():
-            asset = _find_asset(assets, pattern, info.asset_exclude)
-            if not asset:
-                return False, (
-                    f"No asset matching '{pattern}' in release {tag}.\n"
-                    f"  This may be a repo rename or restructure — check: {info.manual_url}"
-                )
-            assets_to_download.append((asset, out_name))
-
-    total_size = sum(a.get("size", 0) for a, _ in assets_to_download)
-    downloaded_so_far = 0
-
-    BINS_DIR.mkdir(parents=True, exist_ok=True)
-
-    try:
         if is_zip_mode:
-            asset, _ = assets_to_download[0]
-            download_url = asset["browser_download_url"]
-            tmp_path = None
-            try:
-                with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
-                    tmp_path = Path(tmp.name)
-
-                req = urllib.request.Request(
-                    download_url,
-                    headers={"User-Agent": f"blackout-kit/{__version__}"},
-                )
-
-                asset_downloaded = 0
-                with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
-                    cl = resp.headers.get("Content-Length")
-                    if cl:
-                        try:
-                            asset_size = int(cl)
-                            if total_size == 0 or total_size < asset_size:
-                                total_size = asset_size
-                        except ValueError:
-                            pass
-
-                    with open(tmp_path, "wb") as f:
-                        while True:
-                            chunk = resp.read(65536)
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                            asset_downloaded += len(chunk)
-                            if progress_callback:
-                                progress_callback(asset_downloaded, total_size)
-
-                if not zipfile.is_zipfile(tmp_path):
-                    return False, f"Downloaded file is not a valid ZIP (asset: {asset['name']})."
-
-                ok, missing = _extract_from_zip(tmp_path, info.extract_map)
-                if not ok:
-                    if missing == "corrupt_zip":
-                        return False, "ZIP archive is corrupted — try again."
-                    return False, (
-                        f"Expected file not found in archive: '{missing}'\n"
-                        f"  The zip structure may have changed in {tag}. Report at github.com/kiacoder/blackout-kit/issues"
-                    )
-
-                # Verify extracted binaries before finalizing them.
-                for out_name in info.output_bins:
-                    dest = BINS_DIR / out_name
-                    if out_name == "blackout-engine" and sys.platform.startswith("linux"):
-                        dest.chmod(dest.stat().st_mode | 0o111)
-                    ok_verify, msg = verify_binary(dest)
-                    if not ok_verify:
-                        try:
-                            dest.unlink(missing_ok=True)
-                        except Exception:
-                            pass
-                        return False, (
-                            f"Integrity check FAILED for {out_name}: {msg}\n"
-                            f"  The downloaded file may be corrupted or tampered with.\n"
-                            f"  Try again or download manually: {info.manual_url}"
-                        )
-            finally:
-                if tmp_path:
-                    try:
-                        tmp_path.unlink(missing_ok=True)
-                    except Exception:
-                        pass
+            if asset is None:
+                return False, f"No asset matching '{info.asset_pattern}' in release {tag}."
+            assets_to_download = [(asset, None)]
         else:
-            for asset, out_name in assets_to_download:
-                download_url = asset["browser_download_url"]
-                dest_path = BINS_DIR / out_name
-                temp_dest = dest_path.with_suffix(".tmp")
-                expected_size = asset.get("size", 0)
-                try:
-                    req = urllib.request.Request(
-                        download_url,
-                        headers={"User-Agent": f"blackout-kit/{__version__}"},
+            assets_to_download = []
+            for pattern, output_name in info.extract_map.items():
+                selected = _find_asset(assets, pattern, info.asset_exclude)
+                if selected is None:
+                    return False, f"No asset matching '{pattern}' in release {tag}."
+                assets_to_download.append((selected, output_name))
+
+        for selected, _output_name in assets_to_download:
+            url = selected.get("browser_download_url")
+            if not _trusted_download_url(url):
+                return False, "Release asset URL is not an allowed HTTPS GitHub download URL"
+            if _asset_sha256(selected) is None:
+                return False, "Trusted SHA-256 digest metadata is missing for this release asset"
+
+        stage_dir = Path(tempfile.mkdtemp(prefix="blackout-download-"))
+        provenance: list[dict[str, str]] = []
+        try:
+            total_size = sum(int(selected.get("size", 0) or 0) for selected, _ in assets_to_download)
+            downloaded = 0
+            if is_zip_mode:
+                selected, _ = assets_to_download[0]
+                archive = stage_dir / "release.zip"
+                ok, message, size = _download_stream(
+                    selected["browser_download_url"],
+                    archive,
+                    expected_size=int(selected.get("size", 0) or 0),
+                    progress_callback=progress_callback,
+                    total_size=total_size,
+                    downloaded_so_far=downloaded,
+                )
+                if not ok:
+                    return False, message
+                ok, message = _verify_download_digest(archive, selected)
+                if not ok:
+                    return False, message
+                if not zipfile.is_zipfile(archive):
+                    return False, f"Downloaded file is not a valid ZIP (asset: {selected.get('name', '')})."
+                ok, missing = _extract_from_zip(archive, info.extract_map, stage_dir)
+                if not ok:
+                    return False, f"Archive extraction failed: {missing}"
+                digest = _asset_sha256(selected) or ""
+                for output_name in info.output_bins:
+                    staged = stage_dir / output_name
+                    if output_name == "blackout-engine" and sys.platform.startswith("linux"):
+                        staged.chmod(staged.stat().st_mode | 0o111)
+                    valid, detail = verify_binary(staged)
+                    if not valid:
+                        return False, f"Structural verification failed for {output_name}: {detail}"
+                    provenance.append({
+                        "key": info.key,
+                        "output": output_name,
+                        "repository": info.github_repo,
+                        "release": tag,
+                        "asset": str(selected.get("name", "")),
+                        "sha256": digest,
+                        "output_sha256": sha256_file(staged),
+                        "verification": "sha256_and_structural",
+                    })
+            else:
+                for selected, output_name in assets_to_download:
+                    staged = stage_dir / str(output_name)
+                    ok, message, size = _download_stream(
+                        selected["browser_download_url"],
+                        staged,
+                        expected_size=int(selected.get("size", 0) or 0),
+                        progress_callback=progress_callback,
+                        total_size=total_size,
+                        downloaded_so_far=downloaded,
                     )
-                    with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
-                        with open(temp_dest, "wb") as f:
-                            while True:
-                                chunk = resp.read(65536)
-                                if not chunk:
-                                    break
-                                f.write(chunk)
-                                downloaded_so_far += len(chunk)
-                                if progress_callback:
-                                    progress_callback(downloaded_so_far, total_size)
-                    
-                    if expected_size > 0 and temp_dest.stat().st_size != expected_size:
-                        raise Exception("Downloaded file size mismatch (truncated or corrupted)")
+                    if not ok:
+                        return False, message
+                    downloaded += size
+                    ok, message = _verify_download_digest(staged, selected)
+                    if not ok:
+                        return False, message
+                    valid, detail = verify_binary(staged)
+                    if not valid:
+                        return False, f"Structural verification failed for {output_name}: {detail}"
+                    provenance.append({
+                        "key": info.key,
+                        "output": str(output_name),
+                        "repository": info.github_repo,
+                        "release": tag,
+                        "asset": str(selected.get("name", "")),
+                        "sha256": _asset_sha256(selected) or "",
+                        "output_sha256": sha256_file(staged),
+                        "verification": "sha256_and_structural",
+                    })
 
-                    # Verify PE header validity before finalizing
-                    ok_verify, msg = verify_binary(temp_dest)
-                    if not ok_verify:
-                        try:
-                            temp_dest.unlink(missing_ok=True)
-                        except Exception:
-                            pass
-                        return False, (
-                            f"Integrity check FAILED for {out_name}: {msg}\n"
-                            f"  The downloaded file may be corrupted or tampered with.\n"
-                            f"  Try again or download manually: {info.manual_url}"
-                        )
+            ok, message = _promote_staged_outputs(stage_dir, info.output_bins, provenance)
+            if not ok:
+                return False, message
+            return True, f"Installed {info.display_name} ({tag}); SHA-256 verified"
+        except urllib.error.URLError as exc:
+            return False, f"Download failed: {exc.reason}"
+        except OSError as exc:
+            return False, f"File system error writing to bins/: {exc}"
+        except Exception as exc:
+            return False, f"Unexpected error: {exc}"
+        finally:
+            import shutil
+            shutil.rmtree(stage_dir, ignore_errors=True)
 
-                    if dest_path.exists():
-                        dest_path.unlink()
-                    temp_dest.rename(dest_path)
-                finally:
-                    if temp_dest.exists():
-                        try:
-                            temp_dest.unlink()
-                        except Exception:
-                            pass
 
-        return True, f"Installed {info.display_name} ({tag})"
-
-    except urllib.error.URLError as e:
-        return False, f"Download failed: {e.reason}"
-    except OSError as e:
-        return False, f"File system error writing to bins/: {e}"
-    except Exception as e:
-        return False, f"Unexpected error: {e}"
+# Manual source helpers remain private and are intentionally not used by the
+# verified automatic download path. Manual files are always labeled unverified.
 
 
 def download_all(

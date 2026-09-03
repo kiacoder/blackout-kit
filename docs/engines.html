@@ -62,6 +62,19 @@
     </section>
 
     <section class="card">
+      <h2>Read the capability matrix</h2>
+      <p>Run <code>blackout demo</code> for a safe simulation or <code>blackout capabilities</code> for the full catalog with local state.</p>
+      <p><strong>Ready</strong> means local prerequisites passed. <strong>Blocked</strong> means a local runtime, setting, permission, port, or compatible saved configuration is missing. <strong>Unsupported</strong> means this platform has no shipped runtime path. A cataloged target remains visible even when it is unsupported here.</p>
+      <p>Automatic GitHub release downloads are staged and require matching SHA-256 metadata before promotion. Manual or user-supplied runtimes are labeled unverified and are the user's responsibility.</p>
+    </section>
+
+    <section class="card">
+      <h2>Golden path</h2>
+      <p><code>blackout demo</code> → <code>blackout doctor --local-only</code> → <code>blackout capabilities</code> → <code>blackout route</code> → <code>blackout setup</code> → <code>blackout ready &lt;engine&gt;</code> → <code>blackout connect</code></p>
+      <p>The guided setup is read-only in JSON and non-interactive modes. When Blackout Kit changes a local system proxy, it records ownership and restores or clears it only while the current proxy still matches the recorded target.</p>
+    </section>
+
+    <section class="card">
       <h2>Boundary reminder</h2>
       <p>Engine availability does not prove that the selected upstream server or filtered network will work. Blackout Kit distinguishes local readiness from remote success.</p>
     </section>

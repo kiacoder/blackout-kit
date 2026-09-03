@@ -157,57 +157,117 @@ blackout doctor --include-optional
 
 ---
 
-## First-run checklist
+## First-run golden path
 
-Run these in order.
-
-### 1. Check local health
-
-```cmd
-python blackout.py doctor
-```
-
-### 2. Inspect runtime status
+Begin with a safe simulation and local-only inspection. Nothing connects just
+because these commands were run:
 
 ```cmd
-python blackout.py bins
+blackout demo
+blackout doctor --local-only
+blackout capabilities
+blackout route
+blackout setup
 ```
 
-### 3. Download what Blackout Kit can install automatically
+`blackout setup` opens a keyboard-only guided workflow in an interactive terminal.
+It can offer config/import, settings review, and a runtime download for only the
+selected target. These actions are explicit; downloads and connections require
+confirmation. In JSON, quiet, or noninteractive mode, setup stays a read-only
+checklist and does not prompt.
+
+After following the displayed blocker guidance:
 
 ```cmd
-python blackout.py bins download
+blackout ready <engine>
+blackout connect
+blackout status
 ```
 
-### 4. Add or import a saved config if your engine needs one
+To connect directly from the final interactive setup plan:
 
 ```cmd
-python blackout.py config add <uri>
+blackout setup --connect
 ```
 
-or
+This option is intentionally rejected in JSON, quiet, and noninteractive modes.
+
+### Capability states
+
+`blackout capabilities` preserves the full public engine catalog while reporting
+local facts separately:
+
+- **ready**: local platform, runtime, settings, and other checks pass; this does not
+  prove that an upstream server is reachable.
+- **blocked**: a local runtime, setting, permission, port, or compatible saved config
+  is missing.
+- **unsupported**: the current platform has no shipped runtime path for that target.
+
+The catalog is not reduced when a platform supports fewer engines. Use the row's
+runtime, upstream, privilege, listener, and system-effect fields to understand what
+would happen before choosing a path.
+
+### Manual and automatic runtime sources
+
+`blackout setup` offers only the selected engine's missing runtime. Automatic release
+sources are staged, structurally checked, and accepted only when approved HTTPS
+GitHub metadata includes a matching SHA-256 digest. Verified output hashes are kept
+in `bins/.provenance.json` for later local integrity checks. Existing files are not
+replaced when verification fails.
+
+Some engines remain cataloged but require a manual or user-supplied runtime. Such
+sources are labeled manual/unverified; a catalog entry is not a cryptographic claim
+about a third-party binary.
+
+### Proxy ownership
+
+When an engine exposes a local proxy and Blackout Kit changes the system proxy, it
+records the exact target it owns. On stop, cancellation, startup failure, or daemon
+shutdown, cleanup restores or clears the prior snapshot only if the current proxy
+still matches Blackout's recorded target. If another program changed it, Blackout
+Kit leaves that current proxy untouched.
+
+### Safe demonstration mode
+
+`blackout demo` reads local metadata and produces a simulation report. It does not
+run doctor, start an engine or daemon, probe ports, resolve remote hosts, download
+artifacts, mutate proxy/DNS/firewall/routes/settings, or terminate processes.
+Use `blackout --json demo` for one compact, secret-free envelope.
+
+### Local readiness is not remote reachability
+
+`blackout ready`, `route`, and the capability matrix inspect local files, settings,
+platform support, process state, loopback ports, and saved configuration shape.
+They do not test the upstream server as proof that the final connection will work.
+
+The separate `blackout bins` command remains available when you intentionally want
+to inspect all runtime assets, and `blackout bins download <key>` remains available
+for an explicit targeted download outside the guided setup flow.
+
+---
+
+## Legacy checklist equivalents
+
+The explicit commands below remain available for experienced users:
 
 ```cmd
-python blackout.py config import <url>
+blackout doctor --local-only
+blackout bins
+blackout route
+blackout ready xray
+blackout connect
 ```
 
-### 5. See what is locally ready
+They are equivalent building blocks, but `blackout setup` is the recommended first
+run because it keeps the order and confirmations visible.
 
-```cmd
-python blackout.py route
-```
+---
 
-### 6. Validate one engine without changing anything
+## Explicit commands for experienced users
 
-```cmd
-python blackout.py ready xray
-```
-
-### 7. Connect
-
-```cmd
-python blackout.py connect
-```
+The guided sequence above replaces the old download-everything-first workflow.
+Use the explicit commands only when you already understand the selected engine's
+requirements.
 
 ---
 

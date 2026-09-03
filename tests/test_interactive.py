@@ -137,6 +137,71 @@ def test_replace_config_workflow_does_not_prefill_old_uri(monkeypatch):
     replace.assert_called_once_with(0, "vless://new-uuid@new.example:443")
 
 
+def test_setup_add_config_cancel_does_not_write(monkeypatch):
+    add = Mock()
+    monkeypatch.setattr(interactive.manager, "add_config", add)
+
+    interactive._add_config(
+        lambda *_args, **_kwargs: "vless://uuid@example.com:443",
+        None,
+        lambda _question: False,
+        require_confirmation=True,
+    )
+
+    add.assert_not_called()
+
+
+def test_setup_replace_config_cancel_does_not_write(monkeypatch):
+    config = ProxyConfig(
+        protocol="vless",
+        address="old.example",
+        port=443,
+        raw_uri="vless://old-uuid@old.example:443",
+    )
+    replace = Mock()
+    monkeypatch.setattr(interactive.manager, "load_configs", lambda: [config])
+    monkeypatch.setattr(interactive.manager, "replace_config", replace)
+
+    interactive._replace_config(
+        lambda *_args, **_kwargs: "vless://new-uuid@new.example:443",
+        scripted_menu("0"),
+        lambda _question: False,
+        require_confirmation=True,
+    )
+
+    replace.assert_not_called()
+
+
+def test_setup_subscription_cancel_does_not_fetch_or_write(monkeypatch):
+    import_and_merge = Mock()
+    monkeypatch.setattr(interactive.manager, "import_and_merge", import_and_merge)
+
+    interactive._import_subscription(
+        lambda *_args, **_kwargs: "https://example.com/subscription",
+        None,
+        lambda _question: False,
+        require_confirmation=True,
+    )
+
+    import_and_merge.assert_not_called()
+
+
+def test_setup_setting_cancel_does_not_write(monkeypatch):
+    set_value = Mock()
+    monkeypatch.setattr(interactive.cfg, "set_value", set_value)
+
+    interactive._edit_setting(
+        "proxy_host",
+        {"proxy_host": "127.0.0.1"},
+        None,
+        lambda *_args, **_kwargs: "localhost",
+        lambda _question: False,
+        require_confirmation=True,
+    )
+
+    set_value.assert_not_called()
+
+
 def test_remove_config_requires_confirmation(monkeypatch):
     config = ProxyConfig(
         protocol="vless",

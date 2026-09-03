@@ -31,7 +31,7 @@ from . import settings as cfg
 _MCP_ENGINES = frozenset({
     "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
     "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
-    "tuic", "legend",
+    "tuic", "awg", "legend",
 })
 
 
@@ -87,7 +87,7 @@ TOOLS_MANIFEST = [
             "properties": {
                 "engine": {
                     "type": "string",
-                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "legend"]
+                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend"]
                 }
             },
             "required": ["engine"]
@@ -101,7 +101,7 @@ TOOLS_MANIFEST = [
             "properties": {
                 "engine": {
                     "type": "string",
-                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "legend"],
+                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend"],
                     "description": "Explicit engine choice. Linux supports only xray, tun, hysteria2, and tuic."
                 }
             }
@@ -315,9 +315,12 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
             settings = cfg.load()
             details = ["✓ Blackout Kit daemon stopped"]
             proxy = proxy_manager.get_proxy_status()
-            if settings.get("auto_set_proxy") and _is_blackout_proxy(proxy):
-                if proxy_manager.clear_system_proxy():
-                    details.append("Blackout-managed proxy cleared")
+            if settings.get("auto_set_proxy"):
+                if proxy_manager.cleanup_owned_system_proxy():
+                    details.append("Blackout-managed proxy restored")
+                elif proxy_manager.proxy_ownership_status() is None:
+                    if proxy.get("enabled"):
+                        details.append("external proxy preserved")
                 else:
                     details.append("Blackout-managed proxy cleanup failed")
             elif proxy.get("enabled"):

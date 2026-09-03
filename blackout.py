@@ -74,41 +74,16 @@ def _check_compat() -> list[str]:
     return warnings
 
 
-# ──────────────────────────── First-run hint ─────────────────────────────────
+# ──────────────────────────── First-run compatibility shim ─────────────────────
 
 def _first_run_hint():
-    """
-    If this is the first time Blackout Kit is launched (no settings file),
-    print a short getting-started nudge.
-    """
-    from pathlib import Path
-    from blackoutkit import settings as _cfg
-    settings_file = Path.home() / ".blackout-kit" / "settings.json"
-    if not settings_file.exists():
-        show = True  # genuine first run
-    else:
-        show = _cfg.load().get("show_first_run", False)  # hidden after setup unless user re-enables
-    if show:
-        try:
-            from rich.console import Console
-            from rich.panel import Panel
-            Console().print(Panel(
-                "[bold]Welcome to Blackout Kit![/bold]  Looks like your first launch.\n\n"
-                "Get started in 3 commands:\n"
-                "  [cyan]python blackout.py bins download[/cyan]      — auto-download all engine binaries\n"
-                "  [cyan]python blackout.py doctor[/cyan]             — verify everything is ready\n"
-                "  [cyan]python blackout.py connect[/cyan]            — start bypassing\n\n"
-                "[dim]Tip: run 'python blackout.py help quick_start' for the full setup guide.[/dim]",
-                title="[bold green]First Run[/bold green]",
-                border_style="green",
-                padding=(0, 2),
-            ))
-        except ImportError:
-            print("Welcome to Blackout Kit! Looks like your first launch.")
-            print("Get started in 3 commands:")
-            print("  python blackout.py bins download")
-            print("  python blackout.py doctor")
-            print("  python blackout.py connect")
+    """Delegate first-run rendering to the installed CLI onboarding boundary."""
+    from blackoutkit.onboarding import render_first_run_welcome
+    from blackoutkit.theme import console, is_interactive
+
+    if not is_interactive():
+        return False
+    return render_first_run_welcome(console)
 
 
 # ──────────────────────────── Main ───────────────────────────────────────────
@@ -117,6 +92,12 @@ def _first_run_hint():
 def _machine_output_requested(argv: list[str] | None = None) -> bool:
     """Return whether this invocation requested the machine-readable contract."""
     return "--json" in (sys.argv[1:] if argv is None else argv)
+
+
+def _demo_requested(argv: list[str] | None = None) -> bool:
+    """Return whether this invocation requests the side-effect-free demo."""
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    return next((argument for argument in arguments if not argument.startswith("-")), None) == "demo"
 
 
 if __name__ == "__main__":
@@ -140,7 +121,7 @@ if __name__ == "__main__":
                 print(f"Warning: {w}", file=sys.stderr)
 
     # 1.5 Extract bundled binaries if running as PyInstaller EXE
-    if getattr(sys, 'frozen', False):
+    if getattr(sys, 'frozen', False) and not _demo_requested():
         import shutil
         from blackoutkit import BINS_DIR, _MEIPASS
         bundled_bins = _MEIPASS / "bins"
@@ -154,11 +135,7 @@ if __name__ == "__main__":
                     except Exception:
                         pass
 
-    # 2. First-run nudge (only if no settings file yet)
-    if not machine_output:
-        _first_run_hint()
-
-    # 3. Run the Typer CLI (its no-argument callback opens the launcher).
+    # 2. Run the Typer CLI (its root callback owns onboarding and launcher output).
     try:
         from blackoutkit.proxy_manager import install_console_close_handler
         from blackoutkit.typer_cli import main
@@ -172,8 +149,8 @@ if __name__ == "__main__":
         except Exception:
             print("\nInterrupted. Cleaning up...")
         try:
-            from blackoutkit.proxy_manager import clear_system_proxy
-            clear_system_proxy()
+            from blackoutkit.proxy_manager import cleanup_owned_system_proxy
+            cleanup_owned_system_proxy()
         except Exception:
             pass
         sys.exit(0)

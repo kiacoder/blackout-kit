@@ -37,27 +37,40 @@
       <h2>Windows source install</h2>
       <pre>git clone https://github.com/kiacoder/blackout-kit.git
 cd blackout-kit
-pip install -r requirements.txt
-python blackout.py version
-python blackout.py bins
-python blackout.py bins download</pre>
+python -m pip install .
+blackout version</pre>
+      <p>The core install includes the Typer CLI and local checks. GUI, capture, media, and torrent dependencies remain optional.</p>
     </section>
 
     <section class="card">
       <h2>Linux source/runtime install</h2>
-      <pre>python3 -m pip install -r requirements.txt
+      <pre>python3 -m pip install .
 mkdir -p bins
 chmod +x bins/blackout-engine
-python3 blackout.py version</pre>
-      <p>Linux requires the managed runtime asset in <code>bins/blackout-engine</code> and currently supports only <code>xray</code>, <code>tun</code>, <code>hysteria2</code>, and <code>tuic</code>.</p>
+blackout version</pre>
+      <p>Linux requires the managed executable <code>bins/blackout-engine</code> and currently supports only <code>xray</code>, <code>tun</code>, <code>hysteria2</code>, and <code>tuic</code>.</p>
     </section>
 
     <section class="card">
-      <h2>After install</h2>
-      <pre>python blackout.py doctor
-python blackout.py route
-python blackout.py ready xray
-python blackout.py connect</pre>
+      <h2>Safe first run</h2>
+      <pre>blackout demo
+blackout doctor --local-only
+blackout capabilities
+blackout route
+blackout setup
+blackout ready &lt;engine&gt;
+blackout connect</pre>
+      <p><code>blackout setup</code> is the guided keyboard workflow. It is read-only in JSON or non-interactive mode. Automatic runtime downloads are staged and require matching SHA-256 release metadata; manual sources remain labeled unverified.</p>
+    </section>
+
+    <section class="card">
+      <h2>After a proxy change</h2>
+      <p>Blackout Kit records the exact local proxy target it owns and restores or clears it only when the current proxy still matches that target. If another program changes the proxy, Blackout Kit leaves it untouched.</p>
+    </section>
+
+    <section class="card">
+      <h2>Local state, not remote proof</h2>
+      <p>The capability matrix and readiness checks describe platform support, local runtimes, settings, saved configuration shape, and local ports. They do not prove that an upstream server or filtered network is reachable.</p>
     </section>
   </main>
 

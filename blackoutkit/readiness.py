@@ -8,9 +8,15 @@ import sys
 from dataclasses import asdict, dataclass
 
 from . import BINS_DIR, daemon, settings as cfg, vault
+from .capabilities import get_capability, valid_config_records
 from .config.manager import load_configs
 from .downloader import check_installed
-from .routing import PROXY_PROTOCOLS, SETTING_REQUIREMENTS, platform_engines
+from .routing import platform_engines
+
+
+def _platform_key(platform: str | None = None) -> str:
+    current = platform or sys.platform
+    return "linux" if current.startswith("linux") else current
 
 
 @dataclass(frozen=True)
@@ -21,18 +27,53 @@ class ReadyCheck:
     detail: str
 
 
-_WINDOWS_ADMIN_ENGINES = frozenset({"gdpi", "warp", "tun"})
-_LOCAL_PORTS = {
-    "sni": ("sni_listen_port", "xray_socks_port", "xray_http_port"),
-    "xray": ("xray_socks_port", "xray_http_port"),
-    "hysteria2": ("xray_socks_port",),
-    "tuic": ("xray_socks_port",),
-    "psiphon": ("psiphon_http_port", "psiphon_socks_port"),
-    "warp": (1080,),
-    "tor": (9050,),
-    "mhrv": (8085, 8086),
-    "appsscript": ("gas_proxy_port",),
-}
+def _capability(engine: str):
+    return get_capability(engine)
+
+
+def _setting_value_present(settings: dict, key: str) -> bool:
+    value = settings.get(key)
+    if not value:
+        return False
+    if key.endswith(("_config", "_config_file")):
+        try:
+            return os.path.isfile(os.fspath(value))
+        except TypeError:
+            return False
+    return True
+
+
+def _port_value(settings: dict, item: str | int) -> int:
+    if isinstance(item, int):
+        return item
+    return int(settings.get(item, cfg.DEFAULTS[item]))
+
+
+def _local_ports(engine: str, settings: dict) -> tuple[int, ...]:
+    capability = _capability(engine)
+    if capability is None:
+        return ()
+    return tuple(_port_value(settings, item) for item in capability.local_ports)
+
+
+def _setting_requirements(engine: str) -> tuple[str, ...]:
+    capability = _capability(engine)
+    return tuple(capability.required_settings) if capability else ()
+
+
+def _runtime_requirements(engine: str, platform: str, settings: dict | None = None) -> tuple[str, ...]:
+    capability = _capability(engine)
+    return capability.runtime_for(platform, settings) if capability else ()
+
+
+def _upstream_requirement(engine: str, platform: str) -> str:
+    capability = _capability(engine)
+    return capability.upstream_for(platform) if capability else "none"
+
+
+def _compatible_protocols(engine: str, platform: str) -> tuple[str, ...]:
+    capability = _capability(engine)
+    return capability.protocols_for(platform) if capability else ()
 
 
 def _check(name: str, ok: bool, detail: str, blocking: bool = True) -> ReadyCheck:
@@ -60,51 +101,93 @@ def _is_windows_admin() -> bool:
         return False
 
 
-def _selected_config(engine: str, configs):
-    expected = PROXY_PROTOCOLS.get(engine)
-    if expected is None and engine in {"xray", "tun", "sni", "legend"}:
-        expected = {"vless", "trojan", "vmess"}
+def _selected_config(expected: tuple[str, ...], configs):
     if not expected:
         return None
-    return next((item for item in configs if item.protocol in expected), None)
+    return next(
+        (item for item in valid_config_records(configs) if str(item.protocol).lower() in expected),
+        None,
+    )
 
 
-def _binary_checks(engine: str, installed: dict[str, bool]) -> list[ReadyCheck]:
-    if sys.platform.startswith("linux"):
+def _runtime_available(component: str, installed: dict[str, bool]) -> bool:
+    if component == "sni-spoofing":
+        return bool(installed.get("sni-spoofing") or installed.get("mhrv"))
+    return bool(installed.get(component))
+
+
+def _binary_checks(
+    engine: str,
+    installed: dict[str, bool],
+    platform: str,
+    settings: dict,
+) -> list[ReadyCheck]:
+    capability = _capability(engine)
+    requirements = _runtime_requirements(engine, platform, settings)
+    if capability is None or not requirements:
+        return []
+    if platform == "linux":
         runner = BINS_DIR / "blackout-engine"
+        available = runner.is_file() and os.access(runner, os.X_OK)
         return [_check(
             "Managed Linux runner",
-            runner.is_file() and os.access(runner, os.X_OK),
-            "blackout-engine is available" if runner.is_file() and os.access(runner, os.X_OK) else "Install executable bins/blackout-engine for Linux x86_64",
+            available,
+            "blackout-engine is available" if available else "Install executable bins/blackout-engine for Linux x86_64",
         )]
-
-    requirements = {
-        "sni": ("sni-spoofing",),
-        "xray": ("sni-spoofing",),
-        "gdpi": ("goodbyedpi",),
-        "psiphon": ("warp_dll",),
-        "warp": ("warp_dll",),
-        "tun": ("sing-box",),
-        "tor": ("tor",),
-        "mhrv": ("mhrv",),
-        "wireguard": ("wireguard",),
-        "openvpn": ("openvpn",),
-        "softether": ("softether",),
-        "legend": ("tor", "sni-spoofing"),
-    }.get(engine, ())
     return [
-        _check(f"Runtime: {name}", bool(installed.get(name)), f"{name} is installed" if installed.get(name) else f"{name} is missing")
+        _check(
+            f"Runtime: {name}",
+            _runtime_available(name, installed),
+            f"{name} is installed" if _runtime_available(name, installed) else f"{name} is missing",
+        )
         for name in requirements
     ]
+
+
+def _privilege_checks(engine: str, platform: str) -> list[ReadyCheck]:
+    capability = _capability(engine)
+    if capability is None:
+        return []
+    privilege = capability.privilege
+    checks: list[ReadyCheck] = []
+    if platform == "win32" and "windows_admin" in privilege:
+        admin = _is_windows_admin()
+        checks.append(_check(
+            "Administrator privileges",
+            admin,
+            "Administrator privileges are available" if admin else "This engine will require UAC elevation before it can start",
+            blocking=False,
+        ))
+    if platform == "linux" and "linux_root" in privilege:
+        root = hasattr(os, "geteuid") and os.geteuid() == 0
+        checks.append(_check("Root privileges", root, "Running with sudo" if root else "Run this engine with sudo"))
+    return checks
+
+
+def _linux_network_checks(engine: str) -> list[ReadyCheck]:
+    if _platform_key() != "linux":
+        return []
+    capability = _capability(engine)
+    if capability is None or "linux_root" not in capability.privilege:
+        return []
+    checks = []
+    if capability.local_surface == "network_tunnel":
+        checks.append(_check("ip command", shutil.which("ip") is not None, "ip is available" if shutil.which("ip") else "Install iproute2 (ip command)"))
+    if engine == "tun":
+        available = os.path.exists("/dev/net/tun")
+        checks.append(_check("TUN device", available, "/dev/net/tun is available" if available else "/dev/net/tun is unavailable"))
+    return checks
 
 
 def evaluate(engine: str, *, allow_active_daemon: bool = False) -> list[ReadyCheck]:
     """Evaluate a selected engine without starting processes or contacting networks."""
     normalized = (engine or "").lower()
     settings = cfg.load()
+    platform = _platform_key()
+    capability = _capability(normalized)
     checks: list[ReadyCheck] = []
 
-    supported = platform_engines()
+    supported = platform_engines(platform)
     checks.append(_check(
         "Platform support",
         normalized in supported,
@@ -112,6 +195,11 @@ def evaluate(engine: str, *, allow_active_daemon: bool = False) -> list[ReadyChe
     ))
     if normalized not in supported:
         return checks
+    if capability is None:
+        return checks
+
+    for blocker in capability.static_blockers:
+        checks.append(_check("Capability limitation", False, blocker))
 
     active_pid = daemon.get_pid()
     checks.append(_check(
@@ -140,22 +228,27 @@ def evaluate(engine: str, *, allow_active_daemon: bool = False) -> list[ReadyChe
     ))
 
     installed = check_installed()
-    for check in _binary_checks(normalized, installed):
+    for check in _binary_checks(normalized, installed, platform, settings):
         checks.append(ReadyCheck(check.name, check.ok or allow_active_daemon, check.blocking and not allow_active_daemon, "Internal daemon startup preserves user-facing runtime validation" if not check.ok and allow_active_daemon else check.detail))
 
-    for setting in SETTING_REQUIREMENTS.get(normalized, ()):
-        present = bool(settings.get(setting))
+    for setting in _setting_requirements(normalized):
+        present = _setting_value_present(settings, setting)
         checks.append(_check(
             f"Setting: {setting}",
             present,
             f"{setting} is configured" if present else f"Configure {setting} before connecting",
         ))
 
+    for check in _privilege_checks(normalized, platform):
+        checks.append(ReadyCheck(check.name, check.ok or allow_active_daemon, check.blocking and not allow_active_daemon, "Internal daemon startup preserves user-facing privilege validation" if not check.ok and allow_active_daemon else check.detail))
+    for check in _linux_network_checks(normalized):
+        checks.append(ReadyCheck(check.name, check.ok or allow_active_daemon, check.blocking and not allow_active_daemon, "Internal daemon startup preserves user-facing network validation" if not check.ok and allow_active_daemon else check.detail))
+
     if normalized == "ikev2" and settings.get("ikev2_tunnel_type") == "L2tp":
         checks.append(_check(
             "Setting: ikev2_psk",
-            bool(settings.get("ikev2_psk")),
-            "ikev2_psk is configured" if settings.get("ikev2_psk") else "Configure ikev2_psk for L2TP",
+            _setting_value_present(settings, "ikev2_psk"),
+            "ikev2_psk is configured" if _setting_value_present(settings, "ikev2_psk") else "Configure ikev2_psk for L2TP",
         ))
 
     try:
@@ -164,14 +257,14 @@ def evaluate(engine: str, *, allow_active_daemon: bool = False) -> list[ReadyChe
     except vault.VaultError as exc:
         configs = []
         config_error = str(exc)
-    selected = _selected_config(normalized, configs)
-    config_required = normalized in {"tun", "hysteria2", "tuic"} or (sys.platform.startswith("linux") and normalized in {"xray", "sni", "legend"})
-    if normalized in {"xray", "tun", "sni", "legend", "hysteria2", "tuic"}:
+    expected_protocols = _compatible_protocols(normalized, platform)
+    selected = _selected_config(expected_protocols, configs)
+    upstream_requirement = _upstream_requirement(normalized, platform)
+    if upstream_requirement == "saved_config":
         checks.append(_check(
             "Proxy configuration",
-            selected is not None or not config_required,
-            "A compatible saved proxy configuration is available" if selected else (config_error or "No compatible saved proxy configuration; this engine can use its local fallback on this platform"),
-            blocking=config_required,
+            selected is not None,
+            "A compatible saved proxy configuration is available" if selected else (config_error or "No compatible saved proxy configuration"),
         ))
         if selected is not None:
             error = selected.reality_validation_error()
@@ -180,16 +273,15 @@ def evaluate(engine: str, *, allow_active_daemon: bool = False) -> list[ReadyChe
                 error is None,
                 "Selected proxy configuration is structurally valid" if error is None else error,
             ))
-            if sys.platform.startswith("linux") and normalized in {"xray", "tun"}:
-                linux_compatible = selected.protocol in {"vless", "trojan"} and selected.address not in {"127.0.0.1", "0.0.0.0", "localhost", "::1"}
+            if platform == "linux" and normalized in {"xray", "tun"}:
+                linux_compatible = selected.address not in {"127.0.0.1", "0.0.0.0", "localhost", "::1"}
                 checks.append(_check(
                     "Linux upstream configuration",
                     linux_compatible,
                     "A direct VLESS or Trojan upstream is configured" if linux_compatible else "Linux XRay/TUN requires a direct VLESS or Trojan upstream",
                 ))
 
-    for item in _LOCAL_PORTS.get(normalized, ()):
-        port = settings.get(item, cfg.DEFAULTS[item]) if isinstance(item, str) else item
+    for port in _local_ports(normalized, settings):
         available = _port_free(port)
         checks.append(_check(
             f"Local port {port}",
@@ -197,28 +289,13 @@ def evaluate(engine: str, *, allow_active_daemon: bool = False) -> list[ReadyChe
             f"127.0.0.1:{port} is available" if available else f"127.0.0.1:{port} is already in use",
         ))
 
-    if sys.platform == "win32" and normalized in _WINDOWS_ADMIN_ENGINES:
-        admin = _is_windows_admin()
+    if platform == "linux" and settings.get("kill_switch"):
         checks.append(_check(
-            "Administrator privileges",
-            admin,
-            "Administrator privileges are available" if admin else "This engine will require UAC elevation before it can start",
+            "Kill-switch endpoint",
+            True,
+            "Endpoint allowlist validation is deferred to start; ready does not resolve remote hosts",
             blocking=False,
         ))
-
-    if sys.platform.startswith("linux"):
-        if normalized == "tun":
-            root = hasattr(os, "geteuid") and os.geteuid() == 0
-            checks.append(_check("Root privileges", root, "Running with sudo" if root else "Run Linux TUN with sudo"))
-            checks.append(_check("ip command", shutil.which("ip") is not None, "ip is available" if shutil.which("ip") else "Install iproute2 (ip command)"))
-            checks.append(_check("TUN device", os.path.exists("/dev/net/tun"), "/dev/net/tun is available" if os.path.exists("/dev/net/tun") else "/dev/net/tun is unavailable"))
-        if settings.get("kill_switch"):
-            checks.append(_check(
-                "Kill-switch endpoint",
-                True,
-                "Endpoint allowlist validation is deferred to start; ready does not resolve remote hosts",
-                blocking=False,
-            ))
 
     return checks
 

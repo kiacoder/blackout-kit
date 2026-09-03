@@ -285,6 +285,7 @@ class XRayEngine(Engine):
             stream["tlsSettings"] = {
                 "serverName": c.sni,
                 "fingerprint": c.fp or s["xray_fingerprint"],
+                "allowInsecure": allow_insecure,
             }
 
         if c.protocol == "trojan":
@@ -306,8 +307,23 @@ class XRayEngine(Engine):
                 "streamSettings": stream,
                 "mux": {"enabled": s["xray_mux_enabled"]},
             }
-        self._log.warning("Protocol '%s' is unsupported, falling back to trojan", c.protocol)
-        return self._default_outbound()
+        if c.protocol == "vmess":
+            return {
+                "tag": "proxy",
+                "protocol": "vmess",
+                "settings": {
+                    "vnext": [{
+                        "address": target_ip,
+                        "port": c.port,
+                        "users": [{"id": c.uuid, "alterId": 0, "security": "auto"}],
+                    }],
+                },
+                "streamSettings": stream,
+                "mux": {"enabled": s["xray_mux_enabled"]},
+            }
+        self._log.warning("Protocol '%s' is unsupported; refusing to build an outbound", c.protocol)
+        raise ValueError(f"Unsupported XRay protocol: {c.protocol}")
+
 
     def _is_reality_config(self) -> bool:
         return bool(self.proxy_config and self.proxy_config.is_reality())
