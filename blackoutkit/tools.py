@@ -1933,10 +1933,16 @@ def monitor_process_network() -> list[dict]:
 
 # ─────────────────────────── Public Wi-Fi Honeypot ───────────────────
 
-def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0, callback=None) -> list[dict]:
+def run_honeypot_listener(
+    ports: list[int] | None = None,
+    duration: float = 60.0,
+    callback=None,
+    bind_host: str = "127.0.0.1",
+) -> list[dict]:
     """
     🐝 Public Wi-Fi Honeypot & Port Scan Detector:
-    Binds decoy TCP sockets to specified ports (e.g. 80, 22, 445, 3389).
+    Binds decoy TCP sockets to specified ports (e.g. 80, 22, 445, 3389)
+    on a dedicated interface/address.
     When an external IP attempts to connect, logs the probe event and invokes optional callback.
     """
     if ports is None:
@@ -1950,7 +1956,7 @@ def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             sock.settimeout(1.0)
-            sock.bind(("0.0.0.0", port))
+            sock.bind((bind_host, port))
             sock.listen(5)
             active_sockets.append((port, sock))
         except Exception as exc:
