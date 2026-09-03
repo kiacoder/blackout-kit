@@ -2880,23 +2880,13 @@ def cmd_panic(args):
     for res in results:
         status_str = "[success]✓ OK[/success]" if res["ok"] else "[error]✗ Failed[/error]"
         table.add_row(res["step"], status_str, res["detail"])
-    # 2. Restore only a Blackout-owned system proxy
-    console.print("[dim]→ Restoring Blackout-managed system proxy...[/dim]")
-    cleanup_owned_system_proxy()
-    
-    # 3. Disable Kill Switch
-    console.print("[dim]→ Disabling kill switch firewall rules...[/dim]")
-    from . import security as sec
-    sec.disable_kill_switch()
-    cfg.set_value("kill_switch", False)
-    
-    # 4. Flush DNS
-    console.print("[dim]→ Flushing DNS cache...[/dim]")
-    from .tools import flush_dns
-    flush_dns()
-    
+
     console.print(table)
-    console.print("\n[bold green]✓ EMERGENCY PANIC ACTION COMPLETE. SYSTEM SECURED.[/bold green]")
+    complete = all(bool(res.get("ok")) for res in results)
+    if complete:
+        console.print("\n[bold green]✓ EMERGENCY PANIC ACTION COMPLETE. SYSTEM SECURED.[/bold green]")
+    else:
+        console.print("\n[bold yellow]⚠ PANIC ACTION COMPLETED WITH FAILURES. REVIEW THE RESULTS ABOVE.[/bold yellow]")
 
 
 def cmd_shield(args):
