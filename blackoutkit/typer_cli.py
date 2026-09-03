@@ -2536,6 +2536,7 @@ def tools_capture(
     count: int = typer.Option(0, "--count", "-c", help="Stop after N packets (0 = unbounded, Ctrl+C to stop)"),
     filter: str = typer.Option(None, "--filter", "-f", help="Raw BPF filter expression (e.g. 'tcp port 443')"),
     host: str = typer.Option(None, "--host", help="Shorthand filter for traffic to/from this host"),
+    pcap: str = typer.Option(None, "--pcap", "-p", help="Export packet trace to standard .pcap binary file for Wireshark"),
     ctx: typer.Context = None,
 ):
     """Capture packets locally; install `blackout-kit[capture]` and Npcap/libpcap first."""
@@ -2551,6 +2552,7 @@ def tools_capture(
         count=int(_option_value(count, 0)),
         filter=_option_value(filter),
         host=_option_value(host),
+        pcap=_option_value(pcap),
     ))
 
 @tools_app.command("scan-file")
@@ -3309,3 +3311,435 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+@tools_app.command("audit")
+def tools_audit():
+    """🛡️ Run a security hardening audit (scans open ports, DNS, cleartext services, killswitch)."""
+    from .tools import run_network_audit
+
+    console.print("[bold cyan]🛡️ Running Network Hardening Audit...[/bold cyan]\n")
+    report = run_network_audit()
+
+    score = report["score"]
+    grade = report["grade"]
+    score_color = "green" if score >= 80 else "yellow" if score >= 60 else "red"
+
+    console.print(f"Overall Security Posture Score: [{score_color}][bold]{score}/100 ({grade})[/bold][/{score_color}]\n")
+
+    table = make_table(
+        "Security Audit Findings",
+        [("Category", "cyan"), ("Status", ""), ("Summary", "bold white"), ("Recommendation", "dim")],
+        [],
+    )
+
+    for f in report["findings"]:
+        status = "[success]✓ PASS[/success]" if f["ok"] else f"[error]⚠ {f['severity']}[/error]"
+        table.add_row(f["category"], status, f["summary"], f["recommendation"])
+
+    console.print(table)
+
+
+@tools_app.command("process-monitor")
+def tools_process_monitor():
+    """👁️ Live Process Network Monitor (attributes active sockets to local processes)."""
+    from .tools import monitor_process_network
+
+    console.print("[bold cyan]👁️ Process Network Connection Summary...[/bold cyan]\n")
+    procs = monitor_process_network()
+
+    table = make_table(
+        "Process Network Summary",
+        [("PID", "dim"), ("Process Name", "bold white"), ("Total Sockets", "cyan"), ("Established", "green"), ("Protocols", "yellow"), ("Sample Remote Endpoint", "dim")],
+        [],
+    )
+
+    for p in procs[:30]:  # Top 30 process talkers
+        table.add_row(
+            str(p["pid"]),
+            p["process"],
+            str(p["socket_count"]),
+            str(p["established_count"]),
+            p["protocols"],
+            p["remote_sample"]
+        )
+
+    console.print(table)
+
+
+@tools_app.command("honeypot")
+def tools_honeypot(
+    duration: int = typer.Option(60, "--duration", "-d", help="Duration in seconds to run honeypot listener"),
+    ports: str = typer.Option("22,80,445,3389,8080", "--ports", "-p", help="Comma-separated decoy ports"),
+):
+    """🐝 Public Wi-Fi Honeypot & Scan Detector (alerts when local network IPs probe decoy ports)."""
+    from .tools import run_honeypot_listener
+
+    port_list = [int(p.strip()) for p in ports.split(",") if p.strip().isdigit()]
+    console.print(f"[bold cyan]🐝 Public Wi-Fi Honeypot Active[/bold cyan] (listening on ports {port_list} for {duration}s)...\n")
+
+    def _alert(probe):
+        console.print(f"[bold red]⚠️ ALERT: Port probe detected from {probe['remote_ip']}:{probe['remote_port']} -> Decoy Port {probe['target_port']}![/bold red]")
+
+    probes = run_honeypot_listener(ports=port_list, duration=float(duration), callback=_alert)
+
+    if probes:
+        console.print(f"\n[bold red]Detected {len(probes)} suspicious scan attempts during honeypot session.[/bold red]")
+    else:
+        console.print("[success]✓ Honeypot session finished. No suspicious network scans detected on local LAN.[/success]")
+
+
+@tools_app.command("dns-proxy")
+def tools_dns_proxy(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Local IP to bind DNS proxy listener"),
+    port: int = typer.Option(5300, "--port", "-p", help="Local UDP port to bind DNS proxy listener"),
+    upstream: str = typer.Option("https://1.1.1.1/dns-query", "--upstream", "-u", help="Upstream DoH endpoint URL"),
+):
+    """🌐 Secure DoH DNS Proxy Engine (local UDP listener that forwards queries over encrypted DNS-over-HTTPS)."""
+    from .tools import run_doh_proxy_server
+
+    console.print(f"[bold cyan]🌐 Secure DoH DNS Proxy Engine Active[/bold cyan]")
+    console.print(f"[muted]Listening on UDP {host}:{port} -> Forwarding over encrypted DoH to {upstream}[/muted]")
+    console.print("[dim]Press Ctrl+C to stop local DNS proxy...[/dim]\n")
+
+    try:
+        run_doh_proxy_server(host=host, port=port, upstream_doh=upstream)
+    except KeyboardInterrupt:
+        console.print("\n[muted]DoH DNS Proxy server stopped.[/muted]")
+
+
+@tools_app.command("explain")
+def tools_explain():
+    """🤖 AI Network Explainer (reads live network state and summarizes anomalies)."""
+    from .tools import explain_network_state
+
+    console.print("[bold cyan]🤖 AI Network State Analysis...[/bold cyan]\n")
+    report = explain_network_state()
+
+    console.print(f"Overall Security Score: [bold green]{report['security_score']}/100 ({report['grade']})[/bold green]")
+    console.print(f"Active Process Connections: {report['active_processes_count']}")
+    console.print(f"Anomalies Detected: [bold red]{report['total_anomalies_detected']}[/bold red]\n")
+
+    if report["anomalies"]:
+        console.print("[bold yellow]Detected Anomalies / Warnings:[/bold yellow]")
+        for a in report["anomalies"]:
+            console.print(f"  • {a}")
+    else:
+        console.print("[bold green]✓ No suspicious network anomalies detected.[/bold green]")
+
+
+# ── SSH GROUP ──
+ssh_app = typer.Typer(help="SSH Vault & Manager (manage and connect to SSH servers)", no_args_is_help=False)
+app.add_typer(ssh_app, name="ssh")
+
+@ssh_app.command("add")
+def ssh_add(
+    name: str = typer.Argument(..., help="Profile alias name (e.g. prod-server)"),
+    host: str = typer.Option(..., "--host", "-h", help="Hostname or IP address"),
+    user: str = typer.Option("root", "--user", "-u", help="SSH username (default: root)"),
+    port: int = typer.Option(22, "--port", "-p", help="SSH port (default: 22)"),
+    key: str = typer.Option("", "--key", "-k", help="Optional private key file path"),
+):
+    """Add or update an SSH connection profile in the vault."""
+    from .tools import save_ssh_profile
+    if save_ssh_profile(name, host, user, port, key):
+        console.print(f"[success]✓ SSH profile '{name}' saved to vault![/success]")
+    else:
+        console.print(f"[error]Failed to save SSH profile '{name}'[/error]")
+
+@ssh_app.command("list")
+def ssh_list():
+    """List all saved SSH profiles."""
+    from .tools import list_ssh_profiles
+    profiles = list_ssh_profiles()
+    if not profiles:
+        console.print("[muted]No SSH profiles saved in vault. Use `blackout ssh add` to add one.[/muted]")
+        return
+    table = make_table(
+        "Saved SSH Vault Profiles",
+        [("Name", "bold cyan"), ("User@Host", "bold white"), ("Port", "yellow"), ("Key Path", "dim")],
+        [],
+    )
+    for p in profiles:
+        table.add_row(p["name"], f"{p['user']}@{p['host']}", str(p["port"]), p.get("key_path") or "default")
+    console.print(table)
+
+@ssh_app.command("connect")
+def ssh_connect(
+    name: str = typer.Argument(..., help="SSH profile name to connect to"),
+):
+    """Connect to a saved SSH profile using system ssh client."""
+    import subprocess
+    from .tools import list_ssh_profiles
+    profiles = {p["name"]: p for p in list_ssh_profiles()}
+    if name not in profiles:
+        console.print(f"[error]SSH profile '{name}' not found in vault.[/error]")
+        return
+    p = profiles[name]
+    cmd = ["ssh", f"{p['user']}@{p['host']}", "-p", str(p["port"])]
+    if p.get("key_path"):
+        cmd.extend(["-i", p["key_path"]])
+    console.print(f"[info]Connecting to {p['name']} ({p['user']}@{p['host']}:{p['port']})...[/info]")
+    try:
+        subprocess.run(cmd)
+    except Exception as exc:
+        console.print(f"[error]Failed to launch SSH client: {exc}[/error]")
+
+@ssh_app.command("remove")
+def ssh_remove(
+    name: str = typer.Argument(..., help="SSH profile name to remove"),
+):
+    """Remove a saved SSH profile from vault."""
+    from .tools import remove_ssh_profile
+    if remove_ssh_profile(name):
+        console.print(f"[success]✓ Removed SSH profile '{name}' from vault.[/success]")
+    else:
+        console.print(f"[error]SSH profile '{name}' not found in vault.[/error]")
+
+
+# ── REST API / DASHBOARD GROUP ──
+api_app = typer.Typer(help="Local REST API & Web Dashboard", no_args_is_help=False)
+app.add_typer(api_app, name="api")
+
+@api_app.command("start")
+def api_start(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host IP to bind web server"),
+    port: int = typer.Option(8080, "--port", "-p", help="Port to bind web server"),
+):
+    """Start local REST API and browser-based Web Dashboard."""
+    from .tools import run_web_api_dashboard
+    console.print(f"[bold cyan]🌐 Starting Blackout Kit Web Dashboard & REST API...[/bold cyan]")
+    console.print(f"[success]✓ Open dashboard in your browser:[/success] [bold white]http://{host}:{port}/[/bold white]")
+    console.print("[dim]Press Ctrl+C to stop the REST API server...[/dim]\n")
+    run_web_api_dashboard(host=host, port=port)
+
+
+# ── AUTOMATION GROUP ──
+automation_app = typer.Typer(help="Scriptable Event Automation (rules for network events)", no_args_is_help=False)
+app.add_typer(automation_app, name="automation")
+
+@automation_app.command("add")
+def auto_add(
+    name: str = typer.Argument(..., help="Automation rule name"),
+    event: str = typer.Option(..., "--event", "-e", help="Event trigger name (e.g. on_network_disconnect, on_dns_tamper)"),
+    action: str = typer.Option(..., "--action", "-a", help="Action to run: panic | flush_dns | flush_arp | audit | recovery"),
+):
+    """Add a scriptable event automation rule."""
+    from .tools import save_automation_rule
+    if save_automation_rule(name, event, action):
+        console.print(f"[success]✓ Automation rule '{name}' saved![/success]")
+    else:
+        console.print(f"[error]Failed to save automation rule '{name}'[/error]")
+
+@automation_app.command("list")
+def auto_list():
+    """List configured event automation rules."""
+    from .tools import list_automation_rules
+    rules = list_automation_rules()
+    if not rules:
+        console.print("[muted]No automation rules saved. Use `blackout automation add` to create one.[/muted]")
+        return
+    table = make_table(
+        "Event Automation Rules",
+        [("Rule Name", "bold cyan"), ("Event Trigger", "bold white"), ("Action", "yellow"), ("Status", "green")],
+        [],
+    )
+    for r in rules:
+        status = "Active" if r.get("enabled", True) else "Disabled"
+        table.add_row(r["name"], r["event"], r["action"], status)
+    console.print(table)
+
+@automation_app.command("trigger")
+def auto_trigger(
+    event: str = typer.Argument(..., help="Event name to trigger (e.g. on_network_disconnect)"),
+):
+    """Manually trigger an event to run matching automation actions."""
+    from .tools import trigger_automation_event
+    results = trigger_automation_event(event)
+    if not results:
+        console.print(f"[muted]No active automation rules matched event '{event}'.[/muted]")
+        return
+    for res in results:
+        status_str = "[success]✓ OK[/success]" if res["ok"] else "[error]✗ Failed[/error]"
+        console.print(f"Rule [bold]{res['rule']}[/bold]: {status_str} -> {res['detail']}")
+
+@automation_app.command("remove")
+def auto_remove(
+    name: str = typer.Argument(..., help="Automation rule name to remove"),
+):
+    """Remove an automation rule."""
+    from .tools import remove_automation_rule
+    if remove_automation_rule(name):
+        console.print(f"[success]✓ Removed automation rule '{name}'.[/success]")
+    else:
+        console.print(f"[error]Automation rule '{name}' not found.[/error]")
+
+
+@tools_app.command("scan-yara")
+def tools_scan_yara(
+    path: str = typer.Argument(..., help="Path to local file to scan with YARA rules engine"),
+):
+    """🔒 YARA Rules Engine (scan file against malware & webshell byte signatures)."""
+    from .tools import scan_file_yara
+    res = scan_file_yara(path)
+    if not res["ok"]:
+        console.print(f"[error]YARA scan error: {res.get('error')}[/error]")
+        return
+    if res["clean"]:
+        console.print(f"[success]✓ YARA Scan Clean: No signature threats found in {path}[/success]")
+    else:
+        console.print(f"[bold red]⚠️ YARA THREAT MATCHES DETECTED in {path}:[/bold red]")
+        for m in res["matches"]:
+            console.print(f"  • Matched Rule: [bold]{m['rule']}[/bold]")
+
+
+@tools_app.command("simulate")
+def tools_simulate(
+    host: str = typer.Argument("8.8.8.8", help="Target host to probe"),
+    latency: float = typer.Option(100.0, "--latency", "-l", help="Added latency in ms"),
+    loss: float = typer.Option(10.0, "--loss", help="Simulated packet loss percentage (0-100)"),
+):
+    """⚡ Network Simulation (simulate high latency and packet loss for DevOps/QA testing)."""
+    from .tools import simulate_network_conditions
+    res = simulate_network_conditions(host=host, added_latency_ms=latency, simulated_loss_pct=loss)
+    st = res["stats"]
+    console.print(f"[bold cyan]⚡ Network Simulation to {host}[/bold cyan] (+{latency}ms latency, {loss}% loss):\n")
+    console.print(f"Avg Latency: {st['avg']:.1f}ms | Loss Rate: {st['loss_pct']:.1f}%")
+
+
+@tools_app.command("phishing-check")
+def tools_phishing_check(
+    domain: str = typer.Argument(..., help="Domain name to check for phishing / typosquatting risks"),
+):
+    """🛡️ Phishing Domain Check (scans domain for typosquatting & phishing heuristics)."""
+    from .tools import check_phishing_domain
+    res = check_phishing_domain(domain)
+    if res["safe"]:
+        console.print(f"[success]✓ Domain '{domain}' ({res['ip']}) appears clean from common phishing keywords.[/success]")
+    else:
+        console.print(f"[bold red]⚠️ PHISHING / TYPOSQUATTING RISK DETECTED for '{domain}':[/bold red]")
+        for r in res["reasons"]:
+            console.print(f"  • {r}")
+
+
+@tools_app.command("traffic-graph")
+def tools_traffic_graph(
+    samples: int = typer.Option(5, "--samples", "-s", help="Number of samples to record"),
+    interval: float = typer.Option(1.0, "--interval", "-i", help="Interval between samples in seconds"),
+):
+    """📊 Live Visual Traffic Graph (displays real-time bandwidth bars)."""
+    from .tools import get_interface_io_counters, compute_bandwidth_rates, generate_ascii_bandwidth_chart
+    console.print(f"[bold cyan]📊 Live Traffic Visual Bar Graph ({samples} samples)...[/bold cyan]\n")
+
+    prev = get_interface_io_counters()
+    for _ in range(samples):
+        time.sleep(interval)
+        curr = get_interface_io_counters()
+        rates = compute_bandwidth_rates(prev, curr, interval)
+        prev = curr
+
+        tot_rx = sum(r["rx_bps"] for r in rates.values())
+        tot_tx = sum(r["tx_bps"] for r in rates.values())
+
+        chart = generate_ascii_bandwidth_chart(tot_rx, tot_tx)
+        console.print(chart + "\n")
+
+
+@tools_app.command("arp-guard")
+def tools_arp_guard():
+    """🌐 Subnet ARP Guard (detects duplicate MAC addresses indicating ARP poisoning / MITM)."""
+    from .tools import detect_arp_spoofing
+    res = detect_arp_spoofing()
+    if res["ok"]:
+        console.print(f"[success]✓ ARP Guard Clean: Checked {res['total_hosts']} hosts on local ARP table. No ARP spoofing detected.[/success]")
+    else:
+        console.print(f"[bold red]⚠️ SUSPECTED ARP POISONING / MITM ATTACK DETECTED:[/bold red]")
+        for s in res["spoof_suspects"]:
+            console.print(f"  • MAC [bold]{s['mac']}[/bold] is shared by multiple IPs: {', '.join(s['ips'])}")
+
+
+# ── VAULT MANAGEMENT GROUP ──
+vault_app = typer.Typer(help="Encrypted Vault Backup & Key Utility", no_args_is_help=False)
+app.add_typer(vault_app, name="vault")
+
+@vault_app.command("backup")
+def vault_backup(
+    output: str = typer.Option("blackout_vault_backup.json", "--output", "-o", help="Backup output path"),
+):
+    """Create an encrypted backup of the saved configs & settings vault."""
+    from . import settings as cfg
+    from .config.manager import load_configs, serialize_setup
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = Path(output).expanduser().resolve()
+    try:
+        setup_data = serialize_setup()
+        out_path.write_text(json.dumps(setup_data, indent=2), encoding="utf-8")
+        console.print(f"[success]✓ Vault backup written to: {out_path}[/success]")
+    except Exception as exc:
+        console.print(f"[error]Failed to write vault backup: {exc}[/error]")
+
+@vault_app.command("restore")
+def vault_restore(
+    path: str = typer.Argument(..., help="Path to backup file to restore"),
+):
+    """Restore vault configs & settings from a backup file."""
+    from .typer_cli import _decode_setup, _apply_setup
+    p = Path(path).expanduser().resolve()
+    if not p.exists():
+        console.print(f"[error]Backup file not found: {p}[/error]")
+        return
+    try:
+        content = p.read_text(encoding="utf-8")
+        setup_data = json.loads(content)
+        from .typer_cli import _validate_setup_data
+        configs, settings_data = _validate_setup_data(setup_data)
+        _apply_setup(configs, settings_data)
+        console.print(f"[success]✓ Vault restored successfully from {p} ({len(configs)} configs)![/success]")
+    except Exception as exc:
+        console.print(f"[error]Failed to restore vault backup: {exc}[/error]")
+
+
+@config_app.command("benchmark")
+def cfg_benchmark():
+    """📜 Interactive Proxy Config Benchmark (test all saved proxy records concurrently)."""
+    from .config.manager import load_configs
+    from .scanner.proxy_tester import test_tcp_port
+    configs = load_configs()
+    if not configs:
+        console.print("[muted]No saved configs to benchmark.[/muted]")
+        return
+    console.print(f"[bold cyan]📜 Benchmarking {len(configs)} saved proxy configs...[/bold cyan]\n")
+    table = make_table(
+        "Config Benchmark Results",
+        [("#", "dim"), ("Protocol", "cyan"), ("Transport", "yellow"), ("Server Endpoint", "bold white"), ("Latency", "green")],
+        [],
+    )
+    for idx, cfg in enumerate(configs, 1):
+        parsed = cfg.parsed_dict if hasattr(cfg, "parsed_dict") else {}
+        server = parsed.get("add") or parsed.get("host") or "unknown"
+        port = int(parsed.get("port") or 443)
+        lat = test_tcp_port(server, port)
+        lat_str = f"{int(lat)} ms" if lat is not None else "[red]Timeout[/red]"
+        table.add_row(str(idx), cfg.protocol, cfg.transport_label(), f"{server}:{port}", lat_str)
+    console.print(table)
+
+
+@ssh_app.command("sftp")
+def ssh_sftp(
+    name: str = typer.Argument(..., help="SSH profile name"),
+    action: str = typer.Option("ls", "--action", "-a", help="ls | get | put"),
+    remote: str = typer.Option(".", "--remote", "-r", help="Remote path"),
+    local: str = typer.Option("", "--local", "-l", help="Local path for get/put"),
+):
+    """📂 SFTP Remote File Manager (browse, upload, or download remote files)."""
+    import subprocess
+    from .tools import run_sftp_client
+    res = run_sftp_client(name, action=action, remote_path=remote, local_path=local)
+    if not res["ok"]:
+        console.print(f"[error]{res['error']}[/error]")
+        return
+    console.print(f"[info]Connecting to SFTP for {res['user_host']}...[/info]")
+    try:
+        subprocess.run(res["command_args"])
+    except Exception as exc:
+        console.print(f"[error]Failed to launch SFTP client: {exc}[/error]")

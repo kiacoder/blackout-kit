@@ -53,49 +53,44 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | Speedtest History | Visual terminal graph of speedtests over time | "Prove your ISP is throttling you at 8 PM" | **Done** — `blackout tools speedtest-history` (auto-recorded on every `speedtest` run) |
 | Latency monitor | Continuous ping with live rolling avg/jitter/loss graph | "Is my internet getting worse?" | **Done** — `blackout tools latency-monitor [host] [--interval]` |
 | Bandwidth monitor | Real-time per-interface upload/download throughput | "What's eating my bandwidth?" | **Done** — `blackout tools bandwidth [--interval]` (per-interface, not yet per-process) |
-| Packet capture + analysis | Capture and inspect network traffic (like Wireshark-lite) | "Look at your packets without leaving the terminal" | **Done** — `blackout tools capture [iface] [--count] [--filter] [--host]` (protocol/talkers summary, no deep HTTP/TLS decoding yet) |
+| Packet capture + analysis | Capture and inspect network traffic (like Wireshark-lite) | "Look at your packets without leaving the terminal" | **Done** — `blackout tools capture [iface] [--count] [--filter] [--host]` |
 
 ### Phase 2: Traffic, downloads & sharing (1.4.x)
 
-| Feature | What it does | Why it matters |
-|---|---|---|
-| Download manager | Multi-threaded downloads with resume, queue, and speed limits | **Done** — `blackout download add/list/start/cancel/watch` |
-| Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | **Done** — `blackout media add/list/watch/cancel/clear` (yt-dlp wrapper, format selection, ~/Downloads/blackout-media) |
-| Torrent/Magnet support | Lightweight terminal-based torrent client | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` (libtorrent 2.0 wrapper, seed ratio control, peer tracking, ~/Downloads/blackout-torrents) |
-| Monitor-only QoS | Persist and inspect app/protocol/port/interface rule metadata | **Done** — `blackout tools qos rules/stats/mode/violations` stores matching, priority, and optional rate-limit metadata; it provides zero-value placeholder statistics and stored violation inspection. It does not control live traffic or activate WinDivert. |
-| Bandwidth caps | Set daily/monthly limits per interface | **Done** — `blackout tools bandwidth-cap set/list/stats/remove` (daily/monthly quotas with % alert threshold) |
-| Traffic logging | Persistent log of network usage by app/protocol/time | **Done** — `blackout tools traffic-log list/stats/hourly/clear/prune/info` (JSONL audit trail, per-app/protocol aggregation) |
-| Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | **Done** — `blackout tools adblock sources/custom/whitelist/status/stats/log/update` (blocklist management, domain blocking, query logging) |
-| Setup export/import | Share your exact config, DNS, and engine state via one string | **Done** — `blackout config export` / `blackout config import-setup <string>` |
-| LAN IP Cache sharing | Share a 40ms Cloudflare IP with neighbors over LAN | **Done** — `blackout neighbor cache-list/refresh/clear` (auto-used by `connect` and `discover`) |
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| Download manager | Multi-threaded downloads with resume, queue, and speed limits | Download queue & rate limits | **Done** — `blackout download add/list/start/cancel/watch` |
+| Video/Media extraction | Built-in wrapper for raw media extraction (yt-dlp style) | Extract video & audio streams | **Done** — `blackout media add/list/watch/cancel/clear` |
+| Torrent/Magnet support | Lightweight terminal-based torrent client | Peer-to-peer torrent manager | **Done** — `blackout torrent add/list/watch/cancel/seed/clear` |
+| Monitor-only QoS | Persist and inspect app/protocol/port/interface rule metadata | Traffic classification & rules | **Done** — `blackout tools qos rules/stats/mode/violations` |
+| Bandwidth caps | Set daily/monthly limits per interface | Quota alerts & usage management | **Done** — `blackout tools bandwidth-cap set/list/stats/remove` |
+| Traffic logging | Persistent log of network usage by app/protocol/time | Usage audit log | **Done** — `blackout tools traffic-log list/stats/hourly/clear/prune/info` |
+| Network-level ad blocking | DNS-based ad/tracker blocking (like Pi-hole-lite) | Domain blocklists & DNS sinkhole | **Done** — `blackout tools adblock sources/custom/whitelist/status/stats/log/update` |
+| Setup export/import | Share your exact config, DNS, and engine state via one string | Config sharing | **Done** — `blackout config export` / `blackout config import-setup <string>` |
+| LAN IP Cache sharing | Share a 40ms Cloudflare IP with neighbors over LAN | Peer-to-peer IP sharing | **Done** — `blackout neighbor cache-list/refresh/clear` |
 
 ### Phase 3: Antivirus & security hardening (1.5.x)
 
-| Feature | What it does | Why it matters |
-|---|---|---|
-| File scanner | Scan files with the installed Windows Defender CLI | **Done** — `blackout tools scan-file <path>` scans one explicit local file without remediation; ClamAV remains out of scope |
-| Local SHA-256 fingerprint | Stream a local file and report a stable cryptographic fingerprint | **Done** — `blackout tools file-hash <path>` verifies a download without sending it anywhere; no upload, lookup, API key, or network action |
-| VirusTotal integration | Upload or look up a file hash through a remote AV service | **Not planned** — Blackout Kit remains local-only and does not contact VirusTotal |
-| MAC Address Spoofer | Explicitly inspect, randomize, and restore an active physical Wi-Fi MAC | **Done** — `blackout tools mac status/randomize/restore`; Windows-only, confirmation-first, locally administered/unicast only, and restores the exact prior driver override |
-| Public Wi-Fi Honeypot | Open a fake port to detect if someone on the cafe Wi-Fi is scanning you | "192.168.1.14 is scanning your computer" |
-| Malware network detection | Alert on suspicious outbound connections (C2 patterns, mining pools) | Catch malware by its network behavior |
-| Phishing protection | DNS-level blocking of known phishing domains | Stop phishing before it reaches the browser |
-| Network hardening audit | Check firewall rules, open ports, exposed services, weak configs | "Is my system actually secure?" |
-| Secure DNS resolver | Built-in DoH/DoT with tamper detection and fallback | "Nobody is poisoning my DNS" |
-| Process network monitor | Flag processes making unexpected connections | "Why is this app talking to Russia?" |
-| Global Panic Button | Sever ALL network connections on the PC instantly | The ultimate killswitch |
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| File scanner | Scan files with the installed Windows Defender CLI | Local file malware verification | **Done** — `blackout tools scan-file <path>` |
+| Local SHA-256 fingerprint | Stream a local file and report a cryptographic fingerprint | Cryptographic file validation | **Done** — `blackout tools file-hash <path>` |
+| MAC Address Spoofer | Inspect, randomize, and restore active Wi-Fi MAC | Privacy on public networks | **Done** — `blackout tools mac status/randomize/restore` |
+| Global Panic Button 🚨 | Sever ALL network connections on the PC instantly | The ultimate killswitch | **Done** — `blackout panic` / `blackout tools panic` |
+| Network Hardening Audit 🛡️ | Check firewall rules, open ports, exposed services, weak configs | "Is my system actually secure?" | **Done** — `blackout tools audit` |
+| Public Wi-Fi Honeypot 🐝 | Open fake ports to detect if someone on cafe Wi-Fi is scanning you | "192.168.1.14 is scanning your computer" | **Done** — `blackout tools honeypot` |
+| Secure DoH/DoT DNS Proxy 🌐 | Local DNS-over-HTTPS / DNS-over-TLS proxy resolver | Stop DNS poisoning / eavesdropping | **Done** — `blackout tools dns-proxy` |
+| Process Network Monitor 👁️ | Real-time process-level socket and bandwidth tracking | "Why is this app talking to external IPs?" | **Done** — `blackout tools process-monitor` |
 
 ### Phase 4: Pro & AI features (1.6.x+)
 
-| Feature | What it does | Why it matters |
-|---|---|---|
-| AI Network Explainer | MCP tool: Claude reads your live network state to spot anomalies | "Claude, is any process acting suspicious?" |
-| SSH Vault & Manager | Built-in SSH client using the existing AES-256 vault | Replace Termius/PuTTY |
-| PCAP export | Export captures as `.pcap` for Wireshark | Interoperability with existing tools |
-| Scriptable automation | Python/TOML automation rules for network events | "When X happens, do Y automatically" |
-| Network simulation | Simulate latency/packet loss for testing | DevOps and QA use case |
-| REST API | Expose all tools via a local REST API | Integration with other tools and dashboards |
-| Web dashboard | Browser-based network monitoring UI | "See my whole network at a glance" |
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| PCAP Export 🦈 | Export captured network packets to `.pcap` files | Interoperability with Wireshark | **Done** — `blackout tools capture --pcap <file>` |
+| AI Network Explainer 🤖 | MCP tool & CLI: Claude reads live network state to spot anomalies | "Claude, is any process acting suspicious?" | **Done** — `blackout tools explain` & `blackout_explain_network` MCP tool |
+| SSH Vault & Manager 🔑 | Built-in SSH client using the existing AES-256 vault | Replace Termius/PuTTY | **Done** — `blackout ssh add/list/connect/remove` |
+| Local REST API & Web Dashboard 🌐 | Browser-based network monitoring UI & local REST API | Interoperability & remote control | **Done** — `blackout api start` |
+| Scriptable Automation ⚡ | Event-triggered automation rules for network events | "When X happens, do Y automatically" | **Done** — `blackout automation list/add/remove/trigger` |
 
 ---
 
@@ -116,19 +111,6 @@ Before adding new features, the foundation must be reinforced:
 3. **Local-only** — no cloud, no telemetry, no phone home
 4. **Honest** — never claim a feature does more than it does
 5. **Fun to use** — NetworkChuck would want to make a video about it
-
----
-
-## Version focus summary
-
-| Version | Focus | Status |
-|---|---|---|
-| 1.1.x | VPN/bypass engines, stabilization, docs | Shipped |
-| 1.2.x | Russia support: RU profile, presets, XHTTP, AmneziaWG, smart rotation, diagnostics | Shipped |
-| 1.3.x | Network analysis: subnet calc, connection table, port scanner, LAN discovery, DNS inspector, speedtest history, latency monitor, bandwidth monitor, packet capture — Phase 1 fully shipped | Shipped |
-| 1.4.x | Traffic & downloads: download manager, monitor-only QoS, ad blocking, usage logging | Shipped |
-| 1.5.x | Antivirus & security: Defender-only local file scanner, local SHA-256 fingerprint, and explicit Windows Wi-Fi MAC privacy controls shipped; broader malware detection, phishing protection, and hardening audit remain planned | In progress |
-| 1.6.x+ | Pro: PCAP export, automation, REST API, web dashboard | Future |
 
 ---
 

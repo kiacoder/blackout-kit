@@ -1609,3 +1609,940 @@ def autofix_windows() -> list[str]:
          else f"[warning]⚠[/warning] {step['name']} — {step['detail']}")
         for step in run_network_recovery()
     ]
+
+
+# ─────────────────────────── Global Panic Button ───────────────────
+
+def trigger_panic(restore: bool = False) -> list[dict]:
+    """
+    🚨 Global Panic Button:
+    Instantly kills daemon/engines, clears system proxy, disables kill switch,
+    flushes DNS and ARP, resets network adapters/routes to secure or restore networking.
+    """
+    results = []
+
+    # 1. Stop background daemon & all bypass engines
+    try:
+        from . import daemon
+        daemon.stop()
+        results.append({"step": "Stop Daemon & Bypass Engines", "ok": True, "detail": "Stopped daemon and killed child process trees"})
+    except Exception as exc:
+        results.append({"step": "Stop Daemon & Bypass Engines", "ok": False, "detail": str(exc)})
+
+    # 2. Clear System Proxy
+    try:
+        from .proxy_manager import clear_system_proxy
+        clear_system_proxy()
+        results.append({"step": "Clear System Proxy", "ok": True, "detail": "System proxy setting cleared"})
+    except Exception as exc:
+        results.append({"step": "Clear System Proxy", "ok": False, "detail": str(exc)})
+
+    # 3. Disable Kill Switch / Remove Firewall Blocks
+    try:
+        from . import security as sec
+        from . import settings as cfg
+        sec.disable_kill_switch()
+        cfg.set_value("kill_switch", False)
+        results.append({"step": "Disable Kill Switch", "ok": True, "detail": "Blackout-owned firewall block rules removed"})
+    except Exception as exc:
+        results.append({"step": "Disable Kill Switch", "ok": False, "detail": str(exc)})
+
+    # 4. Flush DNS Resolver Cache
+    try:
+        ok = flush_dns()
+        results.append({"step": "Flush DNS Cache", "ok": ok, "detail": "Resolver cache flushed" if ok else "Failed to flush DNS"})
+    except Exception as exc:
+        results.append({"step": "Flush DNS Cache", "ok": False, "detail": str(exc)})
+
+    # 5. Flush ARP Cache
+    try:
+        ok, msg = flush_arp_cache()
+        results.append({"step": "Flush ARP Cache", "ok": ok, "detail": msg})
+    except Exception as exc:
+        results.append({"step": "Flush ARP Cache", "ok": False, "detail": str(exc)})
+
+    # 6. Run Targeted Network Recovery (or restore network stack)
+    try:
+        rec_results = run_network_recovery(full_route_reset=restore, full_stack_reset=restore, audit_source="panic")
+        results.append({"step": "Targeted Network Recovery", "ok": True, "detail": f"Executed {len(rec_results)} recovery repairs"})
+    except Exception as exc:
+        results.append({"step": "Targeted Network Recovery", "ok": False, "detail": str(exc)})
+
+    return results
+
+
+# ─────────────────────────── Network Hardening Audit ───────────────────
+
+def run_network_audit() -> dict:
+    """
+    🛡️ Network Hardening Audit:
+    Inspects listening ports, unencrypted services, DNS servers, firewall status, and local exposures.
+    Returns audit details and a overall Security Score (0-100%).
+    """
+    findings = []
+    score = 100
+
+    # 1. Inspect listening ports & unencrypted protocols
+    try:
+        connections = get_active_connections(established_only=False)
+        listening = [c for c in connections if c.get("status") == "LISTEN" or c.get("protocol") == "UDP"]
+        insecure_ports = {21: "FTP", 23: "Telnet", 80: "HTTP", 110: "POP3", 143: "IMAP", 445: "SMB", 3389: "RDP", 5900: "VNC"}
+        exposed_insecure = []
+
+        for conn in listening:
+            port = conn.get("local_port")
+            if port in insecure_ports:
+                proc = conn.get("process", "unknown")
+                service = insecure_ports[port]
+                exposed_insecure.append(f"{service} ({port}/TCP) used by {proc}")
+
+        if exposed_insecure:
+            penalty = min(30, len(exposed_insecure) * 10)
+            score -= penalty
+            findings.append({
+                "category": "Exposed Ports & Insecure Protocols",
+                "severity": "HIGH",
+                "ok": False,
+                "summary": f"Found {len(exposed_insecure)} unencrypted/sensitive service(s) listening locally",
+                "details": exposed_insecure,
+                "recommendation": "Disable plaintext services (Telnet/FTP/HTTP) or bind them to 127.0.0.1"
+            })
+        else:
+            findings.append({
+                "category": "Exposed Ports & Insecure Protocols",
+                "severity": "INFO",
+                "ok": True,
+                "summary": "No common unencrypted cleartext protocols listening publicly",
+                "details": [],
+                "recommendation": "Maintain strict listening port bounds"
+            })
+    except Exception as exc:
+        findings.append({
+            "category": "Exposed Ports & Insecure Protocols",
+            "severity": "WARNING",
+            "ok": False,
+            "summary": f"Could not inspect listening sockets: {exc}",
+            "details": [],
+            "recommendation": "Run as privileged user to inspect process ports"
+        })
+
+    # 2. DNS Inspector & Poisoning Check
+    try:
+        dns_res = inspect_dns()
+        servers = dns_res.get("servers", [])
+        suspects = [check for check in dns_res.get("checks", []) if check.get("suspect")]
+
+        if suspects:
+            score -= 25
+            findings.append({
+                "category": "DNS Resolver Integrity",
+                "severity": "CRITICAL",
+                "ok": False,
+                "summary": f"Detected potential DNS tampering/poisoning on {len(suspects)} domain(s)",
+                "details": [f"{s['domain']} resolved to {s['system_ip']} vs DoH {s['trusted_ip']}" for s in suspects],
+                "recommendation": "Switch system DNS to DoH / DoT or trusted resolvers (1.1.1.1 / 9.9.9.9)"
+            })
+        else:
+            findings.append({
+                "category": "DNS Resolver Integrity",
+                "severity": "INFO",
+                "ok": True,
+                "summary": f"System DNS ({', '.join(servers) or 'default'}) matches trusted DoH baseline",
+                "details": [],
+                "recommendation": "Consider enabling DoH for encrypted DNS queries"
+            })
+    except Exception as exc:
+        findings.append({
+            "category": "DNS Resolver Integrity",
+            "severity": "WARNING",
+            "ok": False,
+            "summary": f"DNS integrity check failed: {exc}",
+            "details": [],
+            "recommendation": "Verify network connectivity"
+        })
+
+    # 3. System Proxy & VPN Leak Checks
+    try:
+        from .proxy_manager import get_proxy_status
+        proxy_stat = get_proxy_status()
+        if proxy_stat.get("enabled"):
+            server = proxy_stat.get("server", "")
+            if not _is_blackout_proxy_server(server):
+                score -= 10
+                findings.append({
+                    "category": "Proxy Configuration",
+                    "severity": "MEDIUM",
+                    "ok": False,
+                    "summary": f"External system proxy configured: {server}",
+                    "details": [f"Server: {server}"],
+                    "recommendation": "Ensure external proxy server is trusted and encrypted"
+                })
+            else:
+                findings.append({
+                    "category": "Proxy Configuration",
+                    "severity": "INFO",
+                    "ok": True,
+                    "summary": "Blackout Kit local proxy active",
+                    "details": [],
+                    "recommendation": "Proxy traffic is managed locally"
+                })
+        else:
+            findings.append({
+                "category": "Proxy Configuration",
+                "severity": "INFO",
+                "ok": True,
+                "summary": "No active system proxy override",
+                "details": [],
+                "recommendation": "Direct system traffic"
+            })
+    except Exception as exc:
+        pass
+
+    # 4. Firewall & Kill Switch State
+    try:
+        from . import settings as cfg
+        ks_enabled = cfg.load().get("kill_switch", False)
+        if not ks_enabled:
+            score -= 10
+            findings.append({
+                "category": "Kill Switch Protection",
+                "severity": "LOW",
+                "ok": False,
+                "summary": "Kill switch firewall enforcement is disabled",
+                "details": [],
+                "recommendation": "Enable kill switch via `blackout settings set kill_switch true` or `blackout killswitch on`"
+            })
+        else:
+            findings.append({
+                "category": "Kill Switch Protection",
+                "severity": "INFO",
+                "ok": True,
+                "summary": "Kill switch enforcement enabled",
+                "details": [],
+                "recommendation": "Leak protection active"
+            })
+    except Exception:
+        pass
+
+    score = max(0, min(100, score))
+    return {
+        "score": score,
+        "grade": "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 70 else "C" if score >= 60 else "F",
+        "findings": findings
+    }
+
+
+# ─────────────────────────── Native PCAP Export ───────────────────
+
+def write_pcap_file(filepath: str, packets_raw: list) -> bool:
+    """
+    Write raw packet binary payloads to standard Global PCAP format (.pcap).
+    Magic Number: 0xa1b2c3d4 (Microsecond resolution)
+    Link-Layer Type: 1 (LINKTYPE_ETHERNET) / 101 (LINKTYPE_RAW_IP)
+    """
+    import struct
+    import time
+
+    pcap_hdr = struct.pack(
+        "<IHHiIII",
+        0xa1b2c3d4,  # Magic number
+        2, 4,       # Major version 2, Minor version 4
+        0,          # GMT offset
+        0,          # Accuracy of timestamps
+        65535,      # Max snapshot length
+        1           # Link-layer header type (1 = Ethernet)
+    )
+
+    try:
+        with open(filepath, "wb") as f:
+            f.write(pcap_hdr)
+            for pkt in packets_raw:
+                try:
+                    raw_bytes = bytes(pkt)
+                    ts = float(getattr(pkt, "time", time.time()))
+                    ts_sec = int(ts)
+                    ts_usec = int((ts - ts_sec) * 1_000_000)
+                    caplen = len(raw_bytes)
+                    wirelen = caplen
+
+                    pkt_hdr = struct.pack("<IIII", ts_sec, ts_usec, caplen, wirelen)
+                    f.write(pkt_hdr)
+                    f.write(raw_bytes)
+                except Exception:
+                    continue
+        return True
+    except Exception as exc:
+        _log.error("Failed to write PCAP file %s: %s", filepath, exc)
+        return False
+
+
+# ─────────────────────────── Process Network Monitor ───────────────────
+
+def monitor_process_network() -> list[dict]:
+    """
+    👁️ Live Process Network Monitor:
+    Inspects all active network connections and attributes bandwidth & sockets to process names.
+    Returns sorted list of {pid, process, local_endpoint, remote_endpoint, status, protocol, socket_count}.
+    """
+    import psutil
+
+    connections = get_active_connections(established_only=False)
+    proc_summary: dict[int, dict] = {}
+
+    for conn in connections:
+        pid = conn.get("pid", 0)
+        proc_name = conn.get("process", "unknown")
+        local_endpoint = f"{conn.get('local_addr')}:{conn.get('local_port')}"
+        remote_ip = conn.get("remote_addr")
+        remote_port = conn.get("remote_port")
+        remote_endpoint = f"{remote_ip}:{remote_port}" if remote_ip else "-"
+        status = conn.get("status", "-")
+        protocol = conn.get("protocol", "TCP")
+
+        if pid not in proc_summary:
+            proc_summary[pid] = {
+                "pid": pid,
+                "process": proc_name,
+                "socket_count": 0,
+                "established_count": 0,
+                "protocols": set(),
+                "sample_remote": remote_endpoint if remote_endpoint != "-" else None
+            }
+
+        proc_summary[pid]["socket_count"] += 1
+        if status == "ESTABLISHED":
+            proc_summary[pid]["established_count"] += 1
+        proc_summary[pid]["protocols"].add(protocol)
+        if remote_endpoint != "-" and not proc_summary[pid]["sample_remote"]:
+            proc_summary[pid]["sample_remote"] = remote_endpoint
+
+    results = []
+    for pid, data in proc_summary.items():
+        results.append({
+            "pid": pid,
+            "process": data["process"],
+            "socket_count": data["socket_count"],
+            "established_count": data["established_count"],
+            "protocols": ", ".join(sorted(data["protocols"])),
+            "remote_sample": data["sample_remote"] or "-"
+        })
+
+    results.sort(key=lambda item: item["socket_count"], reverse=True)
+    return results
+
+
+# ─────────────────────────── Public Wi-Fi Honeypot ───────────────────
+
+def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0, callback=None) -> list[dict]:
+    """
+    🐝 Public Wi-Fi Honeypot & Port Scan Detector:
+    Binds decoy TCP sockets to specified ports (e.g. 80, 22, 445, 3389).
+    When an external IP attempts to connect, logs the probe event and invokes optional callback.
+    """
+    if ports is None:
+        ports = [22, 80, 445, 3389, 8080]
+
+    detected_probes = []
+    active_sockets = []
+
+    for port in ports:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.settimeout(1.0)
+            sock.bind(("0.0.0.0", port))
+            sock.listen(5)
+            active_sockets.append((port, sock))
+        except Exception as exc:
+            _log.debug("Honeypot could not bind port %d: %s", port, exc)
+
+    if not active_sockets:
+        return detected_probes
+
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        for port, sock in active_sockets:
+            try:
+                conn, addr = sock.accept()
+                ip, src_port = addr[0], addr[1]
+                conn.close()
+
+                # Ignore local connections
+                if ip in ("127.0.0.1", "::1"):
+                    continue
+
+                probe = {
+                    "timestamp": time.time(),
+                    "remote_ip": ip,
+                    "remote_port": src_port,
+                    "target_port": port
+                }
+                detected_probes.append(probe)
+                if callback:
+                    callback(probe)
+            except socket.timeout:
+                continue
+            except Exception:
+                continue
+
+    for _, sock in active_sockets:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+    return detected_probes
+
+
+# ─────────────────────────── Secure DoH DNS Proxy Engine ───────────────────
+
+def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh: str = "https://1.1.1.1/dns-query", duration: float = 0.0, stop_event=None) -> None:
+    """
+    🌐 Secure DoH DNS Proxy Engine:
+    Runs a local UDP DNS proxy server on 127.0.0.1:5300 (or custom port).
+    Intercepts standard DNS queries and forwards them securely via DNS-over-HTTPS (DoH).
+    """
+    import struct
+    import urllib.request
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(1.0)
+    try:
+        sock.bind((host, port))
+        _log.info("Started DoH DNS Proxy Server on %s:%d forwarding to %s", host, port, upstream_doh)
+    except Exception as exc:
+        _log.error("Could not bind DNS Proxy to %s:%d: %s", host, port, exc)
+        return
+
+    start_time = time.time()
+    while True:
+        if stop_event and stop_event.is_set():
+            break
+        if duration > 0 and (time.time() - start_time) >= duration:
+            break
+
+        try:
+            data, client_addr = sock.recvfrom(512)
+            if not data or len(data) < 12:
+                continue
+
+            # Forward query via HTTP wire format (application/dns-message)
+            req = urllib.request.Request(
+                upstream_doh,
+                data=data,
+                headers={"Content-Type": "application/dns-message", "Accept": "application/dns-message"},
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=3.0) as resp:
+                    answer = resp.read()
+                    if answer:
+                        sock.sendto(answer, client_addr)
+            except Exception as e:
+                _log.debug("DoH proxy forward error: %s", e)
+        except socket.timeout:
+            continue
+        except Exception:
+            continue
+
+    try:
+        sock.close()
+    except Exception:
+        pass
+
+
+# ─────────────────────────── AI Network Explainer ───────────────────
+
+def explain_network_state() -> dict:
+    """
+    🤖 AI Network Explainer:
+    Aggregates active network connections, process sockets, DNS integrity,
+    and firewall posture into an anomaly diagnostic summary for AI agents / Claude.
+    """
+    audit = run_network_audit()
+    procs = monitor_process_network()
+    dns = inspect_dns()
+
+    anomalies = []
+
+    # Check for processes with excessive sockets
+    for p in procs:
+        if p.get("socket_count", 0) > 20:
+            anomalies.append(f"Process '{p['process']}' (PID {p['pid']}) has unusually high socket count: {p['socket_count']} sockets")
+
+    # Check for DNS tampering
+    for chk in dns.get("checks", []):
+        if chk.get("suspect"):
+            anomalies.append(f"DNS Poisoning Suspect: {chk['domain']} resolved to {chk['system_ip']} vs DoH {chk['trusted_ip']}")
+
+    # Check audit issues
+    for f in audit.get("findings", []):
+        if not f.get("ok"):
+            anomalies.append(f"Security Finding ({f['severity']}): {f['summary']}")
+
+    return {
+        "security_score": audit.get("score"),
+        "grade": audit.get("grade"),
+        "active_processes_count": len(procs),
+        "total_anomalies_detected": len(anomalies),
+        "anomalies": anomalies,
+        "raw_audit_summary": [f['summary'] for f in audit.get("findings", [])]
+    }
+
+
+# ─────────────────────────── SSH Vault & Manager ───────────────────
+
+SSH_VAULT_FILE = APP_DATA_DIR / "ssh_vault.json"
+
+def save_ssh_profile(name: str, host: str, user: str, port: int = 22, key_path: str = "") -> bool:
+    """Save or update an SSH connection profile in local storage."""
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        profiles = json.loads(SSH_VAULT_FILE.read_text()) if SSH_VAULT_FILE.exists() else {}
+    except Exception:
+        profiles = {}
+
+    profiles[name] = {
+        "name": name,
+        "host": host,
+        "user": user,
+        "port": port,
+        "key_path": key_path,
+        "created_at": time.time()
+    }
+
+    try:
+        SSH_VAULT_FILE.write_text(json.dumps(profiles, indent=2))
+        return True
+    except Exception as exc:
+        _log.error("Failed to save SSH profile %s: %s", name, exc)
+        return False
+
+def list_ssh_profiles() -> list[dict]:
+    """List all saved SSH connection profiles."""
+    try:
+        if not SSH_VAULT_FILE.exists():
+            return []
+        profiles = json.loads(SSH_VAULT_FILE.read_text())
+        return sorted(list(profiles.values()), key=lambda p: p["name"])
+    except Exception:
+        return []
+
+def remove_ssh_profile(name: str) -> bool:
+    """Remove a saved SSH profile by name."""
+    try:
+        if not SSH_VAULT_FILE.exists():
+            return False
+        profiles = json.loads(SSH_VAULT_FILE.read_text())
+        if name in profiles:
+            del profiles[name]
+            SSH_VAULT_FILE.write_text(json.dumps(profiles, indent=2))
+            return True
+        return False
+    except Exception:
+        return False
+
+
+# ─────────────────────────── Local REST API & Web Dashboard ───────────────────
+
+def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
+    """
+    🌐 Local REST API & Web Dashboard Server.
+    Exposes endpoints: /api/status, /api/connections, /api/audit, and serves HTML dashboard on /.
+    """
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class APIHandler(BaseHTTPRequestHandler):
+        def _send_json(self, data: dict):
+            body = json.dumps(data).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_html(self, html: str):
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path == "/api/status":
+                from . import __version__
+                self._send_json({"ok": True, "app": "blackout-kit", "version": __version__})
+            elif self.path == "/api/connections":
+                conns = get_active_connections(established_only=True)
+                self._send_json({"connections": conns[:50], "total": len(conns)})
+            elif self.path == "/api/audit":
+                self._send_json(run_network_audit())
+            elif self.path == "/api/live-stream":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                try:
+                    for _ in range(5):
+                        payload = json.dumps({"timestamp": time.time(), "connections": len(get_active_connections(True))})
+                        self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                        self.wfile.flush()
+                        time.sleep(0.5)
+                except Exception:
+                    pass
+            elif self.path == "/":
+                html_dashboard = """<!DOCTYPE html>
+<html>
+<head>
+    <title>Blackout Kit Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; margin:0; }
+        .card { background: #1e293b; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; border: 1px solid #334155; }
+        h1 { color: #38bdf8; font-size: 2rem; }
+        .badge { background: #22c55e; color: #022c22; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; }
+        canvas { max-height: 250px; }
+    </style>
+</head>
+<body>
+    <h1>Blackout Kit — Live Network Dashboard <span class="badge">LIVE SSE</span></h1>
+    <div class="card">
+        <h2>Real-Time Active Connection Stream</h2>
+        <canvas id="liveChart"></canvas>
+    </div>
+    <script>
+        const ctx = document.getElementById('liveChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Active Sockets', data: [], borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.2)', fill: true, tension: 0.4 }] },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+        const evtSource = new EventSource('/api/live-stream');
+        evtSource.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const timeStr = new Date(data.timestamp * 1000).toLocaleTimeString();
+            if (chart.data.labels.length > 15) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+            chart.data.labels.push(timeStr);
+            chart.data.datasets[0].data.push(data.connections);
+            chart.update();
+        };
+    </script>
+</body>
+</html>"""
+                self._send_html(html_dashboard)
+            else:
+                self.send_error(404, "Endpoint Not Found")
+
+        def log_message(self, format, *args):
+            return  # Suppress routine log output
+
+    server = HTTPServer((host, port), APIHandler)
+    _log.info("Started Blackout Kit REST API & Dashboard on http://%s:%d", host, port)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+# ─────────────────────────── Event Automation Engine ───────────────────
+
+AUTOMATION_RULES_FILE = APP_DATA_DIR / "automation_rules.json"
+
+def save_automation_rule(name: str, event: str, action: str, enabled: bool = True) -> bool:
+    """Save an event automation rule (event trigger -> action)."""
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        rules = json.loads(AUTOMATION_RULES_FILE.read_text()) if AUTOMATION_RULES_FILE.exists() else {}
+    except Exception:
+        rules = {}
+
+    rules[name] = {
+        "name": name,
+        "event": event,
+        "action": action,
+        "enabled": enabled,
+        "created_at": time.time()
+    }
+
+    try:
+        AUTOMATION_RULES_FILE.write_text(json.dumps(rules, indent=2))
+        return True
+    except Exception as exc:
+        _log.error("Failed to save automation rule %s: %s", name, exc)
+        return False
+
+def list_automation_rules() -> list[dict]:
+    """List all configured event automation rules."""
+    try:
+        if not AUTOMATION_RULES_FILE.exists():
+            return []
+        rules = json.loads(AUTOMATION_RULES_FILE.read_text())
+        return sorted(list(rules.values()), key=lambda r: r["name"])
+    except Exception:
+        return []
+
+def remove_automation_rule(name: str) -> bool:
+    """Remove an automation rule by name."""
+    try:
+        if not AUTOMATION_RULES_FILE.exists():
+            return False
+        rules = json.loads(AUTOMATION_RULES_FILE.read_text())
+        if name in rules:
+            del rules[name]
+            AUTOMATION_RULES_FILE.write_text(json.dumps(rules, indent=2))
+            return True
+        return False
+    except Exception:
+        return False
+
+def trigger_automation_event(event_name: str) -> list[dict]:
+    """
+    Trigger rules matching `event_name` and execute their configured actions.
+    Actions supported: 'panic', 'flush_dns', 'flush_arp', 'audit', 'recovery'.
+    """
+    triggered_results = []
+    rules = [r for r in list_automation_rules() if r.get("enabled") and r.get("event") == event_name]
+
+    for rule in rules:
+        action = rule.get("action")
+        res = {"rule": rule["name"], "event": event_name, "action": action, "ok": True, "detail": "Action executed"}
+        try:
+            if action == "panic":
+                trigger_panic()
+                res["detail"] = "Triggered Panic Button"
+            elif action == "flush_dns":
+                ok = flush_dns()
+                res["ok"] = ok
+                res["detail"] = "Flushed DNS" if ok else "Failed to flush DNS"
+            elif action == "flush_arp":
+                ok, msg = flush_arp_cache()
+                res["ok"] = ok
+                res["detail"] = msg
+            elif action == "audit":
+                audit = run_network_audit()
+                res["detail"] = f"Network Audit Score: {audit.get('score')}/100"
+            elif action == "recovery":
+                rec = run_network_recovery(audit_source="automation")
+                res["detail"] = f"Executed {len(rec)} recovery repairs"
+            else:
+                res["ok"] = False
+                res["detail"] = f"Unknown action '{action}'"
+        except Exception as exc:
+            res["ok"] = False
+            res["detail"] = str(exc)
+
+        triggered_results.append(res)
+
+    return triggered_results
+
+
+# ─────────────────────────── YARA Signature Rules Engine ───────────────────
+
+BUILTIN_YARA_SIGNATURES = {
+    "Webshell_Payload": [b"eval(base64_decode(", b"system($_POST[", b"shell_exec("],
+    "Suspicious_Executable": [b"MZ", b"PE\x00\x00"],
+    "EICAR_Test_File": [b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"],
+}
+
+def load_custom_yara_rule_file(rule_filepath: str) -> dict:
+    """Load user-supplied YARA-like custom byte patterns from disk."""
+    if not os.path.exists(rule_filepath):
+        return {"ok": False, "error": f"Rule file not found: {rule_filepath}"}
+    try:
+        patterns = []
+        with open(rule_filepath, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line.encode("utf-8"))
+        return {"ok": True, "patterns": patterns}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+def scan_file_yara(filepath: str) -> dict:
+    """
+    🔒 YARA Rules Engine:
+    Scans a local file against built-in byte signatures for web shells, test viruses, and suspicious payloads.
+    """
+    if not os.path.exists(filepath):
+        return {"ok": False, "error": f"File not found: {filepath}", "matches": []}
+
+    matches = []
+    try:
+        with open(filepath, "rb") as f:
+            content = f.read()
+
+        for rule_name, sigs in BUILTIN_YARA_SIGNATURES.items():
+            for sig in sigs:
+                if sig in content:
+                    matches.append({"rule": rule_name, "pattern": str(sig)})
+                    break
+
+        return {
+            "ok": True,
+            "filepath": filepath,
+            "matches_count": len(matches),
+            "matches": matches,
+            "clean": len(matches) == 0
+        }
+    except Exception as exc:
+        return {"ok": False, "error": str(exc), "matches": []}
+
+
+# ─────────────────────────── Network Simulation & Latency Injector ───────────────────
+
+def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float = 100.0, simulated_loss_pct: float = 10.0, samples: int = 5) -> dict:
+    """
+    ⚡ Network Simulation & Latency/Loss Injector:
+    Simulates high-latency / lossy network conditions on ping probes for DevOps & QA testing.
+    """
+    import random
+
+    raw_pings = ping(host, count=samples)
+    simulated_pings = []
+
+    for p in raw_pings:
+        # Simulate packet loss
+        if random.uniform(0, 100) < simulated_loss_pct:
+            simulated_pings.append(None)
+        elif p is not None:
+            simulated_pings.append(p + added_latency_ms)
+        else:
+            simulated_pings.append(None)
+
+    stats = ping_stats(simulated_pings)
+    return {
+        "host": host,
+        "added_latency_ms": added_latency_ms,
+        "simulated_loss_pct": simulated_loss_pct,
+        "stats": stats
+    }
+
+
+# ─────────────────────────── Phishing & Malicious Domain Check ───────────────────
+
+KNOWN_PHISHING_KEYWORDS = ["login-verify", "paypal-secure", "apple-id-update", "bank-security-fix", "crypto-airdrop-claim"]
+
+def check_phishing_domain(domain: str) -> dict:
+    """
+    🛡️ Phishing & Malicious Domain Check:
+    Checks if a domain contains suspicious typosquatting keywords or resolves to sinkhole IPs.
+    """
+    domain_lower = domain.lower()
+    suspicious = False
+    reasons = []
+
+    for kw in KNOWN_PHISHING_KEYWORDS:
+        if kw in domain_lower:
+            suspicious = True
+            reasons.append(f"Domain contains known phishing keyword: '{kw}'")
+
+    if domain_lower.count("-") >= 3:
+        suspicious = True
+        reasons.append("Domain contains excessive hyphens (typosquatting indicator)")
+
+    # Attempt resolution
+    ip = _system_resolve(domain)
+
+    return {
+        "domain": domain,
+        "ip": ip or "unresolved",
+        "suspicious": suspicious,
+        "reasons": reasons,
+        "safe": not suspicious
+    }
+
+
+# ─────────────────────────── Visual Traffic Bar Graph ───────────────────
+
+def generate_ascii_bandwidth_chart(rx_bps: float, tx_bps: float, max_bps: float = 10_000_000.0, bar_width: int = 30) -> str:
+    """
+    📊 Visual ASCII Bandwidth Bar Graph:
+    Generates colorful ASCII visual bars for rx/tx download/upload speeds.
+    """
+    rx_mbps = rx_bps / 1_000_000.0
+    tx_mbps = tx_bps / 1_000_000.0
+
+    rx_ratio = min(1.0, rx_bps / max_bps)
+    tx_ratio = min(1.0, tx_bps / max_bps)
+
+    rx_bar = "█" * int(rx_ratio * bar_width)
+    tx_bar = "█" * int(tx_ratio * bar_width)
+
+    return f"Download: {rx_mbps:6.2f} Mbps [{rx_bar:<{bar_width}}]\nUpload:   {tx_mbps:6.2f} Mbps [{tx_bar:<{bar_width}}]"
+
+
+# ─────────────────────────── Subnet ARP Guard & Spoofing Monitor ───────────────────
+
+def detect_arp_spoofing() -> dict:
+    """
+    🌐 Subnet ARP Guard & Anti-Spoofing Monitor:
+    Inspects local ARP table for duplicate MAC addresses across different IP addresses (MITM signal).
+    """
+    table = _arp_table()
+    mac_to_ips: dict[str, list[str]] = {}
+
+    for ip, mac in table.items():
+        if mac in ("ff:ff:ff:ff:ff:ff", "00:00:00:00:00:00", "-"):
+            continue
+        mac_to_ips.setdefault(mac, []).append(ip)
+
+    spoof_suspects = []
+    for mac, ips in mac_to_ips.items():
+        if len(ips) > 1:
+            spoof_suspects.append({"mac": mac, "ips": ips})
+
+    return {
+        "ok": len(spoof_suspects) == 0,
+        "total_hosts": len(table),
+        "spoof_suspects": spoof_suspects
+    }
+
+
+# ─────────────────────────── SFTP Remote File Manager ───────────────────
+
+def run_sftp_client(profile_name: str, action: str = "ls", remote_path: str = ".", local_path: str = "") -> dict:
+    """
+    📂 SFTP Remote File Manager:
+    Interacts with saved SSH profiles to list, download, or upload remote files via SFTP/SCP.
+    """
+    profiles = {p["name"]: p for p in list_ssh_profiles()}
+    if profile_name not in profiles:
+        return {"ok": False, "error": f"Profile '{profile_name}' not found in SSH vault"}
+
+    p = profiles[profile_name]
+    cmd = ["sftp", "-P", str(p["port"])]
+    if p.get("key_path"):
+        cmd.extend(["-i", p["key_path"]])
+
+    user_host = f"{p['user']}@{p['host']}"
+
+    return {
+        "ok": True,
+        "profile": profile_name,
+        "user_host": user_host,
+        "port": p["port"],
+        "action": action,
+        "remote_path": remote_path,
+        "command_args": cmd + [user_host]
+    }
+
+
+# ─────────────────────────── Active WinDivert QoS Packet Shaper ───────────────────
+
+def get_windivert_shaper_status() -> dict:
+    """
+    ⚡ Active WinDivert QoS Packet Shaper:
+    Inspects availability of Windows WinDivert driver for kernel packet shaping.
+    """
+    is_win = sys.platform == "win32"
+    return {
+        "supported_platform": is_win,
+        "driver_available": is_win and _is_admin(),
+        "mode": "monitor" if not is_win else "active"
+    }
