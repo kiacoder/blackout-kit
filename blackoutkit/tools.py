@@ -1609,3 +1609,443 @@ def autofix_windows() -> list[str]:
          else f"[warning]⚠[/warning] {step['name']} — {step['detail']}")
         for step in run_network_recovery()
     ]
+
+
+# ─────────────────────────── Global Panic Button ───────────────────
+
+def trigger_panic(restore: bool = False) -> list[dict]:
+    """
+    🚨 Global Panic Button:
+    Instantly kills daemon/engines, clears system proxy, disables kill switch,
+    flushes DNS and ARP, resets network adapters/routes to secure or restore networking.
+    """
+    results = []
+
+    # 1. Stop background daemon & all bypass engines
+    try:
+        from . import daemon
+        daemon.stop()
+        results.append({"step": "Stop Daemon & Bypass Engines", "ok": True, "detail": "Stopped daemon and killed child process trees"})
+    except Exception as exc:
+        results.append({"step": "Stop Daemon & Bypass Engines", "ok": False, "detail": str(exc)})
+
+    # 2. Clear System Proxy
+    try:
+        from .proxy_manager import clear_system_proxy
+        clear_system_proxy()
+        results.append({"step": "Clear System Proxy", "ok": True, "detail": "System proxy setting cleared"})
+    except Exception as exc:
+        results.append({"step": "Clear System Proxy", "ok": False, "detail": str(exc)})
+
+    # 3. Disable Kill Switch / Remove Firewall Blocks
+    try:
+        from . import security as sec
+        from . import settings as cfg
+        sec.disable_kill_switch()
+        cfg.set_value("kill_switch", False)
+        results.append({"step": "Disable Kill Switch", "ok": True, "detail": "Blackout-owned firewall block rules removed"})
+    except Exception as exc:
+        results.append({"step": "Disable Kill Switch", "ok": False, "detail": str(exc)})
+
+    # 4. Flush DNS Resolver Cache
+    try:
+        ok = flush_dns()
+        results.append({"step": "Flush DNS Cache", "ok": ok, "detail": "Resolver cache flushed" if ok else "Failed to flush DNS"})
+    except Exception as exc:
+        results.append({"step": "Flush DNS Cache", "ok": False, "detail": str(exc)})
+
+    # 5. Flush ARP Cache
+    try:
+        ok, msg = flush_arp_cache()
+        results.append({"step": "Flush ARP Cache", "ok": ok, "detail": msg})
+    except Exception as exc:
+        results.append({"step": "Flush ARP Cache", "ok": False, "detail": str(exc)})
+
+    # 6. Run Targeted Network Recovery (or restore network stack)
+    try:
+        rec_results = run_network_recovery(full_route_reset=restore, full_stack_reset=restore, audit_source="panic")
+        results.append({"step": "Targeted Network Recovery", "ok": True, "detail": f"Executed {len(rec_results)} recovery repairs"})
+    except Exception as exc:
+        results.append({"step": "Targeted Network Recovery", "ok": False, "detail": str(exc)})
+
+    return results
+
+
+# ─────────────────────────── Network Hardening Audit ───────────────────
+
+def run_network_audit() -> dict:
+    """
+    🛡️ Network Hardening Audit:
+    Inspects listening ports, unencrypted services, DNS servers, firewall status, and local exposures.
+    Returns audit details and a overall Security Score (0-100%).
+    """
+    findings = []
+    score = 100
+
+    # 1. Inspect listening ports & unencrypted protocols
+    try:
+        connections = get_active_connections(established_only=False)
+        listening = [c for c in connections if c.get("status") == "LISTEN" or c.get("protocol") == "UDP"]
+        insecure_ports = {21: "FTP", 23: "Telnet", 80: "HTTP", 110: "POP3", 143: "IMAP", 445: "SMB", 3389: "RDP", 5900: "VNC"}
+        exposed_insecure = []
+
+        for conn in listening:
+            port = conn.get("local_port")
+            if port in insecure_ports:
+                proc = conn.get("process", "unknown")
+                service = insecure_ports[port]
+                exposed_insecure.append(f"{service} ({port}/TCP) used by {proc}")
+
+        if exposed_insecure:
+            penalty = min(30, len(exposed_insecure) * 10)
+            score -= penalty
+            findings.append({
+                "category": "Exposed Ports & Insecure Protocols",
+                "severity": "HIGH",
+                "ok": False,
+                "summary": f"Found {len(exposed_insecure)} unencrypted/sensitive service(s) listening locally",
+                "details": exposed_insecure,
+                "recommendation": "Disable plaintext services (Telnet/FTP/HTTP) or bind them to 127.0.0.1"
+            })
+        else:
+            findings.append({
+                "category": "Exposed Ports & Insecure Protocols",
+                "severity": "INFO",
+                "ok": True,
+                "summary": "No common unencrypted cleartext protocols listening publicly",
+                "details": [],
+                "recommendation": "Maintain strict listening port bounds"
+            })
+    except Exception as exc:
+        findings.append({
+            "category": "Exposed Ports & Insecure Protocols",
+            "severity": "WARNING",
+            "ok": False,
+            "summary": f"Could not inspect listening sockets: {exc}",
+            "details": [],
+            "recommendation": "Run as privileged user to inspect process ports"
+        })
+
+    # 2. DNS Inspector & Poisoning Check
+    try:
+        dns_res = inspect_dns()
+        servers = dns_res.get("servers", [])
+        suspects = [check for check in dns_res.get("checks", []) if check.get("suspect")]
+
+        if suspects:
+            score -= 25
+            findings.append({
+                "category": "DNS Resolver Integrity",
+                "severity": "CRITICAL",
+                "ok": False,
+                "summary": f"Detected potential DNS tampering/poisoning on {len(suspects)} domain(s)",
+                "details": [f"{s['domain']} resolved to {s['system_ip']} vs DoH {s['trusted_ip']}" for s in suspects],
+                "recommendation": "Switch system DNS to DoH / DoT or trusted resolvers (1.1.1.1 / 9.9.9.9)"
+            })
+        else:
+            findings.append({
+                "category": "DNS Resolver Integrity",
+                "severity": "INFO",
+                "ok": True,
+                "summary": f"System DNS ({', '.join(servers) or 'default'}) matches trusted DoH baseline",
+                "details": [],
+                "recommendation": "Consider enabling DoH for encrypted DNS queries"
+            })
+    except Exception as exc:
+        findings.append({
+            "category": "DNS Resolver Integrity",
+            "severity": "WARNING",
+            "ok": False,
+            "summary": f"DNS integrity check failed: {exc}",
+            "details": [],
+            "recommendation": "Verify network connectivity"
+        })
+
+    # 3. System Proxy & VPN Leak Checks
+    try:
+        from .proxy_manager import get_proxy_status
+        proxy_stat = get_proxy_status()
+        if proxy_stat.get("enabled"):
+            server = proxy_stat.get("server", "")
+            if not _is_blackout_proxy_server(server):
+                score -= 10
+                findings.append({
+                    "category": "Proxy Configuration",
+                    "severity": "MEDIUM",
+                    "ok": False,
+                    "summary": f"External system proxy configured: {server}",
+                    "details": [f"Server: {server}"],
+                    "recommendation": "Ensure external proxy server is trusted and encrypted"
+                })
+            else:
+                findings.append({
+                    "category": "Proxy Configuration",
+                    "severity": "INFO",
+                    "ok": True,
+                    "summary": "Blackout Kit local proxy active",
+                    "details": [],
+                    "recommendation": "Proxy traffic is managed locally"
+                })
+        else:
+            findings.append({
+                "category": "Proxy Configuration",
+                "severity": "INFO",
+                "ok": True,
+                "summary": "No active system proxy override",
+                "details": [],
+                "recommendation": "Direct system traffic"
+            })
+    except Exception as exc:
+        pass
+
+    # 4. Firewall & Kill Switch State
+    try:
+        from . import settings as cfg
+        ks_enabled = cfg.load().get("kill_switch", False)
+        if not ks_enabled:
+            score -= 10
+            findings.append({
+                "category": "Kill Switch Protection",
+                "severity": "LOW",
+                "ok": False,
+                "summary": "Kill switch firewall enforcement is disabled",
+                "details": [],
+                "recommendation": "Enable kill switch via `blackout settings set kill_switch true` or `blackout killswitch on`"
+            })
+        else:
+            findings.append({
+                "category": "Kill Switch Protection",
+                "severity": "INFO",
+                "ok": True,
+                "summary": "Kill switch enforcement enabled",
+                "details": [],
+                "recommendation": "Leak protection active"
+            })
+    except Exception:
+        pass
+
+    score = max(0, min(100, score))
+    return {
+        "score": score,
+        "grade": "A+" if score >= 90 else "A" if score >= 80 else "B" if score >= 70 else "C" if score >= 60 else "F",
+        "findings": findings
+    }
+
+
+# ─────────────────────────── Native PCAP Export ───────────────────
+
+def write_pcap_file(filepath: str, packets_raw: list) -> bool:
+    """
+    Write raw packet binary payloads to standard Global PCAP format (.pcap).
+    Magic Number: 0xa1b2c3d4 (Microsecond resolution)
+    Link-Layer Type: 1 (LINKTYPE_ETHERNET) / 101 (LINKTYPE_RAW_IP)
+    """
+    import struct
+    import time
+
+    pcap_hdr = struct.pack(
+        "<IHHiIII",
+        0xa1b2c3d4,  # Magic number
+        2, 4,       # Major version 2, Minor version 4
+        0,          # GMT offset
+        0,          # Accuracy of timestamps
+        65535,      # Max snapshot length
+        1           # Link-layer header type (1 = Ethernet)
+    )
+
+    try:
+        with open(filepath, "wb") as f:
+            f.write(pcap_hdr)
+            for pkt in packets_raw:
+                try:
+                    raw_bytes = bytes(pkt)
+                    ts = float(getattr(pkt, "time", time.time()))
+                    ts_sec = int(ts)
+                    ts_usec = int((ts - ts_sec) * 1_000_000)
+                    caplen = len(raw_bytes)
+                    wirelen = caplen
+
+                    pkt_hdr = struct.pack("<IIII", ts_sec, ts_usec, caplen, wirelen)
+                    f.write(pkt_hdr)
+                    f.write(raw_bytes)
+                except Exception:
+                    continue
+        return True
+    except Exception as exc:
+        _log.error("Failed to write PCAP file %s: %s", filepath, exc)
+        return False
+
+
+# ─────────────────────────── Process Network Monitor ───────────────────
+
+def monitor_process_network() -> list[dict]:
+    """
+    👁️ Live Process Network Monitor:
+    Inspects all active network connections and attributes bandwidth & sockets to process names.
+    Returns sorted list of {pid, process, local_endpoint, remote_endpoint, status, protocol, socket_count}.
+    """
+    import psutil
+
+    connections = get_active_connections(established_only=False)
+    proc_summary: dict[int, dict] = {}
+
+    for conn in connections:
+        pid = conn.get("pid", 0)
+        proc_name = conn.get("process", "unknown")
+        local_endpoint = f"{conn.get('local_addr')}:{conn.get('local_port')}"
+        remote_ip = conn.get("remote_addr")
+        remote_port = conn.get("remote_port")
+        remote_endpoint = f"{remote_ip}:{remote_port}" if remote_ip else "-"
+        status = conn.get("status", "-")
+        protocol = conn.get("protocol", "TCP")
+
+        if pid not in proc_summary:
+            proc_summary[pid] = {
+                "pid": pid,
+                "process": proc_name,
+                "socket_count": 0,
+                "established_count": 0,
+                "protocols": set(),
+                "sample_remote": remote_endpoint if remote_endpoint != "-" else None
+            }
+
+        proc_summary[pid]["socket_count"] += 1
+        if status == "ESTABLISHED":
+            proc_summary[pid]["established_count"] += 1
+        proc_summary[pid]["protocols"].add(protocol)
+        if remote_endpoint != "-" and not proc_summary[pid]["sample_remote"]:
+            proc_summary[pid]["sample_remote"] = remote_endpoint
+
+    results = []
+    for pid, data in proc_summary.items():
+        results.append({
+            "pid": pid,
+            "process": data["process"],
+            "socket_count": data["socket_count"],
+            "established_count": data["established_count"],
+            "protocols": ", ".join(sorted(data["protocols"])),
+            "remote_sample": data["sample_remote"] or "-"
+        })
+
+    results.sort(key=lambda item: item["socket_count"], reverse=True)
+    return results
+
+
+# ─────────────────────────── Public Wi-Fi Honeypot ───────────────────
+
+def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0, callback=None) -> list[dict]:
+    """
+    🐝 Public Wi-Fi Honeypot & Port Scan Detector:
+    Binds decoy TCP sockets to specified ports (e.g. 80, 22, 445, 3389).
+    When an external IP attempts to connect, logs the probe event and invokes optional callback.
+    """
+    if ports is None:
+        ports = [22, 80, 445, 3389, 8080]
+
+    detected_probes = []
+    active_sockets = []
+
+    for port in ports:
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.settimeout(1.0)
+            sock.bind(("0.0.0.0", port))
+            sock.listen(5)
+            active_sockets.append((port, sock))
+        except Exception as exc:
+            _log.debug("Honeypot could not bind port %d: %s", port, exc)
+
+    if not active_sockets:
+        return detected_probes
+
+    start_time = time.time()
+    while time.time() - start_time < duration:
+        for port, sock in active_sockets:
+            try:
+                conn, addr = sock.accept()
+                ip, src_port = addr[0], addr[1]
+                conn.close()
+
+                # Ignore local connections
+                if ip in ("127.0.0.1", "::1"):
+                    continue
+
+                probe = {
+                    "timestamp": time.time(),
+                    "remote_ip": ip,
+                    "remote_port": src_port,
+                    "target_port": port
+                }
+                detected_probes.append(probe)
+                if callback:
+                    callback(probe)
+            except socket.timeout:
+                continue
+            except Exception:
+                continue
+
+    for _, sock in active_sockets:
+        try:
+            sock.close()
+        except Exception:
+            pass
+
+    return detected_probes
+
+
+# ─────────────────────────── Secure DoH DNS Proxy Engine ───────────────────
+
+def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh: str = "https://1.1.1.1/dns-query", duration: float = 0.0, stop_event=None) -> None:
+    """
+    🌐 Secure DoH DNS Proxy Engine:
+    Runs a local UDP DNS proxy server on 127.0.0.1:5300 (or custom port).
+    Intercepts standard DNS queries and forwards them securely via DNS-over-HTTPS (DoH).
+    """
+    import struct
+    import urllib.request
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.settimeout(1.0)
+    try:
+        sock.bind((host, port))
+        _log.info("Started DoH DNS Proxy Server on %s:%d forwarding to %s", host, port, upstream_doh)
+    except Exception as exc:
+        _log.error("Could not bind DNS Proxy to %s:%d: %s", host, port, exc)
+        return
+
+    start_time = time.time()
+    while True:
+        if stop_event and stop_event.is_set():
+            break
+        if duration > 0 and (time.time() - start_time) >= duration:
+            break
+
+        try:
+            data, client_addr = sock.recvfrom(512)
+            if not data or len(data) < 12:
+                continue
+
+            # Forward query via HTTP wire format (application/dns-message)
+            req = urllib.request.Request(
+                upstream_doh,
+                data=data,
+                headers={"Content-Type": "application/dns-message", "Accept": "application/dns-message"},
+                method="POST"
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=3.0) as resp:
+                    answer = resp.read()
+                    if answer:
+                        sock.sendto(answer, client_addr)
+            except Exception as e:
+                _log.debug("DoH proxy forward error: %s", e)
+        except socket.timeout:
+            continue
+        except Exception:
+            continue
+
+    try:
+        sock.close()
+    except Exception:
+        pass

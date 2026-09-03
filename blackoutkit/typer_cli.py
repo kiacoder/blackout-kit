@@ -2357,6 +2357,7 @@ def tools_capture(
     count: int = typer.Option(0, "--count", "-c", help="Stop after N packets (0 = unbounded, Ctrl+C to stop)"),
     filter: str = typer.Option(None, "--filter", "-f", help="Raw BPF filter expression (e.g. 'tcp port 443')"),
     host: str = typer.Option(None, "--host", help="Shorthand filter for traffic to/from this host"),
+    pcap: str = typer.Option(None, "--pcap", "-p", help="Export packet trace to standard .pcap binary file for Wireshark"),
     ctx: typer.Context = None,
 ):
     """Capture packets locally; install `blackout-kit[capture]` and Npcap/libpcap first."""
@@ -2372,6 +2373,7 @@ def tools_capture(
         count=int(_option_value(count, 0)),
         filter=_option_value(filter),
         host=_option_value(host),
+        pcap=_option_value(pcap),
     ))
 
 @tools_app.command("scan-file")
@@ -3122,3 +3124,98 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+@tools_app.command("audit")
+def tools_audit():
+    """🛡️ Run a security hardening audit (scans open ports, DNS, cleartext services, killswitch)."""
+    from .tools import run_network_audit
+
+    console.print("[bold cyan]🛡️ Running Network Hardening Audit...[/bold cyan]\n")
+    report = run_network_audit()
+
+    score = report["score"]
+    grade = report["grade"]
+    score_color = "green" if score >= 80 else "yellow" if score >= 60 else "red"
+
+    console.print(f"Overall Security Posture Score: [{score_color}][bold]{score}/100 ({grade})[/bold][/{score_color}]\n")
+
+    table = make_table(
+        "Security Audit Findings",
+        [("Category", "cyan"), ("Status", ""), ("Summary", "bold white"), ("Recommendation", "dim")],
+        [],
+    )
+
+    for f in report["findings"]:
+        status = "[success]✓ PASS[/success]" if f["ok"] else f"[error]⚠ {f['severity']}[/error]"
+        table.add_row(f["category"], status, f["summary"], f["recommendation"])
+
+    console.print(table)
+
+
+@tools_app.command("process-monitor")
+def tools_process_monitor():
+    """👁️ Live Process Network Monitor (attributes active sockets to local processes)."""
+    from .tools import monitor_process_network
+
+    console.print("[bold cyan]👁️ Process Network Connection Summary...[/bold cyan]\n")
+    procs = monitor_process_network()
+
+    table = make_table(
+        "Process Network Summary",
+        [("PID", "dim"), ("Process Name", "bold white"), ("Total Sockets", "cyan"), ("Established", "green"), ("Protocols", "yellow"), ("Sample Remote Endpoint", "dim")],
+        [],
+    )
+
+    for p in procs[:30]:  # Top 30 process talkers
+        table.add_row(
+            str(p["pid"]),
+            p["process"],
+            str(p["socket_count"]),
+            str(p["established_count"]),
+            p["protocols"],
+            p["remote_sample"]
+        )
+
+    console.print(table)
+
+
+@tools_app.command("honeypot")
+def tools_honeypot(
+    duration: int = typer.Option(60, "--duration", "-d", help="Duration in seconds to run honeypot listener"),
+    ports: str = typer.Option("22,80,445,3389,8080", "--ports", "-p", help="Comma-separated decoy ports"),
+):
+    """🐝 Public Wi-Fi Honeypot & Scan Detector (alerts when local network IPs probe decoy ports)."""
+    from .tools import run_honeypot_listener
+
+    port_list = [int(p.strip()) for p in ports.split(",") if p.strip().isdigit()]
+    console.print(f"[bold cyan]🐝 Public Wi-Fi Honeypot Active[/bold cyan] (listening on ports {port_list} for {duration}s)...\n")
+
+    def _alert(probe):
+        console.print(f"[bold red]⚠️ ALERT: Port probe detected from {probe['remote_ip']}:{probe['remote_port']} -> Decoy Port {probe['target_port']}![/bold red]")
+
+    probes = run_honeypot_listener(ports=port_list, duration=float(duration), callback=_alert)
+
+    if probes:
+        console.print(f"\n[bold red]Detected {len(probes)} suspicious scan attempts during honeypot session.[/bold red]")
+    else:
+        console.print("[success]✓ Honeypot session finished. No suspicious network scans detected on local LAN.[/success]")
+
+
+@tools_app.command("dns-proxy")
+def tools_dns_proxy(
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Local IP to bind DNS proxy listener"),
+    port: int = typer.Option(5300, "--port", "-p", help="Local UDP port to bind DNS proxy listener"),
+    upstream: str = typer.Option("https://1.1.1.1/dns-query", "--upstream", "-u", help="Upstream DoH endpoint URL"),
+):
+    """🌐 Secure DoH DNS Proxy Engine (local UDP listener that forwards queries over encrypted DNS-over-HTTPS)."""
+    from .tools import run_doh_proxy_server
+
+    console.print(f"[bold cyan]🌐 Secure DoH DNS Proxy Engine Active[/bold cyan]")
+    console.print(f"[muted]Listening on UDP {host}:{port} -> Forwarding over encrypted DoH to {upstream}[/muted]")
+    console.print("[dim]Press Ctrl+C to stop local DNS proxy...[/dim]\n")
+
+    try:
+        run_doh_proxy_server(host=host, port=port, upstream_doh=upstream)
+    except KeyboardInterrupt:
+        console.print("\n[muted]DoH DNS Proxy server stopped.[/muted]")

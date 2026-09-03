@@ -2478,18 +2478,37 @@ def cmd_tools(args):
         stop_event = threading.Event()
         capture_error: list[Exception] = []
 
+        pcap_file = getattr(args, "pcap", None)
+        raw_packets = [] if pcap_file else None
+
         def _on_packet(pkt: dict):
             packets.append(pkt)
 
+        def _on_raw_packet(pkt):
+            if raw_packets is not None:
+                raw_packets.append(pkt)
+            _on_packet(net_tools.parse_packet_summary(pkt))
+
         def _run_capture():
             try:
-                net_tools.capture_packets(
-                    iface=iface,
-                    bpf_filter=bpf_filter,
-                    count=count,
-                    stop_event=stop_event,
-                    on_packet=_on_packet,
-                )
+                if pcap_file:
+                    import scapy.all as scapy
+                    scapy.sniff(
+                        iface=iface or None,
+                        filter=bpf_filter or None,
+                        count=count or 0,
+                        prn=_on_raw_packet,
+                        stop_filter=lambda _p: stop_event.is_set(),
+                        store=False,
+                    )
+                else:
+                    net_tools.capture_packets(
+                        iface=iface,
+                        bpf_filter=bpf_filter,
+                        count=count,
+                        stop_event=stop_event,
+                        on_packet=_on_packet,
+                    )
             except Exception as exc:
                 capture_error.append(exc)
             finally:
@@ -2523,6 +2542,12 @@ def cmd_tools(args):
         console.print("\n[muted]Capture stopped.[/muted]\n")
         summary = net_tools.summarize_capture_packets(list(packets))
         console.print(_capture_summary_table(summary))
+        if pcap_file and raw_packets:
+            ok = net_tools.write_pcap_file(pcap_file, raw_packets)
+            if ok:
+                console.print(f"[success]✓ Exported {len(raw_packets)} captured packets to standard PCAP file: [bold]{pcap_file}[/bold][/success]")
+            else:
+                console.print(f"[error]Failed to write PCAP file to {pcap_file}[/error]")
         console.print()
 
     elif args.tools_command == "dns-set":
@@ -2821,32 +2846,25 @@ def cmd_killswitch(args):
 
 
 def cmd_panic(args):
-    """Instantly kills all connections, flushes DNS, clears proxies, and resets killswitch."""
-    console.print("[bold red]🚨 PANIC BUTTON ACTIVATED 🚨[/bold red]")
-    console.print("[muted]Executing emergency disconnect and trace flush...[/muted]\n")
+    """🚨 Emergency network killswitch & trace cleanup."""
+    restore = getattr(args, "restore", False)
+    console.print("[bold red]🚨 GLOBAL PANIC BUTTON ACTIVATED 🚨[/bold red]")
+    console.print("[muted]Executing emergency isolation, process kill, and network recovery...[/muted]\n")
     
-    # 1. Stop daemon
-    console.print("[dim]→ Stopping daemon & all engines...[/dim]")
-    from . import daemon
-    daemon.stop()
+    from .tools import trigger_panic
+    results = trigger_panic(restore=restore)
     
-    # 2. Clear System Proxy
-    console.print("[dim]→ Clearing Windows system proxy...[/dim]")
-    from .proxy_manager import clear_system_proxy
-    clear_system_proxy()
+    table = make_table(
+        "Panic Protocol Results",
+        [("Step", "bold white"), ("Status", ""), ("Details", "dim")],
+        [],
+    )
+    for res in results:
+        status_str = "[success]✓ OK[/success]" if res["ok"] else "[error]✗ Failed[/error]"
+        table.add_row(res["step"], status_str, res["detail"])
     
-    # 3. Disable Kill Switch
-    console.print("[dim]→ Disabling kill switch firewall rules...[/dim]")
-    from . import security as sec
-    sec.disable_kill_switch()
-    cfg.set_value("kill_switch", False)
-    
-    # 4. Flush DNS
-    console.print("[dim]→ Flushing DNS cache...[/dim]")
-    from .tools import flush_dns
-    flush_dns()
-    
-    console.print("\n[bold green]✓ SYSTEM SECURED. YOU ARE OFFLINE.[/bold green]")
+    console.print(table)
+    console.print("\n[bold green]✓ EMERGENCY PANIC ACTION COMPLETE. SYSTEM SECURED.[/bold green]")
 
 
 def cmd_shield(args):
