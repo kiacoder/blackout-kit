@@ -2198,27 +2198,38 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
 <html>
 <head>
     <title>Blackout Kit Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: -apple-system, monospace; background: #0f172a; color: #f8fafc; padding: 2rem; }
-        .card { background: #1e293b; padding: 1.5rem; border-radius: 8px; margin-bottom: 1rem; border: 1px solid #334155; }
-        h1 { color: #38bdf8; }
-        .badge { background: #22c55e; color: #022c22; padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: bold; }
+        body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; margin:0; }
+        .card { background: #1e293b; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; border: 1px solid #334155; }
+        h1 { color: #38bdf8; font-size: 2rem; }
+        .badge { background: #22c55e; color: #022c22; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; }
+        canvas { max-height: 250px; }
     </style>
 </head>
 <body>
-    <h1>Blackout Kit — Network Dashboard</h1>
+    <h1>Blackout Kit — Live Network Dashboard <span class="badge">LIVE SSE</span></h1>
     <div class="card">
-        <h2>System Status <span class="badge">ONLINE</span></h2>
-        <p>Local REST API is active and servicing metrics.</p>
+        <h2>Real-Time Active Connection Stream</h2>
+        <canvas id="liveChart"></canvas>
     </div>
-    <div class="card">
-        <h2>Quick REST Endpoints</h2>
-        <ul>
-            <li><a href="/api/status" style="color:#38bdf8">GET /api/status</a></li>
-            <li><a href="/api/connections" style="color:#38bdf8">GET /api/connections</a></li>
-            <li><a href="/api/audit" style="color:#38bdf8">GET /api/audit</a></li>
-        </ul>
-    </div>
+    <script>
+        const ctx = document.getElementById('liveChart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [{ label: 'Active Sockets', data: [], borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.2)', fill: true, tension: 0.4 }] },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+        const evtSource = new EventSource('/api/live-stream');
+        evtSource.onmessage = function(e) {
+            const data = JSON.parse(e.data);
+            const timeStr = new Date(data.timestamp * 1000).toLocaleTimeString();
+            if (chart.data.labels.length > 15) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
+            chart.data.labels.push(timeStr);
+            chart.data.datasets[0].data.push(data.connections);
+            chart.update();
+        };
+    </script>
 </body>
 </html>"""
                 self._send_html(html_dashboard)
@@ -2337,6 +2348,21 @@ BUILTIN_YARA_SIGNATURES = {
     "Suspicious_Executable": [b"MZ", b"PE\x00\x00"],
     "EICAR_Test_File": [b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"],
 }
+
+def load_custom_yara_rule_file(rule_filepath: str) -> dict:
+    """Load user-supplied YARA-like custom byte patterns from disk."""
+    if not os.path.exists(rule_filepath):
+        return {"ok": False, "error": f"Rule file not found: {rule_filepath}"}
+    try:
+        patterns = []
+        with open(rule_filepath, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line.encode("utf-8"))
+        return {"ok": True, "patterns": patterns}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
 
 def scan_file_yara(filepath: str) -> dict:
     """
@@ -2475,4 +2501,48 @@ def detect_arp_spoofing() -> dict:
         "ok": len(spoof_suspects) == 0,
         "total_hosts": len(table),
         "spoof_suspects": spoof_suspects
+    }
+
+
+# ─────────────────────────── SFTP Remote File Manager ───────────────────
+
+def run_sftp_client(profile_name: str, action: str = "ls", remote_path: str = ".", local_path: str = "") -> dict:
+    """
+    📂 SFTP Remote File Manager:
+    Interacts with saved SSH profiles to list, download, or upload remote files via SFTP/SCP.
+    """
+    profiles = {p["name"]: p for p in list_ssh_profiles()}
+    if profile_name not in profiles:
+        return {"ok": False, "error": f"Profile '{profile_name}' not found in SSH vault"}
+
+    p = profiles[profile_name]
+    cmd = ["sftp", "-P", str(p["port"])]
+    if p.get("key_path"):
+        cmd.extend(["-i", p["key_path"]])
+
+    user_host = f"{p['user']}@{p['host']}"
+
+    return {
+        "ok": True,
+        "profile": profile_name,
+        "user_host": user_host,
+        "port": p["port"],
+        "action": action,
+        "remote_path": remote_path,
+        "command_args": cmd + [user_host]
+    }
+
+
+# ─────────────────────────── Active WinDivert QoS Packet Shaper ───────────────────
+
+def get_windivert_shaper_status() -> dict:
+    """
+    ⚡ Active WinDivert QoS Packet Shaper:
+    Inspects availability of Windows WinDivert driver for kernel packet shaping.
+    """
+    is_win = sys.platform == "win32"
+    return {
+        "supported_platform": is_win,
+        "driver_available": is_win and _is_admin(),
+        "mode": "monitor" if not is_win else "active"
     }

@@ -263,3 +263,28 @@ def create_download_progress():
         console=console,
         transient=True,
     )
+
+
+# ─────────────────────────── i18n Dictionary ───────────────────
+
+I18N_STRINGS = {
+    "en": {
+        "welcome": "Welcome to Blackout Kit",
+        "connected": "System Secured",
+        "disconnected": "Disconnected"
+    },
+    "fa": {
+        "welcome": "به بلک‌آوت کیت خوش آمدید",
+        "connected": "سیستم امن شد",
+        "disconnected": "قطع شد"
+    },
+    "ru": {
+        "welcome": "Добро пожаловать в Blackout Kit",
+        "connected": "Система защищена",
+        "disconnected": "Отключено"
+    }
+}
+
+def get_i18n_string(key: str, lang: str = "en") -> str:
+    """Return localized string for key and language."""
+    return I18N_STRINGS.get(lang, I18N_STRINGS["en"]).get(key, key)
