@@ -275,16 +275,19 @@ class BlackoutGUI(ctk.CTk):
         ctk.CTkLabel(self.settings_frame, text="Security & Preferences", font=ctk.CTkFont(size=24, weight="bold")).grid(row=0, column=0, pady=(0, 20), sticky="w")
         
         self.iran_mode_var = ctk.BooleanVar(value=False)
-
         self.iran_mode_switch = ctk.CTkSwitch(self.settings_frame, text="Enable TIC 2026 Evasion Profile (Iran Mode)", variable=self.iran_mode_var)
-        self.iran_mode_switch.grid(row=1, column=0, pady=10, sticky="w")
+        self.iran_mode_switch.grid(row=1, column=0, pady=5, sticky="w")
+
+        self.russia_mode_var = ctk.BooleanVar(value=False)
+        self.russia_mode_switch = ctk.CTkSwitch(self.settings_frame, text="Enable Russia Transport Preset (RU Mode)", variable=self.russia_mode_var)
+        self.russia_mode_switch.grid(row=2, column=0, pady=5, sticky="w")
 
         self.killswitch_note = ctk.CTkLabel(
             self.settings_frame,
             text="Network Kill Switch is available only on Linux with a validated upstream endpoint.",
             text_color="gray60",
         )
-        self.killswitch_note.grid(row=2, column=0, pady=10, sticky="w")
+        self.killswitch_note.grid(row=3, column=0, pady=10, sticky="w")
         
 
         # --- CYBER TOOLS FRAME ---
@@ -420,6 +423,9 @@ class BlackoutGUI(ctk.CTk):
         if self.iran_mode_var.get():
             self.after(0, self.append_log, "[*] Iran Mode (TIC 2026 Evasion) active -> forcing legend profile.")
             engine_name = "legend"
+        elif self.russia_mode_var.get():
+            self.after(0, self.append_log, "[*] Russia Mode (RU Transport Preset) active -> forcing xray profile.")
+            engine_name = "xray"
         
         try:
             # Ensure no orphaned daemon is running
@@ -457,6 +463,8 @@ class BlackoutGUI(ctk.CTk):
         engine_name = self.engine_var.get()
         if self.iran_mode_var.get():
             engine_name = "legend"
+        elif self.russia_mode_var.get():
+            engine_name = "xray"
             
         proxy_info = cfg.get_engine_proxy_details(engine_name, cfg.load())
         if proxy_info:

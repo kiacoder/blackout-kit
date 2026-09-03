@@ -2364,10 +2364,11 @@ def load_custom_yara_rule_file(rule_filepath: str) -> dict:
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
-def scan_file_yara(filepath: str) -> dict:
+def scan_file_yara(filepath: str, rule_filepath: str = None) -> dict:
     """
     🔒 YARA Rules Engine:
     Scans a local file against built-in byte signatures for web shells, test viruses, and suspicious payloads.
+    Optional rule_filepath loads custom byte patterns.
     """
     if not os.path.exists(filepath):
         return {"ok": False, "error": f"File not found: {filepath}", "matches": []}
@@ -2375,11 +2376,17 @@ def scan_file_yara(filepath: str) -> dict:
     matches = []
     try:
         with open(filepath, "rb") as f:
-            content = f.read()
+            file_bytes = f.read()
 
-        for rule_name, sigs in BUILTIN_YARA_SIGNATURES.items():
+        sigs_dict = dict(BUILTIN_YARA_SIGNATURES)
+        if rule_filepath:
+            custom_res = load_custom_yara_rule_file(rule_filepath)
+            if custom_res.get("ok") and custom_res.get("patterns"):
+                sigs_dict["Custom_User_Rule"] = custom_res["patterns"]
+
+        for rule_name, sigs in sigs_dict.items():
             for sig in sigs:
-                if sig in content:
+                if sig in file_bytes:
                     matches.append({"rule": rule_name, "pattern": str(sig)})
                     break
 
