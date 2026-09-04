@@ -116,7 +116,8 @@ def test_xray_uses_country_aware_bypass_domains():
     domains = domain_rules[0]["domain"]
     assert "yandex.ru" in domains
     assert "vk.com" in domains
-    assert "ir" not in domains
+    # Verify no .ir domains in RU profile (iran-specific domains should not appear)
+    assert not any(d.endswith(".ir") or d == "ir" for d in domains)
 
 
 def test_xray_uses_iranian_domains_when_country_is_ir():
