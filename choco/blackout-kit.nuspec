@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>blackout-kit</id>
+    <version>1.1.1</version>
+    <title>Blackout Kit 🛡️</title>
+    <authors>kiacoder</authors>
+    <owners>kiacoder</owners>
+    <licenseUrl>https://github.com/kiacoder/blackout-kit/blob/main/LICENSE</licenseUrl>
+    <projectUrl>https://github.com/kiacoder/blackout-kit</projectUrl>
+    <iconUrl>https://raw.githubusercontent.com/kiacoder/blackout-kit/main/docs/icon.png</iconUrl>
+    <description>
+Local network coordination toolkit for proxy and VPN engines.
+Supports WireGuard, XRay, Hysteria2, TUIC, Psiphon, and more.
+Includes network analysis, media downloader, torrent manager, and terminal CLI.
+
+REQUIREMENTS: Windows 10+, no Python required
+    </description>
+    <summary>Local proxy toolkit: engines, analysis, media, torrents, CLI</summary>
+    <releaseNotes>
+🔒 Security Hardening: Atomic JSON, thread-safe locking, DoH validation, SFTP safety, WinDivert verification
+✨ Complete toolkit: Phase 1-4 network analysis, media/torrent manager, terminal CLI, web dashboard
+🐛 42 bugs fixed across audit waves
+    </releaseNotes>
+    <copyright>Copyright © 2026 kiacoder</copyright>
+    <tags>proxy vpn wg xray psiphon network security privacy</tags>
+    <projectSourceUrl>https://github.com/kiacoder/blackout-kit</projectSourceUrl>
+    <packageSourceUrl>https://github.com/kiacoder/blackout-kit/blob/main/choco/blackout-kit.nuspec</packageSourceUrl>
+    <bugTrackerUrl>https://github.com/kiacoder/blackout-kit/issues</bugTrackerUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
