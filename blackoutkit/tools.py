@@ -28,6 +28,7 @@ from .theme import console, make_table
 from .proxy_manager import is_admin as _is_admin
 from . import elevate
 from . import APP_DATA_DIR
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 SPEEDTEST_HISTORY_FILE = APP_DATA_DIR / "speedtest_history.json"
 _SPEEDTEST_HISTORY_MAX = 200
