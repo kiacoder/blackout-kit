@@ -75,3 +75,7 @@ blackoutkit = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+markers = [
+    "performance: mark performance tests (run with -m performance)"
+]
