@@ -865,12 +865,3 @@ def stream_daemon_ipc_metrics() -> dict:
         "uptime": time.time() - state["started_at"] if (state and "started_at" in state) else 0.0,
         "memory_mb": 0.0,
     }
-
-    return {
-        "pid": pid,
-        "active": active,
-        "engine": state.get("engine") if state else None,
-        "started_at": state.get("started_at") if state else None,
-        "uptime": time.time() - state["started_at"] if (state and "started_at" in state) else 0.0,
-        "memory_mb": 0.0,
-    }
