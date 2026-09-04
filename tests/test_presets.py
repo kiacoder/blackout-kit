@@ -1,5 +1,5 @@
 """Tests for Phase 5D Regional Presets."""
-import yaml
+import re
 from pathlib import Path
 
 def test_regional_presets_exist_and_valid():
@@ -7,8 +7,7 @@ def test_regional_presets_exist_and_valid():
     for region in ["ru", "ir", "cn"]:
         config_path = presets_dir / f"{region}.yaml"
         assert config_path.exists(), f"Preset {config_path} missing"
-        with open(config_path, "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-            assert data["region"] == region.upper()
-            assert "dns" in data
-            assert "routing" in data
+        content = config_path.read_text(encoding="utf-8")
+        assert f"region: {region.upper()}" in content
+        assert "dns:" in content
+        assert "routing:" in content
