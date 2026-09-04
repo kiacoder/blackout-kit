@@ -48,7 +48,6 @@ all = [
     "yt-dlp>=2024.01.01",
     "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
 ]
-# The torrent command reports an actionable installation message when the Linux binding is unavailable.
 test = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
@@ -74,8 +73,7 @@ blackoutkit = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
-
+addopts = "-ra -m \"not performance\""
 markers = [
-    "performance: mark performance tests (run with -m performance)"
+    "performance: mark performance benchmark tests (run with -m performance)"
 ]
