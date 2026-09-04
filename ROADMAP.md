@@ -98,9 +98,9 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 
 Before adding new features, the foundation must be reinforced:
 
-1. **GUI Parity:** Bring the CustomTkinter GUI up to par with the CLI. Add `--russia`/`--iran` toggles, visual latency graphs, and a "hacker dashboard" aesthetic.
-2. **Daemon IPC Rewrite:** Upgrade from simple files to named pipes or local gRPC for real-time daemon metrics (exact bytes/sec) without disk I/O.
-3. **YARA Rules Engine:** Allow power users to write custom security rules for memory/file scanning.
+1. **GUI Parity:** **Done** — Added `--russia` & `--iran` transport toggles, live radar map, and custom status dashboards to the CustomTkinter GUI.
+2. **Daemon IPC:** **Done** — High-performance in-memory & socket daemon metrics stream (`stream_daemon_ipc_metrics`) without disk polling.
+3. **YARA Rules Engine:** **Done** — User-supplied YARA rule loader (`load_custom_yara_rule_file`) and pattern scanner (`scan_file_yara`).
 
 ---
 

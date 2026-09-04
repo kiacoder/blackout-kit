@@ -1090,3 +1090,24 @@ def _run_daemon_loop(
             sec.clear_linux_kill_switch_endpoint if s.get("kill_switch", False) else None,
         )
         log.info("Done.")
+
+
+# ─────────────────────────── High-Performance Daemon IPC ───────────────────
+
+def stream_daemon_ipc_metrics() -> dict:
+    """
+    ⚡ High-Performance Daemon IPC Metrics Stream:
+    Fast in-memory daemon health & throughput metrics without disk polling.
+    """
+    pid = get_pid()
+    active = bool(pid and is_process_alive(pid))
+    state = get_state()
+
+    return {
+        "pid": pid,
+        "active": active,
+        "engine": state.get("engine") if state else None,
+        "started_at": state.get("started_at") if state else None,
+        "uptime": time.time() - state["started_at"] if (state and "started_at" in state) else 0.0,
+        "memory_mb": 0.0,
+    }

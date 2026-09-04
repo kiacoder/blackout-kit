@@ -28,6 +28,7 @@ from .theme import console, make_table
 from .proxy_manager import is_admin as _is_admin
 from . import elevate
 from . import APP_DATA_DIR
+BASE_DIR = Path(__file__).resolve().parent.parent
 
 SPEEDTEST_HISTORY_FILE = APP_DATA_DIR / "speedtest_history.json"
 _SPEEDTEST_HISTORY_MAX = 200
@@ -1996,6 +1997,20 @@ def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0
 
 # ─────────────────────────── Secure DoH DNS Proxy Engine ───────────────────
 
+def _validate_doh_upstream(url: str) -> bool:
+    """Validate DoH upstream URL: must be https://, no user credentials, valid host."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme != "https":
+            return False
+        if parsed.username or parsed.password:
+            return False
+        if not parsed.hostname:
+            return False
+        return True
+    except Exception:
+        return False
+
 def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh: str = "https://1.1.1.1/dns-query", duration: float = 0.0, stop_event=None) -> None:
     """
     🌐 Secure DoH DNS Proxy Engine:
@@ -2004,6 +2019,11 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
     """
     import struct
     import urllib.request
+    import urllib.parse
+
+    if not _validate_doh_upstream(upstream_doh):
+        _log.error("Invalid DoH upstream URL %s: Must be https:// without embedded credentials.", upstream_doh)
+        return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.settimeout(1.0)
@@ -2022,11 +2042,12 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
             break
 
         try:
-            data, client_addr = sock.recvfrom(512)
+            data, client_addr = sock.recvfrom(4096)
             if not data or len(data) < 12:
                 continue
 
-            # Forward query via HTTP wire format (application/dns-message)
+            query_tx_id = data[:2]
+
             req = urllib.request.Request(
                 upstream_doh,
                 data=data,
@@ -2035,9 +2056,26 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
             )
             try:
                 with urllib.request.urlopen(req, timeout=3.0) as resp:
-                    answer = resp.read()
-                    if answer:
-                        sock.sendto(answer, client_addr)
+                    resp_url = resp.geturl()
+                    if not resp_url.startswith("https://"):
+                        _log.warning("DoH upstream redirected to non-HTTPS scheme: %s", resp_url)
+                        continue
+
+                    ct = resp.getheader("Content-Type", "")
+                    if "application/dns-message" not in ct.lower():
+                        _log.warning("DoH upstream returned unexpected Content-Type: %s", ct)
+                        continue
+
+                    answer = resp.read(65536)
+                    if not answer or len(answer) < 12 or len(answer) > 65535:
+                        continue
+
+                    resp_tx_id = answer[:2]
+                    if resp_tx_id != query_tx_id:
+                        _log.warning("DoH proxy transaction ID mismatch: expected %r, got %r", query_tx_id, resp_tx_id)
+                        continue
+
+                    sock.sendto(answer, client_addr)
             except Exception as e:
                 _log.debug("DoH proxy forward error: %s", e)
         except socket.timeout:
@@ -2049,7 +2087,6 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
         sock.close()
     except Exception:
         pass
-
 
 # ─────────────────────────── AI Network Explainer ───────────────────
 
@@ -2090,17 +2127,69 @@ def explain_network_state() -> dict:
     }
 
 
+
+import tempfile
+import threading
+import urllib.parse
+import shlex
+
+_file_locks = {}
+_file_locks_guard = threading.Lock()
+
+def _get_file_lock(path_str: str) -> threading.Lock:
+    with _file_locks_guard:
+        if path_str not in _file_locks:
+            _file_locks[path_str] = threading.Lock()
+        return _file_locks[path_str]
+
+def _atomic_json_write(path: Path, payload: dict | list) -> bool:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock = _get_file_lock(str(path.resolve()))
+    with lock:
+        fd, temp_path = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".tmp.")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, path)
+            return True
+        except Exception as exc:
+            _log.error("Failed atomic JSON write to %s: %s", path, exc)
+            if os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except Exception:
+                    pass
+            return False
+
+def _safe_json_read(path: Path, default=None):
+    path = Path(path)
+    if not path.exists():
+        return default if default is not None else {}
+    lock = _get_file_lock(str(path.resolve()))
+    with lock:
+        text = path.read_text(encoding="utf-8")
+        if not text.strip():
+            return default if default is not None else {}
+        return json.loads(text)
+
+
 # ─────────────────────────── SSH Vault & Manager ───────────────────
 
 SSH_VAULT_FILE = APP_DATA_DIR / "ssh_vault.json"
 
 def save_ssh_profile(name: str, host: str, user: str, port: int = 22, key_path: str = "") -> bool:
-    """Save or update an SSH connection profile in local storage."""
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    """Save or update an SSH connection profile in local storage atomically."""
     try:
-        profiles = json.loads(SSH_VAULT_FILE.read_text()) if SSH_VAULT_FILE.exists() else {}
-    except Exception:
-        profiles = {}
+        profiles = _safe_json_read(SSH_VAULT_FILE, default={})
+    except json.JSONDecodeError as err:
+        _log.error("Refusing to overwrite corrupted SSH vault file %s: %s", SSH_VAULT_FILE, err)
+        return False
+    except Exception as exc:
+        _log.error("Failed to read SSH vault file: %s", exc)
+        return False
 
     profiles[name] = {
         "name": name,
@@ -2110,38 +2199,30 @@ def save_ssh_profile(name: str, host: str, user: str, port: int = 22, key_path: 
         "key_path": key_path,
         "created_at": time.time()
     }
-
-    try:
-        SSH_VAULT_FILE.write_text(json.dumps(profiles, indent=2))
-        return True
-    except Exception as exc:
-        _log.error("Failed to save SSH profile %s: %s", name, exc)
-        return False
+    return _atomic_json_write(SSH_VAULT_FILE, profiles)
 
 def list_ssh_profiles() -> list[dict]:
     """List all saved SSH connection profiles."""
     try:
-        if not SSH_VAULT_FILE.exists():
-            return []
-        profiles = json.loads(SSH_VAULT_FILE.read_text())
+        profiles = _safe_json_read(SSH_VAULT_FILE, default={})
         return sorted(list(profiles.values()), key=lambda p: p["name"])
     except Exception:
         return []
 
 def remove_ssh_profile(name: str) -> bool:
-    """Remove a saved SSH profile by name."""
+    """Remove a saved SSH profile by name atomically."""
     try:
-        if not SSH_VAULT_FILE.exists():
-            return False
-        profiles = json.loads(SSH_VAULT_FILE.read_text())
-        if name in profiles:
-            del profiles[name]
-            SSH_VAULT_FILE.write_text(json.dumps(profiles, indent=2))
-            return True
+        profiles = _safe_json_read(SSH_VAULT_FILE, default={})
+    except json.JSONDecodeError as err:
+        _log.error("Refusing to modify corrupted SSH vault file %s: %s", SSH_VAULT_FILE, err)
         return False
     except Exception:
         return False
 
+    if name in profiles:
+        del profiles[name]
+        return _atomic_json_write(SSH_VAULT_FILE, profiles)
+    return False
 
 # ─────────────────────────── Local REST API & Web Dashboard ───────────────────
 
@@ -2157,7 +2238,7 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
             body = json.dumps(data).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:8080")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -2183,7 +2264,7 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
-                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:8080")
                 self.end_headers()
                 try:
                     for _ in range(5):
@@ -2254,12 +2335,15 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
 AUTOMATION_RULES_FILE = APP_DATA_DIR / "automation_rules.json"
 
 def save_automation_rule(name: str, event: str, action: str, enabled: bool = True) -> bool:
-    """Save an event automation rule (event trigger -> action)."""
-    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    """Save an event automation rule (event trigger -> action) atomically."""
     try:
-        rules = json.loads(AUTOMATION_RULES_FILE.read_text()) if AUTOMATION_RULES_FILE.exists() else {}
-    except Exception:
-        rules = {}
+        rules = _safe_json_read(AUTOMATION_RULES_FILE, default={})
+    except json.JSONDecodeError as err:
+        _log.error("Refusing to overwrite corrupted automation rules file %s: %s", AUTOMATION_RULES_FILE, err)
+        return False
+    except Exception as exc:
+        _log.error("Failed to read automation rules file: %s", exc)
+        return False
 
     rules[name] = {
         "name": name,
@@ -2268,37 +2352,30 @@ def save_automation_rule(name: str, event: str, action: str, enabled: bool = Tru
         "enabled": enabled,
         "created_at": time.time()
     }
-
-    try:
-        AUTOMATION_RULES_FILE.write_text(json.dumps(rules, indent=2))
-        return True
-    except Exception as exc:
-        _log.error("Failed to save automation rule %s: %s", name, exc)
-        return False
+    return _atomic_json_write(AUTOMATION_RULES_FILE, rules)
 
 def list_automation_rules() -> list[dict]:
     """List all configured event automation rules."""
     try:
-        if not AUTOMATION_RULES_FILE.exists():
-            return []
-        rules = json.loads(AUTOMATION_RULES_FILE.read_text())
+        rules = _safe_json_read(AUTOMATION_RULES_FILE, default={})
         return sorted(list(rules.values()), key=lambda r: r["name"])
     except Exception:
         return []
 
 def remove_automation_rule(name: str) -> bool:
-    """Remove an automation rule by name."""
+    """Remove an automation rule by name atomically."""
     try:
-        if not AUTOMATION_RULES_FILE.exists():
-            return False
-        rules = json.loads(AUTOMATION_RULES_FILE.read_text())
-        if name in rules:
-            del rules[name]
-            AUTOMATION_RULES_FILE.write_text(json.dumps(rules, indent=2))
-            return True
+        rules = _safe_json_read(AUTOMATION_RULES_FILE, default={})
+    except json.JSONDecodeError as err:
+        _log.error("Refusing to modify corrupted automation rules file %s: %s", AUTOMATION_RULES_FILE, err)
         return False
     except Exception:
         return False
+
+    if name in rules:
+        del rules[name]
+        return _atomic_json_write(AUTOMATION_RULES_FILE, rules)
+    return False
 
 def trigger_automation_event(event_name: str) -> list[dict]:
     """
@@ -2314,24 +2391,20 @@ def trigger_automation_event(event_name: str) -> list[dict]:
         try:
             if action == "panic":
                 trigger_panic()
-                res["detail"] = "Triggered Panic Button"
             elif action == "flush_dns":
-                ok = flush_dns()
-                res["ok"] = ok
-                res["detail"] = "Flushed DNS" if ok else "Failed to flush DNS"
+                res["ok"] = flush_dns()
             elif action == "flush_arp":
                 ok, msg = flush_arp_cache()
                 res["ok"] = ok
                 res["detail"] = msg
             elif action == "audit":
-                audit = run_network_audit()
-                res["detail"] = f"Network Audit Score: {audit.get('score')}/100"
+                res["detail"] = run_network_audit()
             elif action == "recovery":
-                rec = run_network_recovery(audit_source="automation")
-                res["detail"] = f"Executed {len(rec)} recovery repairs"
+                from .recovery_audit import run_full_recovery_audit
+                res["detail"] = run_full_recovery_audit()
             else:
                 res["ok"] = False
-                res["detail"] = f"Unknown action '{action}'"
+                res["detail"] = f"Unknown automation action: {action}"
         except Exception as exc:
             res["ok"] = False
             res["detail"] = str(exc)
@@ -2339,7 +2412,6 @@ def trigger_automation_event(event_name: str) -> list[dict]:
         triggered_results.append(res)
 
     return triggered_results
-
 
 # ─────────────────────────── YARA Signature Rules Engine ───────────────────
 
@@ -2364,24 +2436,50 @@ def load_custom_yara_rule_file(rule_filepath: str) -> dict:
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
-def scan_file_yara(filepath: str) -> dict:
+def scan_file_yara(filepath: str, rule_filepath: str = None) -> dict:
     """
     🔒 YARA Rules Engine:
     Scans a local file against built-in byte signatures for web shells, test viruses, and suspicious payloads.
+    Streams file in 64KB chunks with overlap to handle large files safely.
+    Optional rule_filepath loads custom byte patterns.
     """
     if not os.path.exists(filepath):
         return {"ok": False, "error": f"File not found: {filepath}", "matches": []}
 
-    matches = []
-    try:
-        with open(filepath, "rb") as f:
-            content = f.read()
+    sigs_dict = dict(BUILTIN_YARA_SIGNATURES)
+    if rule_filepath:
+        custom_res = load_custom_yara_rule_file(rule_filepath)
+        if custom_res.get("ok") and custom_res.get("patterns"):
+            sigs_dict["Custom_User_Rule"] = custom_res["patterns"]
 
-        for rule_name, sigs in BUILTIN_YARA_SIGNATURES.items():
-            for sig in sigs:
-                if sig in content:
-                    matches.append({"rule": rule_name, "pattern": str(sig)})
+    matches = []
+    matched_rules = set()
+
+    try:
+        max_sig_len = max((len(sig) for sigs in sigs_dict.values() for sig in sigs), default=64)
+        chunk_size = 65536
+        overlap_size = max(1024, max_sig_len * 2)
+
+        with open(filepath, "rb") as f:
+            buffer = b""
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk and not buffer:
                     break
+
+                window = buffer + chunk
+                for rule_name, sigs in sigs_dict.items():
+                    if rule_name in matched_rules:
+                        continue
+                    for sig in sigs:
+                        if sig in window:
+                            matches.append({"rule": rule_name, "pattern": str(sig)})
+                            matched_rules.add(rule_name)
+                            break
+
+                if not chunk:
+                    break
+                buffer = window[-overlap_size:] if len(window) > overlap_size else window
 
         return {
             "ok": True,
@@ -2393,7 +2491,6 @@ def scan_file_yara(filepath: str) -> dict:
     except Exception as exc:
         return {"ok": False, "error": str(exc), "matches": []}
 
-
 # ─────────────────────────── Network Simulation & Latency Injector ───────────────────
 
 def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float = 100.0, simulated_loss_pct: float = 10.0, samples: int = 5) -> dict:
@@ -2403,11 +2500,14 @@ def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float =
     """
     import random
 
+    added_latency_ms = max(0.0, float(added_latency_ms))
+    simulated_loss_pct = max(0.0, min(100.0, float(simulated_loss_pct)))
+    samples = max(1, min(100, int(samples)))
+
     raw_pings = ping(host, count=samples)
     simulated_pings = []
 
     for p in raw_pings:
-        # Simulate packet loss
         if random.uniform(0, 100) < simulated_loss_pct:
             simulated_pings.append(None)
         elif p is not None:
@@ -2423,10 +2523,11 @@ def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float =
         "stats": stats
     }
 
-
 # ─────────────────────────── Phishing & Malicious Domain Check ───────────────────
 
 KNOWN_PHISHING_KEYWORDS = ["login-verify", "paypal-secure", "apple-id-update", "bank-security-fix", "crypto-airdrop-claim"]
+
+SINKHOLE_IPS = {"0.0.0.0", "127.0.0.1", "127.0.0.2", "::1"}
 
 def check_phishing_domain(domain: str) -> dict:
     """
@@ -2446,8 +2547,11 @@ def check_phishing_domain(domain: str) -> dict:
         suspicious = True
         reasons.append("Domain contains excessive hyphens (typosquatting indicator)")
 
-    # Attempt resolution
     ip = _system_resolve(domain)
+    if ip:
+        if ip in SINKHOLE_IPS or ip.startswith("127.") or ip.startswith("100.64."):
+            suspicious = True
+            reasons.append(f"Domain resolves to sinkhole/loopback IP: {ip}")
 
     return {
         "domain": domain,
@@ -2456,7 +2560,6 @@ def check_phishing_domain(domain: str) -> dict:
         "reasons": reasons,
         "safe": not suspicious
     }
-
 
 # ─────────────────────────── Visual Traffic Bar Graph ───────────────────
 
@@ -2509,28 +2612,60 @@ def detect_arp_spoofing() -> dict:
 def run_sftp_client(profile_name: str, action: str = "ls", remote_path: str = ".", local_path: str = "") -> dict:
     """
     📂 SFTP Remote File Manager:
-    Interacts with saved SSH profiles to list, download, or upload remote files via SFTP/SCP.
+    Interacts with saved SSH profiles to list, download, or upload remote files via SFTP/SCP safely.
     """
+    import shlex
+    import subprocess
+
     profiles = {p["name"]: p for p in list_ssh_profiles()}
     if profile_name not in profiles:
         return {"ok": False, "error": f"Profile '{profile_name}' not found in SSH vault"}
 
     p = profiles[profile_name]
-    cmd = ["sftp", "-P", str(p["port"])]
-    if p.get("key_path"):
-        cmd.extend(["-i", p["key_path"]])
-
     user_host = f"{p['user']}@{p['host']}"
 
-    return {
-        "ok": True,
-        "profile": profile_name,
-        "user_host": user_host,
-        "port": p["port"],
-        "action": action,
-        "remote_path": remote_path,
-        "command_args": cmd + [user_host]
-    }
+    if action == "ls":
+        batch_input = "ls " + shlex.quote(remote_path) + "\nquit\n"
+    elif action == "get":
+        loc = local_path if local_path else "."
+        batch_input = "get " + shlex.quote(remote_path) + " " + shlex.quote(loc) + "\nquit\n"
+    elif action == "put":
+        if not local_path:
+            return {"ok": False, "error": "Local path is required for SFTP put action"}
+        batch_input = "put " + shlex.quote(local_path) + " " + shlex.quote(remote_path) + "\nquit\n"
+    else:
+        return {"ok": False, "error": f"Unsupported SFTP action: {action}"}
+
+    cmd = ["sftp", "-b", "-", "-P", str(p["port"])]
+    if p.get("key_path"):
+        cmd.extend(["-i", p["key_path"]])
+    cmd.append(user_host)
+
+    try:
+        res = subprocess.run(
+            cmd,
+            input=batch_input.encode("utf-8"),
+            capture_output=True,
+            timeout=30.0
+        )
+        out_text = res.stdout.decode("utf-8", errors="replace")
+        err_text = res.stderr.decode("utf-8", errors="replace")
+        ok = (res.returncode == 0)
+        return {
+            "ok": ok,
+            "profile": profile_name,
+            "user_host": user_host,
+            "port": p["port"],
+            "action": action,
+            "remote_path": remote_path,
+            "local_path": local_path,
+            "command_args": cmd,
+            "stdout": out_text,
+            "stderr": err_text,
+            "error": None if ok else (err_text or f"SFTP process exited with code {res.returncode}")
+        }
+    except Exception as exc:
+        return {"ok": False, "error": f"SFTP execution failed: {exc}"}
 
 
 # ─────────────────────────── Active WinDivert QoS Packet Shaper ───────────────────
@@ -2538,11 +2673,47 @@ def run_sftp_client(profile_name: str, action: str = "ls", remote_path: str = ".
 def get_windivert_shaper_status() -> dict:
     """
     ⚡ Active WinDivert QoS Packet Shaper:
-    Inspects availability of Windows WinDivert driver for kernel packet shaping.
+    Inspects availability of Windows WinDivert driver & DLL for kernel packet shaping.
     """
+    import subprocess
     is_win = sys.platform == "win32"
+    dll_exists = False
+    driver_exists = False
+
+    if is_win:
+        windir = os.environ.get("WINDIR", r"C:\Windows")
+        sys32 = Path(windir) / "System32"
+        sys32_drivers = sys32 / "drivers"
+        bins_dir = BASE_DIR / "bins"
+
+        dll_candidates = [
+            sys32 / "WinDivert.dll",
+            bins_dir / "WinDivert.dll",
+            Path("WinDivert.dll")
+        ]
+        sys_candidates = [
+            sys32_drivers / "WinDivert64.sys",
+            sys32_drivers / "WinDivert32.sys",
+            bins_dir / "WinDivert64.sys",
+            Path("WinDivert64.sys")
+        ]
+
+        dll_exists = any(p.exists() for p in dll_candidates)
+        driver_exists = any(p.exists() for p in sys_candidates)
+
+        if _is_admin():
+            try:
+                res = subprocess.run(["sc", "query", "WinDivert"], capture_output=True, text=True, timeout=3.0)
+                if res.returncode == 0 and "RUNNING" in res.stdout:
+                    driver_exists = True
+            except Exception:
+                pass
+
+    available = is_win and _is_admin() and (dll_exists or driver_exists)
     return {
         "supported_platform": is_win,
-        "driver_available": is_win and _is_admin(),
-        "mode": "monitor" if not is_win else "active"
+        "driver_available": available,
+        "dll_present": dll_exists,
+        "driver_present": driver_exists,
+        "mode": "active" if available else "monitor"
     }

@@ -854,8 +854,8 @@ def stream_daemon_ipc_metrics() -> dict:
     Fast in-memory daemon health & throughput metrics without disk polling.
     """
     pid = get_pid()
+    active = bool(pid and is_process_alive(pid))
     state = get_state()
-    active = is_running()
 
     return {
         "pid": pid,
