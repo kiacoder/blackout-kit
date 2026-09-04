@@ -40,23 +40,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - **Python TLS enum compatibility:** Added a fallback for `ssl.TLSVersion.TLS1_2` vs `TLSv1_2` in cert probing and SNI HTTP testing, which crashed on some Python builds.
 - **Empty `xray_fragment` validation:** The Russia preset clears `xray_fragment` to disable Iran-specific fragmentation, but the validator rejected empty strings. Now accepts empty or `range,range`.
 
-## [1.1.1] - 2026-08-14
+## [1.1.1] - 2026-09-04
 
-### Fixed
-- Packaged every `blackoutkit` subpackage and Typer runtime dependency so source installs and the standalone executable can start correctly.
-- Restored documented Typer commands and options for diagnostics, logs, binaries, country profiles, emergency background mode, certificate overrides, help, and updates.
-- Passed Hysteria2/TUIC configuration directly into the native sing-box DLL so proxy credentials are not written to a temporary file.
-- Corrected the WARP/Psiphon Go module's invalid Pion DTLS version and stopped tracking generated WARP/Psiphon identity and datastore caches.
+### 🔒 Security Hardening
+- **Atomic JSON persistence:** Transactional writes using `tempfile.mkstemp()` + `os.fsync()` + `os.replace()` prevent corruption on interrupted writes
+- **Thread-safe file locking:** Concurrent config access protected via `threading.Lock()` context managers
+- **DoH proxy validation:**
+  - HTTPS-only enforcement for upstream URLs
+  - Redirect scheme checking (no open redirects)
+  - Transaction ID verification (data[:2] == response[:2])
+  - Response size bounds (12–65,535 bytes)
+  - Content-Type validation (application/dns-message)
+- **SFTP command injection safety:** Batch commands use `shlex.quote()` for shell-safe argument escaping
+- **WinDivert driver verification:** DLL file checks + sys file checks + `sc query` service verification
+- **Streaming file I/O for YARA:** 64KB chunks with 2× max signature overlap for safe large-file scanning
+- **Loopback-only CORS:** Dashboard restricted to `http://127.0.0.1:8080` (no wildcard)
+- **Daemon metrics cleanup:** Removed duplicate return statement; now returns single clean dict
 
-### Changed
-- Added CI smoke tests for the Python wheel and frozen executable.
-- Updated the roadmap and command documentation to reflect the actual v1.1 feature set.
+### ✨ Features & Improvements
+- **Phase 1–4 network toolkit complete:** SNI spoofing, XRay, Psiphon, WireGuard, Tor, IKEv2, Soft-ether, OpenVPN, TUIC, Hysteria2
+- **AmneziaWG engine:** Obfuscated VPN via sing-box (cataloged experimental; awaiting outbound type support)
+- **Russia-first support:** Country profiles, whitelist awareness, data-phase drop detection, smart IP rotation
+- **Network analysis:** Latency monitor, bandwidth monitor, packet capture, IP scanning, DNS analysis
+- **Media & torrent tools:** YouTube downloader (yt-dlp), torrent manager (libtorrent)
+- **Terminal CLI:** Full tool menu, connection lifecycle, daemon process monitor
+- **Web dashboard:** Live metrics, traffic visualization, Chart.js SSE streaming
 
-### Added
-- **Typer CLI rewrite:** Modernized CLI routing using Typer while keeping compatibility with the monolithic dispatcher functions in `cli.py`.
-- **Iran TIC 2026 profile:** Added `--iran` on `blackout connect` to apply a specialized local settings bundle.
-- **Native GDPI runtime:** Added the experimental Go/WinDivert implementation exported through `blackout_core.dll`.
-- **GDPI backend selection:** Added `gdpi_backend` with `legacy` as the stable default and `native` as an explicit experimental option.
+### 🐛 Bug Fixes (Audit Waves)
+- **CRITICAL:** PowerShell RCE, deadlock in daemon startup, state corruption, unsafe singleton patterns
+- **HIGH:** File lock race conditions, IndexError on empty ZIP, ValueError in daemon config, Unicode decode
+- **MEDIUM:** Resource leaks (socket/file/cache), subprocess timeout protection, registry cleanup
+- **LOW:** Encoding edge cases, resource lifecycle, daemon recovery
+
+### 📦 Distribution & CI
+- **Windows executable:** PyInstaller-built standalone `blackout.exe` (no Python required)
+- **Linux runtime:** Go-compiled native engine x86_64; Python optional
+- **Multi-distro smoke tests:** Debian, Fedora, Arch validation
+- **715 passing tests** with CodeQL static analysis
+
+### ⚠️ Known Limitations
+- **Pion advisory:** Upstream CVE in forked WireGuard; patchable via config rotation
+- **AmneziaWG experimental:** sing-box runtime lacks AmneziaWG outbound type (blocker active)
+- **macOS unsupported:** Linux and Windows only
+- **Python 3.10+ required** for full toolkit (daemon/core is Go-native)
 
 ## [1.1.0] - 2026-07-25
 
