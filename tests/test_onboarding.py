@@ -139,7 +139,7 @@ def test_root_first_run_welcome_renders_once_without_writing_settings(monkeypatc
     settings_file = tmp_path / "settings.json"
     monkeypatch.setattr(cfg, "SETTINGS_FILE", settings_file)
     monkeypatch.setattr(typer_cli, "is_interactive", lambda: True)
-    monkeypatch.setattr("blackoutkit.cli.print_banner", lambda: None)
+    monkeypatch.setattr("blackoutkit.theme.print_banner", lambda: None)
     monkeypatch.setattr("blackoutkit.cli._show_launcher_menu", lambda: None)
 
     result = runner.invoke(typer_cli.app, [])

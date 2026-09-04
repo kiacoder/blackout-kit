@@ -3276,7 +3276,8 @@ def app_callback(
             from .onboarding import render_first_run_welcome
             render_first_run_welcome(console)
         from . import settings as cfg
-        from .cli import _show_launcher_menu, print_banner
+        from .cli import _show_launcher_menu
+        from .theme import print_banner
         s = cfg.load()
         if s.get("show_banner", True) and not quiet:
             print_banner()

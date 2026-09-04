@@ -1495,7 +1495,7 @@ def test_quiet_suppresses_migrated_read_output(monkeypatch):
 
 def test_root_no_color_does_not_leak_between_invocations(monkeypatch):
     monkeypatch.setattr("blackoutkit.cli._show_launcher_menu", lambda: None)
-    monkeypatch.setattr("blackoutkit.cli.print_banner", lambda: None)
+    monkeypatch.setattr("blackoutkit.theme.print_banner", lambda: None)
     monkeypatch.setattr("blackoutkit.settings.load", lambda: {"show_banner": False})
 
     first = runner.invoke(typer_cli.app, ["--no-color"])
