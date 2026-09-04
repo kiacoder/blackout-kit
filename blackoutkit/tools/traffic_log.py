@@ -14,8 +14,6 @@ import os
 import tempfile
 import threading
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Optional
 
 _log = logging.getLogger(__name__)
 _traffic_lock = threading.Lock()
@@ -45,8 +43,8 @@ def append_connection_log(entry: dict) -> None:
 
 
 def load_traffic_log(
-    since_ts: Optional[float] = None,
-    limit: Optional[int] = None,
+    since_ts: float | None = None,
+    limit: int | None = None,
 ) -> list[dict]:
     """
     Load traffic entries from JSONL, optionally filtered by timestamp and limited (thread-safe).
@@ -83,9 +81,9 @@ def load_traffic_log(
 
 
 def get_traffic_stats(
-    app: Optional[str] = None,
-    protocol: Optional[str] = None,
-    since_ts: Optional[float] = None,
+    app: str | None = None,
+    protocol: str | None = None,
+    since_ts: float | None = None,
 ) -> dict:
     """
     Aggregate traffic stats by app/protocol.

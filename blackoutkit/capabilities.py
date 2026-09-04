@@ -1,11 +1,11 @@
 """Pure capability metadata for Blackout Kit engine targets."""
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import os
 import sys
-from typing import Any, Iterable
-
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
+from typing import Any
 
 PUBLIC_ENGINE_NAMES = (
     "sni",
@@ -469,8 +469,8 @@ def serialize_capability(capability: EngineCapability) -> dict[str, Any]:
 
 
 __all__ = [
-    "EngineCapability",
     "PUBLIC_ENGINE_NAMES",
+    "EngineCapability",
     "all_capabilities",
     "build_capability_matrix",
     "get_capability",

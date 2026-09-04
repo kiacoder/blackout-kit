@@ -1,16 +1,16 @@
 """Shared connection lifecycle used by Typer and legacy command adapters."""
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import dataclass, field
 import asyncio
 import ctypes
 import os
 import socket
 import sys
 import time
-from typing import Any, Callable
-
+from collections.abc import Callable
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from typing import Any
 
 _WINDOWS_ELEVATED_ENGINES = frozenset({"gdpi", "warp", "tun"})
 _LINUX_ENGINES = frozenset({"xray", "tun", "hysteria2", "tuic", "awg"})

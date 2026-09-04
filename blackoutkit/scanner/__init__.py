@@ -16,20 +16,20 @@ Rare upgrades:
 """
 
 from .ip_scanner import (
+    cache_age_str,
     check_ip,
     generate_cloudflare_ips,
+    load_cache,
+    save_cache,
     scan_ips,
     scan_sync,
-    save_cache,
-    load_cache,
-    cache_age_str,
 )
 from .proxy_tester import (
+    full_connectivity_report,
     test_direct,
-    test_tcp_port,
     test_http_proxy,
     test_socks5_proxy,
-    full_connectivity_report,
+    test_tcp_port,
 )
 
 
@@ -92,22 +92,22 @@ def is_connected(
 
 
 __all__ = [
+    "best_ip",
+    "cache_age_str",
     # From ip_scanner
     "check_ip",
-    "generate_cloudflare_ips",
-    "scan_ips",
-    "scan_sync",
-    "save_cache",
-    "load_cache",
-    "cache_age_str",
-    # From proxy_tester
-    "test_direct",
-    "test_tcp_port",
-    "test_http_proxy",
-    "test_socks5_proxy",
     "full_connectivity_report",
+    "generate_cloudflare_ips",
+    "is_connected",
+    "load_cache",
     # Package-level helpers
     "quick_scan",
-    "best_ip",
-    "is_connected",
+    "save_cache",
+    "scan_ips",
+    "scan_sync",
+    # From proxy_tester
+    "test_direct",
+    "test_http_proxy",
+    "test_socks5_proxy",
+    "test_tcp_port",
 ]

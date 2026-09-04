@@ -14,11 +14,10 @@ import logging
 import os
 import tempfile
 import threading
-import urllib.request
 import urllib.error
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Optional, tuple
+import urllib.request
+from datetime import datetime, timedelta, timezone
+from typing import tuple
 
 _log = logging.getLogger(__name__)
 _adblock_lock = threading.Lock()

@@ -14,20 +14,18 @@ import fnmatch
 import hashlib
 import json
 import os
+import sys
 import tempfile
 import threading
-import sys
 import urllib.error
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
-from . import __version__
-
-from . import PROJECT_ROOT, BINS_DIR
+from . import BINS_DIR, __version__
 
 _PROVENANCE_FILE = BINS_DIR / ".provenance.json"
 _DOWNLOAD_LOCK = threading.Lock()
@@ -352,7 +350,7 @@ def _extract_from_zip(
                     if not resolved.is_relative_to(output_dir.resolve()):
                         return False, "unsafe_output_path"
                     dest.write_bytes(zf.read(matched))
-                except (OSError, IOError) as exc:
+                except OSError as exc:
                     return False, f"write_error: {exc}"
     except zipfile.BadZipFile:
         return False, "corrupt_zip"
@@ -981,8 +979,8 @@ def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = 
 def _download_openvpn_binary(progress_callback: Callable[[int, int], None] | None = None) -> tuple[bool, str]:
     """Helper to download OpenVPN MSI and extract openvpn.exe and DLLs using msiexec."""
     import re
-    import subprocess
     import shutil
+    import subprocess
     try:
         req = urllib.request.Request(
             "https://build.openvpn.net/downloads/releases/",

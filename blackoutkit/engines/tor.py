@@ -15,7 +15,8 @@ Rare upgrades:
 """
 import subprocess
 from pathlib import Path
-from .base import Engine, BINS_DIR
+
+from .base import BINS_DIR, Engine
 
 TOR_BIN_NAMES = [
     "tor.exe",

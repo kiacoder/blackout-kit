@@ -8,20 +8,18 @@ Epic upgrades:
   - check_disk_space(): warns if < 200 MB free in bins/ parent drive
   - check_binary_runnable(): actually launches each binary to confirm it executes
 """
-import json
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from . import settings as cfg
-from .theme import console
-from .engines.gdpi import GDPI_BIN_NAMES
-from rich.panel import Panel
-from rich.table import Table
 from rich import box
+from rich.table import Table
 
 from . import APP_DATA_DIR, BINS_DIR, DATA_DIR, PROJECT_ROOT, resource_path
+from . import settings as cfg
+from .engines.gdpi import GDPI_BIN_NAMES
+from .theme import console
 
 
 def _data_file_path(relative_path: str) -> Path:
@@ -174,7 +172,8 @@ def _gdpi_backend() -> str:
 def check_bins_present() -> list[CheckResult]:
     """Check which binaries are present — suggests 'blackout bins download' for missing ones."""
     results = []
-    from .downloader import BIN_REGISTRY, BINS_DIR as _BINS_DIR
+    from .downloader import BIN_REGISTRY
+    from .downloader import BINS_DIR as _BINS_DIR
 
     if sys.platform.startswith("linux"):
         runner = _BINS_DIR / "blackout-engine"
@@ -403,8 +402,8 @@ def _load_country_profile_quietly():
     """Load country profile without printing anything — returns profile or None."""
     try:
         from . import country_profiles as cp
-        from .network_switcher import get_isp_info
         from . import settings as _cfg
+        from .network_switcher import get_isp_info
         code = _cfg.load().get("country", "")
         if code:
             return cp.get_profile(code)
@@ -455,8 +454,8 @@ def check_russia_whitelist() -> list[CheckResult]:
         if not profile or profile.code != "RU":
             return results
 
-        from .russia_whitelist import check_whitelist_status
         from .config.manager import load_configs
+        from .russia_whitelist import check_whitelist_status
         from .tools import resolve_doh
 
         configs = load_configs()
@@ -469,7 +468,7 @@ def check_russia_whitelist() -> list[CheckResult]:
             host = c.address
             resolved = resolve_doh(host)
             ip = resolved or host
-            on_whitelist, detail = check_whitelist_status(ip)
+            _on_whitelist, detail = check_whitelist_status(ip)
             results.append(CheckResult(
                 f"Whitelist: {c.name or c.address}",
                 True,
@@ -718,6 +717,7 @@ def check_windows_compat() -> CheckResult:
     """Verify the current platform exposes a supported Blackout Kit runtime."""
     if sys.platform.startswith("linux"):
         import platform
+
         from . import BINS_DIR
 
         arch = platform.machine().lower()
@@ -825,6 +825,7 @@ def get_execution_context() -> dict:
     """Returns information about how and where the app is running."""
     import sys
     from pathlib import Path
+
     from . import __version__
     
     script_path = Path(sys.argv[0]).resolve()
@@ -874,7 +875,7 @@ def check_ports_in_use() -> CheckResult:
     
     def _fix_ports():
         import random
-        for name, (port, _) in in_use.items():
+        for name in in_use:
             new_port = random.randint(15000, 50000)
             if name == "SNI": cfg.set_value("sni_listen_port", new_port)
             elif name == "XRay SOCKS": cfg.set_value("xray_socks_port", new_port)

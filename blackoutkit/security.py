@@ -16,7 +16,6 @@ Also handles:
   - Mode enforcement verification
   - Defender exclusion verification and listing
 """
-import base64
 import hashlib
 import json
 import logging
@@ -27,12 +26,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-from . import settings as cfg
 from . import elevate
+from . import settings as cfg
 
 _log = logging.getLogger(__name__)
 
-from . import PROJECT_ROOT, APP_DATA_DIR, BINS_DIR, DATA_DIR
+from . import APP_DATA_DIR, BINS_DIR, DATA_DIR
+
 CONFIGS_FILE  = DATA_DIR / "configs.txt"
 ENC_CONFIGS   = APP_DATA_DIR / "configs.enc"
 
@@ -175,8 +175,8 @@ def _linux_kill_switch_endpoints(engine_name: str | None = None) -> list[tuple[s
     if not sys.platform.startswith("linux"):
         return []
     try:
-        from .config.manager import load_configs
         from . import linux_network
+        from .config.manager import load_configs
 
         settings = cfg.load()
         selected = (engine_name or settings.get("selected_engine", "auto")).lower()
@@ -367,8 +367,8 @@ def _get_machine_id() -> bytes:
 
 def _derive_aes_key(machine_id: bytes) -> bytes:
     """Derive a 32-byte AES-256 key via PBKDF2-HMAC-SHA256."""
-    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     kdf = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
@@ -473,7 +473,7 @@ def add_defender_exclusion(path: Path | None = None) -> bool:
         'Write-Output "OK" | Out-File -FilePath $env:BLACKOUT_MARKER_PATH -Encoding UTF8'
     )
     env = {**os.environ, "BLACKOUT_EXCL_PATH": target, "BLACKOUT_MARKER_PATH": str(marker)}
-    handle, pid = elevate.launch_elevated(
+    handle, _pid = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_elevated],
         env=env,
@@ -513,7 +513,7 @@ def remove_defender_exclusion(path: Path | None = None) -> bool:
         'Write-Output "OK" | Out-File -FilePath $env:BLACKOUT_MARKER_PATH -Encoding UTF8'
     )
     env = {**os.environ, "BLACKOUT_EXCL_PATH": target, "BLACKOUT_MARKER_PATH": str(marker)}
-    handle, pid = elevate.launch_elevated(
+    handle, _pid = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_elevated],
         env=env,

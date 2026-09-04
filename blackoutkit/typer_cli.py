@@ -4,11 +4,11 @@ This will eventually replace cli.py.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 import base64
 import json
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import click
@@ -29,7 +29,6 @@ from .cli_output import (
     emit_json,
     emit_jsonl,
     emit_verbose,
-    error_payload,
     is_quiet,
     read_secret,
     require_import,
@@ -46,7 +45,6 @@ from .theme import (
     print_friendly_error,
     refresh_console_theme,
 )
-
 
 _DEFAULT_NO_COLOR = console.no_color
 
@@ -245,6 +243,7 @@ def _one_based_index(number: int) -> int:
 
 def _render_settings(settings: dict) -> None:
     from rich.markup import escape
+
     from . import settings as cfg
 
     table = make_table(
@@ -355,8 +354,8 @@ def _read_profile_file(path: Path) -> bytes:
 
 
 def _apply_setup(configs: list, settings_data: dict) -> None:
-    from .config.manager import load_configs, save_configs
     from . import settings as cfg
+    from .config.manager import load_configs, save_configs
 
     old_configs = load_configs()
     old_settings = cfg.load()
@@ -374,8 +373,8 @@ def _apply_setup(configs: list, settings_data: dict) -> None:
 
 
 def _compatibility_payload(configs: list) -> dict:
-    from . import settings as cfg
     from . import downloader
+    from . import settings as cfg
     from .capabilities import build_capability_matrix
     from .routing import recommend_routes
 
@@ -570,8 +569,8 @@ app = typer.Typer(
 
 
 def _capability_payload(engine: str | None = None) -> dict:
-    from .capabilities import build_capability_matrix
     from . import settings as cfg
+    from .capabilities import build_capability_matrix
     from .config.manager import load_configs
     from .downloader import check_installed
 
@@ -991,9 +990,10 @@ def scan(
     ))
 
 def _ask_engine(prompt_text: str = "Choose an engine") -> str | None:
+    from rich.align import Align
     from rich.columns import Columns
     from rich.panel import Panel
-    from rich.align import Align
+
     from .cli import ALL_ENGINE_CHOICES
 
     if not is_interactive():
@@ -1237,12 +1237,8 @@ def doctor(
 
 
 def _connection_service(options: OutputOptions):
-    from . import readiness
-    from . import security
+    from . import cli, daemon, proxy_manager, readiness, security
     from . import settings as cfg
-    from . import daemon
-    from . import proxy_manager
-    from . import cli
     from .connection_service import ConnectionService
 
     def emit(event: dict[str, object]) -> None:
@@ -3032,8 +3028,8 @@ def config_edit():
 @settings_app.command("list")
 def settings_list(ctx: typer.Context = None):
     """List all settings with sensitive values masked."""
+
     from . import settings as cfg
-    from rich.markup import escape
 
     values = cfg.load()
     options = _output_options(ctx)
@@ -3051,8 +3047,9 @@ def settings_get(
     ctx: typer.Context = None,
 ):
     """Get one setting with its description."""
-    from . import settings as cfg
     from rich.markup import escape
+
+    from . import settings as cfg
 
     key = _option_value(key)
     if key not in cfg.DEFAULTS:
@@ -3279,7 +3276,7 @@ def app_callback(
             from .onboarding import render_first_run_welcome
             render_first_run_welcome(console)
         from . import settings as cfg
-        from .cli import print_banner, _show_launcher_menu
+        from .cli import _show_launcher_menu, print_banner
         s = cfg.load()
         if s.get("show_banner", True) and not quiet:
             print_banner()
@@ -3398,7 +3395,7 @@ def tools_dns_proxy(
     """🌐 Secure DoH DNS Proxy Engine (local UDP listener that forwards queries over encrypted DNS-over-HTTPS)."""
     from .tools import run_doh_proxy_server
 
-    console.print(f"[bold cyan]🌐 Secure DoH DNS Proxy Engine Active[/bold cyan]")
+    console.print("[bold cyan]🌐 Secure DoH DNS Proxy Engine Active[/bold cyan]")
     console.print(f"[muted]Listening on UDP {host}:{port} -> Forwarding over encrypted DoH to {upstream}[/muted]")
     console.print("[dim]Press Ctrl+C to stop local DNS proxy...[/dim]\n")
 
@@ -3470,6 +3467,7 @@ def ssh_connect(
 ):
     """Connect to a saved SSH profile using system ssh client."""
     import subprocess
+
     from .tools import list_ssh_profiles
     profiles = {p["name"]: p for p in list_ssh_profiles()}
     if name not in profiles:
@@ -3508,7 +3506,7 @@ def api_start(
 ):
     """Start local REST API and browser-based Web Dashboard."""
     from .tools import run_web_api_dashboard
-    console.print(f"[bold cyan]🌐 Starting Blackout Kit Web Dashboard & REST API...[/bold cyan]")
+    console.print("[bold cyan]🌐 Starting Blackout Kit Web Dashboard & REST API...[/bold cyan]")
     console.print(f"[success]✓ Open dashboard in your browser:[/success] [bold white]http://{host}:{port}/[/bold white]")
     console.print("[dim]Press Ctrl+C to stop the REST API server...[/dim]\n")
     run_web_api_dashboard(host=host, port=port)
@@ -3628,7 +3626,11 @@ def tools_traffic_graph(
     interval: float = typer.Option(1.0, "--interval", "-i", help="Interval between samples in seconds"),
 ):
     """📊 Live Visual Traffic Graph (displays real-time bandwidth bars)."""
-    from .tools import get_interface_io_counters, compute_bandwidth_rates, generate_ascii_bandwidth_chart
+    from .tools import (
+        compute_bandwidth_rates,
+        generate_ascii_bandwidth_chart,
+        get_interface_io_counters,
+    )
     console.print(f"[bold cyan]📊 Live Traffic Visual Bar Graph ({samples} samples)...[/bold cyan]\n")
 
     prev = get_interface_io_counters()
@@ -3653,7 +3655,7 @@ def tools_arp_guard():
     if res["ok"]:
         console.print(f"[success]✓ ARP Guard Clean: Checked {res['total_hosts']} hosts on local ARP table. No ARP spoofing detected.[/success]")
     else:
-        console.print(f"[bold red]⚠️ SUSPECTED ARP POISONING / MITM ATTACK DETECTED:[/bold red]")
+        console.print("[bold red]⚠️ SUSPECTED ARP POISONING / MITM ATTACK DETECTED:[/bold red]")
         for s in res["spoof_suspects"]:
             console.print(f"  • MAC [bold]{s['mac']}[/bold] is shared by multiple IPs: {', '.join(s['ips'])}")
 
@@ -3667,8 +3669,7 @@ def vault_backup(
     output: str = typer.Option("blackout_vault_backup.json", "--output", "-o", help="Backup output path"),
 ):
     """Create an encrypted backup of the saved configs & settings vault."""
-    from . import settings as cfg
-    from .config.manager import load_configs, serialize_setup
+    from .config.manager import serialize_setup
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
     out_path = Path(output).expanduser().resolve()
     try:
@@ -3683,7 +3684,7 @@ def vault_restore(
     path: str = typer.Argument(..., help="Path to backup file to restore"),
 ):
     """Restore vault configs & settings from a backup file."""
-    from .typer_cli import _decode_setup, _apply_setup
+    from .typer_cli import _apply_setup
     p = Path(path).expanduser().resolve()
     if not p.exists():
         console.print(f"[error]Backup file not found: {p}[/error]")
@@ -3733,6 +3734,7 @@ def ssh_sftp(
 ):
     """📂 SFTP Remote File Manager (browse, upload, or download remote files)."""
     import subprocess
+
     from .tools import run_sftp_client
     res = run_sftp_client(name, action=action, remote_path=remote, local_path=local)
     if not res["ok"]:

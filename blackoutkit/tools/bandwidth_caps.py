@@ -13,9 +13,7 @@ import logging
 import os
 import tempfile
 import threading
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Optional
+from datetime import datetime, timezone
 
 _log = logging.getLogger(__name__)
 _bandwidth_lock = threading.Lock()
@@ -147,8 +145,8 @@ def get_current_usage(interface: str) -> tuple[int, int, int, int]:
 
 def check_cap_exceeded(
     interface: str,
-    daily_limit_mb: Optional[int] = None,
-    monthly_limit_mb: Optional[int] = None,
+    daily_limit_mb: int | None = None,
+    monthly_limit_mb: int | None = None,
 ) -> tuple[bool, float, str]:
     """
     Check if usage exceeds limits.
@@ -231,7 +229,7 @@ def load_caps() -> dict[str, dict]:
         return {}
 
 
-def set_cap(interface: str, daily_mb: Optional[int] = None, monthly_mb: Optional[int] = None) -> None:
+def set_cap(interface: str, daily_mb: int | None = None, monthly_mb: int | None = None) -> None:
     """Update or add a cap for an interface."""
     caps = load_caps()
 
@@ -246,7 +244,7 @@ def set_cap(interface: str, daily_mb: Optional[int] = None, monthly_mb: Optional
     save_caps(caps)
 
 
-def get_cap(interface: str) -> tuple[Optional[int], Optional[int]]:
+def get_cap(interface: str) -> tuple[int | None, int | None]:
     """Get cap for an interface. Returns (daily_mb, monthly_mb)."""
     caps = load_caps()
     if interface in caps:

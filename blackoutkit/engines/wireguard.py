@@ -16,10 +16,10 @@ Settings:
 Download WireGuard: https://www.wireguard.com/install/
 """
 import logging
-import time
 from pathlib import Path
-from .base import Engine
+
 from .. import settings as cfg
+from .base import Engine
 
 _STARTUP_TIMEOUT = 5.0
 

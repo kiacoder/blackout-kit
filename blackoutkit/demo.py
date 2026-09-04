@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import sys
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from .capabilities import build_capability_matrix
 from .config.manager import load_configs
 from .routing import recommend_routes
-
 
 GOLDEN_PATH = (
     "doctor --local-only",

@@ -6,6 +6,7 @@ this watchdog instantly unsets the Windows system proxy to restore internet.
 import sys
 import time
 from pathlib import Path
+
 import psutil
 
 # Ensure blackoutkit is importable
@@ -79,6 +80,7 @@ def monitor(daemon_pid: int, generation: str | None = None):
 
     def cleanup_metadata():
         import json
+
         from blackoutkit.daemon import PID_FILE, STATE_FILE
         try:
             if PID_FILE.exists():

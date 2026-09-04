@@ -25,6 +25,7 @@ import os
 import subprocess
 import sys
 import time
+
 from .base import Engine
 
 # Name used for the Windows VPN connection profile
@@ -221,11 +222,11 @@ class IKEv2Engine(Engine):
         # Spawn a monitor subprocess so base.is_running() has a process to poll
         self._process = subprocess.Popen(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
-             f'while ($true) {{'
+             (f'while ($true) {{'
              f'  $s = (Get-VpnConnection -Name "{VPN_PROFILE_NAME}" -EA SilentlyContinue).ConnectionStatus;'
              f'  if ($s -ne "Connected") {{ exit 1 }};'
              f'  Start-Sleep 5'
-             f'}}'],
+             f'}}')],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
         )

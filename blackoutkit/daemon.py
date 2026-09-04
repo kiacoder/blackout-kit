@@ -4,11 +4,9 @@ Starts and stops engines as persistent background processes.
 Stores PID and state in ~/.blackout-kit/
 """
 import json
-import logging
-import logging.handlers
 import os
-import sys
 import subprocess
+import sys
 import tempfile
 import threading as _threading
 import time
@@ -441,29 +439,29 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             except Exception as close_e:
                 logging.debug("Failed to close devnull file: %s", close_e)
 
-    from .engines.xray import XRayEngine
-    from .engines.tun import TUNEngine
-    from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
     from .engines.amneziawg import AmneziaWGEngine
+    from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
+    from .engines.tun import TUNEngine
+    from .engines.xray import XRayEngine
 
     if sys.platform == "win32":
-        from .engines.sni import SNIEngine
         from .engines.gdpi import GoodbyeDPIEngine
-        from .engines.psiphon import PsiphonEngine
-        from .engines.warp import WARPEngine
-        from .engines.tor import TorEngine
-        from .engines.mhrv import MhrvEngine
         from .engines.ikev2 import IKEv2Engine
-        from .engines.wireguard import WireGuardEngine
+        from .engines.mhrv import MhrvEngine
         from .engines.openvpn import OpenVPNEngine
+        from .engines.psiphon import PsiphonEngine
+        from .engines.sni import SNIEngine
         from .engines.softether import SoftEtherEngine
+        from .engines.tor import TorEngine
+        from .engines.warp import WARPEngine
+        from .engines.wireguard import WireGuardEngine
     else:
         SNIEngine = GoodbyeDPIEngine = PsiphonEngine = WARPEngine = None
         TorEngine = MhrvEngine = IKEv2Engine = WireGuardEngine = None
         OpenVPNEngine = SoftEtherEngine = None
-    from . import settings as cfg
     from . import security as sec
-    from .proxy_manager import set_system_proxy, clear_system_proxy
+    from . import settings as cfg
+    from .proxy_manager import clear_system_proxy, set_system_proxy
 
     _ensure_dir()
 
@@ -619,8 +617,9 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             log.info("Network-level engine active — no system proxy needed.")
 
     try:
-        from .tray import start_tray
         import threading
+
+        from .tray import start_tray
 
         def _on_tray_stop():
             log.info("Tray requested shutdown.")

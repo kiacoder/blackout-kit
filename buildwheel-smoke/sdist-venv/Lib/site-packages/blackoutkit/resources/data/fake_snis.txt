@@ -1,0 +1,72 @@
+# Fake SNI domains for DPI bypass.
+# These are real, well-known domains that Iran and global DPI systems typically whitelist.
+# The SNI spoofer sends one of these as the "visible" SNI while the real traffic
+# goes to a Cloudflare IP — the firewall sees an allowed domain and passes it through.
+#
+# Tip: run "blackout scan --sni" to test which are currently resolvable.
+
+# ── Google services (almost always whitelisted) ──────────────────
+www.google.com
+www.googleapis.com
+www.gstatic.com
+storage.googleapis.com
+fonts.googleapis.com
+ajax.googleapis.com
+
+# ── Cloudflare / CDN ─────────────────────────────────────────────
+www.cloudflare.com
+speed.cloudflare.com
+cdn.cloudflare.com
+www.hcaptcha.com
+
+# ── Development / hosting platforms ─────────────────────────────
+auth.vercel.com
+cdn.vercel.com
+pages.dev
+cdn.jsdelivr.net
+www.github.com
+raw.githubusercontent.com
+
+# ── Major tech companies ─────────────────────────────────────────
+www.microsoft.com
+www.apple.com
+www.adobe.com
+www.oracle.com
+www.salesforce.com
+
+# ── Communication / social ───────────────────────────────────────
+www.discord.com
+www.zoom.us
+www.webex.com
+
+# ── Media / streaming ────────────────────────────────────────────
+www.speedtest.net
+cdnjs.cloudflare.com
+
+# ── Specific domains used by the community ───────────────────────
+www.creationlong.org
+www.multiplydose.com
+www.gossipglove.com
+www.ignitelimit.com
+www.calmlunch.com
+www.calmloud.com
+
+# === Iran (TIC 2026) — domestic CDN domains ===
+# Iran's DPI cannot block ArvanCloud or Aparat without breaking their own infrastructure.
+# Use these as the fake SNI when operating inside Iran for maximum camouflage.
+# The traffic looks like a normal domestic CDN connection — firewall passes it through.
+www.arvancloud.ir
+arvancloud.ir
+cdn.arvancloud.ir
+cdn.aras.ir
+www.aparat.com
+aparat.com
+
+# === China (Great Firewall) — domestic CDN domains ===
+# Chinese CDN endpoints whitelisted by GFW DPI.
+# Use these when operating from mainland China.
+www.baidu.com
+www.qq.com
+www.taobao.com
+www.jd.com
+cdn.bootcss.com

@@ -23,7 +23,8 @@ import sys
 import threading
 import time
 from pathlib import Path
-from .base import Engine, BINS_DIR
+
+from .base import BINS_DIR, Engine
 
 SE_BIN_NAMES    = ["vpnclient.exe"]
 SE_CMD_NAMES    = ["vpncmd.exe"]

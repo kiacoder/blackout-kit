@@ -1,9 +1,8 @@
 import ctypes
+import logging
 import os
 import sys
 import threading
-from pathlib import Path
-import logging
 
 _log = logging.getLogger("blackoutkit.core")
 

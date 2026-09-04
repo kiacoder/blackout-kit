@@ -19,15 +19,14 @@ Rare upgrades:
   - Specific error message suggesting WinTUN / admin when crash detected
 """
 import json
-import subprocess
 import sys
 import time
-
-from .xray import LINUX_RUNNER_NAMES
 from pathlib import Path
-from .base import Engine
+
 from .. import settings as cfg
 from ..elevate import restart_as_admin
+from .base import Engine
+from .xray import LINUX_RUNNER_NAMES
 
 TUN_BIN_NAMES = [
     "sing-box.exe",

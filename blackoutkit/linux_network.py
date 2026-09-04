@@ -256,9 +256,8 @@ def _apply_nft_firewall(interface: str, endpoints: list[tuple[ipaddress.IPv4Addr
 
 
 def _append_iptables_rules(binary: str, chain: str, interface: str, endpoints: list[tuple[ipaddress.IPv4Address | ipaddress.IPv6Address, int]], version: int) -> bool:
-    if not _run_ok([binary, "-N", chain]):
-        if not _run_ok([binary, "-F", chain]):
-            return False
+    if not _run_ok([binary, "-N", chain]) and not _run_ok([binary, "-F", chain]):
+        return False
     if not _run_ok([binary, "-C", "OUTPUT", "-j", chain]):
         if not _run_ok([binary, "-I", "OUTPUT", "1", "-j", chain]):
             return False

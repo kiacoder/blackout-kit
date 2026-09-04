@@ -7,7 +7,6 @@ import secrets
 import sys
 import tempfile
 import time
-from pathlib import Path
 
 from .. import APP_DATA_DIR
 from .. import settings as cfg

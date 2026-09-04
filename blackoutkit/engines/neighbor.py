@@ -33,6 +33,7 @@ import socket
 import struct
 import threading
 import time
+
 from .base import Engine
 
 # UDP multicast group — same on all Blackout Kit instances for auto-discovery
@@ -163,7 +164,7 @@ class NeighborConnectEngine(Engine):
                         except (ValueError, UnicodeDecodeError):
                             # Malformed beacon data — skip and continue waiting
                             pass
-                except socket.timeout:
+                except TimeoutError:
                     pass
                 except Exception as e:
                     import logging

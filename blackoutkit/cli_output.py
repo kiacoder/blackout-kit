@@ -1,15 +1,14 @@
 """Shared output, error, and sensitive-input helpers for the CLI."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import getpass
 import json
 import sys
 import time
+from dataclasses import dataclass
 from typing import Any, TextIO
 
 from rich.console import Console
-
 
 OUTPUT_SCHEMA_VERSION = 1
 DEFAULT_INPUT_LIMIT = 2 * 1024 * 1024
@@ -220,9 +219,9 @@ SAFE_SOURCE_LABELS = _SAFE_SOURCE_LABELS
 __all__ = [
     "DEFAULT_INPUT_LIMIT",
     "OUTPUT_SCHEMA_VERSION",
+    "SAFE_SOURCE_LABELS",
     "OptionalDependencyError",
     "OutputOptions",
-    "SAFE_SOURCE_LABELS",
     "emit_error",
     "emit_json",
     "emit_jsonl",

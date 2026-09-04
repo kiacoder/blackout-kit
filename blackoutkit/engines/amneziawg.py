@@ -15,17 +15,12 @@ Requirements:
 Settings:
   awg_config_file  — Full path to your AmneziaWG .conf file
 """
-import json
 import logging
-import sys
 from pathlib import Path
-
-from .base import Engine
-from .xray import LINUX_RUNNER_NAMES
-
 
 # The bundled sing-box runtime does not register the AmneziaWG outbound type.
 from .. import settings as cfg
+from .base import Engine
 
 _log = logging.getLogger(__name__)
 

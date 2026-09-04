@@ -17,8 +17,6 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional, Callable
 from enum import Enum
 
 _log = logging.getLogger(__name__)
@@ -53,7 +51,7 @@ _DEFAULT_GLOBAL_SETTINGS = {
 _SUPPORTED_ENFORCEMENT_MODES = frozenset(mode.value for mode in EnforcementMode)
 
 
-def _normalize_global_settings(settings: Optional[dict]) -> dict:
+def _normalize_global_settings(settings: dict | None) -> dict:
     normalized = dict(_DEFAULT_GLOBAL_SETTINGS)
     if isinstance(settings, dict):
         normalized.update(settings)
@@ -84,7 +82,7 @@ def load_qos_rules() -> list[dict]:
             return []
 
 
-def save_qos_rules(rules: list[dict], settings: Optional[dict] = None) -> None:
+def save_qos_rules(rules: list[dict], settings: dict | None = None) -> None:
     """
     Atomically save QoS rules to JSON (thread-safe).
     Settings dict includes: qos_enabled, default_priority, enforcement_mode.
@@ -132,8 +130,8 @@ def add_rule(
     priority: int = 50,
     rate_limit_kbps: int = 0,
     burst_kb: int = 512,
-    port_filter: Optional[str] = None,
-    interface: Optional[str] = None,
+    port_filter: str | None = None,
+    interface: str | None = None,
 ) -> str:
     """
     Add a new QoS rule.
@@ -192,7 +190,7 @@ def remove_rule(rule_id: str) -> bool:
     return False
 
 
-def get_rule(rule_id: str) -> Optional[dict]:
+def get_rule(rule_id: str) -> dict | None:
     """Get a rule by ID."""
     rules = load_qos_rules()
     for rule in rules:
@@ -304,7 +302,7 @@ _rule_throughput_state = _track_rule_throughput()
 _rule_throughput_lock = __import__('threading').Lock()
 
 
-def calculate_rule_throughput(rule_id: str, since_ts: Optional[float] = None) -> tuple[float, float, bool]:
+def calculate_rule_throughput(rule_id: str, since_ts: float | None = None) -> tuple[float, float, bool]:
     """Return placeholder zero-throughput statistics for one stored rule."""
     global _rule_throughput_state
 
@@ -315,7 +313,7 @@ def calculate_rule_throughput(rule_id: str, since_ts: Optional[float] = None) ->
     rate_limit = rule.get("rate_limit_kbps", 0)
 
     with _rule_throughput_lock:
-        state = _rule_throughput_state.get(rule_id, {"rx": 0, "tx": 0, "ts": time.time()})
+        _rule_throughput_state.get(rule_id, {"rx": 0, "tx": 0, "ts": time.time()})
 
     # Monitor-only QoS does not collect or enforce live traffic throughput.
     rx_kbps = 0.0
@@ -381,7 +379,7 @@ def compile_qos_rules_for_shaper() -> list[dict]:
     return compiled
 
 
-def get_qos_stats(rule_id: Optional[str] = None) -> dict:
+def get_qos_stats(rule_id: str | None = None) -> dict:
     """
     Get stored QoS configuration and placeholder statistics.
     If rule_id is specified, return the stored metadata for that rule.
@@ -458,7 +456,7 @@ def log_violation(rule_id: str, violation_type: str, details: str) -> None:
         _log.warning("Failed to record QoS violation: %s", exc)
 
 
-def get_violations(since_ts: Optional[float] = None, limit: int = 100) -> list[dict]:
+def get_violations(since_ts: float | None = None, limit: int = 100) -> list[dict]:
     """
     Load QoS violations from JSONL log.
     Returns list of violation dicts, newest first.

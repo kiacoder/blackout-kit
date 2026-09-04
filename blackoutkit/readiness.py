@@ -7,7 +7,8 @@ import socket
 import sys
 from dataclasses import asdict, dataclass
 
-from . import BINS_DIR, daemon, settings as cfg, vault
+from . import BINS_DIR, daemon, vault
+from . import settings as cfg
 from .capabilities import get_capability, valid_config_records
 from .config.manager import load_configs
 from .downloader import check_installed

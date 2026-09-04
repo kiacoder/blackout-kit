@@ -1,7 +1,4 @@
 import sys
-import subprocess
-from pathlib import Path
-import threading
 
 
 def _native_gui_command() -> list[str]:
@@ -129,11 +126,12 @@ def start_launcher():
         
     # Execute the selected logic
     if launch_config["env"] == "powershell":
-        import blackoutkit.typer_cli as typer_cli
+        from blackoutkit import typer_cli
         typer_cli.connect(pos_engine=None, engine=None, background=launch_config["use_tray"], iran=False)
         
     elif launch_config["env"] == "native":
-        import subprocess, sys, os
+        import os
+        import subprocess
         cmd = _native_gui_command()
         try:
             subprocess.Popen(

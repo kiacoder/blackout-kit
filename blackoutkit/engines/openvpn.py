@@ -21,7 +21,8 @@ import sys
 import threading
 import time
 from pathlib import Path
-from .base import Engine, BINS_DIR
+
+from .base import BINS_DIR, Engine
 
 OVPN_BIN_NAMES   = ["openvpn.exe"]
 SYSTEM_OVPN      = Path("C:/Program Files/OpenVPN/bin/openvpn.exe")
@@ -188,6 +189,7 @@ class OpenVPNEngine(Engine):
         # OpenVPN logs lines like: "Attempting to establish TCP connection with [AF_INET]1.2.3.4:443"
         # or "TCP connection established with [AF_INET]1.2.3.4:443"
         import re
+
         from .. import cert_bypass as cb
         match = re.search(r"connection established with \[AF_INET\]([\d\.]+):(\d+)", log_content)
         if match:

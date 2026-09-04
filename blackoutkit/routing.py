@@ -1,11 +1,13 @@
 """Local, read-only engine recommendation helpers."""
-from dataclasses import dataclass
 import os
 import sys
+from dataclasses import dataclass
 
-from .capabilities import all_capabilities, get_capability, valid_config_protocols, valid_config_records
-
-
+from .capabilities import (
+    all_capabilities,
+    get_capability,
+    valid_config_protocols,
+)
 
 
 def _normalize_platform(platform: str | None = None) -> str:
@@ -178,9 +180,9 @@ __all__ = [
     "FOUNDATION_ENGINE_NAMES",
     "LINUX_ENGINES",
     "PROXY_PROTOCOLS",
-    "RouteCandidate",
     "SETTING_REQUIREMENTS",
     "WINDOWS_ENGINES",
+    "RouteCandidate",
     "platform_engines",
     "recommend_routes",
     "recommended_engine",

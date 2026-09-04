@@ -18,11 +18,10 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, Optional
 from enum import Enum
+from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
@@ -59,10 +58,10 @@ class TorrentDownload:
     download_rate_kbps: int = 0  # Current download speed
     upload_rate_kbps: int = 0  # Current upload speed
     seed_ratio: float = 1.0  # When to stop seeding (1.0 = 1:1 ratio)
-    error_message: Optional[str] = None
+    error_message: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    started_at: str | None = None
+    completed_at: str | None = None
     eta_seconds: int = 0  # Estimated time remaining
 
     def to_dict(self) -> dict:
@@ -148,7 +147,7 @@ class TorrentDownloadManager:
                 "torrent support is unavailable; install blackout-kit[torrent] (libtorrent on Linux Python 3.10–3.13)"
             ) from exc
 
-    def add_torrent(self, magnet_or_file: str, output_dir: Optional[Path] = None, seed_ratio: float = 1.0) -> str:
+    def add_torrent(self, magnet_or_file: str, output_dir: Path | None = None, seed_ratio: float = 1.0) -> str:
         """Queue a new torrent download. Returns download ID."""
         if output_dir is None:
             output_dir = Path.home() / "Downloads" / "blackout-torrents"
@@ -171,7 +170,7 @@ class TorrentDownloadManager:
         _log.info(f"Queued torrent download: {dl_id}")
         return dl_id
 
-    def get_download(self, dl_id: str) -> Optional[TorrentDownload]:
+    def get_download(self, dl_id: str) -> TorrentDownload | None:
         """Get torrent by ID."""
         with self.lock:
             for d in self.downloads:
@@ -325,7 +324,7 @@ class TorrentDownloadManager:
 
 
 # Singleton instance
-_manager: Optional[TorrentDownloadManager] = None
+_manager: TorrentDownloadManager | None = None
 _manager_lock = threading.Lock()
 
 

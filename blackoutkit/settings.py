@@ -679,7 +679,7 @@ def describe(key: str) -> str:
     return descriptions.get(key, "No description available.")
 
 
-def get_engine_proxy_details(engine_name: str, settings: dict = None) -> tuple[str, int] | None:
+def get_engine_proxy_details(engine_name: str, settings: dict | None = None) -> tuple[str, int] | None:
     """
     Return (host, port) for the proxy required by the engine, or None if network-level.
     This prevents setting dead system proxies for network-level VPNs or using wrong ports.

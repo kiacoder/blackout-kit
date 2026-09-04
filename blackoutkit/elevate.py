@@ -53,7 +53,7 @@ def is_admin() -> bool:
     except Exception:
         pass
     try:
-        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE", 0, winreg.KEY_WRITE) as key:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE", 0, winreg.KEY_WRITE):
             pass
         return True
     except OSError:
@@ -65,7 +65,7 @@ def needs_admin(engine_name: str) -> bool:
     return engine_name.lower() in ENGINES_REQUIRING_ADMIN
 
 
-def launch_elevated(exe_path: str | Path, args: list[str] = None, cwd: str | Path = None) -> tuple[int | None, int | None]:
+def launch_elevated(exe_path: str | Path, args: list[str] | None = None, cwd: str | Path | None = None) -> tuple[int | None, int | None]:
     if sys.platform != "win32":
         # Basic implementation for Linux/Mac if needed, or just run normally
         return None, None

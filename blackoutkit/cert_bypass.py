@@ -25,7 +25,7 @@ from dataclasses import asdict, dataclass
 
 _TLS12 = getattr(ssl.TLSVersion, "TLS1_2", None)
 if _TLS12 is None:
-    _TLS12 = getattr(ssl.TLSVersion, "TLSv1_2")
+    _TLS12 = ssl.TLSVersion.TLSv1_2
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -259,7 +259,7 @@ def check_host_cert(
         error = str(exc)
     except ssl.SSLError as exc:
         error = str(exc)
-    except (socket.timeout, TimeoutError):
+    except TimeoutError:
         error = f"Connection timed out after {timeout:.0f}s"
         _existing = get_record(host, port)
         record = HostCertRecord(

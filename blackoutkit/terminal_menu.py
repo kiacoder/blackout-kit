@@ -7,14 +7,14 @@ keys is isolated in `KeyReader` so callers/tests can inject a canned
 sequence of `Key` values instead of touching a real terminal.
 """
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Callable, Optional
 
+from rich import box
 from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
 from .theme import console, is_interactive
 
@@ -189,7 +189,7 @@ def _build_panel(
     items: list,
     idx: int,
     guide: str,
-    max_visible: Optional[int] = None,
+    max_visible: int | None = None,
     filter_text: str = "",
 ) -> Panel:
     from rich.markup import escape
@@ -272,7 +272,7 @@ def _filtered_items(items: list, filter_text: str) -> list:
     return [
         item
         for item in items
-        if needle in " ".join((item.key, item.label, item.description)).casefold()
+        if needle in f"{item.key} {item.label} {item.description}".casefold()
     ]
 
 
@@ -294,10 +294,10 @@ def _read_menu_event(
 def run_menu(
     title: str,
     items: list,
-    guide: Optional[str] = None,
-    key_source: Optional[Callable[[], object]] = None,
-    max_visible: Optional[int] = None,
-) -> Optional[str]:
+    guide: str | None = None,
+    key_source: Callable[[], object] | None = None,
+    max_visible: int | None = None,
+) -> str | None:
     """
     Render a keyboard-navigable menu and return the activated item's key.
 

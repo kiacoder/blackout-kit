@@ -12,9 +12,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from .base import Engine, BINS_DIR
 from .. import core
 from .. import settings as cfg
+from .base import BINS_DIR, Engine
 
 GDPI_BIN_NAMES = [
     "goodbyedpi.exe",
@@ -128,7 +128,7 @@ class _LegacyGoodbyeDPIEngine(Engine):
                 with socket.create_connection((host, port), timeout=3.0):
                     self._log.debug("Connectivity OK via %s:%d (%s)", host, port, mode)
                     return True
-            except (socket.timeout, OSError):
+            except (TimeoutError, OSError):
                 continue
         return False
 

@@ -2,9 +2,8 @@
 from __future__ import annotations
 
 import json
-import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from .ownership import (
     acquire_start_lock,

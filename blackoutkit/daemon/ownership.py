@@ -1,14 +1,14 @@
 """Generation-scoped daemon ownership and process-identity helpers."""
 from __future__ import annotations
 
-from contextlib import contextmanager
 import json
 import math
 import os
 import secrets
 import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Iterator
 
 
 class OwnershipBusy(RuntimeError):

@@ -6,7 +6,6 @@ Allows users and AI agents to configure Split Tunneling rules:
   - Intercepting registry ProxyOverride settings
 """
 import json
-import os
 import sys
 from pathlib import Path
 

@@ -3,8 +3,8 @@ Blackout Kit - Psiphon engine.
 Uses the current blackout_warp.dll runtime path for the active Psiphon implementation.
 Source installs still need that local runtime asset available.
 """
-from .base import Engine
 from .. import settings as cfg
+from .base import Engine
 
 _STARTUP_TIMEOUT = 60.0
 

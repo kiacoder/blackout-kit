@@ -5,7 +5,6 @@ Intercepts DNS queries and blocks requests to ad/tracker domains.
 import logging
 import threading
 from collections import deque
-from typing import Optional
 
 _log = logging.getLogger(__name__)
 MAX_QUERY_BUFFER = 1_000

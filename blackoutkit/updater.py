@@ -20,10 +20,8 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from . import APP_DATA_DIR, PROJECT_ROOT, __version__
 
-from . import __version__
-
-from . import PROJECT_ROOT, APP_DATA_DIR
 GITHUB_REPO   = "kiacoder/blackout-kit"
 RELEASES_API  = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 UPDATE_TIMEOUT = 10  # seconds
@@ -125,9 +123,10 @@ def _release_update_asset(release: dict, *, frozen: bool) -> tuple[str | None, d
 
 def download_and_apply(release: dict) -> bool:
     """Download and apply an update only after trusted digest verification."""
-    from .theme import console
     import os
     import subprocess
+
+    from .theme import console
 
     is_frozen = getattr(sys, "frozen", False)
     url, asset, suffix = _release_update_asset(release, frozen=is_frozen)
@@ -297,8 +296,8 @@ def run_preflight() -> list[PreflightResult]:
                 ))
 
     # ── Config file ──────────────────────────────────────────────
-    from .config.manager import load_configs
     from . import security as sec
+    from .config.manager import load_configs
 
     if sec.configs_are_obfuscated():
         ok = sec.deobfuscate_configs()
@@ -329,7 +328,7 @@ def run_preflight() -> list[PreflightResult]:
             ))
 
     # ── IP scan cache ────────────────────────────────────────────
-    from .scanner.ip_scanner import load_cache, cache_age_str, _CACHE_FILE
+    from .scanner.ip_scanner import _CACHE_FILE, cache_age_str, load_cache
 
     cached = load_cache()
     age    = cache_age_str()

@@ -4,9 +4,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Optional
+from datetime import datetime, timedelta, timezone
 
 from .. import APP_DATA_DIR
 
@@ -65,7 +63,7 @@ def save_neighbor_cache(neighbors: list[dict]) -> None:
         pass
 
 
-def load_neighbor_cache(max_age_minutes: int = DEFAULT_CACHE_TTL_MINUTES) -> Optional[list[dict]]:
+def load_neighbor_cache(max_age_minutes: int = DEFAULT_CACHE_TTL_MINUTES) -> list[dict] | None:
     """
     Load neighbor cache if it exists and is still fresh.
 

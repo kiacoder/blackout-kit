@@ -5,9 +5,9 @@ Uses sing-box library inside blackout_core.dll.
 import json
 import sys
 
+from .. import settings as cfg
 from .base import Engine
 from .xray import LINUX_RUNNER_NAMES
-from .. import settings as cfg
 
 
 class SingBoxProxyEngine(Engine):

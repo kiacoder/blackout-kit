@@ -51,7 +51,7 @@ async def check_ip(ip: str, port: int = 443, timeout: float = 2.0) -> tuple[str,
     """
     try:
         start = time.monotonic()
-        reader, writer = await asyncio.wait_for(
+        _reader, writer = await asyncio.wait_for(
             asyncio.open_connection(ip, port),
             timeout=timeout,
         )
@@ -144,8 +144,9 @@ async def scan_ips(
 
 def scan_sync(ips: list[str], port: int = 443, concurrency: int = 100, timeout: float = 2.0, progress_callback=None) -> list[tuple[str, float]]:
     """Synchronous wrapper using Go DLL."""
-    from ..core import get_core_dll
     import ctypes
+
+    from ..core import get_core_dll
     dll = get_core_dll()
     if not dll:
         # Fallback if DLL fails to load (very unlikely now)
@@ -191,8 +192,9 @@ def scan_sync(ips: list[str], port: int = 443, concurrency: int = 100, timeout: 
 # ─────────────────────────── Cache ───────────────────────────────
 
 import json as _json
+from datetime import datetime as _dt
+from datetime import timezone as _tz
 from pathlib import Path as _Path
-from datetime import datetime as _dt, timezone as _tz
 
 _CACHE_FILE = _Path.home() / ".blackout-kit" / "scan_cache.json"
 _CACHE_MAX_AGE_HOURS = 12
@@ -206,8 +208,8 @@ def save_cache(results: list[tuple[str, float]]):
             "timestamp": _dt.now(_tz.utc).isoformat(),
             "results": [[ip, ms] for ip, ms in results],
         }
-        import tempfile
         import os
+        import tempfile
         fd, path = tempfile.mkstemp(dir=_CACHE_FILE.parent, suffix=".tmp")
         try:
             with os.fdopen(fd, "w") as f:

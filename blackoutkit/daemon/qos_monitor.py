@@ -11,7 +11,7 @@ Features:
 import logging
 import threading
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 _log = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class QosMonitor:
         """
         self.check_interval = check_interval
         self.active = False
-        self.alert_callback: Optional[Callable[[dict], None]] = None
+        self.alert_callback: Callable[[dict], None] | None = None
         self._monitor_thread = None
         self._should_stop = False
         self._stop_event = threading.Event()
@@ -107,8 +107,8 @@ class QosMonitor:
         """
         # Import here to avoid circular dependencies
         from ..tools.qos import (
-            load_qos_rules,
             calculate_rule_throughput,
+            load_qos_rules,
             log_violation,
         )
 
@@ -158,7 +158,7 @@ class QosMonitor:
 
 # ──────────────────────────── Module-level Singleton ──────────────────────────
 
-_monitor_instance: Optional[QosMonitor] = None
+_monitor_instance: QosMonitor | None = None
 _monitor_lock = threading.Lock()
 
 

@@ -6,11 +6,13 @@ import sys
 import threading
 from pathlib import Path
 
+
 def _create_image():
     try:
-        from PIL import Image, ImageDraw
         # Try loading custom icon first
         import sys
+
+        from PIL import Image, ImageDraw
         if getattr(sys, 'frozen', False):
             icon_path = Path(sys._MEIPASS) / "bins" / "icon.png"
         else:

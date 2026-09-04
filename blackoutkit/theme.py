@@ -11,15 +11,15 @@ import os
 import sys
 from contextlib import contextmanager
 
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Confirm, IntPrompt, Prompt
 from rich.table import Table
-from rich.text import Text
 from rich.theme import Theme
-from rich import box
 
-from . import __version__, settings as _cfg
+from . import __version__
+from . import settings as _cfg
 
 # ──────────────────────────────── Color detection ─────────────────────────────
 # Respect NO_COLOR spec (https://no-color.org/) and CI/non-TTY environments.
@@ -250,8 +250,13 @@ def spinner(description: str = "Working…"):
 def create_download_progress():
     """Create a standardized rich Progress instance for downloads."""
     from rich.progress import (
-        Progress, SpinnerColumn, TextColumn, BarColumn, 
-        DownloadColumn, TransferSpeedColumn, TimeRemainingColumn
+        BarColumn,
+        DownloadColumn,
+        Progress,
+        SpinnerColumn,
+        TextColumn,
+        TimeRemainingColumn,
+        TransferSpeedColumn,
     )
     return Progress(
         SpinnerColumn(style="bold cyan"),

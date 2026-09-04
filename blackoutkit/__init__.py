@@ -147,18 +147,18 @@ def check_version(minimum: str) -> bool:
 # ─────────────────────────── Public API ──────────────────────────────────────
 
 __all__ = [
-    "__version__",
-    "__author__",
-    "__description__",
-    "__license__",
-    "__url__",
-    "__python_requires__",
-    "PROJECT_ROOT",
     "APP_DATA_DIR",
     "BINS_DIR",
     "DATA_DIR",
-    "resource_path",
+    "PROJECT_ROOT",
+    "__author__",
+    "__description__",
+    "__license__",
+    "__python_requires__",
+    "__url__",
+    "__version__",
+    "check_version",
     "ensure_frozen_resources",
     "get_version",
-    "check_version",
+    "resource_path",
 ]

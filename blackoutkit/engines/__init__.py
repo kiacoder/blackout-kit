@@ -11,23 +11,23 @@ This replaces scattered `if engine == "sni": SNIEngine()` patterns in cli.py
 with a single registry lookup: get_engine("sni")().
 """
 
-from .sni        import SNIEngine
-from .xray       import XRayEngine
-from .gdpi       import GoodbyeDPIEngine
-from .psiphon    import PsiphonEngine
-from .warp       import WARPEngine
-from .tun        import TUNEngine
-from .tor        import TorEngine
-from .mhrv       import MhrvEngine
-from .ikev2      import IKEv2Engine
-from .wireguard  import WireGuardEngine
-from .openvpn    import OpenVPNEngine
-from .softether  import SoftEtherEngine
-from .neighbor   import NeighborShareEngine, NeighborConnectEngine
+from .amneziawg import AmneziaWGEngine
 from .appsscript import AppsScriptEngine
-from .singbox_proxy import SingBoxProxyEngine, Hysteria2Engine, TuicEngine
-from .amneziawg  import AmneziaWGEngine
-from .base       import Engine
+from .base import Engine
+from .gdpi import GoodbyeDPIEngine
+from .ikev2 import IKEv2Engine
+from .mhrv import MhrvEngine
+from .neighbor import NeighborConnectEngine, NeighborShareEngine
+from .openvpn import OpenVPNEngine
+from .psiphon import PsiphonEngine
+from .singbox_proxy import Hysteria2Engine, SingBoxProxyEngine, TuicEngine
+from .sni import SNIEngine
+from .softether import SoftEtherEngine
+from .tor import TorEngine
+from .tun import TUNEngine
+from .warp import WARPEngine
+from .wireguard import WireGuardEngine
+from .xray import XRayEngine
 
 # ──────────────────────────── Registry ───────────────────────────────────────
 # Single source of truth: engine name → engine class.
@@ -99,18 +99,30 @@ def engine_names() -> list[str]:
 # ──────────────────────────── Public API ─────────────────────────────────────
 
 __all__ = [
-    # Engine classes
-    "SNIEngine", "XRayEngine", "GoodbyeDPIEngine",
-    "PsiphonEngine", "WARPEngine", "TUNEngine", "TorEngine",
-    "MhrvEngine", "IKEv2Engine",
-    "WireGuardEngine", "OpenVPNEngine", "SoftEtherEngine",
-    "NeighborShareEngine", "NeighborConnectEngine",
-    "AppsScriptEngine", "SingBoxProxyEngine", "Hysteria2Engine", "TuicEngine",
-    "AmneziaWGEngine",
-    "Engine",
     # Registry & helpers
     "ENGINE_REGISTRY",
+    "AmneziaWGEngine",
+    "AppsScriptEngine",
+    "Engine",
+    "GoodbyeDPIEngine",
+    "Hysteria2Engine",
+    "IKEv2Engine",
+    "MhrvEngine",
+    "NeighborConnectEngine",
+    "NeighborShareEngine",
+    "OpenVPNEngine",
+    "PsiphonEngine",
+    # Engine classes
+    "SNIEngine",
+    "SingBoxProxyEngine",
+    "SoftEtherEngine",
+    "TUNEngine",
+    "TorEngine",
+    "TuicEngine",
+    "WARPEngine",
+    "WireGuardEngine",
+    "XRayEngine",
+    "engine_names",
     "get_engine",
     "list_engines",
-    "engine_names",
 ]

@@ -1,9 +1,8 @@
 """Keyboard-driven settings and saved-config workflows."""
 import base64
 import json
-import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 from rich.markup import escape
 from rich.panel import Panel
@@ -14,24 +13,23 @@ from .config import manager
 from .terminal_menu import Key, KeyReader, MenuItem, run_menu
 from .theme import console, is_interactive, refresh_console_theme
 
-
-MenuRunner = Callable[..., Optional[str]]
-TextEditor = Callable[..., Optional[str]]
+MenuRunner = Callable[..., str | None]
+TextEditor = Callable[..., str | None]
 ConfirmRunner = Callable[[str], bool]
 
 
 def _menu(
-    runner: Optional[MenuRunner],
+    runner: MenuRunner | None,
     title: str,
     items: list[MenuItem],
-) -> Optional[str]:
+) -> str | None:
     return (runner or run_menu)(title, items)
 
 
 def _confirm(
     question: str,
-    runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner],
+    runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None,
 ) -> bool:
     if confirm_runner is not None:
         return bool(confirm_runner(question))
@@ -46,7 +44,7 @@ def _confirm(
     return choice == "yes"
 
 
-def _acknowledge(title: str, runner: Optional[MenuRunner]) -> None:
+def _acknowledge(title: str, runner: MenuRunner | None) -> None:
     _menu(runner, title, [MenuItem("continue", "Continue", "Return to the previous menu")])
 
 
@@ -75,8 +73,8 @@ def edit_text(
     prompt: str,
     initial: str = "",
     secret: bool = False,
-    key_source: Optional[Callable[[], object]] = None,
-) -> Optional[str]:
+    key_source: Callable[[], object] | None = None,
+) -> str | None:
     """Edit one value using only keyboard input; Escape cancels the edit."""
     if key_source is None and not is_interactive():
         return None
@@ -148,9 +146,9 @@ def _setting_items(keys: list[str], values: dict) -> list[MenuItem]:
 def _setting_input(
     key: str,
     value,
-    menu_runner: Optional[MenuRunner],
-    text_editor: Optional[TextEditor],
-    confirm_runner: Optional[ConfirmRunner],
+    menu_runner: MenuRunner | None,
+    text_editor: TextEditor | None,
+    confirm_runner: ConfirmRunner | None,
 ):
     if key in cfg.SENSITIVE_KEYS:
         action = _menu(
@@ -192,9 +190,9 @@ def _setting_input(
 def _edit_setting(
     key: str,
     values: dict,
-    menu_runner: Optional[MenuRunner],
-    text_editor: Optional[TextEditor],
-    confirm_runner: Optional[ConfirmRunner],
+    menu_runner: MenuRunner | None,
+    text_editor: TextEditor | None,
+    confirm_runner: ConfirmRunner | None,
     require_confirmation: bool = False,
 ) -> None:
     old_value = values.get(key, cfg.DEFAULTS[key])
@@ -221,9 +219,9 @@ def _edit_setting(
 
 def run_settings_menu(
     *,
-    menu_runner: Optional[MenuRunner] = None,
-    text_editor: Optional[TextEditor] = None,
-    confirm_runner: Optional[ConfirmRunner] = None,
+    menu_runner: MenuRunner | None = None,
+    text_editor: TextEditor | None = None,
+    confirm_runner: ConfirmRunner | None = None,
     require_confirmation: bool = False,
 ) -> None:
     """Open the keyboard settings editor."""
@@ -282,8 +280,8 @@ def _config_label(index: int, config) -> str:
 def _select_config(
     title: str,
     configs: list,
-    menu_runner: Optional[MenuRunner],
-) -> Optional[int]:
+    menu_runner: MenuRunner | None,
+) -> int | None:
     items = [
         MenuItem(str(index), _config_label(index, config), "Select this saved config")
         for index, config in enumerate(configs)
@@ -297,7 +295,7 @@ def _select_config(
 
 def _show_configs(
     configs: list,
-    menu_runner: Optional[MenuRunner],
+    menu_runner: MenuRunner | None,
 ) -> None:
     if not configs:
         console.print("[muted]No saved configs.[/muted]")
@@ -321,9 +319,9 @@ def _show_configs(
 
 
 def _add_config(
-    text_editor: Optional[TextEditor],
-    menu_runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner] = None,
+    text_editor: TextEditor | None,
+    menu_runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None = None,
     require_confirmation: bool = False,
 ) -> None:
     if text_editor is None:
@@ -351,9 +349,9 @@ def _add_config(
 
 
 def _replace_config(
-    text_editor: Optional[TextEditor],
-    menu_runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner] = None,
+    text_editor: TextEditor | None,
+    menu_runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None = None,
     require_confirmation: bool = False,
 ) -> None:
     configs = manager.load_configs()
@@ -389,8 +387,8 @@ def _replace_config(
 
 
 def _remove_config(
-    menu_runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner],
+    menu_runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None,
 ) -> None:
     configs = manager.load_configs()
     if not configs:
@@ -411,9 +409,9 @@ def _remove_config(
 
 
 def _import_subscription(
-    text_editor: Optional[TextEditor],
-    menu_runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner] = None,
+    text_editor: TextEditor | None,
+    menu_runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None = None,
     require_confirmation: bool = False,
 ) -> None:
     if text_editor is None:
@@ -434,9 +432,9 @@ def _import_subscription(
 
 
 def _export_setup(
-    text_editor: Optional[TextEditor],
-    menu_runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner],
+    text_editor: TextEditor | None,
+    menu_runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None,
 ) -> None:
     choice = _menu(
         menu_runner,
@@ -494,9 +492,9 @@ def _validate_imported_configs(configs: list) -> list:
 
 
 def _import_setup(
-    text_editor: Optional[TextEditor],
-    menu_runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner],
+    text_editor: TextEditor | None,
+    menu_runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None,
 ) -> None:
     if text_editor is None:
         setup_string = edit_text("Base64 setup string")
@@ -546,8 +544,8 @@ def _import_setup(
 
 def _protect_configs(
     action: str,
-    menu_runner: Optional[MenuRunner],
-    confirm_runner: Optional[ConfirmRunner],
+    menu_runner: MenuRunner | None,
+    confirm_runner: ConfirmRunner | None,
 ) -> None:
     if action == "encrypt":
         if vault.config_vault_active():
@@ -575,9 +573,9 @@ def _protect_configs(
 
 def run_config_menu(
     *,
-    menu_runner: Optional[MenuRunner] = None,
-    text_editor: Optional[TextEditor] = None,
-    confirm_runner: Optional[ConfirmRunner] = None,
+    menu_runner: MenuRunner | None = None,
+    text_editor: TextEditor | None = None,
+    confirm_runner: ConfirmRunner | None = None,
     require_confirmation: bool = False,
 ) -> None:
     """Open the keyboard manager for saved proxy configuration data."""

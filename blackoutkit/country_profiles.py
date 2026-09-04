@@ -5,6 +5,7 @@ Built-in profiles with censorship levels, recommended engine orders,
 bypass DNS servers, blocked test URLs, and usage notes.
 """
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 
 

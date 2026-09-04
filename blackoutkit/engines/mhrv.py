@@ -8,10 +8,7 @@ Port:
 
 HTTPS CONNECT requests are intentionally unsupported; use SNI or XRay for HTTPS traffic.
 """
-import subprocess
-import time
-from pathlib import Path
-from .base import Engine, BINS_DIR
+from .base import Engine
 
 MHRV_BIN_NAMES = [
     "mhrv-rs.exe",

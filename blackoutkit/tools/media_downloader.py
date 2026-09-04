@@ -17,21 +17,18 @@ import shutil
 import subprocess
 import tempfile
 
-
 MEDIA_INSTALL_HINT = "media support is unavailable; install blackout-kit[media] (yt-dlp)"
 import threading
-import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, Optional
 from enum import Enum
+from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
-from .. import APP_DATA_DIR, __version__
+from .. import APP_DATA_DIR
 
 MEDIA_QUEUE_FILE = APP_DATA_DIR / "media_downloads.json"
 MEDIA_MAX_HISTORY = 1000
@@ -68,10 +65,10 @@ class MediaDownload:
     status: MediaDownloadStatus = MediaDownloadStatus.PENDING
     total_size: int = 0  # Bytes (0 if unknown)
     downloaded: int = 0  # Bytes so far
-    error_message: Optional[str] = None
+    error_message: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    started_at: Optional[str] = None
-    completed_at: Optional[str] = None
+    started_at: str | None = None
+    completed_at: str | None = None
     eta_seconds: int = 0  # Estimated time remaining
     speed_kbps: int = 0  # Current download speed
 
@@ -142,7 +139,7 @@ class MediaDownloadManager:
         self.executor = ThreadPoolExecutor(max_workers=max_parallel, thread_name_prefix="media-dl")
         self.running = False
 
-    def add_download(self, url: str, format_spec: str = "", output_dir: Optional[Path] = None) -> str:
+    def add_download(self, url: str, format_spec: str = "", output_dir: Path | None = None) -> str:
         """Queue a new media download. Returns download ID."""
         if output_dir is None:
             output_dir = Path.home() / "Downloads" / "blackout-media"
@@ -165,7 +162,7 @@ class MediaDownloadManager:
         _log.info(f"Queued media download: {dl_id} from {url}")
         return dl_id
 
-    def get_download(self, dl_id: str) -> Optional[MediaDownload]:
+    def get_download(self, dl_id: str) -> MediaDownload | None:
         """Get download by ID."""
         with self.lock:
             for d in self.downloads:
@@ -268,7 +265,7 @@ class MediaDownloadManager:
 
 
 # Singleton instance
-_manager: Optional[MediaDownloadManager] = None
+_manager: MediaDownloadManager | None = None
 _manager_lock = threading.Lock()
 
 

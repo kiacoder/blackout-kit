@@ -27,7 +27,6 @@ import sys
 
 from . import settings as cfg
 
-
 _MCP_ENGINES = frozenset({
     "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
     "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
@@ -472,8 +471,9 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
 
         elif tool_name == "blackout_scan":
             count = args.get("count", 50)
-            from .scanner.ip_scanner import generate_cloudflare_ips, scan_ips
             import asyncio
+
+            from .scanner.ip_scanner import generate_cloudflare_ips, scan_ips
             ips = generate_cloudflare_ips(count)
             results = asyncio.run(scan_ips(ips, concurrency=20, timeout=2.0))
             top_results = [{"ip": ip, "latency_ms": ms} for ip, ms in results[:10]]

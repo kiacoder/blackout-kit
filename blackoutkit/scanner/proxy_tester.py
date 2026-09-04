@@ -6,8 +6,8 @@ import atexit
 import socket
 import threading
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 
 # Lightweight test URLs — these return very small responses
 TEST_URLS = [

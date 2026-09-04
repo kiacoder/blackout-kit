@@ -10,10 +10,10 @@ Rare upgrades:
   - Crash-check if the port never opens (process may have exited with an error)
 """
 import json
-import subprocess
 from pathlib import Path
-from .base import Engine
+
 from .. import settings as cfg
+from .base import Engine
 
 SNI_BIN_NAMES = [
     "sni-spoofing.exe",
@@ -99,8 +99,10 @@ class SNIEngine(Engine):
     def _run_auto_scan(self, dll, c_path) -> str | None:
         import asyncio
         import time
-        from ..scanner import ip_scanner
+
         from rich.table import Table
+
+        from ..scanner import ip_scanner
         from ..theme import console
         
         console.print("[cyan]Auto-detecting best Cloudflare IP for SNI spoofing...[/cyan]")
@@ -274,7 +276,7 @@ class SNIEngine(Engine):
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
                 tls12 = getattr(ssl.TLSVersion, "TLS1_2", None)
                 if tls12 is None:
-                    tls12 = getattr(ssl.TLSVersion, "TLSv1_2")
+                    tls12 = ssl.TLSVersion.TLSv1_2
                 context.minimum_version = tls12
                 context.options |= ssl.OP_NO_SSLv2 | ssl.OP_NO_SSLv3 | ssl.OP_NO_TLSv1 | ssl.OP_NO_TLSv1_1
                 context.check_hostname = False

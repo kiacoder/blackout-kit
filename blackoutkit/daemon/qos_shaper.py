@@ -11,11 +11,9 @@ Features:
 """
 import ctypes
 import logging
-import os
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 _log = logging.getLogger(__name__)
 
@@ -358,7 +356,7 @@ class QosShaper:
 
 # ──────────────────────────── Module-level Singleton ──────────────────────────
 
-_shaper_instance: Optional[QosShaper] = None
+_shaper_instance: QosShaper | None = None
 _shaper_lock = threading.Lock()
 
 

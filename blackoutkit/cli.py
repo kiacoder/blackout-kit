@@ -4,34 +4,43 @@ All user-facing commands live here.
 """
 import argparse
 import asyncio
-from collections import deque
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+import importlib
 import json
 import os
 import sys
 import threading
 import time
-from contextlib import nullcontext
-from pathlib import Path
+from collections import deque
+from contextlib import contextmanager, nullcontext
+from datetime import datetime, timedelta, timezone
 
+from rich import box
+from rich.live import Live
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import (
-    Progress, SpinnerColumn, BarColumn,
-    TextColumn, TimeElapsedColumn, TaskProgressColumn,
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+    TimeElapsedColumn,
 )
 from rich.table import Table
-from rich.live import Live
-from rich import box
-from rich.markup import escape
 
-from . import __version__
-from .theme import console, print_banner, make_table, latency_color, refresh_console_theme, is_interactive, ask_choice, confirm
-from .terminal_menu import MenuItem, run_menu
+from . import __version__, daemon
 from . import settings as cfg
-from . import daemon
+from .terminal_menu import MenuItem, run_menu
+from .theme import (
+    ask_choice,
+    confirm,
+    console,
+    is_interactive,
+    latency_color,
+    make_table,
+    refresh_console_theme,
+)
 
-import importlib
 
 class _LazyModule:
     def __init__(self, name, package):
@@ -120,8 +129,8 @@ ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "
 
 def _get_engine_classes(name: str) -> tuple:
     if sys.platform.startswith("linux") and name == "tun":
-        from .engines.xray import XRayEngine
         from .engines.tun import TUNEngine
+        from .engines.xray import XRayEngine
         return (XRayEngine, TUNEngine)
     if name == "sni":
         from .engines.sni import SNIEngine
@@ -141,8 +150,8 @@ def _get_engine_classes(name: str) -> tuple:
         return (WARPEngine,)
     elif name == "tun":
         from .engines.sni import SNIEngine
-        from .engines.xray import XRayEngine
         from .engines.tun import TUNEngine
+        from .engines.xray import XRayEngine
         return (SNIEngine, XRayEngine, TUNEngine)
     elif name == "tor":
         from .engines.tor import TorEngine
@@ -175,8 +184,8 @@ def _get_engine_classes(name: str) -> tuple:
         from .engines.amneziawg import AmneziaWGEngine
         return (AmneziaWGEngine,)
     elif name == "legend":
-        from .engines.tor import TorEngine
         from .engines.sni import SNIEngine
+        from .engines.tor import TorEngine
         from .engines.xray import XRayEngine
         return (TorEngine, SNIEngine, XRayEngine)
     return ()
@@ -430,7 +439,7 @@ def _start_engine_stack(name: str, *, emit: bool = True):
     running = []
 
     import logging
-    from rich.status import Status
+
 
     class EngineStatusHandler(logging.Handler):
         def __init__(self, status_obj, eng_name):
@@ -532,7 +541,7 @@ def _render_connection_event(event: dict[str, object]) -> None:
     elif event_type == "engine_started":
         console.print(f"  [success]✓ {event.get('name')}[/success] running (PID {event.get('pid')})")
     elif event_type == "proxy" and event.get("configured"):
-        console.print(f"  [success]✓ System proxy set[/success]")
+        console.print("  [success]✓ System proxy set[/success]")
     elif event_type == "network_engine":
         console.print("  [info]Network-level engine — no system proxy needed[/info]")
     elif event_type == "proxy_warning":
@@ -657,7 +666,7 @@ def _scan_fake_snis():
             d.strip() for d in sni_file.read_text(encoding="utf-8", errors="replace").splitlines()
             if d.strip() and not d.startswith("#")
         ]
-    except (OSError, IOError, MemoryError) as e:
+    except (OSError, MemoryError) as e:
         console.print(f"[error]Failed to read fake SNIs file: {e}[/error]")
         return
 
@@ -686,8 +695,8 @@ def _scan_fake_snis():
 
 def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
     console.print("[info]Testing pre-tested known-good IPs first...[/info]")
-    from .scanner.ip_scanner import KNOWN_GOOD_IPS, scan_ips, generate_cloudflare_ips
     from . import settings as cfg
+    from .scanner.ip_scanner import KNOWN_GOOD_IPS, generate_cloudflare_ips, scan_ips
     custom_ips = cfg.load().get("sni_custom_ips") or []
     pre_tested = list(set(custom_ips + KNOWN_GOOD_IPS))
     
@@ -1346,8 +1355,9 @@ def cmd_config(args):
             console.print("[error]Decryption failed. Encrypted files were preserved; they may be corrupted or from a different machine.[/error]")
 
     elif args.config_command == "export":
-        from .config.manager import serialize_setup
         import base64
+
+        from .config.manager import serialize_setup
 
         try:
             setup_data = serialize_setup()
@@ -1369,8 +1379,9 @@ def cmd_config(args):
             console.print(f"[error]Export failed: {e}[/error]")
 
     elif args.config_command == "import-setup":
-        from .config.manager import deserialize_setup, save_configs
         import base64
+
+        from .config.manager import deserialize_setup, save_configs
 
         try:
             setup_string = args.setup_string
@@ -1556,10 +1567,10 @@ def cmd_tools(args):
         lat         = result["latency_ms"]
         mbps        = result["download_mbps"]
         upload_mbps = result.get("upload_mbps")
-        up_str = f"[bold]{'%.2f' % upload_mbps} Mbps[/bold]" if upload_mbps is not None else "[dim]—[/dim]"
+        up_str = f"[bold]{f'{upload_mbps:.2f}'} Mbps[/bold]" if upload_mbps is not None else "[dim]—[/dim]"
         console.print(Panel(
             f"  [muted]Latency:[/muted]   {latency_color(lat) if lat is not None else '[error]timeout[/error]'}\n"
-            f"  [muted]Download:[/muted]  [bold]{'%.2f' % mbps if mbps is not None else '?'} Mbps[/bold]\n"
+            f"  [muted]Download:[/muted]  [bold]{f'{mbps:.2f}' if mbps is not None else '?'} Mbps[/bold]\n"
             f"  [muted]Upload:[/muted]    {up_str}\n"
             f"  [muted]Test:[/muted]      {result.get('test_size', '-')}",
             title="[bold]Speed Test — Cloudflare[/bold]",
@@ -1948,8 +1959,12 @@ def cmd_tools(args):
 
     elif args.tools_command == "bandwidth-cap":
         from .tools.bandwidth_caps import (
-            load_caps, set_cap, remove_cap, get_current_usage, get_cap, check_cap_exceeded,
-            load_bandwidth_history, list_all_caps
+            check_cap_exceeded,
+            get_cap,
+            get_current_usage,
+            list_all_caps,
+            remove_cap,
+            set_cap,
         )
 
         subcmd = getattr(args, "bandwidth_cap_subcmd", "list")
@@ -2018,14 +2033,19 @@ def cmd_tools(args):
 
     elif args.tools_command == "traffic-log":
         from .tools.traffic_log import (
-            load_traffic_log, get_traffic_stats, get_traffic_by_hour, get_top_apps,
-            prune_old_logs, clear_traffic_log, get_log_entry_count, get_log_size_mb
+            clear_traffic_log,
+            get_log_entry_count,
+            get_log_size_mb,
+            get_traffic_by_hour,
+            get_traffic_stats,
+            load_traffic_log,
+            prune_old_logs,
         )
 
         subcmd = getattr(args, "traffic_log_subcmd", "list")
         app_filter = getattr(args, "app", None)
         protocol_filter = getattr(args, "protocol", None)
-        hours_filter = getattr(args, "hours", 24)
+        getattr(args, "hours", 24)
 
         if subcmd == "list":
             limit = getattr(args, "limit", 50)
@@ -2063,19 +2083,19 @@ def cmd_tools(args):
         elif subcmd == "stats":
             stats = get_traffic_stats(app=app_filter, protocol=protocol_filter)
 
-            console.print(f"\n[bold cyan]Traffic Statistics[/bold cyan]")
+            console.print("\n[bold cyan]Traffic Statistics[/bold cyan]")
             if app_filter:
                 console.print(f"[muted]Filter: app={app_filter}[/muted]")
             if protocol_filter:
                 console.print(f"[muted]Filter: protocol={protocol_filter}[/muted]")
 
-            console.print(f"\n[bold]Overall[/bold]")
+            console.print("\n[bold]Overall[/bold]")
             console.print(f"  Total connections: {stats['total_connections']}")
             console.print(f"  Total downloaded: {stats['total_recv_bytes'] / 1024 / 1024:.1f} MB")
             console.print(f"  Total uploaded: {stats['total_sent_bytes'] / 1024 / 1024:.1f} MB")
 
             if stats['by_app']:
-                console.print(f"\n[bold]By App[/bold]")
+                console.print("\n[bold]By App[/bold]")
                 for app_name, app_stats in sorted(stats['by_app'].items(), key=lambda x: x[1]['recv_bytes'] + x[1]['sent_bytes'], reverse=True)[:10]:
                     rx = app_stats['recv_bytes'] / 1024 / 1024
                     tx = app_stats['sent_bytes'] / 1024 / 1024
@@ -2083,7 +2103,7 @@ def cmd_tools(args):
                     console.print(f"  {app_name[:30]:30} — ↓{rx:7.1f} MB  ↑{tx:7.1f} MB  ({conn} conns)")
 
             if stats['by_protocol']:
-                console.print(f"\n[bold]By Protocol[/bold]")
+                console.print("\n[bold]By Protocol[/bold]")
                 for prot, prot_stats in sorted(stats['by_protocol'].items(), key=lambda x: x[1]['recv_bytes'] + x[1]['sent_bytes'], reverse=True):
                     rx = prot_stats['recv_bytes'] / 1024 / 1024
                     tx = prot_stats['sent_bytes'] / 1024 / 1024
@@ -2124,16 +2144,23 @@ def cmd_tools(args):
         elif subcmd == "info":
             entry_count = get_log_entry_count()
             size_mb = get_log_size_mb()
-            console.print(f"\n[bold cyan]Traffic Log Info[/bold cyan]")
+            console.print("\n[bold cyan]Traffic Log Info[/bold cyan]")
             console.print(f"  Entries: {entry_count:,}")
             console.print(f"  Size: {size_mb:.1f} MB")
 
     elif args.tools_command == "adblock":
         from .tools.adblock import (
-            add_blocklist_source, remove_blocklist_source, get_blocklist_sources,
-            download_blocklist, update_all_blocklists, add_custom_block, remove_custom_block,
-            add_whitelist, remove_whitelist, check_domain_blocked, get_adblock_stats,
-            get_dns_query_log, get_adblock_status
+            add_blocklist_source,
+            add_custom_block,
+            add_whitelist,
+            get_adblock_stats,
+            get_adblock_status,
+            get_blocklist_sources,
+            get_dns_query_log,
+            remove_blocklist_source,
+            remove_custom_block,
+            remove_whitelist,
+            update_all_blocklists,
         )
 
         subcmd = getattr(args, "adblock_subcmd", "status")
@@ -2234,7 +2261,7 @@ def cmd_tools(args):
 
         elif subcmd == "status":
             status = get_adblock_status()
-            console.print(f"\n[bold cyan]Ad Blocker Status[/bold cyan]")
+            console.print("\n[bold cyan]Ad Blocker Status[/bold cyan]")
             console.print(f"  Sources: {status['enabled_sources']}/{status['total_sources']} enabled")
             console.print(f"  Total rules: {status['total_rules']:,}")
             console.print(f"  Custom blocks: {status['custom_blocks']}")
@@ -2243,13 +2270,13 @@ def cmd_tools(args):
 
         elif subcmd == "stats":
             stats = get_adblock_stats()
-            console.print(f"\n[bold cyan]Ad Blocking Statistics[/bold cyan]")
+            console.print("\n[bold cyan]Ad Blocking Statistics[/bold cyan]")
             console.print(f"  Total rules: {stats['total_rules']:,}")
             console.print(f"  Blocked today: {stats['queries_blocked_today']}")
             console.print(f"  Sources: {stats['sources_enabled']}/{stats['sources_total']} enabled")
 
             if stats['top_blocked_domains']:
-                console.print(f"\n[bold]Top Blocked Domains[/bold]")
+                console.print("\n[bold]Top Blocked Domains[/bold]")
                 for item in stats['top_blocked_domains']:
                     console.print(f"  {item['domain']}: {item['count']} queries")
 
@@ -2291,12 +2318,19 @@ def cmd_tools(args):
                     console.print(f"[error]✗ {name}[/error] — {error}")
 
     elif args.tools_command == "qos":
-        from .tools.qos import (
-            load_qos_rules, add_rule, remove_rule, enable_rule, disable_rule,
-            list_rules, get_qos_stats, set_enforcement_mode, get_enforcement_mode,
-            get_violations
-        )
         from rich.table import Table
+
+        from .tools.qos import (
+            add_rule,
+            disable_rule,
+            enable_rule,
+            get_enforcement_mode,
+            get_qos_stats,
+            get_violations,
+            list_rules,
+            remove_rule,
+            set_enforcement_mode,
+        )
 
         subcmd = getattr(args, "qos_subcmd", "rules")
 
@@ -2399,7 +2433,7 @@ def cmd_tools(args):
                 console.print("  TX Placeholder: 0.0 kbps (no live measurement)")
                 console.print("  Live enforcement: not supported")
             else:
-                console.print(f"\n[bold cyan]QoS Stored Configuration[/bold cyan]")
+                console.print("\n[bold cyan]QoS Stored Configuration[/bold cyan]")
                 console.print(f"  Total rules: {stats.get('total_rules')}")
                 console.print(f"  Enabled: {stats.get('enabled_rules')}")
                 console.print(f"  Monitoring mode: {stats.get('enforcement_mode').upper()}")
@@ -2428,7 +2462,7 @@ def cmd_tools(args):
 
             if not new_mode:
                 current = get_enforcement_mode()
-                console.print(f"\n[bold cyan]QoS Monitoring Mode[/bold cyan]")
+                console.print("\n[bold cyan]QoS Monitoring Mode[/bold cyan]")
                 console.print(f"  Current: [bold]{current.upper()}[/bold]")
                 console.print("  Options: off, monitor")
                 return
@@ -2697,7 +2731,7 @@ def cmd_tools(args):
         current_mode = sec.get_current_mode()
         policy_lines = []
         for m in ("speed", "private", "legend"):
-            allow, warn = cb.should_allow_insecure(host, port, m)
+            allow, _warn = cb.should_allow_insecure(host, port, m)
             icon   = "✓" if allow else "✗"
             colour = "success" if allow else "error"
             marker = "  ◄ active" if m == current_mode else ""
@@ -3097,10 +3131,15 @@ def _get_local_ip() -> str:
 
 def cmd_download(args):
     """Download manager — multi-threaded HTTP(S) downloads with queue, resume, and speed limiting."""
+    from rich.progress import (
+        BarColumn,
+        Progress,
+        SpinnerColumn,
+        TaskProgressColumn,
+        TimeElapsedColumn,
+    )
+
     from .tools import download_manager
-    from . import settings as cfg
-    from rich.progress import Progress, SpinnerColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
-    from rich.table import Table
 
     subcmd = getattr(args, "download_command", None)
 
@@ -3109,8 +3148,8 @@ def cmd_download(args):
             "[bold]Download Manager[/bold] — Multi-threaded downloads with resume & speed limiting.\n\n"
             "  [cyan]add <url>[/cyan]           — Queue a download\n"
             "  [cyan]list[/cyan]                — Show queue and progress\n"
-            "  [cyan]start [ID...]​[/cyan]      — Start queued downloads\n"
-            "  [cyan]cancel [ID...]​[/cyan]     — Pause downloads (keep partial files)\n"
+            "  [cyan]start [ID...]\u200b[/cyan]      — Start queued downloads\n"
+            "  [cyan]cancel [ID...]\u200b[/cyan]     — Pause downloads (keep partial files)\n"
             "  [cyan]clear[/cyan]               — Clear completed downloads\n"
             "  [cyan]watch[/cyan]               — Live progress for active downloads\n\n"
             "[dim]Examples:[/dim]\n"
@@ -3143,7 +3182,7 @@ def cmd_download(args):
 
     # ── list: Show queue and progress ──────────────────────────────
     elif subcmd == "list":
-        status_filter = getattr(args, "status", None)
+        getattr(args, "status", None)
 
         downloads = download_manager.list_downloads()
         if not downloads:
@@ -3161,9 +3200,7 @@ def cmd_download(args):
 
         for d in downloads:
             status_str = d.status.value
-            if d.status == download_manager.DownloadStatus.DOWNLOADING:
-                status_str = f"[bold green]{status_str}[/bold green]"
-            elif d.status == download_manager.DownloadStatus.COMPLETED:
+            if d.status == download_manager.DownloadStatus.DOWNLOADING or d.status == download_manager.DownloadStatus.COMPLETED:
                 status_str = f"[bold green]{status_str}[/bold green]"
             elif d.status == download_manager.DownloadStatus.FAILED:
                 status_str = f"[bold red]{status_str}[/bold red]"
@@ -3307,8 +3344,8 @@ def cmd_download(args):
 
 def cmd_media(args):
     """Media downloader — Queue YouTube and similar video downloads with yt-dlp."""
+
     from .tools import media_downloader
-    from rich.table import Table
 
     subcmd = getattr(args, "media_command", None)
 
@@ -3382,9 +3419,7 @@ def cmd_media(args):
 
         for d in downloads:
             status_str = d.status.value
-            if d.status == media_downloader.MediaDownloadStatus.DOWNLOADING:
-                status_str = f"[bold green]{status_str}[/bold green]"
-            elif d.status == media_downloader.MediaDownloadStatus.COMPLETED:
+            if d.status == media_downloader.MediaDownloadStatus.DOWNLOADING or d.status == media_downloader.MediaDownloadStatus.COMPLETED:
                 status_str = f"[bold green]{status_str}[/bold green]"
             elif d.status == media_downloader.MediaDownloadStatus.FAILED:
                 status_str = f"[bold red]{status_str}[/bold red]"
@@ -3424,9 +3459,7 @@ def cmd_media(args):
 
                 for d in downloads:
                     status_str = d.status.value
-                    if d.status == media_downloader.MediaDownloadStatus.DOWNLOADING:
-                        status_str = f"[bold green]{status_str}[/bold green]"
-                    elif d.status == media_downloader.MediaDownloadStatus.COMPLETED:
+                    if d.status == media_downloader.MediaDownloadStatus.DOWNLOADING or d.status == media_downloader.MediaDownloadStatus.COMPLETED:
                         status_str = f"[bold green]{status_str}[/bold green]"
                     elif d.status == media_downloader.MediaDownloadStatus.FAILED:
                         status_str = f"[bold red]{status_str}[/bold red]"
@@ -3460,8 +3493,8 @@ def cmd_media(args):
 
 def cmd_torrent(args):
     """Torrent downloader — Queue magnet and .torrent downloads with libtorrent."""
+
     from .tools import torrent_manager
-    from rich.table import Table
 
     subcmd = getattr(args, "torrent_command", None)
 
@@ -3734,7 +3767,7 @@ def cmd_preflight(args):
     with console.status("[bold]Checking...[/bold]", spinner="dots"):
         results = updater.run_preflight()
 
-    ready, crit_fails, total_fails = updater.preflight_summary(results)
+    ready, crit_fails, _total_fails = updater.preflight_summary(results)
 
     table = make_table(
         "Preflight Report",
@@ -3958,8 +3991,9 @@ def cmd_network(args):
 
 def cmd_bins(args):
     """Manage engine binaries — show status, download missing, update all."""
-    from . import downloader as dl
     from rich.panel import Panel as _Panel
+
+    from . import downloader as dl
 
     subcmd = getattr(args, "bins_command", None)
 
@@ -4078,10 +4112,6 @@ def cmd_bins(args):
 
 def _download_single(dl, key: str, info, force: bool = False):
     """Download one binary with a Rich progress bar. Used by cmd_bins."""
-    from rich.progress import (
-        Progress, SpinnerColumn, BarColumn,
-        TextColumn, DownloadColumn, TransferSpeedColumn, TimeRemainingColumn,
-    )
 
     label = f"Downloading [bold]{info.display_name}[/bold]..."
     repo_disp = info.github_repo or (
@@ -4332,8 +4362,9 @@ def _run_setup_from_menu():
 
 
 def _run_native_fix_from_menu():
-    from . import typer_cli
     import typer
+
+    from . import typer_cli
 
     try:
         typer_cli.fix(

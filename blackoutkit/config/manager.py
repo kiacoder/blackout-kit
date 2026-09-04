@@ -4,15 +4,15 @@ Parses vless://, trojan://, and vmess:// URIs.
 Loads/saves configs and imports from subscription URLs.
 """
 import base64
-import hashlib
 import json
 import os
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from .. import DATA_DIR, vault
+
 CONFIGS_FILE = DATA_DIR / "configs.txt"
 SETUP_SCHEMA_VERSION = 1
 SUBSCRIPTION_MAX_BYTES = 2 * 1024 * 1024
@@ -237,8 +237,8 @@ def save_configs(configs: list[ProxyConfig], path: Path | None = None):
     p = path or CONFIGS_FILE
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        import tempfile
         import os
+        import tempfile
         fd, tmp_path = tempfile.mkstemp(dir=p.parent, text=True)
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
@@ -250,7 +250,7 @@ def save_configs(configs: list[ProxyConfig], path: Path | None = None):
             except OSError:
                 pass
             raise
-    except (OSError, IOError) as e:
+    except OSError as e:
         import logging
         logging.error(f"Failed to save proxy configs to {p}: {e}")
         raise

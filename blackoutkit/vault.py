@@ -146,6 +146,7 @@ def encrypt_profile(data: dict, passphrase: str) -> bytes:
     if not isinstance(data, dict):
         raise VaultError("Profile data must be an object")
     import secrets
+
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     salt = secrets.token_bytes(16)

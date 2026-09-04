@@ -13,14 +13,13 @@ Legendary upgrade:
     and records them in the cert store even in "none" log level mode
 """
 import json
-import subprocess
 import sys
 import threading
-from pathlib import Path
-from .base import Engine, BINS_DIR
-from .. import settings as cfg
-from .. import security as _sec
+
 from .. import cert_bypass as _cb
+from .. import security as _sec
+from .. import settings as cfg
+from .base import BINS_DIR, Engine
 
 XRAY_BIN_NAMES = [
     "xray.exe",

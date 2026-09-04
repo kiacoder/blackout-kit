@@ -1,7 +1,8 @@
-import customtkinter as ctk
+import math
 import threading
 import time
-import math
+
+import customtkinter as ctk
 
 WORLD_MAP = [
     "         .......                                          .......                       ",
@@ -417,7 +418,7 @@ class BlackoutGUI(ctk.CTk):
         threading.Thread(target=self._real_connect, args=(current_attempt,), daemon=True).start()
         
     def _real_connect(self, attempt: int):
-        from . import daemon, settings as cfg
+        from . import daemon
         engine_name = self.engine_var.get()
         
         if self.iran_mode_var.get():
@@ -491,8 +492,8 @@ class BlackoutGUI(ctk.CTk):
         threading.Thread(target=self._tail_logs, args=(attempt,), daemon=True).start()
         
     def _tail_logs(self, attempt: int):
+
         from . import daemon
-        import os
         try:
             if not daemon.LOG_FILE.exists():
                 return

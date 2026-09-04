@@ -1,9 +1,10 @@
 """Beginner-friendly, explicit Blackout Kit setup workflow."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 import sys
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 from .capabilities import build_capability_matrix, get_capability
 from .demo import GOLDEN_PATH

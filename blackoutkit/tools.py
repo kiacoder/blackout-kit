@@ -21,13 +21,10 @@ __path__ = [str(Path(__file__).with_name("tools"))]
 
 _log = logging.getLogger(__name__)
 
-from rich.table import Table
-from rich import box
 
-from .theme import console, make_table
+from . import APP_DATA_DIR, elevate
 from .proxy_manager import is_admin as _is_admin
-from . import elevate
-from . import APP_DATA_DIR
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SPEEDTEST_HISTORY_FILE = APP_DATA_DIR / "speedtest_history.json"
@@ -45,7 +42,7 @@ def _run_elevated(cmd: list[str], timeout_ms: int = 30000) -> bool:
         "-NoNewWindow -Wait -PassThru; exit $p.ExitCode"
     )
     env = {**os.environ, "BLACKOUT_CMD_0": cmd[0], "BLACKOUT_CMD_ARGS": subprocess.list2cmdline(cmd[1:])}
-    handle, pid = elevate.launch_elevated(
+    handle, _pid = elevate.launch_elevated(
         "powershell.exe",
         ["-NoProfile", "-Command", ps_script],
         env=env,
@@ -627,9 +624,9 @@ def benchmark_dns(domain: str = "www.google.com", repeat: int = 3) -> list[tuple
 
 def resolve_doh(domain: str, timeout: float = 5.0) -> str | None:
     """Resolve a domain to an IP using Cloudflare DoH (DNS over HTTPS)."""
-    import urllib.request
-    import json
     import ipaddress
+    import json
+    import urllib.request
     try:
         ipaddress.ip_address(domain)
         return domain
@@ -654,7 +651,8 @@ def resolve_doh(domain: str, timeout: float = 5.0) -> str | None:
 
 def _dns_query(dns_ip: str, hostname: str, timeout: float = 3.0) -> str | None:
     """Simple DNS A-record query using raw UDP to a specific server."""
-    import struct, random
+    import random
+    import struct
     query_id = random.randint(0, 65535)
     # Build a minimal DNS query packet
     header  = struct.pack(">HHHHHH", query_id, 0x0100, 1, 0, 0, 0)
@@ -1796,7 +1794,7 @@ def run_network_audit() -> dict:
                 "details": [],
                 "recommendation": "Direct system traffic"
             })
-    except Exception as exc:
+    except Exception:
         pass
 
     # 4. Firewall & Kill Switch State
@@ -1885,7 +1883,6 @@ def monitor_process_network() -> list[dict]:
     Inspects all active network connections and attributes bandwidth & sockets to process names.
     Returns sorted list of {pid, process, local_endpoint, remote_endpoint, status, protocol, socket_count}.
     """
-    import psutil
 
     connections = get_active_connections(established_only=False)
     proc_summary: dict[int, dict] = {}
@@ -1893,7 +1890,7 @@ def monitor_process_network() -> list[dict]:
     for conn in connections:
         pid = conn.get("pid", 0)
         proc_name = conn.get("process", "unknown")
-        local_endpoint = f"{conn.get('local_addr')}:{conn.get('local_port')}"
+        f"{conn.get('local_addr')}:{conn.get('local_port')}"
         remote_ip = conn.get("remote_addr")
         remote_port = conn.get("remote_port")
         remote_endpoint = f"{remote_ip}:{remote_port}" if remote_ip else "-"
@@ -1981,7 +1978,7 @@ def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0
                 detected_probes.append(probe)
                 if callback:
                     callback(probe)
-            except socket.timeout:
+            except TimeoutError:
                 continue
             except Exception:
                 continue
@@ -2005,9 +2002,7 @@ def _validate_doh_upstream(url: str) -> bool:
             return False
         if parsed.username or parsed.password:
             return False
-        if not parsed.hostname:
-            return False
-        return True
+        return parsed.hostname
     except Exception:
         return False
 
@@ -2017,9 +2012,8 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
     Runs a local UDP DNS proxy server on 127.0.0.1:5300 (or custom port).
     Intercepts standard DNS queries and forwards them securely via DNS-over-HTTPS (DoH).
     """
-    import struct
-    import urllib.request
     import urllib.parse
+    import urllib.request
 
     if not _validate_doh_upstream(upstream_doh):
         _log.error("Invalid DoH upstream URL %s: Must be https:// without embedded credentials.", upstream_doh)
@@ -2078,7 +2072,7 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
                     sock.sendto(answer, client_addr)
             except Exception as e:
                 _log.debug("DoH proxy forward error: %s", e)
-        except socket.timeout:
+        except TimeoutError:
             continue
         except Exception:
             continue
@@ -2128,10 +2122,10 @@ def explain_network_state() -> dict:
 
 
 
+import shlex
 import tempfile
 import threading
 import urllib.parse
-import shlex
 
 _file_locks = {}
 _file_locks_guard = threading.Lock()
@@ -2205,7 +2199,7 @@ def list_ssh_profiles() -> list[dict]:
     """List all saved SSH connection profiles."""
     try:
         profiles = _safe_json_read(SSH_VAULT_FILE, default={})
-        return sorted(list(profiles.values()), key=lambda p: p["name"])
+        return sorted(profiles.values(), key=lambda p: p["name"])
     except Exception:
         return []
 
@@ -2231,7 +2225,7 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
     🌐 Local REST API & Web Dashboard Server.
     Exposes endpoints: /api/status, /api/connections, /api/audit, and serves HTML dashboard on /.
     """
-    from http.server import HTTPServer, BaseHTTPRequestHandler
+    from http.server import BaseHTTPRequestHandler, HTTPServer
 
     class APIHandler(BaseHTTPRequestHandler):
         def _send_json(self, data: dict):
@@ -2269,7 +2263,7 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                 try:
                     for _ in range(5):
                         payload = json.dumps({"timestamp": time.time(), "connections": len(get_active_connections(True))})
-                        self.wfile.write(f"data: {payload}\n\n".encode("utf-8"))
+                        self.wfile.write(f"data: {payload}\n\n".encode())
                         self.wfile.flush()
                         time.sleep(0.5)
                 except Exception:
@@ -2358,7 +2352,7 @@ def list_automation_rules() -> list[dict]:
     """List all configured event automation rules."""
     try:
         rules = _safe_json_read(AUTOMATION_RULES_FILE, default={})
-        return sorted(list(rules.values()), key=lambda r: r["name"])
+        return sorted(rules.values(), key=lambda r: r["name"])
     except Exception:
         return []
 
@@ -2436,7 +2430,7 @@ def load_custom_yara_rule_file(rule_filepath: str) -> dict:
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
-def scan_file_yara(filepath: str, rule_filepath: str = None) -> dict:
+def scan_file_yara(filepath: str, rule_filepath: str | None = None) -> dict:
     """
     🔒 YARA Rules Engine:
     Scans a local file against built-in byte signatures for web shells, test viruses, and suspicious payloads.
@@ -2548,10 +2542,9 @@ def check_phishing_domain(domain: str) -> dict:
         reasons.append("Domain contains excessive hyphens (typosquatting indicator)")
 
     ip = _system_resolve(domain)
-    if ip:
-        if ip in SINKHOLE_IPS or ip.startswith("127.") or ip.startswith("100.64."):
-            suspicious = True
-            reasons.append(f"Domain resolves to sinkhole/loopback IP: {ip}")
+    if ip and (ip in SINKHOLE_IPS or ip.startswith(("127.", "100.64."))):
+        suspicious = True
+        reasons.append(f"Domain resolves to sinkhole/loopback IP: {ip}")
 
     return {
         "domain": domain,
@@ -2614,7 +2607,6 @@ def run_sftp_client(profile_name: str, action: str = "ls", remote_path: str = ".
     📂 SFTP Remote File Manager:
     Interacts with saved SSH profiles to list, download, or upload remote files via SFTP/SCP safely.
     """
-    import shlex
     import subprocess
 
     profiles = {p["name"]: p for p in list_ssh_profiles()}

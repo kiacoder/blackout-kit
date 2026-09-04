@@ -18,12 +18,11 @@ import threading
 import time
 import urllib.request
 import uuid
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field, asdict
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, Optional
 from enum import Enum
+from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
@@ -54,9 +53,9 @@ class Download:
     status: DownloadStatus = DownloadStatus.PENDING
     total_size: int = 0  # Bytes (0 if unknown)
     downloaded: int = 0  # Bytes so far
-    error_message: Optional[str] = None
+    error_message: str | None = None
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
     speed_limit_kbps: int = 0  # 0 = no limit
     supports_range: bool = False  # Server supports HTTP 206 Range requests
 
@@ -132,7 +131,7 @@ _active_downloads: dict[str, 'Download'] = {}
 
 def queue_download(
     url: str,
-    destination: Optional[str] = None,
+    destination: str | None = None,
     speed_limit_kbps: int = 0,
 ) -> str:
     """
@@ -166,7 +165,7 @@ def queue_download(
     return download_id
 
 
-def get_download(download_id: str) -> Optional[Download]:
+def get_download(download_id: str) -> Download | None:
     """Lookup a download by ID."""
     with _queue_lock:
         queue = load_queue()
@@ -176,7 +175,7 @@ def get_download(download_id: str) -> Optional[Download]:
     return None
 
 
-def list_downloads(status: Optional[DownloadStatus] = None) -> list[Download]:
+def list_downloads(status: DownloadStatus | None = None) -> list[Download]:
     """List all downloads, optionally filtered by status."""
     with _queue_lock:
         queue = load_queue()
@@ -226,7 +225,7 @@ class DownloadWorker(threading.Thread):
     def __init__(
         self,
         download: Download,
-        progress_callback: Optional[Callable[[int, int], None]] = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ):
         super().__init__(daemon=True)
         self.download = download
@@ -402,7 +401,7 @@ _worker_threads: dict[str, DownloadWorker] = {}
 _worker_lock = threading.Lock()
 
 
-def start_download(download_id: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> bool:
+def start_download(download_id: str, progress_callback: Callable[[int, int], None] | None = None) -> bool:
     """
     Start a queued download in the background.
     Returns True if started, False if already running or not found.

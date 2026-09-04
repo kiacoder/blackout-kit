@@ -4,7 +4,6 @@ Periodically snapshots active connections and logs them to the traffic audit tra
 """
 import logging
 import threading
-import time
 from datetime import datetime, timezone
 
 _log = logging.getLogger(__name__)
