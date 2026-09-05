@@ -3746,3 +3746,61 @@ def ssh_sftp(
         subprocess.run(res["command_args"])
     except Exception as exc:
         console.print(f"[error]Failed to launch SFTP client: {exc}[/error]")
+
+# ────────────────────────── Phase 6 & Phase 7 Typer Commands ──────────────────────────
+
+@tools_app.command("anomaly-check")
+def tools_anomaly_check():
+    """Run anomaly detection on recent traffic logs."""
+    from blackoutkit.anomaly_detector import get_anomaly_logs
+    logs = get_anomaly_logs(limit=10)
+    if not logs:
+        console.print("[green]No anomalies detected in recent connection windows.[/green]")
+    else:
+        for alert in logs:
+            console.print(f"[bold red][{alert.get('severity')}] {alert.get('type')}[/bold red]: {alert.get('details', {}).get('message')}")
+
+@tools_app.command("predict")
+def tools_predict():
+    """Show predictive network optimization recommendations."""
+    from blackoutkit.predictor import get_predictive_recommendations, get_usage_patterns
+    patterns = get_usage_patterns()
+    recs = get_predictive_recommendations()
+    console.print(f"[bold cyan]Usage Baseline:[/bold cyan] Peak hours: {patterns.get('peak_hours')} UTC")
+    for r in recs:
+        console.print(f" -> [bold yellow][{r.get('priority')}] {r.get('action')}[/bold yellow]: {r.get('reason')}")
+
+@tools_app.command("threat-feeds")
+def tools_threat_feeds(
+    action: str = typer.Argument("list", help="Action: list, add, update, remove"),
+    feed_id: str = typer.Option("", "--id", help="Feed ID"),
+    name: str = typer.Option("", "--name", help="Feed Name"),
+    url: str = typer.Option("", "--url", help="Feed URL"),
+):
+    """Manage threat intelligence feeds (add/list/update/remove)."""
+    from blackoutkit.threat_feeds import list_threat_feeds, add_threat_feed, remove_threat_feed, update_threat_feeds
+    action = action.lower()
+    if action == "list":
+        feeds = list_threat_feeds()
+        for f in feeds:
+            console.print(f" • [bold]{f['id']}[/bold] ({f['type']}): {f['name']} -> {f['url']}")
+    elif action == "add" and feed_id and url:
+        add_threat_feed(feed_id, name or feed_id, url)
+        console.print(f"[green]Added threat feed {feed_id}[/green]")
+    elif action == "remove" and feed_id:
+        remove_threat_feed(feed_id)
+        console.print(f"[yellow]Removed threat feed {feed_id}[/yellow]")
+    elif action == "update":
+        res = update_threat_feeds()
+        console.print(f"[green]Updated threat feeds: {res['feeds_processed']} processed, {res['ips_blocked']} IPs, {res['domains_blocked']} domains blocked.[/green]")
+
+@app.command("report")
+def report_export(
+    format: str = typer.Option("pdf", "--format", "-f", help="Export format: pdf or csv"),
+    output: str = typer.Option("report.pdf", "--output", "-o", help="Output file path"),
+    mode: str = typer.Option("GDPR", "--mode", "-m", help="Compliance mode: GDPR, HIPAA, SOC2"),
+):
+    """Export network activity and compliance audit report."""
+    from blackoutkit.reporting import export_report
+    path = export_report(output, fmt=format, mode=mode)
+    console.print(f"[bold green]Report successfully exported to {path}[/bold green]")
