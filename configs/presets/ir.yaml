@@ -1,0 +1,28 @@
+# Blackout Kit Regional Preset: Iran (IR)
+# Strategy: Protocol obfuscation against strict SNI filtering, Cloudflare DoH, and VMess/WS transport.
+
+region: IR
+name: Iran Anti-Censorship Profile
+version: 1.0
+
+dns:
+  mode: doh
+  primary: "https://1.1.1.1/dns-query"
+  fallback: "https://8.8.8.8/dns-query"
+  bypass_domains:
+    - "*.ir"
+    - "*.shaparak.ir"
+
+transport:
+  type: vmess
+  network: ws
+  ws_path: "/chat"
+  tls: true
+  sni_spoof: "www.speedtest.net"
+  fragmentation:
+    enabled: true
+    chunk_size: 50-150
+
+routing:
+  bypass_local: true
+  fallback_dns: "1.0.0.1"

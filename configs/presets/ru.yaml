@@ -1,0 +1,32 @@
+# Blackout Kit Regional Preset: Russia (RU)
+# Strategy: DPI evasion with SNI fragmentation, Yandex DoH, and VLESS/Reality transport.
+
+region: RU
+name: Russia DPI Bypass Profile
+version: 1.0
+
+dns:
+  mode: doh
+  primary: "https://common.dot.dns.yandex.net/dns-query"
+  fallback: "https://77.88.8.8/dns-query"
+  bypass_domains:
+    - "*.ru"
+    - "*.yandex.ru"
+    - "*.vk.com"
+    - "*.gosuslugi.ru"
+
+transport:
+  type: reality
+  sni_spoof: "dl.google.com"
+  fragmentation:
+    enabled: true
+    chunk_size: 100-200
+    delay_ms: 5-10
+  tls_trick:
+    fake_sni: "google.com"
+
+routing:
+  bypass_local: true
+  split_tunnel_apps:
+    - "browser.exe"
+    - "telegram.exe"

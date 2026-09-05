@@ -2246,12 +2246,57 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
             self.wfile.write(body)
 
         def do_GET(self):
-            if self.path == "/api/status":
+            from urllib.parse import urlparse, parse_qs
+            parsed_url = urlparse(self.path)
+            path = parsed_url.path
+            params = parse_qs(parsed_url.query)
+
+            if path == "/api/status":
                 from . import __version__
                 self._send_json({"ok": True, "app": "blackout-kit", "version": __version__})
-            elif self.path == "/api/connections":
+            elif path == "/api/connections":
                 conns = get_active_connections(established_only=True)
+                proc_filter = params.get("process", [None])[0]
+                port_filter = params.get("port", [None])[0]
+                if proc_filter:
+                    conns = [c for c in conns if proc_filter.lower() in str(c.get("process", "")).lower()]
+                if port_filter and port_filter.isdigit():
+                    target_port = int(port_filter)
+                    conns = [c for c in conns if c.get("local_port") == target_port or c.get("remote_port") == target_port]
                 self._send_json({"connections": conns[:50], "total": len(conns)})
+            elif path == "/api/metrics":
+                import psutil
+                conns = get_active_connections(established_only=False)
+                net_io = psutil.net_io_counters() if hasattr(psutil, "net_io_counters") else None
+                metrics = {
+                    "timestamp": time.time(),
+                    "active_connections": len(conns),
+                    "established_connections": len([c for c in conns if c.get("status") == "ESTABLISHED"]),
+                    "bytes_sent": net_io.bytes_sent if net_io else 0,
+                    "bytes_recv": net_io.bytes_recv if net_io else 0,
+                    "packets_sent": net_io.packets_sent if net_io else 0,
+                    "packets_recv": net_io.packets_recv if net_io else 0,
+                }
+                self._send_json(metrics)
+            elif path == "/api/bandwidth":
+                import psutil
+                interval = float(params.get("interval", ["1"])[0])
+                io1 = psutil.net_io_counters(pernic=True) if hasattr(psutil, "net_io_counters") else {}
+                time.sleep(min(interval, 2.0))
+                io2 = psutil.net_io_counters(pernic=True) if hasattr(psutil, "net_io_counters") else {}
+                per_iface = {}
+                for iface, counter1 in io1.items():
+                    if iface in io2:
+                        counter2 = io2[iface]
+                        per_iface[iface] = {
+                            "bytes_sent_sec": counter2.bytes_sent - counter1.bytes_sent,
+                            "bytes_recv_sec": counter2.bytes_recv - counter1.bytes_recv,
+                        }
+                self._send_json({
+                    "timestamp": time.time(),
+                    "interval_seconds": interval,
+                    "interfaces": per_iface
+                })
             elif self.path == "/api/audit":
                 self._send_json(run_network_audit())
             elif self.path == "/api/live-stream":
