@@ -37,9 +37,8 @@ def test_feed_parsing(tmp_path):
 0.0.0.0 malware.org
     """
     parsed = mgr.parse_feed_content(content, feed_type="domain")
-    assert "1.1.1.1" in parsed
-    assert "bad-domain.com" in parsed
-    assert "malware.org" in parsed
+    expected_indicators = {"1.1.1.1", "2.2.2.2", "bad-domain.com", "malware.org"}
+    assert parsed == expected_indicators
 
 def test_feed_fetch_and_update(tmp_path):
     feeds_file = tmp_path / "feeds.json"

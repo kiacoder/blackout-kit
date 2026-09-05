@@ -12,10 +12,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
 
 from blackoutkit import APP_DATA_DIR, __version__
 
@@ -97,6 +101,9 @@ class ReportExporter:
         anomaly_count: int = 0,
     ) -> Path:
         """Export Network Summary & Regulatory Compliance Audit as PDF."""
+        if not REPORTLAB_AVAILABLE:
+            raise RuntimeError("ReportLab is not installed. Install with `pip install reportlab`.")
+
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
 

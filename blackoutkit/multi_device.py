@@ -8,7 +8,12 @@ import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-import socketio
+
+try:
+    import socketio
+    SOCKETIO_AVAILABLE = True
+except ImportError:
+    SOCKETIO_AVAILABLE = False
 
 from blackoutkit import APP_DATA_DIR
 
@@ -24,7 +29,10 @@ class MultiDeviceManager:
     def __init__(self, registry_file: Path = DEVICE_REGISTRY_FILE):
         self.registry_file = registry_file
         self.registry_file.parent.mkdir(parents=True, exist_ok=True)
-        self.sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+        if SOCKETIO_AVAILABLE:
+            self.sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+        else:
+            self.sio = None
 
     def _load_registry(self) -> Dict[str, Any]:
         if not self.registry_file.exists():

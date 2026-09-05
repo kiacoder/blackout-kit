@@ -8,9 +8,19 @@ import datetime
 from datetime import timezone
 import logging
 from typing import Any, Dict, List, Optional
-from jose import JWTError, jwt
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine, select
-from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+
+try:
+    from jose import JWTError, jwt
+    JOSE_AVAILABLE = True
+except ImportError:
+    JOSE_AVAILABLE = False
+
+try:
+    from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, create_engine, select
+    from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+    SQLALCHEMY_AVAILABLE = True
+except ImportError:
+    SQLALCHEMY_AVAILABLE = False
 
 from blackoutkit import APP_DATA_DIR
 
@@ -25,38 +35,40 @@ def _now_utc() -> datetime.datetime:
     return datetime.datetime.now(timezone.utc)
 
 
-class Base(DeclarativeBase):
-    pass
+if SQLALCHEMY_AVAILABLE:
+    class Base(DeclarativeBase):
+        pass
 
+    class Organization(Base):
+        __tablename__ = "organizations"
 
-class Organization(Base):
-    __tablename__ = "organizations"
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        org_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+        name: Mapped[str] = mapped_column(String(128))
+        created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now_utc)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    org_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(128))
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now_utc)
+        users: Mapped[List["User"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
 
-    users: Mapped[List["User"]] = relationship(back_populates="organization", cascade="all, delete-orphan")
+    class User(Base):
+        __tablename__ = "users"
 
+        id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+        user_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+        email: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+        role: Mapped[str] = mapped_column(String(32), default="Member")  # Owner, Admin, Member
+        org_id: Mapped[str] = mapped_column(String(64), ForeignKey("organizations.org_id"))
+        created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now_utc)
 
-class User(Base):
-    __tablename__ = "users"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    email: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-    role: Mapped[str] = mapped_column(String(32), default="Member")  # Owner, Admin, Member
-    org_id: Mapped[str] = mapped_column(String(64), ForeignKey("organizations.org_id"))
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=_now_utc)
-
-    organization: Mapped[Organization] = relationship(back_populates="users")
+        organization: Mapped[Organization] = relationship(back_populates="users")
 
 
 class RBACManager:
     """Manages Orgs, Users, Roles, and JWT Auth tokens."""
 
     def __init__(self, db_url: Optional[str] = None):
+        if not SQLALCHEMY_AVAILABLE:
+            self.engine = None
+            return
         if db_url is None:
             DB_PATH.parent.mkdir(parents=True, exist_ok=True)
             db_url = f"sqlite:///{DB_PATH}"
@@ -64,6 +76,8 @@ class RBACManager:
         Base.metadata.create_all(self.engine)
 
     def create_organization(self, org_id: str, name: str) -> Dict[str, Any]:
+        if not SQLALCHEMY_AVAILABLE:
+            raise RuntimeError("SQLAlchemy is required for RBAC. Install with `pip install sqlalchemy`.")
         with Session(self.engine) as session:
             existing = session.scalar(select(Organization).where(Organization.org_id == org_id))
             if existing:
@@ -74,6 +88,8 @@ class RBACManager:
             return {"org_id": org.org_id, "name": org.name}
 
     def create_user(self, user_id: str, email: str, org_id: str, role: str = "Member") -> Dict[str, Any]:
+        if not SQLALCHEMY_AVAILABLE:
+            raise RuntimeError("SQLAlchemy is required for RBAC. Install with `pip install sqlalchemy`.")
         if role not in {"Owner", "Admin", "Member"}:
             role = "Member"
         with Session(self.engine) as session:
@@ -91,6 +107,8 @@ class RBACManager:
             return {"user_id": user.user_id, "email": user.email, "org_id": user.org_id, "role": user.role}
 
     def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
+        if not SQLALCHEMY_AVAILABLE:
+            return None
         with Session(self.engine) as session:
             u = session.scalar(select(User).where(User.user_id == user_id))
             if u:
@@ -98,6 +116,8 @@ class RBACManager:
             return None
 
     def issue_jwt_token(self, user_id: str, expires_delta_hours: int = 24) -> str:
+        if not JOSE_AVAILABLE:
+            raise RuntimeError("python-jose is required for JWT. Install with `pip install python-jose`.")
         u = self.get_user(user_id)
         if not u:
             raise ValueError("User not found")
@@ -106,6 +126,8 @@ class RBACManager:
         return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
     def verify_jwt_token(self, token: str) -> Optional[Dict[str, Any]]:
+        if not JOSE_AVAILABLE:
+            return None
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
             return payload
@@ -113,12 +135,6 @@ class RBACManager:
             return None
 
     def check_permission(self, role: str, action: str) -> bool:
-        """
-        Permission matrix:
-          Owner: Full permissions (*).
-          Admin: Manage team users, policy updates, trigger remote actions.
-          Member: Read-only metrics, view alerts.
-        """
         role = role.capitalize()
         if role == "Owner":
             return True
