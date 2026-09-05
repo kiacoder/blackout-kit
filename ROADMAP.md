@@ -82,7 +82,7 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | Secure DoH/DoT DNS Proxy 🌐 | Local DNS-over-HTTPS / DNS-over-TLS proxy resolver | Stop DNS poisoning / eavesdropping | **Done** — `blackout tools dns-proxy` |
 | Process Network Monitor 👁️ | Real-time process-level socket and bandwidth tracking | "Why is this app talking to external IPs?" | **Done** — `blackout tools process-monitor` |
 
-### Phase 4: Pro & AI features (1.6.x+)
+### Phase 4: Pro & AI features (1.6.x)
 
 | Feature | What it does | Why it matters | Status |
 |---|---|---|---|
@@ -91,6 +91,95 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | SSH Vault & Manager 🔑 | Built-in SSH client using the existing AES-256 vault | Replace Termius/PuTTY | **Done** — `blackout ssh add/list/connect/remove` |
 | Local REST API & Web Dashboard 🌐 | Browser-based network monitoring UI & local REST API | Interoperability & remote control | **Done** — `blackout api start` |
 | Scriptable Automation ⚡ | Event-triggered automation rules for network events | "When X happens, do Y automatically" | **Done** — `blackout automation list/add/remove/trigger` |
+
+### Phase 5: Foundation & UX Improvements (1.6.x)
+
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| CLI Progress Spinners | Rich spinners for `download`, `media`, `torrent`, `capture` | Visual feedback on long operations | **Planned** |
+| Table Formatting | Auto-wrapped, responsive tables for `connections`, `tools discover` | Better readability on small terminals | **Planned** |
+| Context-Rich Errors | Standardized error format with reason & hints | Users know how to fix problems | **Planned** |
+| Performance Benchmarks | Daemon <80MB under 50 connections, IPC p99 <10ms | Reliability metrics tracked | **Planned** |
+| REST API Expansion | `/api/metrics`, `/api/connections?process=X&port=Y`, `/api/bandwidth` | Third-party monitoring integration | **Planned** |
+| Regional Presets | `configs/presets/{ru,ir,cn}.yaml` with routing documentation | One-command region-specific setup | **Planned** |
+| Security Scanning | Bandit + pip-audit in CI (fail on HIGH/CRITICAL) | Automated vulnerability detection | **Planned** |
+
+### Phase 6: Advanced Automation & Insights (1.7.x)
+
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| Anomaly Detection 🔍 | Detect unusual connection patterns, data exfiltration attempts | "Is someone stealing my data?" | **Planned** |
+| Predictive Optimization 📈 | Auto-tune performance based on historical usage patterns | Faster speeds over time | **Planned** |
+| Threat Intelligence Feeds 🛡️ | Real-time block list of malicious IPs/domains | Automated threat protection | **Planned** |
+| Advanced Reporting 📊 | PDF/CSV exports, compliance audit logs, usage dashboards | Enterprise audit trail | **Planned** |
+
+### Phase 7: Enterprise & Team Features (1.8.x)
+
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| Multi-Device Dashboard 📱 | Centralized view of all connected Blackout instances | "What's running on all my devices?" | **Planned** |
+| Team/Org Accounts 👥 | Role-based access control, shared workspaces | Collaboration for teams | **Planned** |
+| Centralized Policy Management 🎯 | Distribute configs, rules, and settings to team members | Enforce security standards | **Planned** |
+| Compliance Reporting 📋 | Audit logs, SLA dashboards, regulatory exports (GDPR, HIPAA) | Meet enterprise requirements | **Planned** |
+
+### Phase 8: Developer Ecosystem (1.9.x)
+
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| Python SDK 🐍 | Embed Blackout networking into any Python app | "Use Blackout as a library" | **Planned** |
+| Plugin System 🔌 | Extend with custom rules, analyzers, exporters | Community contributions | **Planned** |
+| REST API v2 🌐 | Webhooks, event subscriptions, WebSocket streaming | Real-time integrations | **Planned** |
+| Community Marketplace 🏪 | Share & discover community-built plugins and presets | Ecosystem growth | **Planned** |
+
+### Phase 9: Cloud & Mobile (2.0.x)
+
+| Feature | What it does | Why it matters | Status |
+|---|---|---|---|
+| Cloud Config Sync ☁️ | Encrypted backup/restore to optional cloud storage | "Sync my config across devices" | **Planned** |
+| Cross-Platform Device Sync 📲 | Unified state across Windows/Mac/Linux | Seamless multi-device experience | **Planned** |
+| Remote Management Portal 🌍 | Web-based control panel for remote machines | Manage from anywhere | **Planned** |
+| Mobile Companion 📱 | iOS/Android apps for monitoring & alerts | On-the-go network oversight | **Planned** |
+
+---
+
+## Prototype Hardening Initiative (Parallel, Ongoing)
+
+While shipping new phases, systematically harden existing "prototype" features:
+
+### 1. Feature Audit & Edge Case Testing 🧪
+- Identify Phase 1-5 features: "mature" vs "prototype"
+- For each prototype: test edge cases (slow networks, connection drops, resource limits, concurrent operations)
+- Simulate failure scenarios (daemon crash recovery, config corruption, rollback safety)
+
+### 2. Scenario Simulations 🌍
+- **Censorship scenarios**: GFW-like blocking, DNS hijacking, IP blocking, protocol filtering
+- **Network degradation**: High latency, packet loss, limited bandwidth, frequent disconnections
+- **Resource constraints**: Low memory, slow disk, CPU throttling, power limits
+- **Adversarial**: Malicious configs, symlink attacks, file permission races, injection attempts
+- **Recovery**: Daemon restart, config reload, state corruption, clean startup after crash
+
+### 3. Bug Hunting Sprint 🐛
+- Fuzz testing on config parsing, network inputs, CLI argument handling
+- Memory leak detection (long-running daemon under load)
+- Race conditions in multi-threaded code paths
+- File handle/socket leaks during connection churn
+- Dependency version compatibility matrix testing
+
+### 4. Production Readiness Checklist ✅
+For each feature before shipping Phase 6+:
+- [ ] Error handling complete (no unwanted panics/exceptions)
+- [ ] Memory footprint characterized & optimized
+- [ ] Timeout handling on all I/O operations
+- [ ] Graceful degradation (feature fails cleanly, doesn't break the app)
+- [ ] Documentation with examples & failure modes
+- [ ] User feedback loop (GitHub issues tracked & responded to)
+
+### Execution Strategy
+- Phases 6-9 ship on a 6-month cadence (one per quarter)
+- **Prototype hardening runs in parallel** — each sprint (2 weeks) picks one feature to harden:
+  - Week 1: Scenario simulations + bug hunting
+  - Week 2: Fix critical issues, add edge-case tests
+  - Repeat for next prototype
 
 ---
 
