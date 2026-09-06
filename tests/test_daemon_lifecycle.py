@@ -251,3 +251,39 @@ def test_neighbor_reports_cache_persistence_failure(monkeypatch, caplog):
 
     assert "Failed to persist neighbor cache: disk full" in caplog.text
     engine.stop()
+
+
+def test_traffic_monitor_normalizes_connections_and_emits_counter_deltas():
+    samples = [
+        {
+            "pid": 42,
+            "process": "browser.exe",
+            "protocol": "TCP",
+            "local_addr": "192.168.1.10",
+            "local_port": 50000,
+            "remote_addr": "8.8.8.8",
+            "remote_port": 443,
+            "status": "ESTABLISHED",
+            "bytes_sent": 100,
+            "bytes_recv": 200,
+        }
+    ]
+    entries = []
+    timestamps = iter((100.0, 105.0))
+    monitor = TrafficMonitor(
+        connection_loader=lambda **_kwargs: list(samples),
+        log_writer=entries.append,
+        clock=lambda: next(timestamps),
+    )
+
+    monitor._snapshot_connections()
+    samples[0]["bytes_sent"] = 160
+    samples[0]["bytes_recv"] = 260
+    monitor._snapshot_connections()
+
+    assert entries[0]["local"] == "192.168.1.10:50000"
+    assert entries[0]["remote"] == "8.8.8.8:443"
+    assert entries[0]["bytes_available"] is True
+    assert (entries[0]["bytes_sent"], entries[0]["bytes_recv"]) == (100, 200)
+    assert (entries[1]["bytes_sent"], entries[1]["bytes_recv"]) == (60, 60)
+    assert entries[1]["duration_sec"] == 5.0

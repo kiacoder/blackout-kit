@@ -1509,7 +1509,7 @@ def gui(ctx: typer.Context = None):
 
 _JSON_NATIVE_COMMANDS = frozenset({
     "version", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
-    "country", "bins", "capabilities", "demo", "setup",
+    "country", "bins", "capabilities", "demo", "setup", "report",
 })
 _CONFIG_JSON_COMMANDS = frozenset({
     "list", "validate", "check-duplicates", "compatibility", "diff",
@@ -1519,7 +1519,9 @@ _CONFIG_JSON_COMMANDS = frozenset({
 _SETTINGS_JSON_COMMANDS = frozenset({"list", "get", "set", "reset"})
 _COUNTRY_JSON_COMMANDS = frozenset({"set", "reset", "show", "list"})
 _BINS_JSON_COMMANDS = frozenset({"list"})
-_TOOLS_JSON_COMMANDS = frozenset({"netfix"})
+_TOOLS_JSON_COMMANDS = frozenset({
+    "netfix", "anomaly-check", "anomaly-log", "predict", "threat-feeds",
+})
 
 
 def _reject_unsupported_json(command: str | None, options: OutputOptions) -> None:
@@ -2143,6 +2145,265 @@ def cfg_import_setup(
     elif not _is_quiet(options):
         console.print("[success]✓ Setup imported successfully.[/success]")
 
+def _split_endpoint(value: object) -> tuple[str, int]:
+    text = str(value or "").strip()
+    if text.startswith("[") and "]:" in text:
+        host, _, port_text = text[1:].partition("]:")
+    else:
+        host, separator, port_text = text.rpartition(":")
+        if not separator or not port_text.isdigit():
+            return text, 0
+    try:
+        return host, int(port_text)
+    except ValueError:
+        return text, 0
+
+
+def _connection_event_from_traffic(item: dict):
+    from .anomaly_detector import ConnectionEvent
+
+    src_ip = str(item.get("local_addr", ""))
+    src_port = 0
+    if not src_ip:
+        src_ip, src_port = _split_endpoint(item.get("local"))
+    dst_ip = str(item.get("remote_addr", ""))
+    dst_port = item.get("remote_port", 0)
+    if not dst_ip:
+        dst_ip, parsed_port = _split_endpoint(item.get("remote"))
+        dst_port = dst_port or parsed_port
+    if not dst_ip:
+        return None
+
+    try:
+        timestamp = float(item.get("ts", time.time()))
+        destination_port = int(dst_port or 0)
+        bytes_sent = max(0, int(item.get("bytes_sent", 0) or 0))
+        bytes_received = max(
+            0, int(item.get("bytes_recv", item.get("bytes_received", 0)) or 0)
+        )
+    except (TypeError, ValueError):
+        return None
+
+    status = str(item.get("status", "established")).casefold()
+    state = "failed" if status in {"failed", "refused", "timeout"} else "established"
+    bytes_available = item.get("bytes_available")
+    if bytes_available is None:
+        sent_value = item.get("bytes_sent")
+        received_value = item.get("bytes_recv")
+        if received_value is None:
+            received_value = item.get("bytes_received")
+        bytes_available = (
+            isinstance(sent_value, (int, float))
+            and not isinstance(sent_value, bool)
+            and isinstance(received_value, (int, float))
+            and not isinstance(received_value, bool)
+        )
+    else:
+        bytes_available = bool(bytes_available)
+    return ConnectionEvent(
+        timestamp=timestamp,
+        src_ip=src_ip or f"local:{src_port}",
+        dst_ip=dst_ip,
+        dst_port=destination_port,
+        protocol=str(item.get("protocol", "tcp")).casefold(),
+        bytes_sent=bytes_sent,
+        bytes_received=bytes_received,
+        state=state,
+        process_name=str(item.get("process", "unknown")),
+        bytes_available=bool(bytes_available),
+    )
+
+
+def _recent_traffic(hours: int, limit: int) -> list[dict]:
+    from .tools.traffic_log import load_traffic_log
+
+    cutoff = time.time() - hours * 3600
+    return sorted(
+        load_traffic_log(since_ts=cutoff, limit=limit),
+        key=lambda item: item.get("ts", 0),
+    )
+
+
+def _anomaly_scan_payload(hours: int, limit: int, z_threshold: float) -> dict:
+    from dataclasses import asdict
+
+    from .anomaly_detector import AnomalyDetector
+
+    entries = _recent_traffic(hours, limit)
+    detector = AnomalyDetector(z_threshold=z_threshold, persist=False)
+    scanned = 0
+    for item in entries:
+        event = _connection_event_from_traffic(item)
+        if event is None:
+            continue
+        scanned += 1
+        detector.detect(event)
+    return {
+        "scanned": scanned,
+        "detected": len(detector.anomalies),
+        "summary": detector.alert_summary(),
+        "anomalies": [asdict(anomaly) for anomaly in detector.anomalies],
+    }
+
+
+def _anomaly_log_payload(hours: int, limit: int, severity: str | None) -> dict:
+    from collections import Counter
+    from dataclasses import asdict
+    from datetime import datetime, timedelta, timezone
+
+    from .anomaly_detector import AnomalyDetector
+
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    anomalies = AnomalyDetector(persist=False).get_anomalies(
+        since=since, severity=severity
+    )[-limit:]
+    by_type = Counter(item.anomaly_type for item in anomalies)
+    by_severity = Counter(item.severity for item in anomalies)
+    return {
+        "total": len(anomalies),
+        "by_type": dict(by_type),
+        "by_severity": dict(by_severity),
+        "anomalies": [asdict(item) for item in reversed(anomalies)],
+    }
+
+
+def _predict_payload(
+    hours: int, limit: int, current_transport: str, primary_dns: str
+) -> dict:
+    from dataclasses import asdict
+    from datetime import datetime, timezone
+
+    from .predictor import Predictor
+
+    entries = _recent_traffic(hours, limit)
+    predictor = Predictor()
+    sample_count = 0
+    for item in entries:
+        try:
+            timestamp = float(item.get("ts"))
+            hour = datetime.fromtimestamp(timestamp).hour
+            sent = max(0, float(item.get("bytes_sent", 0) or 0))
+            received = max(
+                0,
+                float(item.get("bytes_recv", item.get("bytes_received", 0)) or 0),
+            )
+            duration = max(1.0, float(item.get("duration_sec", 1) or 1))
+        except (TypeError, ValueError, OSError, OverflowError):
+            continue
+        status = str(item.get("status", "established")).casefold()
+        success = status not in {"failed", "refused", "timeout"}
+        bandwidth_mbps = (sent + received) * 8 / duration / 1_000_000
+        predictor.record_connection(
+            str(item.get("protocol", "https")).casefold(),
+            bandwidth_mbps,
+            success=success,
+            hour=hour,
+        )
+        sample_count += 1
+
+    patterns = [
+        asdict(pattern)
+        for hour in sorted(predictor.hourly_stats)
+        if (pattern := predictor.get_pattern(hour)) is not None
+    ]
+    recommendations = [
+        predictor.recommend_transport(current_transport.casefold()),
+        predictor.recommend_dns_failover(primary_dns),
+        predictor.recommend_config_rotation(),
+    ]
+    return {
+        "samples": sample_count,
+        "peak_hours": predictor.predict_peak_hours(),
+        "patterns": patterns,
+        "recommendations": [
+            asdict(item) for item in recommendations if item is not None
+        ],
+    }
+
+
+def _render_anomalies(payload: dict, title: str) -> None:
+    if not payload["anomalies"]:
+        console.print("[success]No anomalies found in the selected period.[/success]")
+        return
+    table = make_table(
+        title,
+        [("Time", "dim"), ("Severity", ""), ("Type", "cyan"), ("Target", "yellow"), ("Description", "")],
+        [],
+    )
+    for item in payload["anomalies"]:
+        table.add_row(
+            item["timestamp"],
+            item["severity"],
+            item["anomaly_type"],
+            item["affected_ip"],
+            item["description"],
+        )
+    console.print(table)
+
+
+report_app = typer.Typer(help="Export network and compliance reports", no_args_is_help=False)
+app.add_typer(report_app, name="report")
+
+
+@report_app.callback(invoke_without_command=True)
+def report_status(ctx: typer.Context):
+    options = _output_options(ctx)
+    if ctx.invoked_subcommand is not None:
+        return
+    if options.json_output:
+        _print_cli_error(
+            "missing_command",
+            "a report subcommand is required",
+            options=options,
+            exit_code=2,
+        )
+    typer.echo(ctx.get_help())
+    raise typer.Exit(code=2)
+
+
+@report_app.command("export")
+def report_export(
+    format: str = typer.Option(..., "--format", help="Export format: pdf or csv"),
+    output: str = typer.Option(..., "--output", "-o", help="Destination file"),
+    compliance: str = typer.Option(None, "--compliance", help="Compliance profile: gdpr, hipaa, or soc2"),
+    hours: int = typer.Option(24, "--hours", help="Include evidence from the last N hours"),
+    ctx: typer.Context = None,
+):
+    """Export local network, anomaly, audit, and compliance evidence."""
+    from .reporting import ReportGenerator
+
+    options = _output_options(ctx)
+    export_format = str(_option_value(format, "")).casefold()
+    output_path = Path(str(_option_value(output))).expanduser().resolve()
+    compliance_mode = _option_value(compliance)
+    hours = int(_option_value(hours, 24))
+    try:
+        ReportGenerator().export(
+            output_path,
+            format=export_format,
+            compliance_mode=compliance_mode,
+            since_hours=hours,
+        )
+    except (OSError, ValueError) as exc:
+        _fail_parameter(str(exc), options=options)
+    except (ImportError, ModuleNotFoundError):
+        _print_cli_error(
+            "report_export_failed",
+            "PDF support is unavailable; reinstall blackout-kit with its core dependencies",
+            options=options,
+        )
+    payload = {
+        "exported": True,
+        "format": export_format,
+        "compliance_mode": compliance_mode.casefold() if compliance_mode else None,
+        "period_hours": hours,
+    }
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        console.print(f"[success]Report exported to:[/success] {output_path}")
+
+
 # ── TOOLS GROUP ──
 tools_app = typer.Typer(help="Network diagnostics, DNS, hotspot, and more", no_args_is_help=False)
 app.add_typer(tools_app, name="tools")
@@ -2451,6 +2712,253 @@ def tools_traffic_log(
     args.limit = limit
     args.older_than = older_than
     cmd_tools(args)
+
+
+@tools_app.command("anomaly-check")
+def tools_anomaly_check(
+    hours: int = typer.Option(24, "--hours", help="Analyze traffic from the last N hours"),
+    limit: int = typer.Option(1000, "--limit", help="Maximum traffic records to analyze"),
+    z_threshold: float = typer.Option(3.0, "--z-threshold", help="Statistical anomaly threshold"),
+    ctx: typer.Context = None,
+):
+    """Analyze local traffic history for unusual patterns without changing it."""
+    options = _output_options(ctx)
+    hours = int(_option_value(hours, 24))
+    limit = int(_option_value(limit, 1000))
+    z_threshold = float(_option_value(z_threshold, 3.0))
+    if hours <= 0 or limit <= 0 or z_threshold <= 0:
+        _fail_parameter(
+            "--hours, --limit, and --z-threshold must be greater than zero",
+            options=options,
+        )
+    payload = _anomaly_scan_payload(hours, limit, z_threshold)
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        console.print(
+            f"Scanned {payload['scanned']} records; detected {payload['detected']} anomalies."
+        )
+        _render_anomalies(payload, "Traffic Anomalies")
+
+
+@tools_app.command("anomaly-log")
+def tools_anomaly_log(
+    hours: int = typer.Option(24, "--hours", help="Show alerts from the last N hours"),
+    limit: int = typer.Option(100, "--limit", help="Maximum alerts to show"),
+    severity: str = typer.Option(None, "--severity", help="Filter: low, medium, high, or critical"),
+    ctx: typer.Context = None,
+):
+    """Show persisted anomaly alerts."""
+    options = _output_options(ctx)
+    hours = int(_option_value(hours, 24))
+    limit = int(_option_value(limit, 100))
+    severity = _option_value(severity)
+    if hours <= 0 or limit <= 0:
+        _fail_parameter("--hours and --limit must be greater than zero", options=options)
+    if severity:
+        severity = severity.casefold()
+        if severity not in {"low", "medium", "high", "critical"}:
+            _fail_parameter(
+                "--severity must be low, medium, high, or critical",
+                options=options,
+            )
+    payload = _anomaly_log_payload(hours, limit, severity)
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        _render_anomalies(payload, "Anomaly Log")
+
+
+@tools_app.command("predict")
+def tools_predict(
+    hours: int = typer.Option(168, "--hours", help="Analyze traffic from the last N hours"),
+    limit: int = typer.Option(10000, "--limit", help="Maximum traffic records to analyze"),
+    transport: str = typer.Option("https", "--transport", help="Current transport"),
+    dns: str = typer.Option("8.8.8.8", "--dns", help="Current primary DNS"),
+    ctx: typer.Context = None,
+):
+    """Predict peak periods and suggest local network optimizations."""
+    options = _output_options(ctx)
+    hours = int(_option_value(hours, 168))
+    limit = int(_option_value(limit, 10000))
+    if hours <= 0 or limit <= 0:
+        _fail_parameter("--hours and --limit must be greater than zero", options=options)
+    payload = _predict_payload(
+        hours,
+        limit,
+        str(_option_value(transport, "https")),
+        str(_option_value(dns, "8.8.8.8")),
+    )
+    if options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    console.print(
+        f"Analyzed {payload['samples']} samples. Peak hours: "
+        f"{', '.join(f'{hour:02d}:00' for hour in payload['peak_hours']) or 'none'}"
+    )
+    if not payload["recommendations"]:
+        console.print("[muted]No optimization changes are recommended now.[/muted]")
+        return
+    table = make_table(
+        "Optimization Recommendations",
+        [("Type", "cyan"), ("Current", ""), ("Suggested", "yellow"), ("Confidence", ""), ("Reason", "")],
+        [],
+    )
+    for item in payload["recommendations"]:
+        table.add_row(
+            item["recommendation_type"],
+            item["current_value"],
+            item["suggested_value"],
+            f"{item['confidence']:.0%}",
+            item["reason"],
+        )
+    console.print(table)
+
+
+threat_feeds_app = typer.Typer(help="Manage malicious IP and domain feeds", no_args_is_help=False)
+tools_app.add_typer(threat_feeds_app, name="threat-feeds")
+
+
+@threat_feeds_app.callback(invoke_without_command=True)
+def threat_feeds_status(ctx: typer.Context):
+    if ctx.invoked_subcommand is not None:
+        return
+    options = _output_options(ctx)
+    from .threat_feeds import ThreatFeedsManager
+
+    payload = ThreatFeedsManager().get_stats()
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        console.print(
+            f"{payload['enabled_feeds']}/{payload['total_feeds']} feeds enabled · "
+            f"{payload['blocked_ips']} blocked IPs · {payload['blocked_domains']} blocked domains"
+        )
+
+
+@threat_feeds_app.command("list")
+def threat_feeds_list(ctx: typer.Context = None):
+    """List configured threat intelligence feeds."""
+    from dataclasses import asdict
+
+    from .threat_feeds import ThreatFeedsManager
+
+    options = _output_options(ctx)
+    feeds = [
+        {
+            key: value
+            for key, value in asdict(feed).items()
+            if key != "url"
+        }
+        for feed in ThreatFeedsManager().list_feeds()
+    ]
+    payload = {"total": len(feeds), "feeds": feeds}
+    if options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    table = make_table(
+        "Threat Intelligence Feeds",
+        [("Name", "cyan"), ("Type", "yellow"), ("Enabled", ""), ("Entries", ""), ("Last Updated", "dim")],
+        [],
+    )
+    for feed in feeds:
+        table.add_row(
+            feed["name"],
+            feed["feed_type"],
+            "yes" if feed["enabled"] else "no",
+            str(feed["entry_count"]),
+            feed["last_updated"] or "never",
+        )
+    console.print(table)
+
+
+@threat_feeds_app.command("add")
+def threat_feeds_add(
+    name: str = typer.Argument(..., help="Unique feed name"),
+    url: str = typer.Option(..., "--url", help="HTTP(S) feed URL"),
+    feed_type: str = typer.Option(..., "--type", help="Feed type: ip or domain"),
+    ctx: typer.Context = None,
+):
+    """Add a custom IP or domain threat feed."""
+    from .threat_feeds import ThreatFeed, ThreatFeedsManager
+
+    options = _output_options(ctx)
+    manager = ThreatFeedsManager()
+    feed = ThreatFeed(
+        name=str(_option_value(name)).strip(),
+        url=str(_option_value(url)).strip(),
+        feed_type=str(_option_value(feed_type)).casefold(),
+    )
+    if not manager.add_feed(feed):
+        _fail_parameter(
+            "feed name must be unique, type must be ip or domain, and URL must use HTTP(S)",
+            options=options,
+        )
+    payload = {"added": True, "name": feed.name, "feed_type": feed.feed_type}
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        console.print(f"[success]Added threat feed:[/success] {feed.name}")
+
+
+@threat_feeds_app.command("remove")
+def threat_feeds_remove(
+    name: str = typer.Argument(..., help="Feed name to remove"),
+    ctx: typer.Context = None,
+):
+    """Remove a configured threat feed."""
+    from .threat_feeds import ThreatFeedsManager
+
+    options = _output_options(ctx)
+    manager = ThreatFeedsManager()
+    feed_name = str(_option_value(name)).strip()
+    if not manager.remove_feed(feed_name):
+        _fail_parameter(f"unknown threat feed: {feed_name}", options=options)
+    if options.json_output:
+        _print_json_enveloped({"removed": True, "name": feed_name})
+    elif not _is_quiet(options):
+        console.print(f"[success]Removed threat feed:[/success] {feed_name}")
+
+
+@threat_feeds_app.command("update")
+def threat_feeds_update(ctx: typer.Context = None):
+    """Download and merge every enabled threat feed."""
+    from .threat_feeds import ThreatFeedsManager
+
+    options = _output_options(ctx)
+    manager = ThreatFeedsManager()
+    results = manager.update_feeds()
+    failed = [
+        name
+        for name, success in results.items()
+        if not success and manager.feeds[name].enabled
+    ]
+    skipped = [
+        name
+        for name, success in results.items()
+        if not success and not manager.feeds[name].enabled
+    ]
+    payload = {
+        "updated": sum(results.values()),
+        "failed": len(failed),
+        "skipped": len(skipped),
+        "results": results,
+        "stats": manager.get_stats(),
+    }
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        console.print(
+            f"Updated {payload['updated']} feeds; {payload['failed']} failed; "
+            f"{payload['skipped']} disabled."
+        )
+    if failed:
+        raise typer.Exit(code=1)
+
 
 @tools_app.command("adblock")
 def tools_adblock(

@@ -17,8 +17,6 @@ import threading
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from typing import tuple
-
 _log = logging.getLogger(__name__)
 _adblock_lock = threading.Lock()
 
@@ -243,8 +241,10 @@ def remove_whitelist(domain: str) -> bool:
 # ──────────────────────────── Domain Matching ──────────────────────────
 
 def _load_all_rules() -> set[str]:
-    """Load all blocklist rules from cache files."""
-    rules = set()
+    """Load all blocklist and threat-intelligence domain rules."""
+    from ..threat_feeds import load_domain_indicators
+
+    rules = load_domain_indicators(APP_DATA_DIR / "threat-feeds")
 
     # Load from cache files
     if ADBLOCK_CACHE_DIR.exists():

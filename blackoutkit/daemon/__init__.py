@@ -765,6 +765,7 @@ def _run_daemon_loop(
             if name in {"xray", "tun", "hysteria2", "tuic", "awg"}
         }
     s = cfg.load()
+    traffic_monitor = None
 
     def try_start_engines(name: str) -> list:
         factory = ENGINE_MAP.get(name)
@@ -888,6 +889,19 @@ def _run_daemon_loop(
         started=daemon_started,
         generation=state_generation,
     )
+
+    if s.get("traffic_logging_enabled", False):
+        try:
+            from .traffic_monitor import TrafficMonitor
+
+            traffic_monitor = TrafficMonitor(
+                sample_interval_sec=int(s.get("traffic_log_sample_interval_sec", 10))
+            )
+            traffic_monitor.start()
+            log.info("Traffic monitor initialized.")
+        except Exception as exc:
+            traffic_monitor = None
+            log.warning("Traffic monitor could not start: %s", exc)
 
     def _stop_active_engines() -> None:
         nonlocal active
@@ -1082,6 +1096,11 @@ def _run_daemon_loop(
     finally:
         _clear_shutdown_request(generation)
         log.info("Daemon shutting down. Stopping engines...")
+        if traffic_monitor is not None:
+            try:
+                traffic_monitor.stop()
+            except Exception as exc:
+                log.warning("Traffic monitor could not stop cleanly: %s", exc)
         _stop_active_engines()
         _cleanup_daemon_state(
             my_pid,
