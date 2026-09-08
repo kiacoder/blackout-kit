@@ -234,10 +234,22 @@ def test_inspect_dns_flags_only_when_trusted_succeeds_and_system_fails():
     def fake_system_resolve(domain, timeout=3.0):
         return None if domain == "www.google.com" else "1.2.3.4"
 
+    doh_calls = []
+
+    def fake_resolve_doh(domain, timeout=5.0):
+        doh_calls.append((domain, timeout))
+        return "8.8.8.8"
+
     with patch.object(tools, "get_system_dns_servers", return_value=["1.1.1.1"]), \
          patch.object(tools, "_system_resolve", side_effect=fake_system_resolve), \
-         patch.object(tools, "resolve_doh", return_value="8.8.8.8"):
+         patch.object(tools, "resolve_doh", side_effect=fake_resolve_doh):
         report = tools.inspect_dns()
+
+    assert doh_calls == [
+        (domain, tools.DNS_AUDIT_DOH_TIMEOUT)
+        for domain in tools.DNS_POISON_CHECK_DOMAINS
+    ]
+
 
     assert report["servers"] == ["1.1.1.1"]
     assert report["trusted_resolver_reachable"] is True

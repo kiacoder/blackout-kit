@@ -1055,6 +1055,7 @@ DNS_POISON_CHECK_DOMAINS = [
     "www.wikipedia.org",
     "www.cloudflare.com",
 ]
+DNS_AUDIT_DOH_TIMEOUT = 1.0
 
 
 def get_system_dns_servers() -> list[str]:
@@ -1114,7 +1115,7 @@ def inspect_dns() -> dict:
     trusted_reachable = False
     for domain in DNS_POISON_CHECK_DOMAINS:
         system_ip = _system_resolve(domain)
-        trusted_ip = resolve_doh(domain)
+        trusted_ip = resolve_doh(domain, timeout=DNS_AUDIT_DOH_TIMEOUT)
         if trusted_ip:
             trusted_reachable = True
         suspect = bool(trusted_ip) and not system_ip
@@ -2225,14 +2226,19 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
     🌐 Local REST API & Web Dashboard Server.
     Exposes endpoints: /api/status, /api/connections, /api/audit, and serves HTML dashboard on /.
     """
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    cors_host = host.strip("[]")
+    if ":" in cors_host:
+        cors_host = f"[{cors_host}]"
+    cors_origin = f"http://{cors_host}:{port}"
 
     class APIHandler(BaseHTTPRequestHandler):
         def _send_json(self, data: dict):
             body = json.dumps(data).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:8080")
+            self.send_header("Access-Control-Allow-Origin", cors_origin)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -2303,7 +2309,7 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
-                self.send_header("Access-Control-Allow-Origin", "http://127.0.0.1:8080")
+                self.send_header("Access-Control-Allow-Origin", cors_origin)
                 self.end_headers()
                 try:
                     for _ in range(5):
@@ -2359,7 +2365,10 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
         def log_message(self, format, *args):
             return  # Suppress routine log output
 
-    server = HTTPServer((host, port), APIHandler)
+    class DashboardServer(ThreadingHTTPServer):
+        daemon_threads = True
+
+    server = DashboardServer((host, port), APIHandler)
     _log.info("Started Blackout Kit REST API & Dashboard on http://%s:%d", host, port)
     try:
         server.serve_forever()

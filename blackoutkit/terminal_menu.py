@@ -297,6 +297,8 @@ def run_menu(
     guide: str | None = None,
     key_source: Callable[[], object] | None = None,
     max_visible: int | None = None,
+    screen: bool = True,
+    transient: bool = True,
 ) -> str | None:
     """
     Render a keyboard-navigable menu and return the activated item's key.
@@ -334,9 +336,9 @@ def run_menu(
     with Live(
         render(),
         console=console,
-        screen=True,
+        screen=screen,
         auto_refresh=True,
-        transient=True,
+        transient=transient,
         get_renderable=render,
     ) as live:
         while True:

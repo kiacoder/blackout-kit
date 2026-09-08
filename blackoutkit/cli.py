@@ -4454,6 +4454,8 @@ def _interactive_menu():
             run_menu(
                 "Action complete",
                 [MenuItem("continue", "Continue", "Return to the terminal menu")],
+                screen=False,
+                transient=False,
             )
             console.print()
 

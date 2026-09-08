@@ -26,8 +26,42 @@ def test_documented_commands_are_registered():
     result = runner.invoke(typer_cli.app, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("help", "country", "bins", "doctor", "emergency", "logs", "update", "route", "theme"):
+    for command in ("help", "country", "countries", "bins", "doctor", "emergency", "logs", "update", "route", "theme"):
         assert command in result.output
+
+
+def test_late_registered_commands_are_available_when_run_as_module():
+    import subprocess
+    import sys
+
+    for command in (("ssh", "--help"), ("tools", "audit", "--help")):
+        result = subprocess.run(
+            [sys.executable, "-m", "blackoutkit.typer_cli", *command],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+        assert "No such command" not in result.stdout
+
+
+def test_country_and_capabilities_have_human_output():
+    country = runner.invoke(typer_cli.app, ["country", "list"])
+    capabilities = runner.invoke(typer_cli.app, ["capabilities"])
+
+    assert country.exit_code == 0
+    assert "IR: Iran" in country.output
+    assert capabilities.exit_code == 0
+    assert "Capability Matrix" in capabilities.output
+    assert "sni" in capabilities.output
+    assert "Engine" in capabilities.output
+
+
+def test_country_alias_is_available_for_plural_page_navigation():
+    result = runner.invoke(typer_cli.app, ["countries", "list"])
+
+    assert result.exit_code == 0
+    assert "IR: Iran" in result.output
 
 
 def test_status_watch_options_are_registered():
@@ -1016,6 +1050,24 @@ def test_interactive_menu_dispatches_engine_selection_without_crashing(monkeypat
         assert cli._interactive_menu() is True
 
     select_engine.assert_called_once()
+
+
+def test_interactive_page_output_is_not_replaced_by_action_menu(monkeypatch):
+    from blackoutkit import cli
+
+    choices = iter(["capabilities", "continue", "exit"])
+    calls = []
+
+    def fake_run_menu(title, items, **kwargs):
+        calls.append((title, kwargs))
+        return next(choices)
+
+    monkeypatch.setattr(cli, "run_menu", fake_run_menu)
+    monkeypatch.setattr(cli, "_run_capabilities_from_menu", lambda: cli.console.print("Capability Matrix"))
+
+    assert cli._interactive_menu() is True
+    action_calls = [call for call in calls if call[0] == "Action complete"]
+    assert action_calls == [("Action complete", {"screen": False, "transient": False})]
 
 
 def test_menu_select_engine_sets_preferred_engine(monkeypatch):

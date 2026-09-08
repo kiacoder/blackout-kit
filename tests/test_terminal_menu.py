@@ -92,7 +92,29 @@ def test_live_menu_refreshes_while_waiting_for_resize(monkeypatch):
 
     assert run_menu("Title", _items(), key_source=_keys(Key.SPACE)) == "a"
     assert live_class.call_args.kwargs["screen"] is True
+    assert live_class.call_args.kwargs["transient"] is True
     assert live_class.call_args.kwargs["auto_refresh"] is True
+
+
+def test_menu_can_render_inline_without_alternate_screen(monkeypatch):
+    from unittest.mock import Mock
+
+    live = Mock()
+    live.__enter__ = Mock(return_value=live)
+    live.__exit__ = Mock(return_value=False)
+    live.update = Mock()
+    live_class = Mock(return_value=live)
+    monkeypatch.setattr("blackoutkit.terminal_menu.Live", live_class)
+
+    assert run_menu(
+        "Action complete",
+        [MenuItem("continue", "Continue")],
+        key_source=_keys(Key.ENTER),
+        screen=False,
+        transient=False,
+    ) == "continue"
+    assert live_class.call_args.kwargs["screen"] is False
+    assert live_class.call_args.kwargs["transient"] is False
 
 
 def test_viewport_keeps_selection_visible():

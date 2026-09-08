@@ -1509,7 +1509,7 @@ def gui(ctx: typer.Context = None):
 
 _JSON_NATIVE_COMMANDS = frozenset({
     "version", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
-    "country", "bins", "capabilities", "demo", "setup", "report",
+    "country", "countries", "bins", "capabilities", "demo", "setup", "report",
 })
 _CONFIG_JSON_COMMANDS = frozenset({
     "list", "validate", "check-duplicates", "compatibility", "diff",
@@ -3178,6 +3178,7 @@ def help_command(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran
     _show_help(topic)
 country_app = typer.Typer(help="View or pin the active censorship country profile", no_args_is_help=False)
 app.add_typer(country_app, name="country")
+app.add_typer(country_app, name="countries")
 
 @country_app.callback(invoke_without_command=True)
 def country_status(ctx: typer.Context):
@@ -3815,10 +3816,6 @@ def main():
         sys.exit(1)
 
 
-if __name__ == "__main__":
-    main()
-
-
 @tools_app.command("audit")
 def tools_audit():
     """🛡️ Run a security hardening audit (scans open ports, DNS, cleartext services, killswitch)."""
@@ -4254,3 +4251,7 @@ def ssh_sftp(
         subprocess.run(res["command_args"])
     except Exception as exc:
         console.print(f"[error]Failed to launch SFTP client: {exc}[/error]")
+
+
+if __name__ == "__main__":
+    main()
