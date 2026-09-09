@@ -257,45 +257,99 @@ def _parse_config_text(text: str) -> list[ProxyConfig]:
 
 
 def load_configs(path: Path | None = None) -> list[ProxyConfig]:
+    import logging
+    log = logging.getLogger(__name__)
+
     p = path or CONFIGS_FILE
     if path is None and CONFIGS_FILE == vault.CONFIGS_FILE and vault.config_vault_active():
         try:
             return _parse_config_text(vault.read_config_bytes().decode("utf-8", errors="strict"))
-        except (UnicodeDecodeError, vault.VaultError):
+        except UnicodeDecodeError as e:
+            log.error(f"Config vault has invalid UTF-8 encoding: {e}")
             return []
+        except vault.VaultError as e:
+            log.error(f"Could not read config vault: {e}")
+            return []
+
     if not p.exists():
         return []
+
     try:
-        return _parse_config_text(p.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, ValueError):
+        text = p.read_text(encoding="utf-8", errors="replace")
+        if not text.strip():
+            log.warning(f"Config file is empty: {p}")
+            return []
+        return _parse_config_text(text)
+    except OSError as e:
+        if e.errno == 13:  # Permission denied
+            log.error(f"Permission denied reading config file {p}: {e}")
+        elif e.errno == 28:  # No space left on device
+            log.error(f"No space left on device reading {p}: {e}")
+        else:
+            log.error(f"Failed to read config file {p}: {e}")
+        return []
+    except ValueError as e:
+        log.error(f"Config file contains invalid URI format at {p}: {e}")
+        return []
+    except Exception as e:
+        log.error(f"Unexpected error loading configs from {p}: {type(e).__name__}: {e}")
         return []
 
 
 def save_configs(configs: list[ProxyConfig], path: Path | None = None):
+    """
+    Save configs to disk atomically using temp file + rename.
+    Raises SaveError on failure with detailed context.
+    """
+    import logging
+    import os
+    import tempfile
+
+    log = logging.getLogger(__name__)
     text = "\n".join(config.raw_uri for config in configs if config.raw_uri)
+
     if path is None and CONFIGS_FILE == vault.CONFIGS_FILE and vault.config_vault_active():
-        vault.write_config_bytes(text.encode("utf-8"))
+        try:
+            vault.write_config_bytes(text.encode("utf-8"))
+        except vault.VaultError as e:
+            log.error(f"Failed to write configs to vault: {e}")
+            raise SaveError(f"Could not save to vault: {e}") from e
         return
+
     p = path or CONFIGS_FILE
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
-        import os
-        import tempfile
         fd, tmp_path = tempfile.mkstemp(dir=p.parent, text=True)
         try:
             with os.fdopen(fd, 'w', encoding='utf-8') as f:
                 f.write(text)
             os.replace(tmp_path, str(p))
-        except Exception:
+            log.debug(f"Saved {len(configs)} configs to {p}")
+        except Exception as e:
             try:
                 os.unlink(tmp_path)
             except OSError:
                 pass
             raise
     except OSError as e:
-        import logging
-        logging.error(f"Failed to save proxy configs to {p}: {e}")
-        raise
+        error_detail = ""
+        if e.errno == 13:  # Permission denied
+            error_detail = "Permission denied. Check file ownership and permissions."
+        elif e.errno == 28:  # No space left on device
+            error_detail = "Disk is full. Free up disk space."
+        elif e.errno == 30:  # Read-only filesystem
+            error_detail = "Filesystem is read-only."
+        else:
+            error_detail = str(e)
+
+        msg = f"Failed to save configs to {p}: {error_detail}"
+        log.error(msg)
+        raise SaveError(msg) from e
+
+
+class SaveError(Exception):
+    """Raised when configs cannot be saved to disk."""
+    pass
 
 
 def select_proxy_config(protocols: tuple[str, ...]) -> ProxyConfig | None:
