@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import socket
 import tempfile
 import threading
 from dataclasses import asdict, dataclass, replace
@@ -16,6 +17,8 @@ from typing import Optional, Set
 from urllib.parse import urlparse
 
 import httpx
+
+from ._net_utils import reject_private_host
 
 logger = logging.getLogger(__name__)
 _STATE_LOCK = threading.Lock()
@@ -119,6 +122,7 @@ class ThreatFeedsManager:
         self.feed_indicators = self.config_dir / "feed_indicators.json"
         self.custom_ips_file = self.config_dir / "custom_ips.json"
         self.custom_domains_file = self.config_dir / "custom_domains.json"
+        self.feed_state_file = self.config_dir / "feed_state.json"
 
         self.feeds: dict[str, ThreatFeed] = {}
         self.ip_set: Set[str] = set()
@@ -203,12 +207,8 @@ class ThreatFeedsManager:
         return results
 
     def is_ip_blocked(self, ip: str) -> bool:
-        """Check whether an exact normalized IP indicator is present."""
-        try:
-            normalized = str(ip).strip()
-            return str(ipaddress.ip_address(normalized)) in self.ip_set
-        except ValueError:
-            return False
+        """Check whether an IP matches an exact or CIDR indicator."""
+        return self._ip_matches(ip)
 
     def is_domain_blocked(self, domain: str) -> bool:
         """Check whether an exact normalized domain indicator is present."""
@@ -251,7 +251,25 @@ class ThreatFeedsManager:
         """Fetch and atomically replace one feed's indicator snapshot."""
         logger.info("Updating feed: %s", feed.name)
         try:
-            response = httpx.get(feed.url, timeout=30)
+            # Disable automatic redirects; manually follow with validation
+            response = httpx.get(feed.url, timeout=30, follow_redirects=False)
+
+            # Manually follow up to 5 redirects, validating each hop
+            redirects_followed = 0
+            while response.status_code in (301, 302, 303, 307, 308) and redirects_followed < 5:
+                location = response.headers.get("location")
+                if not location:
+                    break
+                parsed_location = urlparse(location)
+                # Validate redirect target
+                try:
+                    reject_private_host(parsed_location.hostname or location, port=443)
+                except ValueError as e:
+                    logger.error("Feed %s redirect blocked by SSRF guard: %s", feed.name, e)
+                    return False
+                response = httpx.get(location, timeout=30, follow_redirects=False)
+                redirects_followed += 1
+
             response.raise_for_status()
             content = response.text
             if len(content.encode("utf-8", errors="replace")) > _MAX_FEED_BYTES:
@@ -356,12 +374,14 @@ class ThreatFeedsManager:
         if not feed.name or feed.feed_type not in {"ip", "domain"}:
             return False
         parsed = urlparse(feed.url)
-        return (
-            parsed.scheme.casefold() == "https"
-            and bool(parsed.hostname)
-            and parsed.username is None
-            and parsed.password is None
-        )
+        if not (parsed.scheme.casefold() == "https" and bool(parsed.hostname) and parsed.username is None and parsed.password is None):
+            return False
+        # Validate that the hostname resolves to a global IP
+        try:
+            reject_private_host(parsed.hostname, port=443)
+        except ValueError:
+            return False
+        return True
 
     @staticmethod
     def _normalize_ip(ip: object) -> Optional[str]:
@@ -370,8 +390,7 @@ class ThreatFeedsManager:
         candidate = ip.strip()
         try:
             if "/" in candidate:
-                network = ipaddress.ip_network(candidate, strict=False)
-                return str(network.network_address)
+                return str(ipaddress.ip_network(candidate, strict=False))
             return str(ipaddress.ip_address(candidate))
         except ValueError:
             return None
@@ -405,9 +424,33 @@ class ThreatFeedsManager:
                     continue
                 if self._validate_feed(feed) and feed.name not in self.feeds:
                     self.feeds[feed.name] = feed
-        if not self.feeds:
+        state = self._read_json(self.feed_state_file)
+        if not self.feeds and not (isinstance(state, dict) and state.get("initialized")):
             self.feeds = {feed.name: replace(feed) for feed in self.DEFAULT_FEEDS}
             self._save_feeds()
+            self._atomic_json_write(self.feed_state_file, {"initialized": True})
+
+    def _normalize_feed_network(self, candidate: str) -> str | None:
+        try:
+            network = ipaddress.ip_network(candidate, strict=False)
+        except ValueError:
+            return self._normalize_ip(candidate)
+        return str(network)
+
+    def _ip_matches(self, candidate: str) -> bool:
+        try:
+            address = ipaddress.ip_address(candidate.strip())
+        except ValueError:
+            return False
+        for indicator in self.ip_set:
+            try:
+                if "/" in indicator and address in ipaddress.ip_network(indicator):
+                    return True
+                if str(address) == indicator:
+                    return True
+            except ValueError:
+                continue
+        return False
 
     @staticmethod
     def _normalized_set(data: object, normalizer) -> Set[str]:
@@ -499,3 +542,4 @@ class ThreatFeedsManager:
         self.feeds.clear()
         self._save_blocked()
         self._save_feeds()
+        self._atomic_json_write(self.feed_state_file, {"initialized": True})

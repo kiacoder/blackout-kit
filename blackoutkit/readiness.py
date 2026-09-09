@@ -47,7 +47,11 @@ def _setting_value_present(settings: dict, key: str) -> bool:
 def _port_value(settings: dict, item: str | int) -> int:
     if isinstance(item, int):
         return item
-    return int(settings.get(item, cfg.DEFAULTS[item]))
+    try:
+        value = settings.get(item, cfg.DEFAULTS[item])
+        return int(value)
+    except (TypeError, ValueError):
+        return -1  # Sentinel for invalid port
 
 
 def _local_ports(engine: str, settings: dict) -> tuple[int, ...]:
@@ -283,6 +287,13 @@ def evaluate(engine: str, *, allow_active_daemon: bool = False) -> list[ReadyChe
                 ))
 
     for port in _local_ports(normalized, settings):
+        if port < 1 or port > 65535:
+            checks.append(_check(
+                f"Configured port {port}",
+                False,
+                f"Configured port {port} is invalid (must be 1-65535)",
+            ))
+            continue
         available = _port_free(port)
         checks.append(_check(
             f"Local port {port}",

@@ -9,22 +9,73 @@ Core features:
   - DNS query audit trail
   - Blocklist update tracking
 """
+import ipaddress
 import json
 import logging
+import math
 import os
+import re
+import socket
 import tempfile
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 _log = logging.getLogger(__name__)
 _adblock_lock = threading.Lock()
 
 from .. import APP_DATA_DIR
+from .._net_utils import SSRFGuardHTTPSHandler
 
 ADBLOCK_RULES_FILE = APP_DATA_DIR / "adblock_rules.json"
 ADBLOCK_CACHE_DIR = APP_DATA_DIR / "adblock_cache"
 DNS_QUERY_LOG = APP_DATA_DIR / "dns_queries.jsonl"
+_MAX_BLOCKLIST_BYTES = 10 * 1024 * 1024
+_SAFE_SOURCE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _safe_source_name(name: str) -> str | None:
+    value = str(name or "").strip()
+    return value if _SAFE_SOURCE_NAME.fullmatch(value) else None
+
+
+def _normalize_domain(domain: object) -> str:
+    return str(domain or "").strip().casefold().rstrip(".")
+
+
+def _safe_blocklist_url(url: object) -> bool:
+    parsed = urllib.parse.urlparse(str(url or "").strip())
+    if parsed.scheme.casefold() != "https" or not parsed.hostname:
+        return False
+    if parsed.username or parsed.password:
+        return False
+    hostname = parsed.hostname.casefold().rstrip(".")
+    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
+        return False
+    try:
+        port = parsed.port or 443
+        addresses = [ipaddress.ip_address(hostname)]
+    except ValueError:
+        try:
+            addresses = [
+                ipaddress.ip_address(info[4][0])
+                for info in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+            ]
+        except (OSError, ValueError):
+            return False
+    return bool(addresses) and all(address.is_global for address in addresses)
+
+
+class _ValidatedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _safe_blocklist_url(newurl):
+            raise urllib.error.URLError("blocklist redirect target is not allowed")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _write_blocklist_cache(cache_file, rules: set[str]) -> None:
+    cache_file.write_text("\n".join(sorted(rules)))
 
 
 # ──────────────────────────── Blocklist Management ──────────────────────────
@@ -64,7 +115,7 @@ def _save_adblock_config(config: dict) -> None:
                     pass
                 raise
         except Exception:
-            pass  # Silently fail
+            raise
 
 
 def add_blocklist_source(name: str, url: str) -> bool:
@@ -72,16 +123,20 @@ def add_blocklist_source(name: str, url: str) -> bool:
     Add a new blocklist source.
     Returns True if added, False if already exists.
     """
+    safe_name = _safe_source_name(name)
+    parsed_url = urllib.parse.urlparse(str(url or "").strip())
+    if safe_name is None or not _safe_blocklist_url(url):
+        return False
     config = _load_adblock_config()
 
     # Check if already exists
     for source in config.get('sources', []):
-        if source['name'].lower() == name.lower():
+        if source['name'].lower() == safe_name.lower():
             return False
 
     config['sources'].append({
-        'name': name,
-        'url': url,
+        'name': safe_name,
+        'url': str(url).strip(),
         'last_update': None,
         'enabled': True,
         'rule_count': 0
@@ -116,14 +171,35 @@ def download_blocklist(name: str, url: str) -> tuple[bool, int, str]:
     Returns: (success, rule_count, error_msg)
     """
     try:
-        cache_file = ADBLOCK_CACHE_DIR / f"{name}.txt"
+        safe_name = _safe_source_name(name)
+        if safe_name is None or not _safe_blocklist_url(url):
+            return False, 0, "Blocklist name and URL are invalid"
+        cache_file = ADBLOCK_CACHE_DIR / f"{safe_name}.txt"
+        if not cache_file.resolve().is_relative_to(ADBLOCK_CACHE_DIR.resolve()):
+            return False, 0, "Unsafe blocklist cache path"
 
-        # Download with timeout
+        # Download with timeout and a bounded response body.
         try:
-            with urllib.request.urlopen(url, timeout=10) as response:
-                content = response.read().decode('utf-8', errors='ignore')
+            opener = urllib.request.build_opener(_ValidatedRedirectHandler(), SSRFGuardHTTPSHandler())
+            with opener.open(str(url).strip(), timeout=10) as response:
+                declared = response.headers.get("Content-Length")
+                if declared and int(declared) > _MAX_BLOCKLIST_BYTES:
+                    return False, 0, "Blocklist response exceeds the size limit"
+                chunks = []
+                total = 0
+                while True:
+                    chunk = response.read(64 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if total > _MAX_BLOCKLIST_BYTES:
+                        return False, 0, "Blocklist response exceeds the size limit"
+                    chunks.append(chunk)
+                content = b"".join(chunks).decode('utf-8', errors='ignore')
         except urllib.error.URLError as e:
             return False, 0, f"Download failed: {e}"
+        except (TypeError, ValueError) as e:
+            return False, 0, f"Invalid blocklist response: {e}"
         except Exception as e:
             return False, 0, f"Network error: {e}"
 
@@ -189,9 +265,9 @@ def _recompute_total_rules(config: dict) -> None:
 def add_custom_block(domain: str) -> bool:
     """Add a custom block rule."""
     config = _load_adblock_config()
-    domain = domain.lower()
+    domain = _normalize_domain(domain)
 
-    if domain in config.get('custom_blocks', []):
+    if not domain or domain in config.get('custom_blocks', []):
         return False
 
     config['custom_blocks'].append(domain)
@@ -216,9 +292,9 @@ def remove_custom_block(domain: str) -> bool:
 def add_whitelist(domain: str) -> bool:
     """Add a domain to the whitelist (bypass all blocklists)."""
     config = _load_adblock_config()
-    domain = domain.lower()
+    domain = _normalize_domain(domain)
 
-    if domain in config.get('whitelist', []):
+    if not domain or domain in config.get('whitelist', []):
         return False
 
     config['whitelist'].append(domain)
@@ -270,8 +346,14 @@ def check_domain_blocked(fqdn: str) -> tuple[bool, str]:
     Check if domain is blocked.
     Returns: (is_blocked, matched_rule)
     """
+    from .. import settings as cfg
+
+    # Check if adblock is globally enabled
+    if not cfg.load().get("adblock_enabled", False):
+        return False, ""
+
     config = _load_adblock_config()
-    fqdn_lower = fqdn.lower()
+    fqdn_lower = _normalize_domain(fqdn)
 
     # Check whitelist first (bypass all blocks)
     whitelist = config.get('whitelist', [])
@@ -295,7 +377,11 @@ def check_domain_blocked(fqdn: str) -> tuple[bool, str]:
 
 
 def log_dns_query(domain: str, blocked: bool, response_ip: str = "0.0.0.0") -> None:
-    """Log a DNS query."""
+    """Log a DNS query when query logging is enabled."""
+    from .. import settings as cfg
+
+    if not cfg.load().get("adblock_query_log_enabled", False):
+        return
     _ensure_adblock_dirs()
 
     entry = {
@@ -386,9 +472,12 @@ def get_dns_query_log(blocked_only: bool = False, hours: int = 24, limit: int = 
 
 def get_adblock_status() -> dict:
     """Get comprehensive adblock status."""
+    from .. import settings as cfg
+
     config = _load_adblock_config()
+    enabled = cfg.load().get('adblock_enabled', False)
     return {
-        'enabled': True,  # Based on settings
+        'enabled': enabled,
         'total_sources': len(config.get('sources', [])),
         'enabled_sources': sum(1 for s in config.get('sources', []) if s.get('enabled', True)),
         'total_rules': config.get('stats', {}).get('total_rules', 0),

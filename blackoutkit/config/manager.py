@@ -4,20 +4,56 @@ Parses vless://, trojan://, and vmess:// URIs.
 Loads/saves configs and imports from subscription URLs.
 """
 import base64
+import contextlib
+import ipaddress
 import json
 import os
+import socket
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
 from .. import DATA_DIR, vault
+from .._net_utils import SSRFGuardHTTPSHandler
 
 CONFIGS_FILE = DATA_DIR / "configs.txt"
 SETUP_SCHEMA_VERSION = 1
 SUBSCRIPTION_MAX_BYTES = 2 * 1024 * 1024
 SUBSCRIPTION_MAX_LINES = 10_000
 SUBSCRIPTION_MAX_REDIRECTS = 3
+@contextlib.contextmanager
+def _config_mutation_lock():
+    lock_path = CONFIGS_FILE.with_suffix(".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+")
+    try:
+        if os.name == "nt":
+            import msvcrt
+
+            handle.seek(0)
+            handle.write(" ")
+            handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
 
 
 class SubscriptionError(ValueError):
@@ -118,6 +154,8 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
     if host_port_str.startswith("["):
         bracket_end = host_port_str.index("]")
         host = host_port_str[1:bracket_end]
+        if not host_port_str[bracket_end + 1:].startswith(":"):
+            raise ValueError("Missing ':' port delimiter in IPv6 host:port")
         try:
             port = int(host_port_str[bracket_end + 2:])
         except (ValueError, IndexError) as e:
@@ -130,6 +168,7 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
             port = int(port_str)
         except ValueError as e:
             raise ValueError(f"Invalid port number: {port_str} ({e})")
+    _validate_proxy_endpoint(host, port)
 
     p = urllib.parse.parse_qs(params_str, keep_blank_values=True)
 
@@ -187,10 +226,13 @@ def _parse_vmess(uri: str) -> ProxyConfig:
     b64 += "=" * (padding % 4)
     data = json.loads(base64.b64decode(b64).decode("utf-8"))
 
+    address = data.get("add", "")
+    port = int(data.get("port", 443))
+    _validate_proxy_endpoint(address, port)
     return ProxyConfig(
         protocol  = "vmess",
-        address   = data.get("add", ""),
-        port      = int(data.get("port", 443)),
+        address   = address,
+        port      = port,
         uuid      = data.get("id", ""),
         sni       = data.get("sni", data.get("host", "")),
         host      = data.get("host", ""),
@@ -288,20 +330,22 @@ def add_config(uri: str) -> ProxyConfig:
     c = parse_v2ray_uri(uri)
     if not c:
         raise ValueError("Invalid V2Ray URI")
-    existing = load_configs()
-    # Avoid duplicates by raw_uri
-    if not any(e.raw_uri == c.raw_uri for e in existing):
-        existing.append(c)
-        save_configs(existing)
+    with _config_mutation_lock():
+        existing = load_configs()
+        # Avoid duplicates by raw_uri
+        if not any(e.raw_uri == c.raw_uri for e in existing):
+            existing.append(c)
+            save_configs(existing)
     return c
 
 
 def remove_config(index: int):
-    configs = load_configs()
-    if not 0 <= index < len(configs):
-        raise IndexError(f"Config index {index} out of range")
-    del configs[index]
-    save_configs(configs)
+    with _config_mutation_lock():
+        configs = load_configs()
+        if not 0 <= index < len(configs):
+            raise IndexError(f"Config index {index} out of range")
+        del configs[index]
+        save_configs(configs)
 
 
 def replace_config(index: int, uri: str) -> ProxyConfig:
@@ -310,18 +354,19 @@ def replace_config(index: int, uri: str) -> ProxyConfig:
     if not replacement:
         raise ValueError("Invalid V2Ray URI")
 
-    configs = load_configs()
-    if not 0 <= index < len(configs):
-        raise IndexError(f"Config index {index} out of range")
-    if any(
-        existing.raw_uri == replacement.raw_uri
-        for position, existing in enumerate(configs)
-        if position != index
-    ):
-        raise ValueError("A config with this URI is already saved")
+    with _config_mutation_lock():
+        configs = load_configs()
+        if not 0 <= index < len(configs):
+            raise IndexError(f"Config index {index} out of range")
+        if any(
+            existing.raw_uri == replacement.raw_uri
+            for position, existing in enumerate(configs)
+            if position != index
+        ):
+            raise ValueError("A config with this URI is already saved")
 
-    configs[index] = replacement
-    save_configs(configs)
+        configs[index] = replacement
+        save_configs(configs)
     return replacement
 
 
@@ -335,21 +380,63 @@ def _validate_subscription_url(url: str) -> str:
         raise SubscriptionError("subscription URL must not contain credentials")
     if not parsed.hostname:
         raise SubscriptionError("subscription URL must include a host")
-    hostname = parsed.hostname.lower().rstrip(".")
-    if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
+    try:
+        port = parsed.port or 443
+    except ValueError as exc:
+        raise SubscriptionError("subscription URL port is invalid") from exc
+    hostname = parsed.hostname.rstrip(".")
+    if hostname.casefold() in {"localhost", "localhost.localdomain"} or hostname.casefold().endswith(".local"):
         raise SubscriptionError("subscription URL host is not allowed")
-    if hostname.startswith(("127.", "10.", "192.168.", "169.254.")) or hostname == "0.0.0.0":
+    try:
+        addresses = [ipaddress.ip_address(hostname)]
+    except ValueError:
+        try:
+            addresses = [
+                ipaddress.ip_address(info[4][0])
+                for info in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+            ]
+        except (OSError, ValueError):
+            raise SubscriptionError("subscription URL host could not be resolved") from None
+    if not addresses or any(not address.is_global for address in addresses):
         raise SubscriptionError("subscription URL host is not allowed")
-    return urllib.parse.urlunsplit(("https", hostname, parsed.path, parsed.query, ""))
+    netloc = f"[{hostname}]" if ":" in hostname and not hostname.startswith("[") else hostname
+    if parsed.port is not None:
+        netloc = f"{netloc}:{port}"
+    return urllib.parse.urlunsplit(("https", netloc, parsed.path, parsed.query, ""))
+
+
+_MAX_SUBSCRIPTION_REDIRECTS = SUBSCRIPTION_MAX_REDIRECTS
 
 
 class _ValidatedRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self):
+        super().__init__()
+        self._redirect_count = 0
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
+        self._redirect_count += 1
+        if self._redirect_count > _MAX_SUBSCRIPTION_REDIRECTS:
+            raise urllib.error.URLError("subscription redirect limit exceeded")
         try:
             validated = _validate_subscription_url(newurl)
         except SubscriptionError as exc:
             raise urllib.error.URLError(str(exc)) from exc
         return super().redirect_request(req, fp, code, msg, headers, validated)
+
+
+def _validate_proxy_endpoint(host: str, port: int) -> None:
+    if not host or not 1 <= port <= 65535:
+        raise ValueError("Host must be non-empty and port must be 1-65535")
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        if any(character.isspace() for character in host):
+            raise ValueError("Host must be a valid hostname or IP address") from None
+
+
+def _validate_config_mutation(configs: list[ProxyConfig]) -> None:
+    for config in configs:
+        _validate_proxy_endpoint(config.address, config.port)
 
 
 def _read_subscription_body(response, *, limit: int = SUBSCRIPTION_MAX_BYTES) -> bytes:
@@ -370,7 +457,7 @@ def _read_subscription_body(response, *, limit: int = SUBSCRIPTION_MAX_BYTES) ->
 def import_from_subscription(url: str) -> list[ProxyConfig]:
     """Fetch and parse a bounded HTTPS V2Ray subscription response."""
     validated_url = _validate_subscription_url(url)
-    opener = urllib.request.build_opener(_ValidatedRedirectHandler())
+    opener = urllib.request.build_opener(_ValidatedRedirectHandler(), SSRFGuardHTTPSHandler())
     request = urllib.request.Request(
         validated_url,
         headers={"User-Agent": "v2rayN/6.0"},
@@ -404,10 +491,11 @@ def import_from_subscription(url: str) -> list[ProxyConfig]:
 def import_and_merge(url: str) -> tuple[int, int]:
     """Fetch a subscription and atomically merge new configs."""
     new = import_from_subscription(url)
-    existing = load_configs()
-    existing_uris = {config.raw_uri for config in existing}
-    added = [config for config in new if config.raw_uri not in existing_uris]
-    save_configs(existing + added)
+    with _config_mutation_lock():
+        existing = load_configs()
+        existing_uris = {config.raw_uri for config in existing}
+        added = [config for config in new if config.raw_uri not in existing_uris]
+        save_configs(existing + added)
     return len(added), len(existing) + len(added)
 
 
@@ -441,7 +529,7 @@ def serialize_setup() -> dict:
     from .. import settings as cfg
 
     configs = load_configs()
-    current_settings = cfg.load()
+    current_settings = cfg._load_plain_settings()
 
     exportable_keys = {
         "selected_engine",
@@ -457,9 +545,32 @@ def serialize_setup() -> dict:
         if k in exportable_keys
     }
 
+    # Strip credentials from URIs to avoid exposing passwords/UUIDs in backup
+    sanitized_configs = []
+    for c in configs:
+        if not c.raw_uri:
+            continue
+        try:
+            parsed = urllib.parse.urlsplit(c.raw_uri)
+            # Reconstruct without credentials
+            netloc = parsed.hostname or parsed.netloc
+            if parsed.port:
+                netloc = f"{netloc}:{parsed.port}"
+            sanitized_uri = urllib.parse.urlunsplit((
+                parsed.scheme,
+                netloc,
+                parsed.path,
+                parsed.query,
+                parsed.fragment
+            ))
+            sanitized_configs.append(sanitized_uri)
+        except Exception:
+            # On any parse error, omit the config from backup (fail safe)
+            pass
+
     return {
         "schema_version": SETUP_SCHEMA_VERSION,
-        "configs": [c.raw_uri for c in configs if c.raw_uri],
+        "configs": sanitized_configs,
         "settings": filtered_settings,
     }
 

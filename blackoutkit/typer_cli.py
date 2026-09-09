@@ -2654,7 +2654,7 @@ def tools_scan_ports(
 @tools_app.command("latency-monitor")
 def tools_latency_monitor(
     host: str = typer.Argument("8.8.8.8", help="Host to ping continuously"),
-    interval: float = typer.Option(1.0, "--interval", "-i", help="Seconds between samples"),
+    interval: float = typer.Option(1.0, "--interval", "-i", min=0.1, help="Seconds between samples"),
 ):
     """Live-updating ping graph with rolling avg/jitter/loss. Ctrl+C to stop."""
     from .cli import cmd_tools
@@ -2666,7 +2666,7 @@ def tools_latency_monitor(
 
 @tools_app.command("bandwidth")
 def tools_bandwidth(
-    interval: float = typer.Option(1.0, "--interval", "-i", help="Seconds between samples"),
+    interval: float = typer.Option(1.0, "--interval", "-i", min=0.1, help="Seconds between samples"),
 ):
     """Live-updating per-interface upload/download throughput. Ctrl+C to stop."""
     from .cli import cmd_tools
@@ -4107,8 +4107,9 @@ def tools_simulate(
     from .tools import simulate_network_conditions
     res = simulate_network_conditions(host=host, added_latency_ms=latency, simulated_loss_pct=loss)
     st = res["stats"]
+    avg = f"{st['avg']:.1f}ms" if st["avg"] is not None else "N/A"
     console.print(f"[bold cyan]⚡ Network Simulation to {host}[/bold cyan] (+{latency}ms latency, {loss}% loss):\n")
-    console.print(f"Avg Latency: {st['avg']:.1f}ms | Loss Rate: {st['loss_pct']:.1f}%")
+    console.print(f"Avg Latency: {avg} | Loss Rate: {st['loss_pct']:.1f}%")
 
 
 @tools_app.command("phishing-check")
@@ -4246,11 +4247,11 @@ def ssh_sftp(
     if not res["ok"]:
         console.print(f"[error]{res['error']}[/error]")
         return
-    console.print(f"[info]Connecting to SFTP for {res['user_host']}...[/info]")
-    try:
-        subprocess.run(res["command_args"])
-    except Exception as exc:
-        console.print(f"[error]Failed to launch SFTP client: {exc}[/error]")
+    console.print(f"[info]SFTP result for {res['user_host']}:[/info]")
+    if res["stdout"]:
+        console.print(res["stdout"])
+    if res["stderr"]:
+        console.print(f"[yellow]{res['stderr']}[/yellow]")
 
 
 if __name__ == "__main__":

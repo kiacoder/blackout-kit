@@ -216,23 +216,10 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
         _mark_proxy_owned(previous, get_proxy_status() or target)
         return True
     except PermissionError:
-        _last_error = f"Registry write denied — run Blackout Kit as Administrator or enable '{key_path}'."
+        _last_error = f"Registry write denied — run Blackout Kit as Administrator."
     except Exception as exc:
         _last_error = f"Registry error: {exc}"
 
-    try:
-        result = subprocess.run(
-            ["netsh", "winhttp", "set", "proxy", target["server"]],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            _last_error = ""
-            _mark_proxy_owned(previous, get_proxy_status() or target)
-            return True
-        _last_error = f"netsh fallback failed (rc={result.returncode})"
-    except Exception as exc:
-        _last_error = f"netsh fallback error: {exc}"
     return False
 
 
@@ -274,20 +261,6 @@ def clear_system_proxy() -> bool:
     except Exception as exc:
         _last_error = f"Registry error: {exc}"
 
-    try:
-        result = subprocess.run(
-            ["netsh", "winhttp", "reset", "proxy"],
-            capture_output=True,
-            timeout=10,
-        )
-        if result.returncode == 0:
-            _last_error = ""
-            if not _restoring_proxy:
-                _forget_proxy_ownership()
-            return True
-        _last_error = f"netsh reset failed (rc={result.returncode})"
-    except Exception as exc:
-        _last_error = f"netsh error: {exc}"
     return False
 
 

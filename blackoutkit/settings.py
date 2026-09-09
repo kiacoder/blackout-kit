@@ -370,15 +370,21 @@ def _apply_env_overrides(settings: dict) -> dict:
             continue
         try:
             if isinstance(default_val, bool):
-                settings[key] = env_raw.lower() in ("1", "true", "yes", "on")
+                normalized = env_raw.lower()
+                if normalized not in ("0", "1", "true", "false", "yes", "no", "on", "off"):
+                    continue
+                candidate = normalized in ("1", "true", "yes", "on")
             elif isinstance(default_val, int):
-                settings[key] = int(env_raw)
+                candidate = int(env_raw)
             elif isinstance(default_val, float):
-                settings[key] = float(env_raw)
+                candidate = float(env_raw)
             elif isinstance(default_val, list):
-                settings[key] = [v.strip() for v in env_raw.split(",")]
+                candidate = [v.strip() for v in env_raw.split(",")]
             else:
-                settings[key] = env_raw
+                candidate = env_raw
+            valid, _reason = validate(key, candidate)
+            if valid:
+                settings[key] = candidate
         except (ValueError, TypeError):
             pass   # Bad env value → ignore silently, keep file value
     return _normalize_qos_settings(settings)
@@ -582,7 +588,7 @@ def set_value(key: str, value):
     ok, msg = validate(key, typed_value)
     if not ok:
         raise ValueError(f"Invalid value for '{key}': {msg}")
-    settings = load()
+    settings = _load_plain_settings()
     settings[key] = typed_value
     save(settings)
 

@@ -10,14 +10,17 @@ from . import APP_DATA_DIR
 
 AUDIT_FILE = APP_DATA_DIR / "recovery_audit.jsonl"
 MAX_RECORDS = 100
-_SECRET_PATTERN = re.compile(r"(?i)(password|psk|token|secret|uuid)=?[^\s,;]+")
+_SECRET_PATTERN = re.compile(
+    r"(?i)([\"']?(?:password|psk|token|secret)[\"']?\s*(?:=|:)\s*)([\"']?)([^\n\"')\]]*?)(\2)(?=\s*[,;}\)\]\n]|$)",
+    re.MULTILINE,
+)
 _URI_CREDENTIAL_PATTERN = re.compile(r"([a-z][a-z0-9+.-]*://)[^\s/@]+@", re.IGNORECASE)
 
 
 def redact(value: object) -> str:
     text = str(value)
     text = _URI_CREDENTIAL_PATTERN.sub(r"\1[hidden]@", text)
-    text = _SECRET_PATTERN.sub(lambda match: f"{match.group(1)}=[hidden]", text)
+    text = _SECRET_PATTERN.sub(lambda match: f"{match.group(1)}{match.group(2)}[hidden]{match.group(4)}", text)
     return text
 
 

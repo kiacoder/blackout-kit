@@ -1,6 +1,7 @@
 """Threat-feed integration with the DNS sinkhole rule matcher."""
 
 import json
+from unittest.mock import MagicMock, patch
 
 from blackoutkit.tools import adblock
 
@@ -11,8 +12,15 @@ def _configure_paths(monkeypatch, tmp_path):
     monkeypatch.setattr(adblock, "ADBLOCK_CACHE_DIR", tmp_path / "adblock_cache")
 
 
+def _mock_adblock_enabled(monkeypatch):
+    """Mock settings to enable adblock for test."""
+    from blackoutkit import settings as cfg
+    monkeypatch.setattr(cfg, "load", lambda: {"adblock_enabled": True})
+
+
 def test_threat_domain_matches_exact_and_subdomains(monkeypatch, tmp_path):
     _configure_paths(monkeypatch, tmp_path)
+    _mock_adblock_enabled(monkeypatch)
     threat_dir = tmp_path / "threat-feeds"
     threat_dir.mkdir()
     (threat_dir / "blocked_domains.json").write_text(
@@ -52,3 +60,14 @@ def test_corrupt_threat_domain_file_is_ignored(monkeypatch, tmp_path):
     threat_dir.mkdir()
     (threat_dir / "blocked_domains.json").write_text("invalid", encoding="utf-8")
     assert adblock.check_domain_blocked("evil.example") == (False, "")
+
+
+def test_trailing_dot_domain_matches(monkeypatch, tmp_path):
+    _configure_paths(monkeypatch, tmp_path)
+    _mock_adblock_enabled(monkeypatch)
+    threat_dir = tmp_path / "threat-feeds"
+    threat_dir.mkdir()
+    (threat_dir / "blocked_domains.json").write_text(
+        json.dumps(["evil.example"]), encoding="utf-8"
+    )
+    assert adblock.check_domain_blocked("evil.example.") == (True, "evil.example")

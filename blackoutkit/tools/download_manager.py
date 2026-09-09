@@ -85,6 +85,7 @@ def save_queue(downloads: list[Download]) -> None:
     """
     Atomically save download queue to disk.
     Keeps last DOWNLOAD_MAX_HISTORY entries.
+    Persistence failures are logged but do not raise (best-effort).
     """
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -104,8 +105,8 @@ def save_queue(downloads: list[Download]) -> None:
             except Exception:
                 pass
             raise
-    except Exception:
-        pass  # Error-resilient: silently fail
+    except Exception as exc:
+        _log.error("Failed to save download queue: %s", exc)
 
 
 def load_queue() -> list[Download]:
@@ -138,6 +139,11 @@ def queue_download(
     Add a download to the queue.
     Returns the download ID for status tracking.
     """
+    # Validate URL scheme — only allow http/https
+    parsed_scheme = urllib.parse.urlsplit(url).scheme.lower()
+    if parsed_scheme not in ("http", "https"):
+        raise ValueError(f"Download URL must use http or https, got: {parsed_scheme!r}")
+
     download_id = str(uuid.uuid4())[:8]
 
     if destination is None:
@@ -227,7 +233,7 @@ class DownloadWorker(threading.Thread):
         download: Download,
         progress_callback: Callable[[int, int], None] | None = None,
     ):
-        super().__init__(daemon=True)
+        super().__init__(daemon=False)
         self.download = download
         self.progress_callback = progress_callback
         self._stop_event = threading.Event()
@@ -256,6 +262,12 @@ class DownloadWorker(threading.Thread):
         url = self.download.url
         dest = self.download.destination
         temp_dest = dest.with_suffix(dest.suffix + '.tmp')
+        paused = False
+
+        # Defense-in-depth: validate URL scheme again
+        parsed_scheme = urllib.parse.urlsplit(url).scheme.lower()
+        if parsed_scheme not in ("http", "https"):
+            raise ValueError(f"Download URL must use http or https, got: {parsed_scheme!r}")
 
         # Ensure parent directory exists
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -317,6 +329,9 @@ class DownloadWorker(threading.Thread):
 
             # Download with progress tracking
             with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as resp:
+                if resume_from > 0 and getattr(resp, "status", 200) != 206:
+                    resume_from = 0
+                    temp_dest.unlink(missing_ok=True)
                 # Update total size if we got it now
                 cl = resp.headers.get("Content-Length")
                 if cl:
@@ -338,6 +353,7 @@ class DownloadWorker(threading.Thread):
                     while True:
                         if self._stop_event.is_set():
                             # User cancelled
+                            paused = True
                             update_download(self.download.id, status=DownloadStatus.PAUSED)
                             return
 
@@ -372,6 +388,7 @@ class DownloadWorker(threading.Thread):
                 raise Exception(f"Downloaded {temp_dest.stat().st_size} bytes, expected {total_size}")
 
             # Move temp file to final destination
+            final_size = temp_dest.stat().st_size
             if dest.exists():
                 dest.unlink()
             temp_dest.rename(dest)
@@ -380,15 +397,15 @@ class DownloadWorker(threading.Thread):
             update_download(
                 self.download.id,
                 status=DownloadStatus.COMPLETED,
-                downloaded=total_size or temp_dest.stat().st_size,
+                downloaded=total_size or final_size,
                 completed_at=datetime.now(timezone.utc).isoformat(),
             )
 
             _log.info(f"Download {self.download.id} completed: {dest}")
 
         finally:
-            # Clean up temp file if it still exists
-            if temp_dest.exists():
+            # Preserve paused partial files for resume.
+            if temp_dest.exists() and not paused:
                 try:
                     temp_dest.unlink()
                 except Exception:

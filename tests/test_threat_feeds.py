@@ -9,15 +9,21 @@ from blackoutkit.threat_feeds import ThreatFeed, ThreatFeedsManager
 
 
 class FakeResponse:
-    def __init__(self, text: str, status_code: int = 200):
+    def __init__(self, text: str, status_code: int = 200, headers=None):
         self.text = text
         self.status_code = status_code
+        self.headers = headers or {}
 
     def raise_for_status(self):
         if self.status_code >= 400:
             request = httpx.Request("GET", "https://example.com")
             response = httpx.Response(self.status_code, request=request)
             raise httpx.HTTPStatusError("error", request=request, response=response)
+
+
+def fake_httpx_get(url, timeout=30, follow_redirects=True):
+    """Mock httpx.get that accepts follow_redirects parameter."""
+    return FakeResponse("1.2.3.4\n5.6.7.8\n")
 
 
 class TestFeedCRUD:
@@ -73,7 +79,7 @@ class TestFeedCRUD:
 
     def test_feeds_persisted_across_instances(self, tmp_path):
         manager1 = ThreatFeedsManager(config_dir=tmp_path)
-        manager1.add_feed(ThreatFeed(name="custom", url="https://x.com", feed_type="ip"))
+        manager1.add_feed(ThreatFeed(name="custom", url="https://example.com/feed.txt", feed_type="ip"))
 
         manager2 = ThreatFeedsManager(config_dir=tmp_path)
         assert "custom" in manager2.feeds
@@ -90,7 +96,7 @@ class TestUpdateFeeds:
 
     def test_update_succeeds_on_valid_response(self, tmp_path, monkeypatch):
         manager = ThreatFeedsManager(config_dir=tmp_path)
-        monkeypatch.setattr(httpx, "get", lambda url, timeout=30: FakeResponse("1.2.3.4\n5.6.7.8\n"))
+        monkeypatch.setattr(httpx, "get", lambda url, timeout=30, follow_redirects=True: FakeResponse("1.2.3.4\n5.6.7.8\n"))
 
         results = manager.update_feeds()
         assert results["abuse.ch-ips"] is True
@@ -99,7 +105,7 @@ class TestUpdateFeeds:
     def test_update_handles_http_status_error(self, tmp_path, monkeypatch):
         """Verifies the fix: raise_for_status() raising HTTPStatusError must be caught."""
         manager = ThreatFeedsManager(config_dir=tmp_path)
-        monkeypatch.setattr(httpx, "get", lambda url, timeout=30: FakeResponse("", status_code=500))
+        monkeypatch.setattr(httpx, "get", lambda url, timeout=30, follow_redirects=True: FakeResponse("", status_code=500))
 
         results = manager.update_feeds()
         assert results["abuse.ch-ips"] is False
@@ -107,7 +113,7 @@ class TestUpdateFeeds:
         assert results["emergingthreats-ips"] is False
 
     def test_update_handles_request_error(self, tmp_path, monkeypatch):
-        def raise_request_error(url, timeout=30):
+        def raise_request_error(url, timeout=30, follow_redirects=True):
             raise httpx.ConnectError("connection failed")
 
         manager = ThreatFeedsManager(config_dir=tmp_path)
@@ -118,7 +124,7 @@ class TestUpdateFeeds:
 
     def test_update_sets_last_updated_on_success(self, tmp_path, monkeypatch):
         manager = ThreatFeedsManager(config_dir=tmp_path)
-        monkeypatch.setattr(httpx, "get", lambda url, timeout=30: FakeResponse("1.2.3.4\n"))
+        monkeypatch.setattr(httpx, "get", lambda url, timeout=30, follow_redirects=True: FakeResponse("1.2.3.4\n"))
 
         manager.update_feeds()
         assert manager.feeds["abuse.ch-ips"].last_updated is not None
@@ -193,7 +199,8 @@ class TestIpFeedParsing:
         manager = ThreatFeedsManager(config_dir=tmp_path)
         count = manager._parse_ip_feed("1.2.3.0/24", "test-feed")
         assert count == 1
-        assert "1.2.3.0" in manager.ip_set
+        assert "1.2.3.0/24" in manager.ip_set
+        assert manager.is_ip_blocked("1.2.3.4") is True
 
     def test_ignores_invalid_ips(self, tmp_path):
         manager = ThreatFeedsManager(config_dir=tmp_path)
@@ -340,3 +347,4 @@ class TestClearAll:
         assert manager.ip_set == set()
         assert manager.domain_set == set()
         assert manager.feeds == {}
+        assert ThreatFeedsManager(config_dir=tmp_path).feeds == {}

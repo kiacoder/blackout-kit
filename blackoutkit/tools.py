@@ -8,6 +8,7 @@ import ctypes
 import ipaddress
 import json
 import logging
+import math
 import os
 import socket
 import subprocess
@@ -24,6 +25,7 @@ _log = logging.getLogger(__name__)
 
 from . import APP_DATA_DIR, elevate
 from .proxy_manager import is_admin as _is_admin
+from ._net_utils import reject_private_host
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -570,19 +572,19 @@ def flush_dns() -> bool:
     try:
         if sys.platform == "win32":
             subprocess.run(["ipconfig", "/flushdns"], capture_output=True, check=True, timeout=10)
-        else:
-            # Try common Linux DNS cache flush methods
-            for cmd in [
-                ["systemctl", "restart", "systemd-resolved"],
-                ["service", "dnsmasq", "restart"],
-                ["nscd", "-i", "hosts"],
-            ]:
-                try:
-                    subprocess.run(cmd, capture_output=True, check=True, timeout=10)
-                    break
-                except Exception:
-                    continue
-        return True
+            return True
+        # Try common Linux DNS cache flush methods
+        for cmd in [
+            ["systemctl", "restart", "systemd-resolved"],
+            ["service", "dnsmasq", "restart"],
+            ["nscd", "-i", "hosts"],
+        ]:
+            try:
+                subprocess.run(cmd, capture_output=True, check=True, timeout=10)
+                return True
+            except Exception:
+                continue
+        return False
     except Exception:
         return False
 
@@ -767,6 +769,8 @@ def record_speedtest_result(result: dict) -> None:
 
 def get_speedtest_history(limit: int = 30) -> list[dict]:
     """Return the most recent N recorded speedtest results, oldest first."""
+    if limit <= 0:
+        return []
     try:
         history = json.loads(SPEEDTEST_HISTORY_FILE.read_text()) if SPEEDTEST_HISTORY_FILE.exists() else []
     except Exception:
@@ -957,7 +961,15 @@ def ping_stats(times: list[float | None]) -> dict:
     Returns: {avg, min, max, jitter, loss_pct}
     Jitter = mean of absolute differences between consecutive successful RTTs.
     """
-    valid    = [t for t in times if t is not None]
+    if not isinstance(times, list):
+        raise TypeError("times must be a list")
+    valid = [
+        t for t in times
+        if isinstance(t, (int, float))
+        and not isinstance(t, bool)
+        and math.isfinite(float(t))
+        and t >= 0
+    ]
     total    = len(times) if times else 1
     loss_pct = 100.0 * (total - len(valid)) / total
 
@@ -1246,7 +1258,13 @@ def scan_ports(
     ports: explicit list, or None to scan the built-in COMMON_PORTS list.
     Returns a list of {port, service, open} for every port that responded open.
     """
+    if isinstance(max_workers, bool) or max_workers < 1:
+        raise ValueError("max_workers must be greater than zero")
+    if not math.isfinite(float(timeout)) or timeout <= 0:
+        raise ValueError("timeout must be greater than zero")
     target_ports = ports if ports is not None else list(COMMON_PORTS.keys())
+    if any(isinstance(port, bool) or not isinstance(port, int) or not 1 <= port <= 65535 for port in target_ports):
+        raise ValueError("ports must contain integers from 1 to 65535")
 
     try:
         resolved_ip = socket.gethostbyname(host)
@@ -1505,6 +1523,7 @@ def set_dns(dns_ip: str, adapter: str | None = None) -> bool:
     if sys.platform != "win32":
         return False
     try:
+        ipaddress.ip_address(dns_ip)
         if adapter:
             adapters_to_set = [adapter]
         else:
@@ -1522,12 +1541,15 @@ def set_dns(dns_ip: str, adapter: str | None = None) -> bool:
                     for adp in adapters_to_set]
             return _run_elevated_multi(cmds)
 
-        for adp in adapters_to_set:
+        return all(
             subprocess.run(
                 ["netsh", "interface", "ip", "set", "dns", adp, "static", dns_ip],
                 capture_output=True, check=False, timeout=10
-            )
-        return True
+            ).returncode == 0
+            for adp in adapters_to_set
+        )
+    except (ValueError, OSError, subprocess.SubprocessError):
+        return False
     except Exception:
         return False
 
@@ -1996,14 +2018,21 @@ def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0
 # ─────────────────────────── Secure DoH DNS Proxy Engine ───────────────────
 
 def _validate_doh_upstream(url: str) -> bool:
-    """Validate DoH upstream URL: must be https://, no user credentials, valid host."""
+    """Validate DoH upstream URL: must be https://, no user credentials, valid global IP."""
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme != "https":
             return False
         if parsed.username or parsed.password:
             return False
-        return parsed.hostname
+        if not parsed.hostname:
+            return False
+        # Validate that the hostname resolves to a global IP
+        try:
+            reject_private_host(parsed.hostname, port=443)
+        except ValueError:
+            return False
+        return True
     except Exception:
         return False
 
@@ -2018,6 +2047,16 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
 
     if not _validate_doh_upstream(upstream_doh):
         _log.error("Invalid DoH upstream URL %s: Must be https:// without embedded credentials.", upstream_doh)
+        return
+
+    # Validate that the bind address is loopback (to prevent unauthenticated open relay)
+    try:
+        bind_addr = ipaddress.ip_address(host)
+        if not bind_addr.is_loopback:
+            _log.error("DoH proxy must bind to a loopback address (127.0.0.1 or ::1), got %s", host)
+            return
+    except ValueError:
+        _log.error("Invalid bind address %s for DoH proxy", host)
         return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -2055,6 +2094,14 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
                     if not resp_url.startswith("https://"):
                         _log.warning("DoH upstream redirected to non-HTTPS scheme: %s", resp_url)
                         continue
+                    # Validate redirect target is not a private/local address
+                    resp_parsed = urllib.parse.urlparse(resp_url)
+                    if resp_parsed.hostname:
+                        try:
+                            reject_private_host(resp_parsed.hostname, port=443)
+                        except ValueError as e:
+                            _log.warning("DoH upstream redirect blocked by SSRF guard: %s", e)
+                            continue
 
                     ct = resp.getheader("Content-Type", "")
                     if "application/dns-message" not in ct.lower():
@@ -2286,9 +2333,17 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                 self._send_json(metrics)
             elif path == "/api/bandwidth":
                 import psutil
-                interval = float(params.get("interval", ["1"])[0])
+                try:
+                    interval = float(params.get("interval", ["1"])[0])
+                except (TypeError, ValueError):
+                    self.send_error(400, "interval must be a finite non-negative number")
+                    return
+                if not math.isfinite(interval) or interval < 0:
+                    self.send_error(400, "interval must be a finite non-negative number")
+                    return
+                interval = min(interval, 2.0)
                 io1 = psutil.net_io_counters(pernic=True) if hasattr(psutil, "net_io_counters") else {}
-                time.sleep(min(interval, 2.0))
+                time.sleep(interval)
                 io2 = psutil.net_io_counters(pernic=True) if hasattr(psutil, "net_io_counters") else {}
                 per_iface = {}
                 for iface, counter1 in io1.items():
@@ -2303,9 +2358,9 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                     "interval_seconds": interval,
                     "interfaces": per_iface
                 })
-            elif self.path == "/api/audit":
+            elif path == "/api/audit":
                 self._send_json(run_network_audit())
-            elif self.path == "/api/live-stream":
+            elif path == "/api/live-stream":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Cache-Control", "no-cache")
@@ -2319,7 +2374,7 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                         time.sleep(0.5)
                 except Exception:
                     pass
-            elif self.path == "/":
+            elif path == "/":
                 html_dashboard = """<!DOCTYPE html>
 <html>
 <head>
@@ -2548,8 +2603,12 @@ def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float =
     """
     import random
 
-    added_latency_ms = max(0.0, float(added_latency_ms))
-    simulated_loss_pct = max(0.0, min(100.0, float(simulated_loss_pct)))
+    added_latency_ms = float(added_latency_ms)
+    simulated_loss_pct = float(simulated_loss_pct)
+    if not math.isfinite(added_latency_ms) or not math.isfinite(simulated_loss_pct):
+        raise ValueError("latency and loss must be finite numbers")
+    added_latency_ms = max(0.0, added_latency_ms)
+    simulated_loss_pct = max(0.0, min(100.0, simulated_loss_pct))
     samples = max(1, min(100, int(samples)))
 
     raw_pings = ping(host, count=samples)
@@ -2615,6 +2674,10 @@ def generate_ascii_bandwidth_chart(rx_bps: float, tx_bps: float, max_bps: float 
     📊 Visual ASCII Bandwidth Bar Graph:
     Generates colorful ASCII visual bars for rx/tx download/upload speeds.
     """
+    if not math.isfinite(float(max_bps)) or max_bps <= 0:
+        raise ValueError("max_bps must be greater than zero")
+    if isinstance(bar_width, bool) or bar_width < 0:
+        raise ValueError("bar_width must not be negative")
     rx_mbps = rx_bps / 1_000_000.0
     tx_mbps = tx_bps / 1_000_000.0
 

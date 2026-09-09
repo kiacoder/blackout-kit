@@ -75,20 +75,24 @@ def test_set_system_proxy_winreg_socks(mock_notify, mock_close, mock_set, mock_o
 @patch("winreg.OpenKey", side_effect=PermissionError("denied"))
 @patch("subprocess.run")
 def test_set_system_proxy_winreg_permission_error_netsh_fallback(mock_run, mock_open):
+    # WinHTTP fallback removed for security (Bug 10 fix: fail-closed instead of SSRF-prone fallback)
+    # When WinINET write fails, we now fail closed instead of falling back to WinHTTP
     mock_run.return_value = MagicMock(returncode=0)
     res = set_system_proxy("127.0.0.1", 10809, "http")
-    assert res is True
-    assert "Registry write denied" in get_last_error() or get_last_error() == ""
+    assert res is False
+    assert "Registry write denied" in get_last_error()
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("winreg.OpenKey", side_effect=Exception("reg err"))
 @patch("subprocess.run")
 def test_set_system_proxy_netsh_fail(mock_run, mock_open):
+    # WinHTTP fallback removed for security (Bug 10 fix)
+    # Registry error causes failure, no netsh fallback anymore
     mock_run.return_value = MagicMock(returncode=1)
     res = set_system_proxy("127.0.0.1", 10809, "http")
     assert res is False
-    assert "netsh fallback failed (rc=1)" in get_last_error()
+    assert "Registry error" in get_last_error()
 
 @patch("sys.platform", "linux")
 @patch("os.environ", {})
@@ -117,9 +121,11 @@ def test_clear_system_proxy_winreg_success(mock_notify, mock_close, mock_set, mo
 @patch("winreg.OpenKey", side_effect=PermissionError("denied"))
 @patch("subprocess.run")
 def test_clear_system_proxy_netsh_fallback(mock_run, mock_open):
+    # WinHTTP fallback removed for security (Bug 10 fix: fail-closed)
+    # When WinINET write fails, we now fail closed instead of falling back to WinHTTP
     mock_run.return_value = MagicMock(returncode=0)
     res = clear_system_proxy()
-    assert res is True
+    assert res is False
 
 @patch("sys.platform", "linux")
 @patch("os.environ", {"http_proxy": "test", "https_proxy": "test"})
@@ -171,18 +177,22 @@ def test_install_console_close_handler(mock_winfunctype, mock_set_console):
 @patch("subprocess.run", side_effect=Exception("netsh bad"))
 @patch("winreg.OpenKey", side_effect=PermissionError("denied"))
 def test_set_system_proxy_netsh_exception(mock_open, mock_run):
+    # WinHTTP fallback removed for security (Bug 10 fix)
+    # Registry error causes failure, no netsh fallback anymore
     res = set_system_proxy("1.1.1.1", 80, "http")
     assert res is False
-    assert "netsh fallback error: netsh bad" in get_last_error()
+    assert "Registry write denied" in get_last_error()
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("subprocess.run", side_effect=Exception("netsh fatal"))
 @patch("winreg.OpenKey", side_effect=Exception("reg fatal"))
 def test_clear_system_proxy_exceptions(mock_open, mock_run):
+    # WinHTTP fallback removed for security (Bug 10 fix)
+    # Registry error causes failure, no netsh fallback anymore
     res = clear_system_proxy()
     assert res is False
-    assert "netsh error: netsh fatal" in get_last_error()
+    assert "Registry error" in get_last_error()
 
 @patch("sys.platform", "linux")
 @patch("os.environ", {})
