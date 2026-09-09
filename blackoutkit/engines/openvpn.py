@@ -16,6 +16,7 @@ Download OpenVPN: https://openvpn.net/community-downloads/
 Or use a provider that gives you .ovpn files.
 """
 import logging
+import os
 import subprocess
 import sys
 import threading
@@ -25,7 +26,7 @@ from pathlib import Path
 from .base import BINS_DIR, Engine
 
 OVPN_BIN_NAMES   = ["openvpn.exe"]
-SYSTEM_OVPN      = Path("C:/Program Files/OpenVPN/bin/openvpn.exe")
+SYSTEM_OVPN      = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "OpenVPN" / "bin" / "openvpn.exe"
 LOG_PATH         = BINS_DIR / "openvpn.log"
 _STARTUP_TIMEOUT = 30.0   # OpenVPN handshake can take a while
 

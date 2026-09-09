@@ -18,6 +18,7 @@ Settings:
 
 Download SoftEther: https://www.softether.org/5-download
 """
+import os
 import subprocess
 import sys
 import threading
@@ -28,7 +29,7 @@ from .base import BINS_DIR, Engine
 
 SE_BIN_NAMES    = ["vpnclient.exe"]
 SE_CMD_NAMES    = ["vpncmd.exe"]
-SYSTEM_SE_DIR   = Path("C:/Program Files/SoftEther VPN Client")
+SYSTEM_SE_DIR   = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SoftEther VPN Client"
 SE_ACCOUNT_NAME = "BlackoutKit"
 
 

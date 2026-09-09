@@ -29,9 +29,12 @@ class WinDivertHandle:
 
     def _load_dll(self) -> None:
         """Load WinDivert64.dll from standard locations."""
+        import os
+        program_files = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
+        program_files_x86 = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
         dll_paths = [
-            Path("C:/Program Files/WinDivert/WinDivert.dll"),
-            Path("C:/Program Files (x86)/WinDivert/WinDivert.dll"),
+            program_files / "WinDivert" / "WinDivert.dll",
+            program_files_x86 / "WinDivert" / "WinDivert.dll",
             Path("C:/WinDivert/WinDivert.dll"),
             Path.cwd() / "WinDivert.dll",
         ]

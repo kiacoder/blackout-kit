@@ -537,7 +537,7 @@ def _artifact_status(info: BinInfo) -> str:
 def artifact_status() -> dict[str, str]:
     """Return safe installation states for each registered artifact."""
     status = {key: _artifact_status(info) for key, info in BIN_REGISTRY.items()}
-    softether_dir = Path("C:/Program Files/SoftEther VPN Client")
+    softether_dir = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "SoftEther VPN Client"
     client_files = [BINS_DIR / name for name in ("vpnclient.exe", "vpncmd.exe")]
     system_files = [softether_dir / name for name in ("vpnclient.exe", "vpncmd.exe")]
     status["softether-client"] = (
