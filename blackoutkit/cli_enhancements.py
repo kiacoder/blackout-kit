@@ -56,28 +56,10 @@ def add_group_callback(group: typer.Typer, group_name: str, dispatcher: Professi
 
 
 def enhance_typer_error_handling(app: typer.Typer) -> None:
-    """Patch Typer's error handling to be more user-friendly."""
-    original_show = console.print
-
-    def enhanced_error_print(msg=None, *args, **kwargs):
-        """Intercept error messages and make them friendlier."""
-        if isinstance(msg, str):
-            # Typer uses some specific error patterns
-            if "No such command:" in msg:
-                parts = msg.split("No such command:")
-                if len(parts) > 1:
-                    bad_cmd = parts[1].strip().strip("'\"")
-                    navigator = get_navigator()
-                    suggestion = navigator.suggest_command(bad_cmd)
-
-                    if suggestion:
-                        msg = f"[red]✗ Unknown command: {bad_cmd}[/red]\n\n[yellow]Did you mean:[/yellow] [cyan]{suggestion}[/cyan]"
-                    else:
-                        msg = f"[red]✗ Unknown command: {bad_cmd}[/red]\n\nRun [cyan]blackout commands[/cyan] for a list."
-
-        return original_show(msg, *args, **kwargs)
-
-    console.print = enhanced_error_print
+    """Enable professional error handling (currently a no-op to avoid patching console.print)."""
+    # Note: Typo suggestions and error formatting are handled by cli_dispatch.py
+    # without patching console.print, which preserves normal output integrity.
+    pass
 
 
 def validate_and_suggest_args(
