@@ -1230,8 +1230,18 @@ def discover_lan_hosts(timeout: float = 0.3, max_workers: int = 100, progress_ca
             continue
         hostname = "-"
         try:
-            hostname = socket.gethostbyaddr(ip)[0]
+            # Timeout after 1 second to prevent hangs on unresponsive reverse DNS
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(1.0)
+            try:
+                hostname = socket.gethostbyaddr(ip)[0]
+            finally:
+                socket.setdefaulttimeout(old_timeout)
+        except (OSError, socket.timeout):
+            # OSError includes socket.gaierror; socket.timeout is explicit
+            pass
         except Exception:
+            # Log unexpected errors but don't break
             pass
         hosts.append({"ip": ip, "mac": mac, "hostname": hostname, "is_self": False})
 
