@@ -297,6 +297,8 @@ def get_state() -> dict | None:
 
 def read_logs(lines: int = 50) -> str:
     """Return the last N lines of the daemon log."""
+    if lines <= 0:
+        return ""
     if not LOG_FILE.exists():
         return "No daemon logs available."
     try:

@@ -192,8 +192,8 @@ class IKEv2Engine(Engine):
             return False
 
         self._log.info(
-            "Starting IKEv2 VPN  server=%s  type=%s  user=%s",
-            self.server, self.tunnel_type, self.username,
+            "Starting IKEv2 VPN  type=%s",
+            self.tunnel_type,
         )
 
         self._create_profile()
@@ -201,8 +201,8 @@ class IKEv2Engine(Engine):
         ok, output = self._connect()
         if not ok:
             self._log.error(
-                "Connect-VpnConnection failed for profile '%s'. Output: %s",
-                VPN_PROFILE_NAME, output or "(no output)",
+                "Connect-VpnConnection failed for profile '%s'.",
+                VPN_PROFILE_NAME,
             )
             return False
 

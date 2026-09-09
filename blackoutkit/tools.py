@@ -573,6 +573,13 @@ def flush_dns() -> bool:
         if sys.platform == "win32":
             subprocess.run(["ipconfig", "/flushdns"], capture_output=True, check=True, timeout=10)
             return True
+        # On Linux, DNS flushing requires root privileges
+        if sys.platform.startswith("linux"):
+            import os
+            if os.geteuid() != 0:
+                import logging
+                logging.getLogger("blackout.tools").error("DNS cache flush requires root privileges on Linux")
+                return False
         # Try common Linux DNS cache flush methods
         for cmd in [
             ["systemctl", "restart", "systemd-resolved"],
@@ -1537,6 +1544,9 @@ def set_dns(dns_ip: str, adapter: str | None = None) -> bool:
             return False
 
         if not _is_admin():
+            from . import theme
+            theme.console.print("[warning]⚠️  Setting DNS requires admin privileges.[/warning]")
+            theme.console.print("[dim]Run with admin privileges or confirm the UAC prompt to proceed.[/dim]")
             cmds = [["netsh", "interface", "ip", "set", "dns", adp, "static", dns_ip]
                     for adp in adapters_to_set]
             return _run_elevated_multi(cmds)

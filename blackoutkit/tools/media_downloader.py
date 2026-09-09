@@ -138,6 +138,7 @@ class MediaDownloadManager:
         self.lock = threading.Lock()
         self.executor = ThreadPoolExecutor(max_workers=max_parallel, thread_name_prefix="media-dl")
         self.running = False
+        self._processes: dict[str, subprocess.Popen] = {}
 
     def add_download(self, url: str, format_spec: str = "", output_dir: Path | None = None) -> str:
         """Queue a new media download. Returns download ID."""
@@ -178,6 +179,9 @@ class MediaDownloadManager:
                     if d.status == MediaDownloadStatus.DOWNLOADING:
                         d.status = MediaDownloadStatus.PAUSED
                         d.error_message = "Cancelled by user"
+                        process = self._processes.get(dl_id)
+                        if process is not None and process.poll() is None:
+                            process.terminate()
                     save_media_queue(self.downloads)
                     return True
         return False
@@ -191,9 +195,15 @@ class MediaDownloadManager:
         """Start downloading all pending items."""
         if self.running:
             return
-        self.running = True
-
         pending = self.get_pending_downloads()
+        if not pending:
+            return
+        try:
+            ensure_media_available()
+        except Exception:
+            self.running = False
+            raise
+        self.running = True
         for download in pending:
             self.executor.submit(self._download_worker, download)
 
@@ -220,10 +230,19 @@ class MediaDownloadManager:
             ]
 
             # Run yt-dlp with timeout
+            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            with self.lock:
+                self._processes[download.id] = process
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=_DOWNLOAD_TIMEOUT)
+                stdout, stderr = process.communicate(timeout=_DOWNLOAD_TIMEOUT)
+                result = subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
             except subprocess.TimeoutExpired:
+                process.kill()
+                process.communicate()
                 raise Exception(f"Download timeout after {_DOWNLOAD_TIMEOUT}s")
+            finally:
+                with self.lock:
+                    self._processes.pop(download.id, None)
 
             # Check if paused while downloading
             with self.lock:

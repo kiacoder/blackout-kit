@@ -2,6 +2,7 @@
 import json
 import threading
 import time
+import urllib.error
 import urllib.request
 import pytest
 
@@ -71,6 +72,21 @@ def test_api_live_stream_uses_bound_origin(api_server):
     assert req.status == 200
     assert req.headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:8899"
     assert b"data:" in req.read()
+
+
+def test_api_audit_and_live_stream_accept_query_strings(api_server):
+    with urllib.request.urlopen(f"{api_server}/api/audit?source=test") as response:
+        assert response.status == 200
+    with urllib.request.urlopen(f"{api_server}/api/live-stream?source=test") as response:
+        assert response.status == 200
+        assert b"data:" in response.read()
+
+
+@pytest.mark.parametrize("interval", ["abc", "nan", "-1"])
+def test_api_bandwidth_rejects_invalid_intervals(api_server, interval):
+    with pytest.raises(urllib.error.HTTPError) as error:
+        urllib.request.urlopen(f"{api_server}/api/bandwidth?interval={interval}")
+    assert error.value.code == 400
 
 
 def test_api_status_remains_responsive_during_audit(api_server, monkeypatch):

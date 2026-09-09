@@ -293,7 +293,7 @@ class Predictor:
         try:
             sample_count = int(stats.get("sample_count", 1))
             connection_count = int(stats.get("connection_count", sample_count))
-            if sample_count < 1 or connection_count < sample_count:
+            if sample_count < 1 or sample_count > _MAX_SAMPLES_PER_HOUR or connection_count < sample_count:
                 return None
             avg_connections = float(stats.get("avg_connections", 1))
             avg_bandwidth = float(stats.get("avg_bandwidth_mbps", 0))

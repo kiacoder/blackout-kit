@@ -158,16 +158,21 @@ class _LegacyGoodbyeDPIEngine(Engine):
         fd_pid, pid_path = tempfile.mkstemp(suffix=".bkpid", prefix="gdpi_")
         os.close(fd_pid)
         self._pid_file = Path(pid_path)
-        pid_file_str = str(self._pid_file)
-        binary_str = str(binary)
-        args_str = subprocess.list2cmdline(self.flags)
-        cwd_str = str(binary.parent)
+
+        # Use environment variables instead of f-string interpolation to prevent injection
+        env = {
+            "GDPI_BINARY": str(binary),
+            "GDPI_WORKDIR": str(binary.parent),
+            "GDPI_ARGS": subprocess.list2cmdline(self.flags),
+            "GDPI_PID_FILE": str(self._pid_file),
+        }
+
         ps_cmd = (
-            f"taskkill /F /IM goodbyedpi.exe 2>$null; "
-            f"Start-Sleep -Milliseconds 500; "
-            f"$p = Start-Process -FilePath '{binary_str}' -WorkingDirectory '{cwd_str}' "
-            f"-ArgumentList '{args_str}' -Verb RunAs -WindowStyle Hidden -PassThru; "
-            f"$p.Id | Out-File -FilePath '{pid_file_str}' -Encoding UTF8"
+            "taskkill /F /IM goodbyedpi.exe 2>$null; "
+            "Start-Sleep -Milliseconds 500; "
+            "$p = Start-Process -FilePath $env:GDPI_BINARY -WorkingDirectory $env:GDPI_WORKDIR "
+            "-ArgumentList $env:GDPI_ARGS -Verb RunAs -WindowStyle Hidden -PassThru; "
+            "$p.Id | Out-File -FilePath $env:GDPI_PID_FILE -Encoding UTF8"
         )
 
         fd, ps1_path = tempfile.mkstemp(suffix=".ps1", prefix="gdpi_launcher_")
@@ -179,6 +184,7 @@ class _LegacyGoodbyeDPIEngine(Engine):
             subprocess.run(
                 ["cmd.exe", "/c", "powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-File", str(ps1_file)],
                 timeout=60,
+                env={**os.environ, **env},
             )
         except subprocess.TimeoutExpired:
             pass
@@ -222,16 +228,19 @@ class _LegacyGoodbyeDPIEngine(Engine):
                 pass
 
             if not killed_with_psutil:
-                subprocess.run(
-                    [
-                        "powershell.exe",
-                        "-NoProfile",
-                        "-Command",
-                        f"Start-Process taskkill -ArgumentList '/F /PID {self._elevated_pid}' -Verb RunAs -WindowStyle Hidden",
-                    ],
-                    capture_output=True,
-                    timeout=5,
-                )
+                if not isinstance(self._elevated_pid, int) or self._elevated_pid < 0 or self._elevated_pid > 2147483647:
+                    self._log.error("Invalid PID value for kill: %s", self._elevated_pid)
+                else:
+                    subprocess.run(
+                        [
+                            "powershell.exe",
+                            "-NoProfile",
+                            "-Command",
+                            f"Start-Process taskkill -ArgumentList @('/F', '/PID', '{self._elevated_pid}') -Verb RunAs -WindowStyle Hidden",
+                        ],
+                        capture_output=True,
+                        timeout=5,
+                    )
             self._elevated_pid = None
 
         if self._elevated_handle is not None:

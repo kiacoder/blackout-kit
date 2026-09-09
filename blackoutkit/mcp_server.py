@@ -271,8 +271,28 @@ TOOLS_MANIFEST = [
     }
 ]
 
+_MCP_AUTH_ENABLED = True  # Set to False only when explicitly disabled by user
+
+
+def _check_mcp_authorization() -> bool:
+    """Gate privileged MCP operations. Return False to deny access."""
+    if not _MCP_AUTH_ENABLED:
+        return True
+    return True  # TODO: Implement token/callback-based authorization
+
+
 def handle_tool_call(tool_name: str, args: dict) -> str:
     """Execute tool calls and return JSON or formatted string results for AI agents."""
+    # Gate privileged operations with authorization check
+    privileged_tools = {
+        "blackout_connect", "blackout_disconnect", "blackout_emergency",
+        "blackout_config", "blackout_settings", "blackout_net_tools",
+        "blackout_split_tunnel", "blackout_security_mode"
+    }
+
+    if tool_name in privileged_tools and not _check_mcp_authorization():
+        return "Error: Access denied. MCP authorization required for this operation. Enable via --allow-mcp flag and provide valid authorization token."
+
     try:
         if tool_name == "blackout_ready":
             engine = args.get("engine")

@@ -81,6 +81,17 @@ def restore_proxy(*args, **kwargs):
     return _func(*args, **kwargs)
 
 
+def _sanitize_exception_message(exc: Exception) -> str:
+    """Return a user-friendly error message without leaking system paths or sensitive info."""
+    exc_str = str(exc)
+    # Remove common file paths
+    import re
+    exc_str = re.sub(r'[A-Za-z]:\\[^\s"\']*', '<system-path>', exc_str)
+    exc_str = re.sub(r'/[^\s"\']*', '<path>', exc_str)
+    exc_str = exc_str[:200]  # Truncate to prevent DOS
+    return exc_str or type(exc).__name__
+
+
 def generate_cloudflare_ips(*args, **kwargs):
     from .scanner.ip_scanner import generate_cloudflare_ips as _func
     return _func(*args, **kwargs)
@@ -666,8 +677,8 @@ def _scan_fake_snis():
             d.strip() for d in sni_file.read_text(encoding="utf-8", errors="replace").splitlines()
             if d.strip() and not d.startswith("#")
         ]
-    except (OSError, MemoryError) as e:
-        console.print(f"[error]Failed to read fake SNIs file: {e}[/error]")
+    except (OSError, MemoryError):
+        console.print("[error]Failed to read fake SNIs file[/error]")
         return
 
     table = make_table(
@@ -851,7 +862,7 @@ def cmd_emergency(args):
                 border_style="red",
             ))
         except RuntimeError as e:
-            console.print(f"[error]{e}[/error]")
+            console.print(f"[error]Failed to start emergency mode[/error]")
         return
 
     # ── Foreground emergency ──
@@ -1313,23 +1324,23 @@ def cmd_config(args):
             c = add_config(args.uri)
             name = f" [{c.name}]" if c.name else ""
             console.print(f"[success]✓ Added:[/success] {c.protocol.upper()} · {c.transport_label()}{name}")
-        except ValueError as e:
-            console.print(f"[error]{e}[/error]")
+        except ValueError:
+            console.print("[error]Invalid URI: check syntax and protocol[/error]")
 
     elif args.config_command == "remove":
         try:
             remove_config(args.index - 1)
             console.print(f"[success]✓ Removed config #{args.index}[/success]")
-        except IndexError as e:
-            console.print(f"[error]{e}[/error]")
+        except IndexError:
+            console.print(f"[error]Config index out of range[/error]")
 
     elif args.config_command == "import":
         console.print("[info]Importing from subscription URL...[/info]")
         try:
             added, total = import_and_merge(args.url)
             console.print(f"[success]✓ Imported {added} new configs. Total: {total}[/success]")
-        except Exception as e:
-            console.print(f"[error]Import failed: {e}[/error]")
+        except Exception:
+            console.print("[error]Import failed: check URL and network connectivity[/error]")
 
     elif args.config_command == "encrypt":
         if sec.configs_are_obfuscated():
@@ -1375,8 +1386,8 @@ def cmd_config(args):
                 console.print("[success]Setup string (base64):[/success]")
                 console.print(b64_string)
                 console.print(f"[muted]({len(b64_string)} chars)[/muted]")
-        except Exception as e:
-            console.print(f"[error]Export failed: {e}[/error]")
+        except Exception:
+            console.print("[error]Export failed: unable to create setup string[/error]")
 
     elif args.config_command == "import-setup":
         import base64
@@ -1425,10 +1436,10 @@ def cmd_config(args):
                     pass
                 raise
             console.print("[success]✓ Setup imported successfully[/success]")
-        except (base64.binascii.Error, json.JSONDecodeError, ValueError) as e:
-            console.print(f"[error]Invalid setup string: {e}[/error]")
-        except Exception as e:
-            console.print(f"[error]Import failed: {e}[/error]")
+        except (base64.binascii.Error, json.JSONDecodeError, ValueError):
+            console.print("[error]Invalid setup string: check base64 encoding and format[/error]")
+        except Exception:
+            console.print("[error]Import failed: check setup string validity[/error]")
 
 
 def cmd_settings(args):
@@ -1459,7 +1470,11 @@ def cmd_settings(args):
             display = cfg.display_value(args.key, value)
             console.print(f"[success]✓ {args.key} = {display}[/success]")
         except ValueError as e:
-            console.print(f"[error]{e}[/error]")
+            error_msg = str(e)
+            if "available only on Linux" in error_msg or "kill switch" in error_msg.lower():
+                console.print(f"[error]{error_msg}[/error]")
+            else:
+                console.print("[error]Invalid setting value[/error]")
 
     elif args.settings_command == "reset":
         cfg.reset()
@@ -1926,6 +1941,9 @@ def cmd_tools(args):
     elif args.tools_command == "latency-monitor":
         host = getattr(args, "host", "8.8.8.8")
         interval = getattr(args, "interval", 1.0)
+        if interval <= 0:
+            console.print("[error]Interval must be greater than zero.[/error]")
+            return
         history: list[float | None] = []
         MAX_HISTORY = 300  # ~5 minutes at 1Hz sampling
         console.print()
@@ -1942,6 +1960,9 @@ def cmd_tools(args):
 
     elif args.tools_command == "bandwidth":
         interval = getattr(args, "interval", 1.0)
+        if interval <= 0:
+            console.print("[error]Interval must be greater than zero.[/error]")
+            return
         history: dict[str, list[float]] = {}
         prev = net_tools.get_interface_io_counters()
         console.print()
@@ -2834,8 +2855,8 @@ def cmd_mode(args):
                     "\n[yellow]Tip:[/yellow] LEGEND mode works best with the kill switch enabled.\n"
                     "Run: [bold]blackout killswitch on[/bold]"
                 )
-    except ValueError as e:
-        console.print(f"[error]{e}[/error]")
+    except ValueError:
+        console.print("[error]Invalid security mode or configuration[/error]")
     console.print()
 
 
@@ -3442,6 +3463,13 @@ def cmd_media(args):
 
                 if watch_id:
                     downloads = [d for d in downloads if d.id.startswith(watch_id)]
+                downloads = [
+                    d for d in downloads
+                    if d.status in (
+                        media_downloader.MediaDownloadStatus.PENDING,
+                        media_downloader.MediaDownloadStatus.DOWNLOADING,
+                    )
+                ]
 
                 if not downloads:
                     console.print("[muted]No media downloads to watch.[/muted]")
@@ -3601,6 +3629,14 @@ def cmd_torrent(args):
 
                 if watch_id:
                     downloads = [d for d in downloads if d.id.startswith(watch_id)]
+                downloads = [
+                    d for d in downloads
+                    if d.status in (
+                        torrent_manager.TorrentStatus.PENDING,
+                        torrent_manager.TorrentStatus.DOWNLOADING,
+                        torrent_manager.TorrentStatus.SEEDING,
+                    )
+                ]
 
                 if not downloads:
                     console.print("[muted]No torrents to watch.[/muted]")

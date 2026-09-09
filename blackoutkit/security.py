@@ -19,6 +19,7 @@ Also handles:
 import hashlib
 import json
 import logging
+import math
 import os
 import platform
 import subprocess
@@ -629,12 +630,29 @@ def get_stability_score(engine_name: str) -> dict:
     except Exception:
         return {"avg_ms": None, "loss_pct": 100, "trend": "unknown", "stable": False}
 
-    if not samples:
+    if not isinstance(samples, list) or not samples:
         return {"avg_ms": None, "loss_pct": 100, "trend": "unknown", "stable": False}
 
-    timeouts = [s for s in samples if s["ms"] is None]
-    valid    = [s["ms"] for s in samples if s["ms"] is not None]
-    loss_pct = 100 * len(timeouts) / len(samples)
+    timeouts = 0
+    valid = []
+    for sample in samples:
+        if not isinstance(sample, dict):
+            timeouts += 1
+            continue
+        value = sample.get("ms")
+        if value is None:
+            timeouts += 1
+            continue
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            timeouts += 1
+            continue
+        if math.isfinite(value) and value >= 0:
+            valid.append(value)
+        else:
+            timeouts += 1
+    loss_pct = 100 * timeouts / len(samples)
     avg_ms   = sum(valid) / len(valid) if valid else None
 
     # Trend: compare first half vs second half latency
@@ -642,7 +660,7 @@ def get_stability_score(engine_name: str) -> dict:
     if len(valid) >= 4:
         half   = len(valid) // 2
         first  = sum(valid[:half]) / half
-        second = sum(valid[half:]) / (len(valid) - half)
+        second  = sum(valid[half:]) / (len(valid) - half)
         if second > first * 1.5:
             trend = "degrading"
         elif second < first * 0.8:

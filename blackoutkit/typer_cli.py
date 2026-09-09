@@ -1472,8 +1472,8 @@ def _add_to_user_path(directory: str) -> bool:
                 winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
                 return True
             return False
-    except Exception as e:
-        console.print(f"[error]Failed to update PATH: {e}[/error]")
+    except Exception:
+        console.print("[error]Failed to update PATH: check permissions and registry access[/error]")
         return False
 
 @app.command("add-to-path")
@@ -3986,8 +3986,8 @@ def ssh_connect(
     console.print(f"[info]Connecting to {p['name']} ({p['user']}@{p['host']}:{p['port']})...[/info]")
     try:
         subprocess.run(cmd)
-    except Exception as exc:
-        console.print(f"[error]Failed to launch SSH client: {exc}[/error]")
+    except Exception:
+        console.print("[error]Failed to launch SSH client[/error]")
 
 @ssh_app.command("remove")
 def ssh_remove(
@@ -4183,8 +4183,8 @@ def vault_backup(
         setup_data = serialize_setup()
         out_path.write_text(json.dumps(setup_data, indent=2), encoding="utf-8")
         console.print(f"[success]✓ Vault backup written to: {out_path}[/success]")
-    except Exception as exc:
-        console.print(f"[error]Failed to write vault backup: {exc}[/error]")
+    except Exception:
+        console.print("[error]Failed to write vault backup: check disk space and permissions[/error]")
 
 @vault_app.command("restore")
 def vault_restore(
@@ -4203,8 +4203,8 @@ def vault_restore(
         configs, settings_data = _validate_setup_data(setup_data)
         _apply_setup(configs, settings_data)
         console.print(f"[success]✓ Vault restored successfully from {p} ({len(configs)} configs)![/success]")
-    except Exception as exc:
-        console.print(f"[error]Failed to restore vault backup: {exc}[/error]")
+    except Exception:
+        console.print("[error]Failed to restore vault backup: check backup file validity[/error]")
 
 
 @config_app.command("benchmark")

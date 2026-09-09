@@ -14,7 +14,7 @@ from pathlib import Path
 from .. import APP_DATA_DIR
 
 _log = logging.getLogger(__name__)
-_traffic_lock = threading.Lock()
+_traffic_lock = threading.RLock()
 TRAFFIC_LOG_FILE = APP_DATA_DIR / "traffic.jsonl"
 
 
@@ -204,26 +204,27 @@ def prune_old_logs(
         return 0
     cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).timestamp()
     try:
-        entries = load_traffic_log(path=log_path)
-        recent = [entry for entry in entries if _entry_timestamp(entry) >= cutoff]
-        removed = len(entries) - len(recent)
-        if not removed:
-            return 0
-        descriptor, temporary = tempfile.mkstemp(
-            suffix=".jsonl", dir=log_path.parent, text=True
-        )
-        try:
-            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-                for entry in recent:
-                    handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
-            os.replace(temporary, log_path)
-        except Exception:
+        with _traffic_lock:
+            entries = load_traffic_log(path=log_path)
+            recent = [entry for entry in entries if _entry_timestamp(entry) >= cutoff]
+            removed = len(entries) - len(recent)
+            if not removed:
+                return 0
+            descriptor, temporary = tempfile.mkstemp(
+                suffix=".jsonl", dir=log_path.parent, text=True
+            )
             try:
-                os.unlink(temporary)
-            except OSError:
-                pass
-            raise
-        return removed
+                with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                    for entry in recent:
+                        handle.write(json.dumps(entry, separators=(",", ":")) + "\n")
+                os.replace(temporary, log_path)
+            except Exception:
+                try:
+                    os.unlink(temporary)
+                except OSError:
+                    pass
+                raise
+            return removed
     except (OSError, TypeError, ValueError):
         return 0
 

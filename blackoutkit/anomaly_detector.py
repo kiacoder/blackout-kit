@@ -119,7 +119,13 @@ class AnomalyDetector:
     @staticmethod
     def _timestamp(timestamp: float | None = None) -> str:
         value = datetime.now(timezone.utc).timestamp() if timestamp is None else timestamp
-        return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+        try:
+            value = float(value)
+            if not math.isfinite(value):
+                raise ValueError
+            return datetime.fromtimestamp(value, tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OverflowError, OSError):
+            return datetime.now(timezone.utc).isoformat()
 
     def _record_anomalies(self, anomalies: list[Anomaly]) -> None:
         for anomaly in anomalies:

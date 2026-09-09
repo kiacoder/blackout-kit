@@ -49,9 +49,18 @@ def _machine_id() -> bytes:
             value = identifiers[0] if identifiers else ""
         else:
             value = platform.node()
-        return value.encode() if value else b"blackout-kit-unknown-machine"
-    except Exception:
-        return b"blackout-kit-default-machine-id"
+        if not value:
+            value = platform.node()
+        if not value:
+            raise VaultError("Machine identity is unavailable")
+        return value.encode()
+    except VaultError:
+        raise
+    except Exception as exc:
+        value = platform.node()
+        if value:
+            return value.encode()
+        raise VaultError("Machine identity is unavailable") from exc
 
 
 def _aes_key() -> bytes:

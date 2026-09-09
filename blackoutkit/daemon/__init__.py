@@ -206,8 +206,14 @@ def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
                 )
         if existing:
             raise RuntimeError(f"Daemon already running (PID {existing}). Run 'blackout stop' first.")
-        if read_lease(_lease_path()) is not None:
-            raise RuntimeError("Daemon ownership is unreadable or stale; refusing to replace daemon state.")
+        stale_lease = read_lease(_lease_path())
+        if stale_lease is not None:
+            with lifecycle_lock(_lifecycle_path()):
+                current_lease = read_lease(_lease_path())
+                if current_lease is not None:
+                    if not process_is_gone(current_lease["pid"], current_lease["create_time"]):
+                        raise RuntimeError("Daemon ownership is unreadable or stale; refusing to replace daemon state.")
+                    _lease_path().unlink(missing_ok=True)
         (APP_DATA_DIR / "daemon.stop.request").unlink(missing_ok=True)
         PID_FILE.unlink(missing_ok=True)
         STATE_FILE.unlink(missing_ok=True)
@@ -440,6 +446,8 @@ def get_state() -> dict | None:
 
 def read_logs(lines: int = 50) -> str:
     """Return the last N lines of the daemon log."""
+    if lines <= 0:
+        return ""
     if not LOG_FILE.exists():
         return "No daemon logs available."
     try:

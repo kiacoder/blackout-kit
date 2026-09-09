@@ -51,8 +51,9 @@ def record(*, source: str, flags: dict[str, bool], results: list[dict]) -> None:
         }
         prior.append(json.dumps(event, ensure_ascii=False, separators=(",", ":")))
         _atomic_write(prior[-MAX_RECORDS:])
-    except OSError:
-        pass
+    except OSError as e:
+        import logging
+        logging.getLogger("blackout.recovery_audit").warning("Failed to write audit record: %s", e)
 
 
 def history(lines: int = 20) -> list[dict]:

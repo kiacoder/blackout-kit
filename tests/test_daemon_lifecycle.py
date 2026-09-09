@@ -159,6 +159,18 @@ def test_qos_save_normalizes_retired_enforcement_mode(monkeypatch, tmp_path):
     assert saved["global_settings"]["enforcement_mode"] == "monitor"
 
 
+def test_settings_ignore_invalid_boolean_environment_override(monkeypatch, tmp_path):
+    from blackoutkit import settings
+
+    settings_file = tmp_path / "settings.json"
+    monkeypatch.setattr(settings, "APP_DATA_DIR", tmp_path)
+    monkeypatch.setattr(settings, "SETTINGS_FILE", settings_file)
+    settings_file.write_text(json.dumps({"show_banner": True}), encoding="utf-8")
+
+    monkeypatch.setenv("BLACKOUT_SHOW_BANNER", "maybe")
+    assert settings.load()["show_banner"] is True
+
+
 def test_settings_normalize_retired_qos_mode_from_file_environment_and_save(monkeypatch, tmp_path):
     from blackoutkit import settings
 

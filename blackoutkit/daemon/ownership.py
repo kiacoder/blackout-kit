@@ -66,7 +66,11 @@ def new_generation() -> str:
 
 
 def _write_json_atomic(path: Path, payload: dict) -> None:
+    # Explicitly set permissions to 0o700 on Unix for security
+    import sys
     path.parent.mkdir(parents=True, exist_ok=True)
+    if sys.platform != "win32":
+        path.parent.chmod(0o700)
     fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", text=True)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:

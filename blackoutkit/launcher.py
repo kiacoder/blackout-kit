@@ -20,11 +20,14 @@ def start_launcher():
     ctk.set_default_color_theme("blue")
     
     app = ctk.CTk()
-    
-    # Suppress CustomTkinter background loop 'invalid command' errors after destruction
-    def silent_callback_exception(exc, val, tb):
-        pass
-    app.report_callback_exception = silent_callback_exception
+
+    # Log but suppress CustomTkinter background loop 'invalid command' errors after destruction
+    import logging
+    logger = logging.getLogger("blackout.launcher")
+    def logged_callback_exception(exc, val, tb):
+        import traceback
+        logger.debug("Suppressed GUI callback error: %s", ''.join(traceback.format_exception(type(exc), exc, tb)[:2]))
+    app.report_callback_exception = logged_callback_exception
     
     app.title("Blackout Kit — Universal Launcher")
     app.geometry("600x700")
@@ -109,13 +112,13 @@ def start_launcher():
     launch_btn.pack(fill="x", padx=50, pady=30)
     
     app.mainloop()
-    
+
     # Cancel all pending background tasks (like CustomTkinter's update loop) to prevent Tcl errors
     try:
         for after_id in app.tk.call('after', 'info'):
             app.after_cancel(after_id)
-    except Exception:
-        pass
+    except (RuntimeError, OSError) as e:
+        logger.debug("Failed to cancel pending tasks during shutdown: %s", e)
         
     # Properly destroy the window after the mainloop exits
     app.destroy()
@@ -141,8 +144,8 @@ def start_launcher():
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-        except Exception:
-            pass
+        except (OSError, subprocess.SubprocessError) as e:
+            logger.error("Failed to launch native GUI: %s", e)
         os._exit(0)
         
     return True

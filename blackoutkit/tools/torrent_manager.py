@@ -12,6 +12,7 @@ Core features:
 """
 import json
 import logging
+import math
 import os
 import tempfile
 import threading
@@ -180,13 +181,31 @@ class TorrentDownloadManager:
 
     def set_seed_ratio(self, dl_id: str, ratio: float) -> bool:
         """Set seed ratio for a torrent."""
+        try:
+            ratio = float(ratio)
+        except (TypeError, ValueError):
+            return False
+        if not math.isfinite(ratio) or ratio < 0:
+            return False
         with self.lock:
             for d in self.downloads:
                 if d.id == dl_id:
-                    d.seed_ratio = max(0.0, ratio)
+                    d.seed_ratio = ratio
                     save_torrent_queue(self.downloads)
                     return True
         return False
+
+    def start_downloads(self) -> None:
+        """Start downloading all pending torrents."""
+        if self.running:
+            return
+        self._init_session()
+        pending = self.get_pending_downloads()
+        if not pending:
+            return
+        self.running = True
+        for download in pending:
+            self.executor.submit(self._download_worker, download)
 
     def cancel_download(self, dl_id: str) -> bool:
         """Cancel a torrent."""
@@ -204,17 +223,6 @@ class TorrentDownloadManager:
         """Get all pending torrents."""
         with self.lock:
             return [d for d in self.downloads if d.status == TorrentStatus.PENDING]
-
-    def start_downloads(self) -> None:
-        """Start downloading all pending torrents."""
-        if self.running:
-            return
-        self.running = True
-        self._init_session()
-
-        pending = self.get_pending_downloads()
-        for download in pending:
-            self.executor.submit(self._download_worker, download)
 
     def _download_worker(self, download: TorrentDownload) -> None:
         """Worker thread for downloading a single torrent."""
