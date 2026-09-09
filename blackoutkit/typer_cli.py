@@ -22,6 +22,13 @@ if not sys.stdout.isatty():
     _typer_rich_utils.FORCE_TERMINAL = False
 
 from . import __version__
+from .cli_navigator import get_navigator
+from .cli_dispatch import ProfessionalCLIGroup, create_professional_app
+from .cli_enhancements import (
+    integrate_navigator_into_typer_app,
+    add_group_callback,
+    enhance_typer_error_handling,
+)
 from .cli_output import (
     OptionalDependencyError,
     OutputOptions,
@@ -562,8 +569,169 @@ app = typer.Typer(
     help="Blackout Kit — Network Security & Bypass Toolkit",
     add_completion=True,
     no_args_is_help=False,
-    rich_markup_mode="rich"
+    rich_markup_mode="rich",
+    pretty_exceptions_show_locals=False,
 )
+
+# Enable professional CLI features
+dispatcher = ProfessionalCLIGroup(app)
+enhance_typer_error_handling(app)
+integrate_navigator_into_typer_app(app, dispatcher)
+
+
+def _register_cli_commands() -> None:
+    """Register all CLI commands with the navigator for discovery and help."""
+    nav = get_navigator()
+
+    # Connection management
+    nav.register_command(
+        "connect", "Start a VPN connection with specified engine",
+        "Connection Management",
+        aliases=["c"],
+        examples=["blackout connect", "blackout connect gdpi --iran"],
+    )
+    nav.register_command(
+        "disconnect", "Stop the active VPN connection",
+        "Connection Management",
+        aliases=["d"],
+        examples=["blackout disconnect"],
+    )
+    nav.register_command(
+        "status", "Show current daemon and VPN status",
+        "Connection Management",
+        examples=["blackout status", "blackout status --watch"],
+    )
+    nav.register_command(
+        "emergency", "Emergency disconnect (kill switch)",
+        "Connection Management",
+        examples=["blackout emergency"],
+    )
+    nav.register_command(
+        "stop", "Stop the daemon",
+        "Connection Management",
+        examples=["blackout stop"],
+    )
+
+    # Configuration and setup
+    nav.register_command(
+        "setup", "Initial setup and configuration",
+        "Setup",
+        examples=["blackout setup"],
+    )
+    nav.register_command(
+        "demo", "Show a read-only simulation",
+        "Utilities",
+        examples=["blackout demo"],
+    )
+
+    # Diagnostics and maintenance
+    nav.register_command(
+        "doctor", "Run diagnostic checks and fix issues",
+        "Maintenance",
+        examples=["blackout doctor", "blackout doctor --fix"],
+    )
+    nav.register_command(
+        "logs", "Show daemon operation logs",
+        "Maintenance",
+        examples=["blackout logs --lines 50", "blackout logs --follow"],
+    )
+    nav.register_command(
+        "scan", "Scan for network anomalies",
+        "Maintenance",
+        examples=["blackout scan"],
+    )
+
+    # System utilities
+    nav.register_command(
+        "ready", "Check if system is ready for VPN",
+        "System",
+        examples=["blackout ready"],
+    )
+    nav.register_command(
+        "capabilities", "Show engine capability matrix",
+        "System",
+        examples=["blackout capabilities", "blackout capabilities xray"],
+    )
+    nav.register_command(
+        "version", "Show version information",
+        "System",
+        examples=["blackout version"],
+    )
+    nav.register_command(
+        "theme", "Configure terminal theme and colors",
+        "System",
+        examples=["blackout theme", "blackout theme --color"],
+    )
+
+    # Advanced features
+    nav.register_command(
+        "route", "Configure routing rules",
+        "Advanced",
+        examples=["blackout route"],
+    )
+    nav.register_command(
+        "mode", "Switch operation modes",
+        "Advanced",
+        examples=["blackout mode"],
+    )
+    nav.register_command(
+        "killswitch", "Configure kill switch",
+        "Advanced",
+        examples=["blackout killswitch on"],
+    )
+    nav.register_command(
+        "shield", "Configure network shield",
+        "Advanced",
+        examples=["blackout shield"],
+    )
+    nav.register_command(
+        "fix", "Fix detected issues",
+        "Advanced",
+        examples=["blackout fix"],
+    )
+
+    # Configuration groups
+    nav.register_group_commands(
+        "config", "Manage proxy configurations",
+        {
+            "list": ("Show all saved configurations", ["blackout config list"]),
+            "add": ("Add a new proxy configuration", ["blackout config add"]),
+            "remove": ("Remove a configuration", ["blackout config remove 1"]),
+            "import": ("Import from a subscription URL", ["blackout config import <url>"]),
+            "validate": ("Check if configs are valid", ["blackout config validate"]),
+            "export": ("Export all configs", ["blackout config export"]),
+            "replace": ("Replace a configuration", ["blackout config replace 1 <uri>"]),
+        },
+    )
+
+    # Settings groups
+    nav.register_group_commands(
+        "settings", "Configure application settings",
+        {
+            "list": ("Show all settings", ["blackout settings list"]),
+            "set": ("Change a setting", ["blackout settings set kill_switch true"]),
+            "reset": ("Reset all settings to defaults", ["blackout settings reset"]),
+            "export": ("Export all settings", ["blackout settings export"]),
+            "import": ("Import settings", ["blackout settings import <file>"]),
+        },
+    )
+
+    # Tools and utilities groups
+    nav.register_group_commands(
+        "tools", "Network diagnostics and utilities",
+        {
+            "dns-bench": ("Benchmark DNS servers", ["blackout tools dns-bench"]),
+            "dns-flush": ("Clear DNS cache", ["blackout tools dns-flush"]),
+            "dns-set": ("Set custom DNS", ["blackout tools dns-set 8.8.8.8"]),
+            "ping": ("Test reachability", ["blackout tools ping example.com"]),
+            "netfix": ("Run network recovery", ["blackout tools netfix"]),
+            "hotspot": ("Toggle mobile hotspot", ["blackout tools hotspot"]),
+        },
+    )
+
+
+# Register commands for discovery
+_register_cli_commands()
 
 # We will gradually port commands from cli.py into here.
 
@@ -1674,6 +1842,15 @@ def config_status(ctx: typer.Context):
     if not is_interactive():
         console.print("[warning]Usage: blackout config (list | add <uri> | import <url> | replace <n> <uri> | remove <n>)[/warning]")
         return
+    # Try professional CLI menu first, fall back to old behavior if cancelled or unavailable
+    try:
+        chosen = dispatcher.navigator.show_group_browser("config")
+        if chosen:
+            console.print(f"\n[cyan]→ blackout config {chosen}[/cyan]\n")
+            return
+    except Exception:
+        pass
+    # Fall back to old behavior for tests and compatibility
     from .interactive import run_config_menu
     run_config_menu()
 
@@ -2423,6 +2600,16 @@ def tools_status(ctx: typer.Context):
             options=options,
             exit_code=2,
         )
+    # Show professional CLI menu for interactive mode
+    if is_interactive():
+        try:
+            chosen = dispatcher.navigator.show_group_browser("tools")
+            if chosen:
+                console.print(f"\n[cyan]→ blackout tools {chosen}[/cyan]\n")
+                return
+        except Exception:
+            pass
+    # Fall back to showing help in non-interactive or on error
     typer.echo(ctx.get_help())
     raise typer.Exit(code=2)
 
@@ -3516,6 +3703,15 @@ def settings_status(ctx: typer.Context):
     if not is_interactive():
         console.print("[warning]Usage: blackout settings (list | get <key> | set <key> <value> | reset)[/warning]")
         return
+    # Try professional CLI menu first, fall back to old behavior if cancelled or unavailable
+    try:
+        chosen = dispatcher.navigator.show_group_browser("settings")
+        if chosen:
+            console.print(f"\n[cyan]→ blackout settings {chosen}[/cyan]\n")
+            return
+    except Exception:
+        pass
+    # Fall back to old behavior for tests and compatibility
     from .interactive import run_settings_menu
     run_settings_menu()
 

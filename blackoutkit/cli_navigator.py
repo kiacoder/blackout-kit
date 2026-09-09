@@ -113,7 +113,7 @@ class CLINavigator:
             console.print("[yellow]No commands available[/yellow]")
             return None
 
-        chosen = run_menu(items, title="Available Commands", guide="↑↓ Navigate    Enter Select    Esc Exit")
+        chosen = run_menu("Available Commands", items, guide="↑↓ Navigate    Enter Select    Esc Exit")
         return chosen.key if chosen else None
 
     def show_group_browser(self, group_name: str) -> str | None:
@@ -136,8 +136,8 @@ class CLINavigator:
             return None
 
         chosen = run_menu(
+            f"[bold]{group_name}[/bold] — {group_cmd.description}",
             items,
-            title=f"[bold]{group_name}[/bold] — {group_cmd.description}",
             guide="↑↓ Navigate    Enter Select    Esc Back",
         )
         return chosen.key if chosen else None

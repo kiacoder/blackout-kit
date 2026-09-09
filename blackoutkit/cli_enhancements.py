@@ -59,7 +59,7 @@ def enhance_typer_error_handling(app: typer.Typer) -> None:
     """Patch Typer's error handling to be more user-friendly."""
     original_show = console.print
 
-    def enhanced_error_print(msg, *args, **kwargs):
+    def enhanced_error_print(msg=None, *args, **kwargs):
         """Intercept error messages and make them friendlier."""
         if isinstance(msg, str):
             # Typer uses some specific error patterns
