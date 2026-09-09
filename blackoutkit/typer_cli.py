@@ -2039,18 +2039,48 @@ def cfg_add(
 def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import"), ctx: typer.Context = None):
     """Import and merge configs from a subscription URL."""
     from .config.manager import import_and_merge
+    from .validation import validate_url, ValidationError
 
     options = _output_options(ctx)
     url = _option_value(url)
     url = url or ask_text("Enter the subscription URL")
     if not url:
         return
+
+    try:
+        url = validate_url(url, param_name="subscription URL")
+    except ValidationError as exc:
+        if options.json_output:
+            _print_cli_error("invalid_input", exc.message, options=options, exit_code=2)
+        else:
+            exc.display()
+        raise typer.Exit(1) from exc
+
     try:
         added, total = import_and_merge(url)
     except ValueError as exc:
-        _fail_parameter(str(exc), options=options)
+        err = ValidationError(
+            f"Invalid subscription format",
+            hint="Check that the subscription URL is valid and accessible",
+            examples=["blackout config import https://example.com/sub"],
+        )
+        if options.json_output:
+            _print_cli_error("invalid_input", str(exc), options=options, exit_code=2)
+        else:
+            err.display()
+        raise typer.Exit(1) from exc
     except OSError as exc:
-        _print_cli_error("subscription_unavailable", str(exc), options=options)
+        err = ValidationError(
+            f"Cannot reach subscription server",
+            hint="Check your internet connection and the URL",
+            examples=["blackout config import https://example.com/sub"],
+        )
+        if options.json_output:
+            _print_cli_error("subscription_unavailable", str(exc), options=options)
+        else:
+            err.display()
+        raise typer.Exit(1) from exc
+
     if options.json_output:
         _print_json_enveloped({"added": added, "total": total})
     elif not _is_quiet(options):
@@ -2088,18 +2118,36 @@ def cfg_replace(
 def cfg_remove(num: int = typer.Argument(None, help="Config number to remove"), ctx: typer.Context = None):
     """Remove a config by number."""
     from .config.manager import remove_config
+    from .validation import validate_config_number, ValidationError
 
     options = _output_options(ctx)
     num = _option_value(num)
     num = num if num is not None else ask_int("Enter the config number to remove")
     if num is None:
         return
+
     try:
+        num = validate_config_number(num)
         remove_config(_one_based_index(num))
+    except ValidationError as exc:
+        if options.json_output:
+            _print_cli_error("invalid_input", exc.message, options=options, exit_code=2)
+        else:
+            exc.display()
+        raise typer.Exit(1) from exc
     except IndexError as exc:
+        from .validation import ValidationError as VErr
+        err = VErr(
+            f"Config #{num} not found",
+            hint="Check your config list first",
+            examples=["blackout config list", "blackout config remove 1"],
+        )
         if options.json_output:
             _print_cli_error("invalid_input", str(exc), options=options, exit_code=2)
-        raise typer.BadParameter(str(exc)) from exc
+        else:
+            err.display()
+        raise typer.Exit(1) from exc
+
     if options.json_output:
         _print_json_enveloped({"removed": True, "index": num})
     elif not _is_quiet(options):
