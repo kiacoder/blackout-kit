@@ -3733,7 +3733,6 @@ def cmd_doctor(args):
         doc.print_report(results, auto_fixed=False)
         return
 
-
     if fix_av:
         console.print("[info]Adding bins/ folder to Windows Defender exclusions...[/info]")
         ok = sec.add_defender_exclusion()
@@ -3744,14 +3743,17 @@ def cmd_doctor(args):
         return
 
     if auto_fix:
-        console.print("[yellow]Running checks and auto-fixing where possible...[/yellow]")
+        console.print("[yellow]Running checks and auto-fixing where possible...[/yellow]\n")
     else:
         console.print("[info]Running diagnostic checks...[/info]")
+
+    # Real-time progress output when auto-fixing
     results = doc.run_all_checks(
         auto_fix=auto_fix,
         include_optional=getattr(args, "include_optional", False),
+        show_progress=auto_fix,  # Show real-time progress when fixing
     )
-    doc.print_report(results, auto_fixed=auto_fix)
+    doc.print_report(results, auto_fixed=auto_fix, show_summary=auto_fix)
 
 
 def cmd_update(args):

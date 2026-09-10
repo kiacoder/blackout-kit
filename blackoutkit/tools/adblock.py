@@ -27,6 +27,8 @@ _adblock_lock = threading.Lock()
 
 from .. import APP_DATA_DIR
 from .._net_utils import SSRFGuardHTTPSHandler
+from ..progress import Spinner
+from ..validation import ValidationError, validate_url
 
 ADBLOCK_RULES_FILE = APP_DATA_DIR / "adblock_rules.json"
 ADBLOCK_CACHE_DIR = APP_DATA_DIR / "adblock_cache"
@@ -45,11 +47,11 @@ def _normalize_domain(domain: object) -> str:
 
 
 def _safe_blocklist_url(url: object) -> bool:
+    try:
+        validate_url(str(url or "").strip(), param_name="blocklist URL", require_https=True)
+    except ValidationError:
+        return False
     parsed = urllib.parse.urlparse(str(url or "").strip())
-    if parsed.scheme.casefold() != "https" or not parsed.hostname:
-        return False
-    if parsed.username or parsed.password:
-        return False
     hostname = parsed.hostname.casefold().rstrip(".")
     if hostname in {"localhost", "localhost.localdomain"} or hostname.endswith(".local"):
         return False
@@ -121,18 +123,35 @@ def _save_adblock_config(config: dict) -> None:
 def add_blocklist_source(name: str, url: str) -> bool:
     """
     Add a new blocklist source.
-    Returns True if added, False if already exists.
+    Returns True if added, False if validation fails or already exists.
     """
     safe_name = _safe_source_name(name)
-    parsed_url = urllib.parse.urlparse(str(url or "").strip())
-    if safe_name is None or not _safe_blocklist_url(url):
-        return False
+    if safe_name is None:
+        raise ValidationError(
+            f"Invalid blocklist source name: {name!r}",
+            hint="Source name must contain only letters, numbers, dots, hyphens, and underscores",
+            examples=["adblock_easylist", "phishing-domains", "ads.list"],
+        )
+
+    if not _safe_blocklist_url(url):
+        raise ValidationError(
+            f"Invalid blocklist URL: {url[:50]}...",
+            hint="URL must start with https:// and resolve to a global IP (not localhost or private IP)",
+            examples=[
+                "https://easylist-downloads.adblockplus.org/easylist.txt",
+                "https://phishing.army/download/phishing_army_blocklist.txt",
+            ],
+        )
+
     config = _load_adblock_config()
 
     # Check if already exists
     for source in config.get('sources', []):
         if source['name'].lower() == safe_name.lower():
-            return False
+            raise ValidationError(
+                f"Blocklist source already exists: {safe_name}",
+                hint="Remove the existing source first or use a different name",
+            )
 
     config['sources'].append({
         'name': safe_name,
@@ -170,12 +189,25 @@ def download_blocklist(name: str, url: str) -> tuple[bool, int, str]:
     Download and parse a blocklist (hosts file format).
     Returns: (success, rule_count, error_msg)
     """
+    spinner = Spinner(f"Downloading {name}... ⠋")
+    spinner.start()
     try:
         safe_name = _safe_source_name(name)
-        if safe_name is None or not _safe_blocklist_url(url):
-            return False, 0, "Blocklist name and URL are invalid"
+        if safe_name is None:
+            spinner.stop()
+            raise ValidationError(
+                f"Invalid blocklist source name: {name!r}",
+                hint="Source name must contain only letters, numbers, dots, hyphens, and underscores",
+            )
+        if not _safe_blocklist_url(url):
+            spinner.stop()
+            raise ValidationError(
+                f"Invalid blocklist URL: {url[:50]}...",
+                hint="URL must start with https:// and resolve to a global IP",
+            )
         cache_file = ADBLOCK_CACHE_DIR / f"{safe_name}.txt"
         if not cache_file.resolve().is_relative_to(ADBLOCK_CACHE_DIR.resolve()):
+            spinner.stop()
             return False, 0, "Unsafe blocklist cache path"
 
         # Download with timeout and a bounded response body.
@@ -184,6 +216,7 @@ def download_blocklist(name: str, url: str) -> tuple[bool, int, str]:
             with opener.open(str(url).strip(), timeout=10) as response:
                 declared = response.headers.get("Content-Length")
                 if declared and int(declared) > _MAX_BLOCKLIST_BYTES:
+                    spinner.stop()
                     return False, 0, "Blocklist response exceeds the size limit"
                 chunks = []
                 total = 0
@@ -193,14 +226,18 @@ def download_blocklist(name: str, url: str) -> tuple[bool, int, str]:
                         break
                     total += len(chunk)
                     if total > _MAX_BLOCKLIST_BYTES:
+                        spinner.stop()
                         return False, 0, "Blocklist response exceeds the size limit"
                     chunks.append(chunk)
                 content = b"".join(chunks).decode('utf-8', errors='ignore')
         except urllib.error.URLError as e:
+            spinner.stop()
             return False, 0, f"Download failed: {e}"
         except (TypeError, ValueError) as e:
+            spinner.stop()
             return False, 0, f"Invalid blocklist response: {e}"
         except Exception as e:
+            spinner.stop()
             return False, 0, f"Network error: {e}"
 
         # Parse hosts file format (skip comments and empty lines)
@@ -232,8 +269,10 @@ def download_blocklist(name: str, url: str) -> tuple[bool, int, str]:
         _recompute_total_rules(config)
         _save_adblock_config(config)
 
+        spinner.stop(f"✓ Downloaded {name} ({len(rules)} rules)")
         return True, len(rules), ""
     except Exception as e:
+        spinner.stop()
         return False, 0, str(e)
 
 

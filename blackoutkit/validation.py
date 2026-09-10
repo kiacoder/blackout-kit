@@ -99,12 +99,29 @@ def validate_choice(value: str, choices: list[str], param_name: str = "option") 
     return value
 
 
-def validate_url(url: str, param_name: str = "URL") -> str:
-    """Validate that a URL has a valid scheme."""
-    if not url.startswith(("http://", "https://", "vmess://", "vless://", "trojan://", "hysteria2://")):
+def validate_url(url: str, param_name: str = "URL", *, require_https: bool = False) -> str:
+    """
+    Validate that a URL has a valid scheme.
+
+    Args:
+        url: The URL to validate
+        param_name: The parameter name for error messages
+        require_https: If True, only allow https:// (not http://)
+
+    Returns:
+        The validated URL string
+    """
+    if require_https:
+        allowed_schemes = ("https://", "vmess://", "vless://", "trojan://", "hysteria2://")
+        hint = "URL must start with https:// or a proxy protocol (vmess, vless, trojan, hysteria2)"
+    else:
+        allowed_schemes = ("http://", "https://", "vmess://", "vless://", "trojan://", "hysteria2://")
+        hint = "URL must start with http://, https://, or a proxy protocol (vmess, vless, trojan, hysteria2)"
+
+    if not url.startswith(allowed_schemes):
         raise ValidationError(
             f"Invalid {param_name}: {url[:50]}...",
-            hint=f"URL must start with http://, https://, or a proxy protocol (vmess, vless, trojan, hysteria2)",
+            hint=hint,
             examples=[
                 "blackout config add https://example.com/sub",
                 "blackout config add vmess://...",

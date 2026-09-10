@@ -151,6 +151,9 @@ DEFAULTS = {
     # Smart config rotation
     "config_rotation":     True,        # Rotate to next saved config when current endpoint fails (blocked IP)
 
+    # Engine fallback
+    "fallback_enabled":    True,        # Automatically try next engine if primary engine fails
+
     # AmneziaWG
     "awg_config_file":     "",          # Full path to AmneziaWG .conf file
 
@@ -220,7 +223,7 @@ SETTING_GROUPS = {
     "SoftEther": ("softether_host", "softether_hub", "softether_username", "softether_password"),
     "Neighbor Sharing": ("neighbor_bind_lan", "lan_neighbor_cache_ttl_minutes", "lan_neighbor_cache_max_size"),
     "Country and Routing": ("country", "xray_split_tunnel", "xray_doh_dns"),
-    "Engine Selection": ("selected_engine", "config_rotation"),
+    "Engine Selection": ("selected_engine", "config_rotation", "fallback_enabled"),
     "AmneziaWG": ("awg_config_file",),
     "Packet Capture": ("capture_default_iface", "capture_max_packets"),
     "Downloads": ("download_speed_limit_kbps", "download_max_parallel", "download_auto_resume"),
@@ -329,6 +332,7 @@ _VALIDATORS: dict[str, tuple] = {
     "selected_engine":    (str,   lambda v: v in _ENGINE_CHOICES, "must be: auto or one of " + ", ".join(_ENGINE_CHOICES)),
     "engine_order":       (list,  lambda v: len(v) > 0 and all(e in _ENGINE_CHOICES for e in v),
                             "must be a non-empty list of valid engines: " + ", ".join(_ENGINE_CHOICES)),
+    "fallback_enabled":   (bool,  lambda v: True,            "must be true or false"),
     "capture_max_packets": (int,  lambda v: 100 <= v <= 100000, "must be 100–100000"),
     "download_speed_limit_kbps": (int, lambda v: v >= 0, "must be 0 (unlimited) or > 0"),
     "download_max_parallel": (int, lambda v: 1 <= v <= 32, "must be 1–32"),
@@ -677,6 +681,7 @@ def describe(key: str) -> str:
         "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
         "config_rotation":    "When enabled, the daemon rotates to the next saved config on reconnect failure (blocked IP)",
+        "fallback_enabled":   "When enabled, automatically try the next engine if the primary engine fails",
         "awg_config_file":    "Full path to your AmneziaWG .conf file",
         "mac_preferred_adapter": "Optional active physical Wi-Fi adapter for explicit MAC privacy commands",
         "mac_randomization_prefix": "Locally administered unicast first octet for fresh private Wi-Fi MACs (default: 02)",

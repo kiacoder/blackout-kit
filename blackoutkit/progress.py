@@ -55,7 +55,8 @@ class Spinner:
             self.thread.join(timeout=1)
 
         # Clear the spinner line
-        console.print("\r" + " " * 80 + "\r", end="", flush=True)
+        sys.stdout.write("\r" + " " * 80 + "\r")
+        sys.stdout.flush()
 
         if final_message:
             console.print(final_message)
@@ -65,7 +66,8 @@ class Spinner:
         idx = 0
         while self.running:
             frame = self.frames[idx % len(self.frames)]
-            console.print(f"\r{frame} {self.message}", end="", flush=True)
+            sys.stdout.write(f"\r{frame} {self.message}")
+            sys.stdout.flush()
             idx += 1
             time.sleep(0.1)
 

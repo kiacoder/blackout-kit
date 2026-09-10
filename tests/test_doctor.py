@@ -415,3 +415,149 @@ def test_get_execution_context():
 def test_check_country_profile(mock_load):
     mock_load.return_value = MagicMock(name="Test", code="TS", censorship_level="High")
     assert doc.check_country_profile().ok is True
+
+
+# ──────────────────────── Real-Time Progress Tests ──────────────────────
+
+@patch("blackoutkit.doctor.check_russia_whitelist", return_value=[])
+@patch("blackoutkit.doctor.check_binary_runnable", return_value=[])
+@patch("blackoutkit.doctor.check_bins_present", return_value=[])
+@patch("blackoutkit.doctor.check_python_deps", return_value=[])
+@patch("blackoutkit.doctor.check_data_files", return_value=[])
+@patch("blackoutkit.doctor.check_stale_proxy")
+@patch("blackoutkit.doctor.check_admin_privileges")
+@patch("blackoutkit.doctor.check_ports_in_use")
+@patch("blackoutkit.doctor.check_tun_adapter")
+@patch("blackoutkit.doctor.check_windows_compat")
+@patch("blackoutkit.doctor.check_firewall_exclusion")
+@patch("blackoutkit.doctor.check_firewall_rules")
+@patch("blackoutkit.doctor.check_process_conflicts")
+@patch("blackoutkit.doctor.check_config_security")
+@patch("blackoutkit.doctor.check_system_path")
+@patch("blackoutkit.doctor.check_windivert")
+@patch("blackoutkit.doctor.check_network_driver")
+@patch("blackoutkit.doctor.check_country_profile")
+@patch("blackoutkit.doctor.check_internet")
+@patch("blackoutkit.doctor.check_disk_space")
+@patch("blackoutkit.doctor.check_settings")
+@patch("blackoutkit.doctor.check_app_data_dir")
+@patch("blackoutkit.doctor.check_bins_dir")
+def test_run_all_checks_with_real_time_progress(
+    mock_check, mock_app, mock_settings, mock_disk, mock_inet, mock_country,
+    mock_netdriver, mock_wind, mock_path, mock_config, mock_proc, mock_fw,
+    mock_excl, mock_compat, mock_tun, mock_ports, mock_admin, mock_stale,
+    mock_data, mock_deps, mock_bins, mock_bin_run, mock_ru
+):
+    """Test that real-time progress indicator works when auto_fix=True and show_progress=True."""
+    # Setup mocks to return CheckResults
+    mock_check.return_value = doc.CheckResult("bins_dir", True, "OK")
+    mock_app.return_value = doc.CheckResult("app_data", True, "OK")
+    mock_settings.return_value = doc.CheckResult("settings", False, "Corrupted", fixable=True, fix=lambda: None)
+    mock_disk.return_value = doc.CheckResult("disk", True, "OK")
+    mock_inet.return_value = doc.CheckResult("inet", True, "OK")
+    mock_country.return_value = doc.CheckResult("country", True, "OK")
+    mock_netdriver.return_value = doc.CheckResult("netdriver", True, "OK")
+    mock_wind.return_value = doc.CheckResult("wind", True, "OK")
+    mock_path.return_value = doc.CheckResult("path", True, "OK")
+    mock_config.return_value = doc.CheckResult("config", True, "OK")
+    mock_proc.return_value = doc.CheckResult("proc", True, "OK")
+    mock_fw.return_value = doc.CheckResult("fw", True, "OK")
+    mock_excl.return_value = doc.CheckResult("excl", True, "OK")
+    mock_compat.return_value = doc.CheckResult("compat", True, "OK")
+    mock_tun.return_value = doc.CheckResult("tun", True, "OK")
+    mock_ports.return_value = doc.CheckResult("ports", True, "OK")
+    mock_admin.return_value = doc.CheckResult("admin", True, "OK")
+    mock_stale.return_value = doc.CheckResult("stale", True, "OK")
+
+    # Call with both auto_fix and show_progress
+    results = doc.run_all_checks(auto_fix=True, show_progress=True)
+
+    # Verify that the fixable check was fixed
+    settings_result = [r for r in results if r.name == "settings"][0]
+    assert settings_result.ok is True
+    assert "[success]Fixed automatically[/success]" in settings_result.message
+
+
+def test_fix_handlers_registered():
+    """Test that FIX_HANDLERS are properly registered."""
+    assert "process_stuck" in doc.FIX_HANDLERS
+    assert "port_conflict" in doc.FIX_HANDLERS
+    assert "stale_lock" in doc.FIX_HANDLERS
+    assert "config_corrupted" in doc.FIX_HANDLERS
+    assert "permission_denied" in doc.FIX_HANDLERS
+
+
+def test_fix_handler_process_stuck():
+    """Test the process_stuck fix handler."""
+    with patch("psutil.process_iter") as mock_iter:
+        # Mock a stuck xray process
+        mock_p = MagicMock()
+        mock_p.info = {"pid": 456, "name": "xray.exe"}
+        mock_p.exe.return_value = "c:\\blackout-kit\\xray.exe"
+        mock_p.pid = 456
+        mock_p.terminate.return_value = None
+        mock_iter.return_value = [mock_p]
+
+        # Call the fix handler
+        doc.FIX_HANDLERS["process_stuck"]()
+
+        # Verify process was terminated
+        mock_p.terminate.assert_called()
+
+
+def test_fix_handler_port_conflict():
+    """Test the port_conflict fix handler."""
+    with patch("blackoutkit.settings.load") as mock_load, \
+         patch("blackoutkit.settings.set_value") as mock_set:
+        mock_load.return_value = {
+            "sni_listen_port": 40443,
+            "xray_socks_port": 10808,
+            "xray_http_port": 10809,
+        }
+
+        # Call the fix handler
+        doc.FIX_HANDLERS["port_conflict"]()
+
+        # Verify that set_value was called to update ports
+        assert mock_set.call_count >= 1
+        calls = mock_set.call_args_list
+        # At least one port should be updated
+        assert any("port" in str(call) for call in calls)
+
+
+def test_fix_handler_config_corrupted():
+    """Test the config_corrupted fix handler."""
+    with patch("blackoutkit.settings.reset") as mock_reset:
+        doc.FIX_HANDLERS["config_corrupted"]()
+        mock_reset.assert_called_once()
+
+
+def test_print_report_with_summary():
+    """Test that print_report includes summary when show_summary=True and auto_fixed=True."""
+    results = [
+        doc.CheckResult("check1", True, "[success]Fixed automatically[/success] (was: broken)", fixable=True),
+        doc.CheckResult("check2", False, "Still broken", fixable=True),
+        doc.CheckResult("check3", True, "OK"),
+    ]
+
+    with patch("blackoutkit.doctor.console.print") as mock_print:
+        doc.print_report(results, auto_fixed=True, show_summary=True)
+
+        # Verify that print was called (indicating report was rendered)
+        assert mock_print.called
+        # Check that summary was printed (look for "Fixed" in any call)
+        calls_str = str(mock_print.call_args_list)
+        assert any("Fixed" in str(call) or "fixed" in str(call) for call in mock_print.call_args_list)
+
+
+def test_check_result_issue_type():
+    """Test that CheckResult supports issue_type parameter for routing to FIX_HANDLERS."""
+    result = doc.CheckResult(
+        "ports_conflict",
+        False,
+        "Ports in use",
+        fixable=True,
+        fix=lambda: None,
+        issue_type="port_conflict"
+    )
+    assert result.issue_type == "port_conflict"

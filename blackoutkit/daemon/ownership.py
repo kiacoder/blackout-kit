@@ -296,40 +296,55 @@ def perform_watchdog_cleanup(
 
 
 def acquire_start_lock(path: Path) -> str:
-    """Create a start lock and reclaim only a lock owned by a gone process."""
+    """Create a start lock and reclaim only a lock owned by a gone process.
+
+    Uses try/retry pattern for safe TOCTOU handling.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     token = secrets.token_urlsafe(16)
     pid = os.getpid()
     create_time = process_create_time(pid)
     if create_time is None:
         raise RuntimeError("Could not establish start process identity.")
+
     owner = {"schema_version": 1, "pid": pid, "create_time": create_time, "token": token}
-    for _attempt in range(3):
+
+    # Try up to 3 times to acquire the lock
+    for attempt in range(3):
         try:
+            # Try to create the lock directory (atomic on all platforms)
             path.mkdir(exist_ok=False)
-        except FileExistsError:
-            current = _read_json(path / "owner.json")
-            if current is None:
-                raise RuntimeError("Daemon start lock is unreadable; refusing to alter daemon state.")
-            if not _owner_is_gone(current):
-                raise RuntimeError("Another 'blackout start' is in progress. Try again in a moment.")
-            try:
-                (path / "owner.json").unlink(missing_ok=True)
-                path.rmdir()
-            except OSError:
-                raise RuntimeError("Another 'blackout start' is in progress. Try again in a moment.")
-            continue
-        else:
+            # Directory created successfully; we own the lock
             try:
                 _write_json_atomic(path / "owner.json", owner)
-            except Exception:
+            except Exception as e:
                 try:
                     path.rmdir()
                 except OSError:
                     pass
-                raise
+                raise RuntimeError(f"Could not write lock file: {e}") from e
             return token
-    raise RuntimeError("Could not acquire the daemon start lock.")
+        except FileExistsError:
+            # Directory already exists; check if owner is gone
+            current = _read_json(path / "owner.json")
+            if current is None:
+                # Lock file is corrupted/unreadable
+                raise RuntimeError("Daemon start lock is unreadable; refusing to alter daemon state.")
+            if _owner_is_gone(current):
+                # Owner is gone; try to reclaim
+                try:
+                    (path / "owner.json").unlink(missing_ok=True)
+                    path.rmdir()
+                except OSError:
+                    # Failed to reclaim; retry loop
+                    continue
+                # Successfully cleaned up stale lock; retry mkdir
+                continue
+            else:
+                # Owner is still alive
+                raise RuntimeError("Another 'blackout start' is in progress. Try again in a moment.")
+
+    raise RuntimeError("Could not acquire the daemon start lock after retries.")
 
 
 def release_start_lock(path: Path, token: str) -> None:
@@ -341,3 +356,48 @@ def release_start_lock(path: Path, token: str) -> None:
             path.rmdir()
     except (OSError, ValueError, TypeError, AttributeError):
         pass
+
+
+def cleanup_stale_records(lock_dir: Path) -> None:
+    """Remove ownership records from dead processes on daemon startup.
+
+    Cleans up:
+    - Stale daemon.start.lock from dead process
+    - Stale daemon.lease.json from dead process
+    - Stale PID file from dead process
+    """
+    lock_dir.mkdir(parents=True, exist_ok=True)
+
+    # Clean up stale start lock
+    start_lock_path = lock_dir / "daemon.start.lock"
+    if start_lock_path.exists():
+        owner = _lock_owner(_read_json(start_lock_path / "owner.json"))
+        if owner and _owner_is_gone(owner):
+            try:
+                (start_lock_path / "owner.json").unlink(missing_ok=True)
+                start_lock_path.rmdir()
+            except OSError:
+                pass
+
+    # Clean up stale lease
+    lease_path = lock_dir / "daemon.lease.json"
+    if lease_path.exists():
+        try:
+            with lifecycle_lock(lock_dir / "daemon.lifecycle.lock"):
+                lease = read_lease(lease_path)
+                if lease and process_is_gone(lease["pid"], lease["create_time"]):
+                    lease_path.unlink(missing_ok=True)
+        except (OSError, OwnershipBusy):
+            pass
+
+    # Clean up stale PID file if process is gone
+    pid_file = lock_dir / "daemon.pid"
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text(encoding="utf-8-sig").replace("\x00", "").strip())
+            if pid > 0:
+                import psutil
+                if not psutil.pid_exists(pid):
+                    pid_file.unlink(missing_ok=True)
+        except (OSError, ValueError, ImportError):
+            pass

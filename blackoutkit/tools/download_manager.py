@@ -105,6 +105,17 @@ def save_queue(downloads: list[Download]) -> None:
             except Exception:
                 pass
             raise
+    except OSError as exc:
+        error_detail = ""
+        if exc.errno == 13:  # Permission denied
+            error_detail = "Permission denied. Check directory permissions."
+        elif exc.errno == 28:  # No space left on device
+            error_detail = "Disk is full. Free up disk space."
+        elif exc.errno == 30:  # Read-only filesystem
+            error_detail = "Filesystem is read-only."
+        else:
+            error_detail = str(exc)
+        _log.error("Failed to save download queue to %s: %s", DOWNLOAD_QUEUE_FILE, error_detail)
     except Exception as exc:
         _log.error("Failed to save download queue: %s", exc)
 

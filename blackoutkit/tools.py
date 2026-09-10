@@ -2080,6 +2080,7 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
         return
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.settimeout(1.0)
     try:
         sock.bind((host, port))

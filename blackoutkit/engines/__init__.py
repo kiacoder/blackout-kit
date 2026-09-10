@@ -96,6 +96,47 @@ def engine_names() -> list[str]:
     return sorted(ENGINE_REGISTRY.keys())
 
 
+def next_engine_candidate(current_engine: str, failed_engines: set[str] | None = None, platform_filter: bool = True) -> str | None:
+    """
+    Find the next candidate engine to try after a failure.
+
+    Args:
+        current_engine: The engine that just failed
+        failed_engines: Set of engines already tried and failed in this session
+        platform_filter: If True, only return engines available on current platform
+
+    Returns:
+        Name of the next engine to try, or None if no candidates remain.
+
+    Priority order: Try other engines in alphabetical order, skipping:
+      - The current engine
+      - Any already-failed engines
+      - Windows-only engines on non-Windows platforms
+      - Linux-only engines on non-Windows platforms
+    """
+    import sys
+
+    if failed_engines is None:
+        failed_engines = set()
+
+    # Determine which engines are available on this platform
+    available = set(ENGINE_REGISTRY.keys())
+    if platform_filter and sys.platform == "win32":
+        # On Windows, all engines available
+        pass
+    elif platform_filter and sys.platform.startswith("linux"):
+        # On Linux, only these engines available
+        linux_engines = {"xray", "tun", "hysteria2", "tuic", "awg"}
+        available = available.intersection(linux_engines)
+
+    # Filter out current and already-failed engines
+    candidates = sorted(available - {current_engine} - failed_engines)
+
+    if candidates:
+        return candidates[0]
+    return None
+
+
 # ──────────────────────────── Public API ─────────────────────────────────────
 
 __all__ = [
@@ -125,4 +166,5 @@ __all__ = [
     "engine_names",
     "get_engine",
     "list_engines",
+    "next_engine_candidate",
 ]

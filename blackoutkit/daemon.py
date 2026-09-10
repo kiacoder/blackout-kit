@@ -602,10 +602,31 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             log.error("All engines failed. Exiting daemon.")
             return
     else:
+        # Try primary engine first
         active = try_start_engines(engine_name)
         if not active:
-            log.error(f"Engine '{engine_name}' failed. Exiting.")
-            return
+            # If fallback is enabled, try alternative engines
+            if s.get("fallback_enabled", True):
+                from . import engines
+                failed_engines = {engine_name}
+                next_engine = engines.next_engine_candidate(engine_name, failed_engines, platform_filter=True)
+
+                while next_engine:
+                    log.warning(f"Engine '{engine_name}' failed, trying fallback: '{next_engine}'")
+                    active = try_start_engines(next_engine)
+                    if active:
+                        log.info(f"Using fallback engine: {next_engine}")
+                        active_engine_name = next_engine
+                        break
+                    failed_engines.add(next_engine)
+                    next_engine = engines.next_engine_candidate(engine_name, failed_engines, platform_filter=True)
+
+                if not active:
+                    log.error(f"Engine '{engine_name}' and all fallback engines failed. Exiting daemon.")
+                    return
+            else:
+                log.error(f"Engine '{engine_name}' failed. Exiting.")
+                return
 
     if s.get("auto_set_proxy", True):
         proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)

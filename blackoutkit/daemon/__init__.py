@@ -16,9 +16,11 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from pathlib import Path
 
+from ..progress import Spinner
 from .ownership import (
     OwnershipBusy,
     acquire_start_lock,
+    cleanup_stale_records,
     lease_matches,
     lifecycle_lock,
     new_generation,
@@ -714,6 +716,7 @@ def _run_daemon_loop(
     from ..proxy_manager import cleanup_owned_system_proxy, set_system_proxy
 
     _ensure_dir()
+    cleanup_stale_records(APP_DATA_DIR)
 
     # Setup rotating logs
     handler = logging.handlers.RotatingFileHandler(
@@ -778,13 +781,18 @@ def _run_daemon_loop(
     def try_start_engines(name: str) -> list:
         factory = ENGINE_MAP.get(name)
         if not factory:
-            log.warning(f"Unknown engine: {name}")
+            log.error(f"Unknown engine: {name} — check available engines via 'blackout capabilities'")
             return []
         from .. import readiness
         checks = readiness.evaluate(name, allow_active_daemon=True)
         blockers = [check.detail for check in checks if check.blocking and not check.ok]
         if blockers:
-            log.warning("Local readiness blocked %s: %s", name, "; ".join(blockers))
+            blocker_msg = "; ".join(blockers)
+            log.error(
+                "Cannot start %s — local readiness checks failed: %s "
+                "(run 'blackout doctor' to diagnose and auto-fix)",
+                name, blocker_msg
+            )
             return []
 
         linux_kill_switch = sys.platform.startswith("linux") and s.get("kill_switch", False)
@@ -800,23 +808,39 @@ def _run_daemon_loop(
         started = []
         failed = False
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=len(engines) if engines else 1) as executor:
-            future_to_eng = {executor.submit(eng.start): eng for eng in engines}
-            for future in concurrent.futures.as_completed(future_to_eng):
-                eng = future_to_eng[future]
-                try:
-                    success = future.result()
-                    if success:
-                        log.info(f"{eng.name} started (PID {eng.pid})")
-                        started.append(eng)
-                    else:
+        spinner = Spinner(f"Starting {name}...")
+        spinner.start()
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(engines) if engines else 1) as executor:
+                future_to_eng = {executor.submit(eng.start): eng for eng in engines}
+                failure_reasons = []
+                for future in concurrent.futures.as_completed(future_to_eng):
+                    eng = future_to_eng[future]
+                    try:
+                        success = future.result()
+                        if success:
+                            log.info(f"{eng.name} started (PID {eng.pid})")
+                            started.append(eng)
+                        else:
+                            reason = f"{eng.name} initialization returned False (binary/config issue?)"
+                            log.error(reason)
+                            failure_reasons.append(reason)
+                            failed = True
+                    except Exception as exc:
+                        reason = f"{eng.name} start exception: {exc}"
+                        log.error(reason)
+                        failure_reasons.append(reason)
                         failed = True
-                except Exception as exc:
-                    log.error(f"{eng.name} start exception: {exc}")
-                    failed = True
+        finally:
+            spinner.stop(f"✓ {name} engine started" if started else f"✗ {name} engine failed")
 
         if failed or len(started) != len(engines):
-            log.warning("One or more engines failed — rolling back partial group start.")
+            reasons_str = "; ".join(failure_reasons) if failure_reasons else "Unknown error"
+            log.error(
+                "Engine startup failed — rolling back. Failures: %s "
+                "(Try: blackout doctor --fix, or check 'blackout logs --follow' for details)",
+                reasons_str
+            )
             for already_started in started:
                 try:
                     already_started.stop()
@@ -961,6 +985,12 @@ def _run_daemon_loop(
                 return True
 
             if restart_count >= max_restarts:
+                log.error(
+                    "FATAL: Engine startup failed after %d attempts. %s "
+                    "Check logs and run 'blackout doctor --fix' to diagnose. "
+                    "If this persists, try: blackout settings set selected_engine <different_engine>",
+                    max_restarts, failure_reason
+                )
                 break
 
             next_delay = _reconnect_delay(

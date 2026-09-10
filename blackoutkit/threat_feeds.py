@@ -19,6 +19,8 @@ from urllib.parse import urlparse
 import httpx
 
 from ._net_utils import reject_private_host
+from .progress import Spinner
+from .validation import ValidationError, validate_url
 
 logger = logging.getLogger(__name__)
 _STATE_LOCK = threading.Lock()
@@ -192,18 +194,24 @@ class ThreatFeedsManager:
     def update_feeds(self) -> dict[str, bool]:
         """Update enabled feeds while preserving the last good snapshot on failure."""
         results: dict[str, bool] = {}
-        for name, feed in list(self.feeds.items()):
-            if not feed.enabled:
-                self._feed_indicators.pop(name, None)
-                results[name] = False
-                continue
-            try:
-                results[name] = self._fetch_feed(feed)
-            except Exception as exc:
-                logger.error("Failed to update feed %s: %s", name, exc)
-                results[name] = False
-        self._rebuild_indicator_sets()
-        self._save_blocked()
+        spinner = Spinner("Importing feeds...")
+        spinner.start()
+        try:
+            for name, feed in list(self.feeds.items()):
+                spinner.message = f"Importing {name}..."
+                if not feed.enabled:
+                    self._feed_indicators.pop(name, None)
+                    results[name] = False
+                    continue
+                try:
+                    results[name] = self._fetch_feed(feed)
+                except Exception as exc:
+                    logger.error("Failed to update feed %s: %s", name, exc)
+                    results[name] = False
+            self._rebuild_indicator_sets()
+            self._save_blocked()
+        finally:
+            spinner.stop("✓ Feeds imported successfully")
         return results
 
     def is_ip_blocked(self, ip: str) -> bool:
@@ -373,9 +381,11 @@ class ThreatFeedsManager:
     def _validate_feed(self, feed: ThreatFeed) -> bool:
         if not feed.name or feed.feed_type not in {"ip", "domain"}:
             return False
-        parsed = urlparse(feed.url)
-        if not (parsed.scheme.casefold() == "https" and bool(parsed.hostname) and parsed.username is None and parsed.password is None):
+        try:
+            validate_url(feed.url, param_name="threat feed URL", require_https=True)
+        except ValidationError:
             return False
+        parsed = urlparse(feed.url)
         # Validate that the hostname resolves to a global IP
         try:
             reject_private_host(parsed.hostname, port=443)
