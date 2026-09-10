@@ -651,6 +651,16 @@ def cmd_country(args):
 
 def cmd_scan(args):
     s = cfg.load()
+
+    # Validate settings before using them
+    errors = cfg.validate_all(s)
+    if errors:
+        console.print("[error]Invalid settings detected:[/error]")
+        for key, error in errors:
+            console.print(f"  {key}: {error}")
+        console.print("[warning]Run 'blackout settings set' to fix them[/warning]")
+        return
+
     do_ips = args.ips or not args.sni
     do_sni = args.sni or not args.ips
 

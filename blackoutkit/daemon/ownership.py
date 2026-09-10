@@ -52,13 +52,21 @@ def process_identity_state(pid: object, expected_create_time: object) -> bool | 
 def process_is_gone(pid: int, expected_create_time: object) -> bool:
     """Return true only when identity is different and the PID is no longer live."""
     state = process_identity_state(pid, expected_create_time)
-    if state is True or state is None:
+    if state is True:
         return False
     try:
         import psutil
-        return not psutil.pid_exists(pid)
+        # If identity check succeeded (state is False), use psutil to confirm
+        if state is False:
+            return not psutil.pid_exists(pid)
+        # If identity check failed (state is None), try psutil as fallback
+        if state is None:
+            if psutil.pid_exists(pid):
+                return False
+            return True
     except (ImportError, OSError):
         return False
+    return False
 
 
 def new_generation() -> str:

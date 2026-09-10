@@ -131,8 +131,9 @@ def load_queue() -> list[Download]:
     try:
         data = json.loads(DOWNLOAD_QUEUE_FILE.read_text())
         return [Download.from_dict(d) for d in data.get("downloads", [])]
-    except Exception:
-        return []  # Silently return empty on error
+    except Exception as exc:
+        _log.warning("Download queue file corrupted or unreadable (%s: %s), queue reset", type(exc).__name__, exc)
+        return []
 
 
 # ──────────────────────────── Queue Management ──────────────────────────
@@ -317,9 +318,6 @@ class DownloadWorker(threading.Thread):
                 total_size = 0
                 accept_ranges = False
 
-            # Now do the actual download
-            update_download(self.download.id, status=DownloadStatus.DOWNLOADING)
-
             # Determine if we can resume
             if resume_from > 0 and accept_ranges:
                 # Use Range request
@@ -359,7 +357,9 @@ class DownloadWorker(threading.Thread):
                 mode = 'ab' if resume_from > 0 else 'wb'
                 with open(temp_dest, mode) as f:
                     downloaded_this_session = 0
-                    last_update = time.time()
+                    last_progress_update = time.time()
+                    last_speed_check = time.time()
+                    download_started = False
 
                     while True:
                         if self._stop_event.is_set():
@@ -376,23 +376,29 @@ class DownloadWorker(threading.Thread):
                         downloaded_this_session += len(chunk)
                         current_downloaded = resume_from + downloaded_this_session
 
+                        # Mark as downloading after first successful read
+                        if not download_started:
+                            update_download(self.download.id, status=DownloadStatus.DOWNLOADING)
+                            download_started = True
+
                         # Update progress periodically
                         now = time.time()
-                        if now - last_update >= 0.2:  # Update every 200ms
+                        if now - last_progress_update >= 0.2:  # Update every 200ms
                             update_download(self.download.id, downloaded=current_downloaded)
                             if self.progress_callback:
                                 self.progress_callback(current_downloaded, total_size or current_downloaded)
-                            last_update = now
+                            last_progress_update = now
 
                         # Speed limiting
                         if self.download.speed_limit_kbps > 0:
-                            elapsed = now - last_update
+                            elapsed = now - last_speed_check
                             if elapsed > 0:
                                 current_speed_kbps = (len(chunk) / 1024) / elapsed
                                 if current_speed_kbps > self.download.speed_limit_kbps:
                                     sleep_time = (len(chunk) / 1024 / self.download.speed_limit_kbps) - elapsed
                                     if sleep_time > 0:
                                         time.sleep(sleep_time)
+                                last_speed_check = now
 
             # Verify downloaded size matches expected (if we know it)
             if total_size > 0 and temp_dest.stat().st_size != total_size:

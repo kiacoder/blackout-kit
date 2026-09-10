@@ -1325,8 +1325,10 @@ def ping_once(host: str, timeout: float = 2.0) -> float | None:
     try:
         start = time.monotonic()
         sock = socket.create_connection((host, 80), timeout=timeout)
-        sock.close()
-        return (time.monotonic() - start) * 1000
+        try:
+            return (time.monotonic() - start) * 1000
+        finally:
+            sock.close()
     except Exception:
         return None
 

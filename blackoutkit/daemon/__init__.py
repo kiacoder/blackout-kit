@@ -593,13 +593,13 @@ def _write_daemon_state(
     started: str | None = None,
     io_bytes: tuple[int, int] | None = None,
     generation: str | None = None,
-) -> None:
-    """Persist a state snapshot owned by the daemon, not an individual engine."""
+) -> bool:
+    """Persist a state snapshot owned by the daemon, not an individual engine. Returns True on success, False on failure."""
     _ensure_dir()
     try:
         with lifecycle_lock(_lifecycle_path()):
             if generation is not None and not _lease_is_current(daemon_pid, generation):
-                return
+                return False
             state = {
                 "engine": _engine_state_payload_name(engine_name, cfg_module),
                 "pid": daemon_pid,
@@ -616,9 +616,11 @@ def _write_daemon_state(
             temporary = STATE_FILE.with_suffix(".tmp")
             temporary.write_text(json.dumps(state), encoding="utf-8")
             os.replace(temporary, STATE_FILE)
+            return True
     except (OSError, OwnershipBusy) as e:
         import logging
         logging.warning("Failed to write daemon state file: %s", e)
+        return False
 
 
 def run_daemon_loop(
