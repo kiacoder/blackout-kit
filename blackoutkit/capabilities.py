@@ -25,6 +25,7 @@ PUBLIC_ENGINE_NAMES = (
     "tuic",
     "awg",
     "legend",
+    "hotspot-shield",
 )
 
 
@@ -235,6 +236,13 @@ _CAPABILITIES: dict[str, EngineCapability] = {
         system_effects=("process", "system_proxy", "local_runtime_files"),
         remote_actions=("Tor bootstrap", "upstream connection",), composite=True,
         notes="Connect/start target; separate from the legend security mode.",
+    ),
+    "hotspot-shield": EngineCapability(
+        "hotspot-shield", "Hotspot Shield", "VPN client", "Hotspot Shield — 95 free rotating VPN servers using IKEv2",
+        ("win32",), upstream_requirement="remote_service",
+        privilege="none", system_effects=("process", "system_proxy"),
+        remote_actions=("upstream VPN connection",),
+        notes="Uses Windows native RRAS VPN stack. Free tier includes 95 servers across 4 CDN networks.",
     ),
 }
 

@@ -15,6 +15,7 @@ from .amneziawg import AmneziaWGEngine
 from .appsscript import AppsScriptEngine
 from .base import Engine
 from .gdpi import GoodbyeDPIEngine
+from .hotspot_shield import HotspotShieldEngine
 from .ikev2 import IKEv2Engine
 from .mhrv import MhrvEngine
 from .neighbor import NeighborConnectEngine, NeighborShareEngine
@@ -51,6 +52,7 @@ ENGINE_REGISTRY: dict[str, type[Engine]] = {
     "hysteria2":  Hysteria2Engine,
     "tuic":       TuicEngine,
     "awg":        AmneziaWGEngine,
+    "hotspot-shield": HotspotShieldEngine,
 }
 
 
