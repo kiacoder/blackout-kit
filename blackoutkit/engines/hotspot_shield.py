@@ -109,12 +109,12 @@ class HotspotShieldEngine(Engine):
         """Check if Hotspot Shield app is running."""
         try:
             result = subprocess.run(
-                ["tasklist", "/FI", "IMAGENAME eq HssStore.Client.exe"],
+                ["tasklist", "/FI", "IMAGENAME eq Hss.Store.Client.exe"],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
-            return "HssStore.Client.exe" in result.stdout
+            return "Hss.Store.Client.exe" in result.stdout
         except Exception as e:
             _log.warning(f"Could not check HS app status: {e}")
             return False
@@ -207,7 +207,7 @@ class HotspotShieldEngine(Engine):
                 # Kill HS app to disconnect
                 try:
                     subprocess.run(
-                        ["taskkill", "/IM", "HssStore.Client.exe", "/F"],
+                        ["taskkill", "/IM", "Hss.Store.Client.exe", "/F"],
                         capture_output=True,
                         timeout=5,
                     )

@@ -24,8 +24,8 @@ PUBLIC_ENGINE_NAMES = (
     "hysteria2",
     "tuic",
     "awg",
-    "legend",
     "hotspot-shield",
+    "legend",
 )
 
 
