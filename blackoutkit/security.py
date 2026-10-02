@@ -348,22 +348,20 @@ _PBKDF2_ITERS  = 100_000
 
 
 def _get_machine_id() -> bytes:
-    """Return raw machine identifier bytes (UUID on Windows, hostname elsewhere)."""
+    """Return raw machine identifier bytes (SMBIOS UUID on Windows, hostname elsewhere).
+
+    Delegates to the vault's candidate chain so obfuscated files stay readable
+    on Windows builds where the wmic binary was removed. The chain cache is
+    reset first: this path runs rarely, and callers may patch probing inputs.
+    """
     try:
-        if sys.platform == "win32":
-            result = subprocess.run(
-                ["wmic", "csproduct", "get", "UUID"],
-                capture_output=True, text=True,
-            )
-            # Skip the "UUID" header line — take the first non-empty, non-header line
-            lines = [l.strip() for l in result.stdout.splitlines()
-                     if l.strip() and l.strip().upper() != "UUID"]
-            uid = lines[0] if lines else ""
-        else:
-            uid = platform.node()
-        return uid.encode() if uid else b"blackout-kit-unknown-machine"
+        from . import vault as vault_module
+
+        vault_module.reset_machine_id_cache()
+        return vault_module.machine_id_candidates()[0]
     except Exception:
-        return b"blackout-kit-default-machine-id"
+        uid = platform.node()
+        return uid.encode() if uid else b"blackout-kit-unknown-machine"
 
 
 def _derive_aes_key(machine_id: bytes) -> bytes:
