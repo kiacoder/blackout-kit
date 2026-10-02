@@ -60,3 +60,4 @@ warp_plus_cache/
 ca.psiphon.PsiphonTunnel.tunnel-core/
 bins/psiphon_data/
 bins/ca.psiphon.PsiphonTunnel.tunnel-core/
+buildwheel-smoke/
