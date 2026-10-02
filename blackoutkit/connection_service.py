@@ -46,6 +46,8 @@ class ConnectionRequest:
     background: bool = False
     iran: bool = False
     russia: bool = False
+    sni_spoof: str | None = None
+    isp_profile: str | None = None
 
 
 @dataclass
@@ -183,6 +185,9 @@ class ConnectionService:
         request = _normalized_request(request, "connect")
         if request.iran and request.russia:
             return self._failure(request, "invalid_preset", "Choose only one preset: --iran or --russia.", status="invalid")
+        invalid = _validate_request_extras(request)
+        if invalid:
+            return self._failure(request, invalid[0], invalid[1], status="invalid")
 
         requested = request.pos_engine or request.engine
         preset_name = _preset_name(request)
@@ -194,12 +199,28 @@ class ConnectionService:
                 base_settings,
                 direct_start=False,
             )
+        if request.isp_profile:
+            from . import isp_profiles
+
+            profile_obj = isp_profiles.get_isp_profile(request.isp_profile)
+            if profile_obj is not None:
+                connect_overrides.update(_env_overrides_from_settings(profile_obj.overrides()))
 
         with temporary_env_overrides(connect_overrides):
             recommended = self.recommended_engine()
             profile = self.active_profile()
-            engine_before_preset = recommended if requested in (None, "auto") else requested
-            if requested is None and self.is_interactive() and not request.background:
+            if requested in (None, "auto") and request.sni_spoof:
+                # An explicit spoof names the SNI path; resolve to it directly
+                # instead of prompting or recommending an unrelated engine.
+                engine_before_preset = "sni"
+            else:
+                engine_before_preset = recommended if requested in (None, "auto") else requested
+            if (
+                requested is None
+                and not request.sni_spoof
+                and self.is_interactive()
+                and not request.background
+            ):
                 choice = self.choose_connection(
                     f"Recommended engine: {recommended}. Continue or choose manually?",
                     ["recommended", "manual", "cancel"],
@@ -289,8 +310,14 @@ class ConnectionService:
         request = _normalized_request(request, "start")
         if request.iran and request.russia:
             return self._failure(request, "invalid_preset", "Choose only one preset: --iran or --russia.", status="invalid")
+        invalid = _validate_request_extras(request)
+        if invalid:
+            return self._failure(request, invalid[0], invalid[1], status="invalid")
 
         requested = request.pos_engine or request.engine
+        if requested in (None, "auto") and request.sni_spoof:
+            # An explicit spoof names the SNI path; skip the engine prompt.
+            requested = "sni"
         if requested is None:
             requested = self.choose_engine("Choose an engine to start")
             if not requested:
@@ -674,6 +701,63 @@ class ConnectionService:
                 "footer": footer,
                 "overrides": overrides,
             }
+
+        # ISP sub-profile: transient overrides layered on top of (or without)
+        # a country preset. The profile implies its country, so combining it
+        # with --iran/--russia is rejected earlier at request validation.
+        if request.isp_profile:
+            from . import isp_profiles
+
+            profile = isp_profiles.get_isp_profile(request.isp_profile)
+            if profile is None:
+                valid = ", ".join(isp_profiles.isp_profile_codes())
+                raise ConnectionServiceError(
+                    f"Unknown ISP profile '{request.isp_profile}'. Valid profiles: {valid}"
+                )
+            profile_overrides = _env_overrides_from_settings(profile.overrides())
+            overrides.update(profile_overrides)
+            profile_changes = [
+                f"ISP profile: {profile.display_name} ({profile.code})",
+                f"Fake SNI → {profile.fake_sni}",
+                f"TLS fragmentation → {profile.xray_fragment or 'disabled'}",
+            ]
+            if preset is None:
+                preset = {
+                    "name": f"isp-profile",
+                    "title": f"ISP Profile — {profile.display_name}",
+                    "changes": profile_changes,
+                    "footer": "[dim]Transient overrides only; saved settings are unchanged. Values are starting points, not field-verified per carrier.[/dim]",
+                    "overrides": dict(overrides),
+                }
+            else:
+                preset.setdefault("changes", []).extend(profile_changes)
+                preset["overrides"] = dict(overrides)
+
+        # Explicit --sni-spoof wins over preset/profile SNI values: the user
+        # named the domain to replicate, so it is the most specific intent.
+        if request.sni_spoof:
+            overrides[_setting_env_name("sni_fake_sni")] = request.sni_spoof
+            spoof_change = f"Fake SNI (spoof) → {request.sni_spoof} (transient)"
+            if preset is None:
+                preset = {
+                    "name": "sni-spoof",
+                    "title": "SNI Spoof — Temporary",
+                    "changes": [spoof_change],
+                    "footer": "[dim]The spoofed domain is used for this connection only; your saved sni_fake_sni setting is untouched.[/dim]",
+                    "overrides": dict(overrides),
+                }
+            else:
+                preset.setdefault("changes", []).append(spoof_change)
+                preset["overrides"] = dict(overrides)
+            if engine_name not in _SNI_SPOOF_CONSUMERS:
+                self._event(
+                    "warning",
+                    message=(
+                        f"Engine '{engine_name}' does not read the fake-SNI setting; "
+                        "--sni-spoof applies to the sni, mhrv, legend, and tun paths."
+                    ),
+                )
+
         return effective, overrides, preset
 
     def _profile_warnings(self, profile: Any, engine_name: str) -> list[str]:
@@ -782,6 +866,8 @@ def bus_emit_bridge(payload: dict[str, Any]) -> None:
 
 
 def _normalized_request(request: ConnectionRequest, operation: str) -> ConnectionRequest:
+    spoof = (request.sni_spoof or "").strip().lower().rstrip(".") or None
+    profile = (request.isp_profile or "").strip().lower() or None
     return ConnectionRequest(
         operation=operation,
         pos_engine=request.pos_engine,
@@ -789,11 +875,71 @@ def _normalized_request(request: ConnectionRequest, operation: str) -> Connectio
         background=bool(request.background),
         iran=bool(request.iran),
         russia=bool(request.russia),
+        sni_spoof=spoof,
+        isp_profile=profile,
     )
 
 
 def _preset_name(request: ConnectionRequest) -> str | None:
     return "iran" if request.iran else "russia" if request.russia else None
+
+
+def _validate_request_extras(request: ConnectionRequest) -> tuple[str, str] | None:
+    """Validate --sni-spoof / --profile request extras before any work.
+
+    Returns (code, message) for the first problem found, else None.
+    """
+    if (request.iran or request.russia) and request.isp_profile:
+        return (
+            "invalid_preset",
+            "--profile cannot be combined with --iran or --russia: an ISP profile already implies the Iran profile.",
+        )
+    if request.sni_spoof:
+        error = validate_sni_spoof_domain(request.sni_spoof)
+        if error:
+            return ("invalid_input", error)
+    if request.isp_profile:
+        from . import isp_profiles
+
+        if isp_profiles.get_isp_profile(request.isp_profile) is None:
+            valid = ", ".join(isp_profiles.isp_profile_codes())
+            return ("invalid_input", f"Unknown ISP profile '{request.isp_profile}'. Valid profiles: {valid}")
+    return None
+
+
+# Engines whose local path actually reads sni_fake_sni; a --sni-spoof request
+# against anything else gets an explicit warning instead of silent no-op.
+_SNI_SPOOF_CONSUMERS = frozenset({"sni", "mhrv", "legend", "tun"})
+
+
+def validate_sni_spoof_domain(domain: str | None) -> str | None:
+    """Return an error message for an unusable fake-SNI domain, else None.
+
+    Accepts bare hostnames only (the value is presented to DPI as an SNI, so
+    schemes, paths, and whitespace are rejected rather than silently mangled).
+    """
+    if not domain or not domain.strip():
+        return "Provide a fake SNI domain, e.g. --sni-spoof www.example.com"
+    value = domain.strip().lower().rstrip(".")
+    if "://" in value:
+        return "Provide a bare hostname without a scheme, e.g. --sni-spoof www.example.com"
+    if any(ch.isspace() for ch in value) or "/" in value or "@" in value:
+        return "Provide a bare hostname without paths, spaces, or credentials"
+    if len(value) > 253:
+        return "Domain exceeds the 253-character DNS limit"
+    labels = value.split(".")
+    if len(labels) < 2:
+        return "Provide a full domain with at least one dot, e.g. www.example.com"
+    for label in labels:
+        if not label:
+            return "Domain has an empty label (check for consecutive dots)"
+        if len(label) > 63:
+            return "Domain has a label longer than 63 characters"
+        if not all(ch.isalnum() or ch == "-" for ch in label):
+            return "Domain labels may only contain letters, digits, and hyphens"
+        if label.startswith("-") or label.endswith("-"):
+            return "Domain labels may not start or end with a hyphen"
+    return None
 
 
 def _profile_payload(profile: Any) -> dict[str, Any] | None:

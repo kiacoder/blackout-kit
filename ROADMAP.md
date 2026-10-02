@@ -42,6 +42,17 @@ considered only when a user-verified need appears. Existing capabilities stay.
 
 ## Where we're going
 
+### ISP sub-profiles & spoofing UX (in progress)
+
+| Feature | What it does | Status |
+|---|---|---|
+| ISP profile schema | `blackoutkit/isp_profiles.py` — per-carrier presets (MCI, Irancell, Rightel, TCI, Shatel) with ASN detection, engine order, and baseline tunables | **Schema shipped** (values are starting points; per-carrier field tuning pending) |
+| Transient `--profile` flag | `blackout connect/start --profile ir-mci` applies carrier overrides without rewriting settings | **Done** |
+| `blackout isp list/show` | Read-only catalog with JSON output | **Done** |
+| `--sni-spoof <domain>` | One-connection fake-SNI override on connect/start | **Done** |
+| Per-carrier field tuning | Validate fragment/SNI values per carrier on live networks, then diverge the baselines | **Pending — requires on-network testing** |
+| ISP-picker first-run step | Onboarding question ("select your carrier") that pre-selects a profile | **Planned** |
+
 ### Operator Foundation (1.7.x) — shipped
 
 The Blackout Operator layer: structured observability that lets external AI

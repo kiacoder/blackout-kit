@@ -1550,6 +1550,8 @@ def connect(
     background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
     iran: bool = typer.Option(False, "--iran", help="TIC 2026 evasion profile"),
     russia: bool = typer.Option(False, "--russia", help="Russia transport preset"),
+    sni_spoof: str = typer.Option(None, "--sni-spoof", metavar="DOMAIN", help="Use this fake SNI domain for this connection only (transient; saved settings untouched)"),
+    profile: str = typer.Option(None, "--profile", metavar="CODE", help="Apply an ISP sub-profile transiently (see: blackout isp list)"),
     ctx: typer.Context = None,
 ):
     """Smart connect — uses a recommendation when no engine is specified."""
@@ -1563,11 +1565,13 @@ def connect(
         background=bool(_option_value(background, False)),
         iran=bool(_option_value(iran, False)),
         russia=bool(_option_value(russia, False)),
+        sni_spoof=_option_value(sni_spoof),
+        isp_profile=_option_value(profile),
     )
     result = _connection_service(options).connect(request)
     _render_connection_result(result, options)
     if not result.ok:
-        raise typer.Exit(code=2 if result.code == "invalid_preset" else 1)
+        raise typer.Exit(code=2 if result.code in {"invalid_preset", "invalid_input"} else 1)
     return result
 
 
@@ -1578,6 +1582,8 @@ def start(
     background: bool = typer.Option(False, "--background", "-d", help="Run as daemon"),
     iran: bool = typer.Option(False, "--iran", help="TIC 2026 profile"),
     russia: bool = typer.Option(False, "--russia", help="Russia transport preset"),
+    sni_spoof: str = typer.Option(None, "--sni-spoof", metavar="DOMAIN", help="Use this fake SNI domain for this run only (transient; saved settings untouched)"),
+    profile: str = typer.Option(None, "--profile", metavar="CODE", help="Apply an ISP sub-profile transiently (see: blackout isp list)"),
     ctx: typer.Context = None,
 ):
     """Start a selected bypass engine."""
@@ -1591,11 +1597,13 @@ def start(
         background=bool(_option_value(background, False)),
         iran=bool(_option_value(iran, False)),
         russia=bool(_option_value(russia, False)),
+        sni_spoof=_option_value(sni_spoof),
+        isp_profile=_option_value(profile),
     )
     result = _connection_service(options).start(request)
     _render_connection_result(result, options)
     if not result.ok:
-        raise typer.Exit(code=2 if result.code == "invalid_preset" else 1)
+        raise typer.Exit(code=2 if result.code in {"invalid_preset", "invalid_input"} else 1)
     return result
 
 
@@ -4512,7 +4520,6 @@ def ssh_sftp(
 
 
 # ─────────────────────────── Blackout Operator surface ───────────────────────────
-#
 # Structured, local-only observability for humans and external AI consumers:
 # canonical snapshot, deterministic recommendations, sanitized support bundles,
 # and the local event journal / opt-in loopback event stream. All read-only
@@ -4524,6 +4531,85 @@ app.add_typer(operator_app, name="operator")
 
 events_app = typer.Typer(help="Inspect the local event journal or serve the loopback event stream", no_args_is_help=True)
 app.add_typer(events_app, name="events")
+
+isp_app = typer.Typer(help="Iranian ISP sub-profiles (transient per-carrier presets)", no_args_is_help=True)
+app.add_typer(isp_app, name="isp")
+
+
+@isp_app.command("list")
+def isp_list(
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    ctx: typer.Context = None,
+):
+    """List the cataloged ISP sub-profiles (read-only; applies nothing)."""
+    options = _output_options(ctx)
+    from . import isp_profiles
+
+    profiles = [profile.to_dict() for profile in isp_profiles.list_isp_profiles()]
+    payload = {"profiles": profiles, "count": len(profiles)}
+    if json_flag or options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    from rich.table import Table
+
+    table = Table(show_header=True, header_style="bold cyan", padding=(0, 2),
+                  title="ISP Sub-Profiles (transient presets; values are starting points, not field-verified)")
+    table.add_column("Code")
+    table.add_column("Carrier")
+    table.add_column("Type")
+    table.add_column("ASNs")
+    table.add_column("Engine order")
+    for profile in profiles:
+        table.add_row(
+            profile["code"],
+            profile["display_name"],
+            profile["access_type"],
+            ", ".join(profile["asn_hints"]),
+            " → ".join(profile["engine_order"]),
+        )
+    console.print(table)
+    console.print("[muted]Apply one transiently: blackout connect --profile <code> — saved settings are never rewritten.[/muted]")
+
+
+@isp_app.command("show")
+def isp_show(
+    code: str = typer.Argument(..., help="Profile code (e.g. ir-mci)"),
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    ctx: typer.Context = None,
+):
+    """Show one ISP sub-profile in detail (read-only; applies nothing)."""
+    options = _output_options(ctx)
+    from . import isp_profiles
+
+    profile = isp_profiles.get_isp_profile(_option_value(code, ""))
+    if profile is None:
+        valid = ", ".join(isp_profiles.isp_profile_codes())
+        _print_cli_error("invalid_input", f"Unknown ISP profile '{code}'. Valid profiles: {valid}", options=options, exit_code=2)
+        return
+    payload = profile.to_dict()
+    if json_flag or options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    from rich.panel import Panel
+
+    overrides = payload["overrides"]
+    body = (
+        f"[bold]Carrier:[/bold] {profile.display_name} ({profile.carrier}, {profile.access_type})\n"
+        f"[bold]Country:[/bold] {profile.country_code}\n"
+        f"[bold]ASN hints:[/bold] {', '.join(profile.asn_hints)}\n"
+        f"[bold]Engine order:[/bold] {' → '.join(profile.engine_order)}\n"
+        f"[bold]Security mode:[/bold] {overrides.get('security_mode')}\n"
+        f"[bold]Fake SNI:[/bold] {overrides.get('sni_fake_sni')}\n"
+        f"[bold]TLS fragment:[/bold] {overrides.get('xray_fragment') or 'disabled'}\n"
+        f"[bold]TLS fingerprint:[/bold] {overrides.get('xray_fingerprint')}\n\n"
+        f"[muted]{profile.notes}[/muted]\n"
+        f"[muted]Apply transiently: blackout connect --profile {profile.code}[/muted]"
+    )
+    console.print(Panel(body, title=f"ISP Profile · {profile.code}", border_style="panel.border"))
 
 
 @app.command("snapshot")

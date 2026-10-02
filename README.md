@@ -101,6 +101,7 @@ Blackout Kit 1.1.1 currently includes:
 - **Zero-flag launcher flow** that always opens a keyboard-navigable terminal chooser (Terminal CLI / Windows App); the GUI opens only when explicitly selected
 - **Desktop GUI** built with `CustomTkinter`
 - **MCP stdio server** for AI clients with a constrained, documented tool surface
+- **Iranian ISP sub-profiles** — `blackout isp list`, transient `--profile ir-mci|ir-irancell|...` carrier presets, and a one-connection `--sni-spoof <domain>` flag; all ride the temporary override mechanism and never rewrite saved settings
 - **Operator observability layer** — canonical `blackout snapshot`, deterministic `blackout operator recommend` with safety classes, sanitized `blackout support-bundle`, local event journal, and an opt-in loopback SSE event stream. Deterministic core logic, not an embedded AI model; external AI systems consume it via MCP
 - **Route recommendation dashboard** based on local readiness, platform support, saved protocols, settings, country profile, and saved health history
 - **Local readiness checks** that do not contact remote hosts or mutate state

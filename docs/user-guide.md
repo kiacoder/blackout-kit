@@ -796,6 +796,48 @@ The old Windows Firewall kill-switch design is intentionally not supported. Blac
 
 ---
 
+## Iranian ISP sub-profiles and SNI spoofing
+
+### Inspect carrier presets
+
+```bash
+blackout isp list
+blackout isp show ir-mci
+```
+
+Profiles exist for MCI, Irancell, Rightel, TCI (fixed), and Shatel (fixed).
+Each carries ASN hints (for detection), a preferred engine order, and
+baseline SNI/fragment values. Values are starting points — they are not
+field-verified per carrier, and no profile guarantees bypass success.
+
+### Apply one transiently
+
+```bash
+blackout connect --profile ir-mci
+blackout start sni --profile ir-irancell -d
+```
+
+Like `--iran`/`--russia`, `--profile` is a temporary override: saved
+settings are never rewritten, even in background-daemon mode. It cannot be
+combined with `--iran` or `--russia` because it already implies the Iran
+profile.
+
+### One-connection SNI spoofing
+
+```bash
+blackout connect sni --sni-spoof www.example.com
+blackout start sni --profile ir-mci --sni-spoof www.example.com -d
+```
+
+`--sni-spoof` takes a bare hostname (no scheme, path, or credentials) and
+applies it for that connection only — your saved `sni_fake_sni` is
+untouched. An explicit spoof with no engine name resolves straight to the
+SNI path, and the explicit spoof wins over a profile's baseline SNI. On
+engines that do not read the fake-SNI setting, Blackout tells you instead
+of ignoring it silently.
+
+---
+
 ## Operator: snapshots, recommendations, events, support bundles
 
 The Operator layer gives you (and AI tools you connect through MCP) one honest

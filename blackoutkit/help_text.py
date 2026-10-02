@@ -706,6 +706,41 @@ The preset applies temporary local overrides for one launch only:
 success. Effectiveness depends on the network, server IP, and current filtering.[/dim]
 """,
 
+"isp": """
+[bold cyan]Iranian ISP sub-profiles — transient per-carrier presets[/bold cyan]
+
+National filtering applies different DPI pressure per carrier. ISP
+sub-profiles specialize the general Iran profile per carrier and apply as
+TEMPORARY overrides — your saved settings are never rewritten.
+
+[bold]Inspect the catalog (read-only)[/bold]
+  blackout isp list
+  blackout isp show ir-irancell
+  blackout isp list --json
+
+[bold]Apply one transiently[/bold]
+  blackout connect --profile ir-mci
+  blackout start sni --profile ir-irancell -d
+
+[bold]Pair with an explicit fake SNI[/bold]
+  blackout connect sni --sni-spoof www.example.com
+  blackout start sni --profile ir-mci --sni-spoof www.example.com -d
+
+--sni-spoof accepts bare hostnames only (no scheme, path, or credentials)
+and wins over the profile's baseline SNI for that one connection. When no
+engine is named, an explicit spoof resolves to the SNI path directly.
+
+Combined with the --profile flag, presets stay transient: nothing is
+written to settings.json, even in background-daemon mode. --profile cannot
+be combined with --iran or --russia because it already implies the Iran
+profile; --sni-spoof composes freely with both.
+
+[dim]Accuracy boundary: per-carrier values are starting points derived from
+the general Iran profile — they are not field-verified per carrier, and no
+profile guarantees bypass success on any network. Effectiveness depends on
+the network, server IP, and current filtering.[/dim]
+""",
+
 "operator": """
 [bold cyan]Blackout Operator — structured observability for humans and AI clients[/bold cyan]
 
@@ -760,6 +795,7 @@ _CATEGORIES: dict[str, list[str]] = {
     "Engines": ["engines", "vpn", "warp", "neighbor"],
     "Security": ["security", "killswitch"],
     "Operator": ["operator"],
+    "Regional": ["isp", "countries", "russia"],
     "Maintenance": ["tools", "cert", "doctor", "update", "preflight", "logs"],
     "Help": ["troubleshoot", "test"],
 }
@@ -802,6 +838,7 @@ _SUMMARIES: dict[str, str] = {
     "bins": "Manage runtime assets and downloadable binaries",
     "cert": "Check normal TLS certs and policy impact",
     "operator": "Structured snapshot, recommendations, events, and support bundles for AI/human operators",
+    "isp": "Iranian carrier sub-profiles (MCI, Irancell, TCI, ...) applied transiently",
 }
 
 
