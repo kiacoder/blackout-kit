@@ -822,6 +822,30 @@ settings are never rewritten, even in background-daemon mode. It cannot be
 combined with `--iran` or `--russia` because it already implies the Iran
 profile.
 
+### Interactive carrier picker
+
+Running `blackout connect` with no arguments in an interactive terminal now
+asks which carrier you are on (arrows/number keys, Enter, Esc to skip).
+Selecting one applies its transient profile and launches the recommended
+engine; **Auto-Detect via ASN** matches your current network against the
+registry and tells you what it found. The picker never appears for
+background/GUI connects or when you already passed `--profile`, `--iran`,
+`--russia`, `--sni-spoof`, or an explicit engine.
+
+### Pair a clean IP with tested fragmentation
+
+```bash
+blackout tune fragment                 # cache → quick scan → probe candidates
+blackout tune fragment --ip 104.16.x.x --apply
+blackout tune fragment --json          # machine-readable report
+```
+
+For the target IP, `tune fragment` launches a short-lived Xray per
+fragmentation candidate and completes a real TLS handshake with your fake
+SNI — so the winning `xray_fragment` is measured, not guessed. `--apply`
+writes `sni_connect_ip` + `xray_fragment` for the normal connect flow.
+Results are a snapshot from your network at that moment, not a guarantee.
+
 ### One-connection SNI spoofing
 
 ```bash

@@ -50,8 +50,9 @@ considered only when a user-verified need appears. Existing capabilities stay.
 | Transient `--profile` flag | `blackout connect/start --profile ir-mci` applies carrier overrides without rewriting settings | **Done** |
 | `blackout isp list/show` | Read-only catalog with JSON output | **Done** |
 | `--sni-spoof <domain>` | One-connection fake-SNI override on connect/start | **Done** |
+| Interactive carrier picker | Bare `blackout connect` offers Irancell/MCI/RighTel/TCI/Shatel/Auto-Detect selection, applies the profile transiently, launches the recommended engine | **Done** (full keyboard navigation, raw-key fallback) |
+| Fragment tuning (`blackout tune fragment`) | Pairs a clean IP (explicit/cache/scan) with tested `xray_fragment` candidates via real TLS handshakes through short-lived Xray; `--apply` binds the winner into the connect pipeline | **Done** (snapshot measurement; per-carrier field sweeps still pending) |
 | Per-carrier field tuning | Validate fragment/SNI values per carrier on live networks, then diverge the baselines | **Pending — requires on-network testing** |
-| ISP-picker first-run step | Onboarding question ("select your carrier") that pre-selects a profile | **Planned** |
 
 ### Operator Foundation (1.7.x) — shipped
 

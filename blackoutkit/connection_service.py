@@ -9,7 +9,7 @@ import sys
 import time
 from collections.abc import Callable
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 _WINDOWS_ELEVATED_ENGINES = frozenset({"gdpi", "warp", "tun"})
@@ -142,6 +142,8 @@ class ConnectionService:
         sleep: Callable[[float], Any] | None = None,
         monotonic: Callable[[], float] | None = None,
         platform: Callable[[], str] | None = None,
+        choose_isp: Callable[[], str | None] | None = None,
+        detect_isp: Callable[[], Any] | None = None,
     ) -> None:
         self.settings_load = settings_load or _load_settings
         self.settings_set = settings_set or _set_setting
@@ -180,6 +182,8 @@ class ConnectionService:
         self.sleep = sleep or time.sleep
         self.monotonic = monotonic or time.monotonic
         self.platform = platform or (lambda: sys.platform)
+        self.choose_isp = choose_isp
+        self.detect_isp = detect_isp or _detect_isp_default
 
     def connect(self, request: ConnectionRequest) -> ConnectionResult:
         request = _normalized_request(request, "connect")
@@ -188,6 +192,33 @@ class ConnectionService:
         invalid = _validate_request_extras(request)
         if invalid:
             return self._failure(request, invalid[0], invalid[1], status="invalid")
+
+        # Interactive carrier picker: offered when nothing more specific was
+        # requested, so "blackout connect" alone can go carrier-aware without
+        # any flags. A selection (or auto-detection) applies transiently.
+        if (
+            self.choose_isp is not None
+            and (request.pos_engine or request.engine) in (None, "auto")
+            and not request.sni_spoof
+            and not request.isp_profile
+            and not request.iran
+            and not request.russia
+            and not request.background
+            and self.is_interactive()
+        ):
+            selection = self.choose_isp()
+            if selection == "auto":
+                detected = self.detect_isp()
+                if detected is not None:
+                    request = replace(request, isp_profile=detected.code)
+                    self._event("warning", message=f"Detected carrier profile: {detected.display_name}")
+                else:
+                    self._event("warning", message="Carrier auto-detection could not match this network; continuing without an ISP profile.")
+            elif selection:
+                from . import isp_profiles
+
+                if isp_profiles.get_isp_profile(selection) is not None:
+                    request = replace(request, isp_profile=selection)
 
         requested = request.pos_engine or request.engine
         preset_name = _preset_name(request)
@@ -218,6 +249,7 @@ class ConnectionService:
             if (
                 requested is None
                 and not request.sni_spoof
+                and not request.isp_profile
                 and self.is_interactive()
                 and not request.background
             ):
@@ -419,11 +451,14 @@ class ConnectionService:
     ) -> ConnectionResult:
         try:
             pid = _invoke_daemon_start(self.daemon_start, engine_name, env_overrides)
-        except RuntimeError as exc:
+        except Exception as exc:
+            # Broad on purpose: any bootstrap failure must surface as a
+            # transaction failure while temporary_env_overrides restores the
+            # process environment — never a raw crash mid-connection.
             return self._failure(
                 request,
                 "daemon_start_failed",
-                str(exc),
+                str(exc) or type(exc).__name__,
                 engine=engine_name,
                 preset=preset,
                 profile=profile,
@@ -506,7 +541,22 @@ class ConnectionService:
                     )
                 kill_switch_enabled = True
 
-            engines = _invoke_start_stack(self.start_engine_stack, engine_name, self.emit_output)
+            try:
+                engines = _invoke_start_stack(self.start_engine_stack, engine_name, self.emit_output)
+            except Exception as exc:
+                # Broad on purpose: bootstrap failures must surface as a
+                # transaction failure while temporary_env_overrides restores
+                # the process environment — never a raw crash mid-connection.
+                return self._failure(
+                    request,
+                    "engine_start_failed",
+                    str(exc) or type(exc).__name__,
+                    engine=engine_name,
+                    preset=preset,
+                    profile=profile,
+                    readiness=readiness,
+                    warnings=warnings,
+                )
             if not engines:
                 return self._failure(
                     request,
@@ -884,6 +934,16 @@ def _preset_name(request: ConnectionRequest) -> str | None:
     return "iran" if request.iran else "russia" if request.russia else None
 
 
+def _detect_isp_default() -> Any:
+    """Detect the carrier profile from the current network (best-effort)."""
+    try:
+        from . import isp_profiles, network_switcher
+
+        return isp_profiles.detect_isp_profile(network_switcher.get_isp_info())
+    except Exception:
+        return None
+
+
 def _validate_request_extras(request: ConnectionRequest) -> tuple[str, str] | None:
     """Validate --sni-spoof / --profile request extras before any work.
 
@@ -903,7 +963,9 @@ def _validate_request_extras(request: ConnectionRequest) -> tuple[str, str] | No
 
         if isp_profiles.get_isp_profile(request.isp_profile) is None:
             valid = ", ".join(isp_profiles.isp_profile_codes())
-            return ("invalid_input", f"Unknown ISP profile '{request.isp_profile}'. Valid profiles: {valid}")
+            suggestions = isp_profiles.suggest_isp_profiles(request.isp_profile)
+            hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+            return ("invalid_input", f"Unknown ISP profile '{request.isp_profile}'.{hint} Valid profiles: {valid}")
     return None
 
 
@@ -925,6 +987,18 @@ def validate_sni_spoof_domain(domain: str | None) -> str | None:
         return "Provide a bare hostname without a scheme, e.g. --sni-spoof www.example.com"
     if any(ch.isspace() for ch in value) or "/" in value or "@" in value:
         return "Provide a bare hostname without paths, spaces, or credentials"
+    if ":" in value:
+        if value.count(":") == 1 and value.split(":", 1)[1].isdigit():
+            return "Omit the port — use only the hostname, e.g. --sni-spoof www.example.com"
+        return "Provide a bare hostname (raw IPv6 addresses are not valid SNI values)"
+    try:
+        import ipaddress
+
+        ipaddress.ip_address(value)
+    except ValueError:
+        pass
+    else:
+        return "Provide a domain name, not a raw IP address — the SNI field must carry a hostname"
     if len(value) > 253:
         return "Domain exceeds the 253-character DNS limit"
     labels = value.split(".")

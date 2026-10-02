@@ -1404,6 +1404,40 @@ def doctor(
     cmd_doctor(args)
 
 
+def _ask_isp_profile() -> str | None:
+    """Keyboard carrier picker for bare `blackout connect`.
+
+    Number keys jump (1–6), arrows move, Enter selects, Esc skips. Returns a
+    profile code, "auto" for ASN detection, or None to continue without a
+    carrier preset. Non-interactive sessions get None automatically.
+    """
+    from . import isp_profiles
+    from .terminal_menu import MenuItem, run_menu
+
+    profiles = isp_profiles.list_isp_profiles()
+    items = [
+        MenuItem(key=str(index + 1), label=profile.display_name,
+                 description=f"{profile.code} · {profile.access_type} · transient preset")
+        for index, profile in enumerate(profiles)
+    ]
+    items.append(MenuItem(
+        key=str(len(profiles) + 1),
+        label="Auto-Detect via ASN",
+        description="Detect the carrier from the current network (ISP lookup)",
+    ))
+    selection = run_menu(
+        "Select your ISP — applies a transient carrier profile",
+        items,
+        guide="↑/↓ move · 1-6 jump · Enter select · Esc skip",
+    )
+    if not selection:
+        return None
+    if selection == str(len(profiles) + 1):
+        return "auto"
+    index = int(selection) - 1
+    return profiles[index].code if 0 <= index < len(profiles) else None
+
+
 def _connection_service(options: OutputOptions):
     from . import cli, daemon, proxy_manager, readiness, security
     from . import settings as cfg
@@ -1444,6 +1478,7 @@ def _connection_service(options: OutputOptions):
         kill_switch_clear_endpoint=security.clear_linux_kill_switch_endpoint,
         emit=emit,
         emit_output=not _is_quiet(options),
+        choose_isp=_ask_isp_profile,
     )
 
 
@@ -4535,6 +4570,89 @@ app.add_typer(events_app, name="events")
 isp_app = typer.Typer(help="Iranian ISP sub-profiles (transient per-carrier presets)", no_args_is_help=True)
 app.add_typer(isp_app, name="isp")
 
+tune_app = typer.Typer(help="Pair clean Cloudflare IPs with tested TLS fragmentation", no_args_is_help=True)
+app.add_typer(tune_app, name="tune")
+
+
+@tune_app.command("fragment")
+def tune_fragment(
+    ip: str = typer.Option(None, "--ip", help="Target a specific clean IP (default: cached best, else a quick scan)"),
+    sni: str = typer.Option(None, "--sni", help="Fake SNI to probe with (default: saved sni_fake_sni)"),
+    count: int = typer.Option(20, "--count", min=1, max=500, help="IPs to try when scanning for a target"),
+    apply: bool = typer.Option(False, "--apply", help="Write the winning IP + fragment into settings"),
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    ctx: typer.Context = None,
+):
+    """Test TLS record fragmentation candidates against a clean IP and bind the winner.
+
+    Probes complete a real TLS handshake through a short-lived Xray per
+    candidate, from this network, right now — a snapshot measurement, not a
+    guarantee of bypass success. With --apply the winning pair is written to
+    sni_connect_ip + xray_fragment; without it, only the report is printed.
+    """
+    options = _output_options(ctx)
+    from . import fragment_tuner as ft
+
+    try:
+        target = ft.resolve_target_ip(_option_value(ip), count=int(_option_value(count, 20)))
+    except Exception as exc:
+        _print_cli_error("scan_failed", f"Could not resolve a target IP: {exc}", options=options, exit_code=1)
+        return
+    if not target:
+        _print_cli_error("no_clean_ip", "No reachable Cloudflare IP found; run: blackout scan", options=options, exit_code=1)
+        return
+
+    try:
+        result = ft.tune(target, fake_sni=_option_value(sni))
+    except FileNotFoundError as exc:
+        _print_cli_error("runtime_missing", str(exc), options=options, exit_code=1)
+        return
+
+    winner = result.winner
+    payload = {
+        "target_ip": result.target_ip,
+        "fake_sni": result.fake_sni,
+        "winner": {"fragment": winner.fragment, "latency_ms": winner.latency_ms, "detail": winner.detail} if winner else None,
+        "applied": bool(apply and winner),
+        "outcomes": [
+            {"fragment": item.fragment or "(none)", "ok": item.ok, "latency_ms": item.latency_ms, "detail": item.detail}
+            for item in result.outcomes
+        ],
+        "note": "Snapshot measurement from this network at this moment; not a bypass guarantee.",
+    }
+    if apply and winner:
+        ft.apply_winner(result.target_ip, winner.fragment)
+
+    if json_flag or options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    from rich.table import Table
+
+    table = Table(show_header=True, header_style="bold cyan", padding=(0, 2),
+                  title=f"Fragment tuning · {result.target_ip} · SNI {result.fake_sni}")
+    table.add_column("Candidate")
+    table.add_column("Result")
+    table.add_column("Latency")
+    table.add_column("Detail")
+    for item in result.outcomes:
+        style = "green" if item.ok else "red"
+        mark = "✓" if item.ok else "✗"
+        table.add_row(item.fragment or "(none)", f"[{style}]{mark}[/{style}]",
+                      f"{item.latency_ms:.0f} ms" if item.latency_ms else "—", item.detail)
+    console.print(table)
+    if winner:
+        if apply:
+            console.print(f"[success]✓ Applied[/success] sni_connect_ip={result.target_ip} xray_fragment={winner.fragment or '(none)'}")
+        else:
+            console.print(
+                f"[muted]Preview only — apply with:[/muted] blackout tune fragment --ip {result.target_ip} "
+                f"--sni {result.fake_sni} --apply"
+            )
+    else:
+        console.print("[warning]No candidate completed a handshake against this IP.[/warning]")
+
 
 @isp_app.command("list")
 def isp_list(
@@ -4586,7 +4704,9 @@ def isp_show(
     profile = isp_profiles.get_isp_profile(_option_value(code, ""))
     if profile is None:
         valid = ", ".join(isp_profiles.isp_profile_codes())
-        _print_cli_error("invalid_input", f"Unknown ISP profile '{code}'. Valid profiles: {valid}", options=options, exit_code=2)
+        suggestions = isp_profiles.suggest_isp_profiles(str(_option_value(code, "")))
+        hint = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+        _print_cli_error("invalid_input", f"Unknown ISP profile '{code}'.{hint} Valid profiles: {valid}", options=options, exit_code=2)
         return
     payload = profile.to_dict()
     if json_flag or options.json_output:

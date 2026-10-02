@@ -177,6 +177,34 @@ def isp_profile_codes() -> tuple[str, ...]:
     return tuple(_PROFILES_BY_CODE)
 
 
+def suggest_isp_profiles(code: str | None, *, limit: int = 3) -> tuple[str, ...]:
+    """Best-guess profile codes for an unknown input ("did you mean ...").
+
+    Matches on profile code similarity and on carrier-name tokens, so both
+    `--profile ir-mcx` (typo) and `--profile mci` (bare carrier name) land on
+    `ir-mci`. Best matches first; empty when nothing is close.
+    """
+    if not code or not str(code).strip():
+        return ()
+    query = str(code).strip().lower()
+    import difflib
+
+    scored: dict[str, float] = {}
+    for profile in _IRAN_PROFILES:
+        tokens = {profile.code, profile.carrier.lower(), profile.display_name.lower()}
+        best = max(
+            difflib.SequenceMatcher(None, query, token).ratio()
+            for token in tokens
+        )
+        # A query contained in a code/carrier ("mci" inside "ir-mci") is a
+        # strong signal even when edit distance is high.
+        if query in profile.code or query == profile.carrier.lower():
+            best = max(best, 0.9)
+        scored[profile.code] = best
+    ranked = sorted(scored.items(), key=lambda item: item[1], reverse=True)
+    return tuple(code for code, score in ranked[: max(1, limit)] if score >= 0.6)
+
+
 def detect_isp_profile(isp_info: Any) -> IspProfile | None:
     """Match an IspInfo-like object against profile ASN hints.
 
@@ -203,4 +231,5 @@ __all__ = [
     "get_isp_profile",
     "isp_profile_codes",
     "list_isp_profiles",
+    "suggest_isp_profiles",
 ]
