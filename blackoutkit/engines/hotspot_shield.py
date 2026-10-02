@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import random
+import secrets
 import subprocess
 import time
 from pathlib import Path
@@ -101,7 +102,7 @@ class HotspotShieldEngine(Engine):
     def select_random_server(self) -> str:
         """Select a random server (for reference; HS app manages actual server)."""
         all_servers = self.get_all_servers()
-        self.current_server = random.choice(all_servers)
+        self.current_server = secrets.choice(all_servers)
         _log.info(f"Selected server reference: {self.current_server}")
         return self.current_server
 

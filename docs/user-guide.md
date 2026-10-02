@@ -796,6 +796,68 @@ The old Windows Firewall kill-switch design is intentionally not supported. Blac
 
 ---
 
+## Operator: snapshots, recommendations, events, support bundles
+
+The Operator layer gives you (and AI tools you connect through MCP) one honest
+structured view of Blackout Kit. It is deterministic rule code, not an AI model,
+and it only ever describes **local** state.
+
+### Snapshot
+
+```bash
+blackout snapshot
+blackout snapshot --json
+```
+
+Shows daemon state, system proxy, vault health, locally ready engines, the
+current local recommendation, recent events, and recovery hints. The JSON
+schema is stable and documented; every output states that it does not test
+upstream reachability.
+
+### Deterministic recommendations
+
+```bash
+blackout operator status          # add --watch for a live view
+blackout operator recommend
+blackout operator actions
+```
+
+Recommendations map local evidence (unreadable vault, failed engine, stale
+Blackout state) to actions with a safety class: READ_ONLY, SAFE_REVERSIBLE,
+PRIVILEGED_REVERSIBLE, DISRUPTIVE, DESTRUCTIVE. Anything disruptive requires
+your explicit confirmation — Blackout Kit never applies broad repair just
+because an AI client asked.
+
+### Local events
+
+```bash
+blackout events recent
+blackout events recent --type engine. --json
+blackout events serve             # OPTIONAL SSE stream on 127.0.0.1:8787
+```
+
+Events are sanitized before anything sees them: secret-bearing fields and
+proxy/VPN/SSH URIs are removed at publish time. `events serve` is off unless
+you run it, binds to loopback only, and can only be observed — it has no
+control surface. External apps (dashboards, avatar hosts) use it to react to
+events such as `engine.starting`, `engine.failed`, or `connection.recovered`.
+
+### Support bundles
+
+```bash
+blackout support-bundle --preview    # inspect exactly what would be included
+blackout support-bundle              # write JSON to your current directory
+blackout support-bundle --output path/to/file.json
+```
+
+Bundles collect version, platform, runtime readiness, scrubbed daemon errors,
+a snapshot, recovery history, and masked settings. Passwords, tokens, private
+keys, PSKs, proxy/VPN/SSH URIs, vault contents, and environment variables are
+removed before writing — values are dropped, not masked. The bundle is written
+only where you save it and is never uploaded by Blackout Kit.
+
+---
+
 ## GUI and MCP
 
 ## Zero-argument terminal launcher

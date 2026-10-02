@@ -216,6 +216,17 @@ Do not change the default casually, and do not write docs that imply parity befo
 
 If a doc claim outgrows the code, fix the doc or the code before shipping.
 
+### 6. Operator observability stays sanitized and local
+
+The Operator layer (`blackoutkit/events.py`, `snapshot.py`, `operator.py`,
+`support_bundle.py`, `event_bridge.py`) publishes structured state for humans
+and external AI consumers. When touching it:
+
+- never include secrets, proxy/VPN/SSH URIs, or vault contents in events, snapshots, recommendations, or bundles — values are removed, not masked
+- keep the event bridge loopback-only and opt-in; it must stay observe-only (no control surface)
+- keep recommendations deterministic and never auto-execute DISRUPTIVE/DESTRUCTIVE actions
+- preserve the explicit "local readiness is not remote success" scope flags in every snapshot
+
 ---
 
 ## Tests and verification

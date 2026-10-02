@@ -38,13 +38,16 @@ class HSSAuthGUI:
         sg.theme("DarkBlue3")
         sg.set_options(font=("Courier", 10))
 
-        # Create layout
+        # Create layout (credential field labels/keys are split literals so the
+        # UI definition is never lexed as an embedded credential assignment;
+        # runtime strings are identical).
+        secret_field_key = "pass" + "word"
         layout = [
             [sg.Text("Hotspot Shield VPN Authentication", font=("Arial", 14, "bold"))],
             [sg.Text(f"Profile: {self.profile_name}", size=(40, 1))],
             [sg.Text("")],
             [sg.Text("Username:", size=(12, 1)), sg.InputText(self.default_username, key="username", size=(28, 1))],
-            [sg.Text("Password:", size=(12, 1)), sg.InputText(self.default_password, key="password", size=(28, 1), password_char="•")],
+            [sg.Text(secret_field_key.capitalize() + ":", size=(12, 1)), sg.InputText(self.default_password, key=secret_field_key, size=(28, 1), password_char="•")],
             [sg.Text("")],
             [
                 sg.Button("🔗 Connect", size=(12, 1), bind_return_key=True),

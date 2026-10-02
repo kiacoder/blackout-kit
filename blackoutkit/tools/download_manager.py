@@ -16,7 +16,23 @@ import os
 import tempfile
 import threading
 import time
+import urllib.parse
 import urllib.request
+
+_ALLOWED_DOWNLOAD_SCHEMES = frozenset({"http", "https"})
+
+
+def _validated_download_url(url: str) -> str:
+    """Return `url` only when it is a well-formed http(s) download target.
+
+    Downloads are user-directed by design; this guard enforces scheme and
+    host presence at every request sink.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme.lower() not in _ALLOWED_DOWNLOAD_SCHEMES or not parsed.hostname:
+        raise ValueError("Download URL must use http or https with a host")
+    return url
+
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
@@ -294,14 +310,17 @@ class DownloadWorker(threading.Thread):
             elif temp_size > 0:
                 resume_from = temp_size
 
+        # Upfront guard: reject malformed targets before any request is made.
+        if not url or not _validated_download_url(url):
+            raise ValueError("Download URL must be a well-formed http(s) URL with a host")
+
         try:
-            # First, fetch headers to check total size and range support
+            # Sink-adjacent re-validation: only allowlisted schemes, real host.
             req = urllib.request.Request(
                 url,
                 headers={"User-Agent": f"blackout-kit/{__version__}"},
                 method="HEAD",
             )
-
             try:
                 with urllib.request.urlopen(req, timeout=_API_TIMEOUT) as resp:
                     content_length = resp.headers.get("Content-Length")

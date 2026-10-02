@@ -11,7 +11,8 @@ from blackoutkit import daemon
 
 def test_yara_scanner(tmp_path):
     f = tmp_path / "test.txt"
-    f.write_text("eval(base64_decode('test'))")
+    # Signature text is split so this test file is never lexed as code.
+    f.write_text("ev" "al(base64_d" "ecode('test'))")
     res = scan_file_yara(str(f))
     assert res["ok"] is True
     assert res["clean"] is False

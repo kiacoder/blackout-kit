@@ -409,11 +409,27 @@ def _write_daemon_state(
         logging.warning("Failed to write daemon state file: %s", e)
 
 
+def _publish_event(payload: dict) -> None:
+    """Emit one structured event from the daemon; never raises."""
+    try:
+        from . import events
+
+        events.publish(payload)
+    except Exception:
+        pass
+
+
 def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     """
     Internal: runs inside the background process.
     Starts the requested engine(s) and monitors them.
     """
+    try:
+        from . import events
+
+        events.enable_default_persistence()
+    except Exception:
+        pass
     env_overrides = {}
     if env_overrides_json:
         try:
@@ -429,7 +445,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
     cfg_lock = _threading.Lock()
     devnull = None
     try:
-        devnull = open(os.devnull, "w")
+        devnull = os.fdopen(os.open(os.devnull, os.O_WRONLY), "w")
         sys.stdout = devnull
         sys.stderr = devnull
     except Exception as e:
@@ -707,6 +723,14 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 restart_count,
                 max_restarts,
             )
+            _publish_event({
+                "type": "daemon.reconnect_scheduled",
+                "engine": active_engine_name,
+                "source": "daemon",
+                "severity": "warning",
+                "summary": failure_reason,
+                "details": {"attempt": restart_count, "max_restarts": max_restarts},
+            })
             active = try_start_engines(active_engine_name)
             if active:
                 os.environ.pop("BLACKOUT_CONFIG_OFFSET", None)
@@ -719,6 +743,13 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                     started=daemon_started,
                 )
                 log.info("Engine restarted successfully (attempt %d/%d).", restart_count, max_restarts)
+                _publish_event({
+                    "type": "connection.recovered",
+                    "engine": active_engine_name,
+                    "source": "daemon",
+                    "summary": f"Engine restarted on attempt {restart_count}/{max_restarts}",
+                    "details": {"attempt": restart_count},
+                })
                 return True
 
             if restart_count >= max_restarts:
@@ -760,6 +791,14 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
             started=daemon_started,
         )
         log.error("Reconnect attempts exhausted after %d failure(s).", restart_count)
+        _publish_event({
+            "type": "connection.lost",
+            "engine": active_engine_name,
+            "source": "daemon",
+            "severity": "error",
+            "summary": failure_reason,
+            "details": {"attempts": restart_count},
+        })
         return False
 
     try:

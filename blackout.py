@@ -104,9 +104,9 @@ if __name__ == "__main__":
     import os
     machine_output = _machine_output_requested()
     if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w")
+        sys.stdout = os.fdopen(os.open(os.devnull, os.O_WRONLY), "w")
     if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w")
+        sys.stderr = os.fdopen(os.open(os.devnull, os.O_WRONLY), "w")
 
     # 1. Compatibility check — print warnings but do not abort
     compat_warnings = _check_compat()

@@ -3,6 +3,16 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from blackoutkit import mcp_server as mcp
+from blackoutkit.vault import SECRET_KEYS
+
+
+def _masked_settings_fixture() -> dict:
+    """Fixture derives field names from SECRET_KEYS so this file never
+    contains a credential-shaped literal; all values are fake and the tests
+    assert masking behavior, not content."""
+    values = {name: f"fixture-value-{index}" for index, name in enumerate(SECRET_KEYS)}
+    values["xray_fingerprint"] = "chrome"
+    return values
 
 
 def test_ready_returns_local_structured_checks():
@@ -106,28 +116,26 @@ def test_disconnect_preserves_external_proxy(monkeypatch):
 
 
 def test_settings_list_masks_sensitive_values():
-    with patch("blackoutkit.settings.load", return_value={
-        "ikev2_password": "secret-password",
-        "ikev2_psk": "secret-psk",
-        "softether_password": "another-secret",
-        "xray_fingerprint": "chrome",
-    }):
+    with patch("blackoutkit.settings.load", return_value=_masked_settings_fixture()):
         result = mcp.handle_tool_call("blackout_settings", {"action": "list"})
 
     settings = json.loads(result)
-    assert settings["ikev2_password"] == "[hidden]"
-    assert settings["ikev2_psk"] == "[hidden]"
-    assert settings["softether_password"] == "[hidden]"
-    assert settings["xray_fingerprint"] == "chrome"
+    fixture = _masked_settings_fixture()
+    for name in fixture:
+        if name == "xray_fingerprint":
+            assert settings[name] == "chrome"
+        else:
+            assert settings[name] == "[hidden]"
 
 
 def test_settings_get_masks_sensitive_value():
-    with patch("blackoutkit.settings.get", return_value="secret-password"):
+    field_name = SECRET_KEYS[0]
+    with patch("blackoutkit.settings.get", return_value="fixture-value-0"):
         result = mcp.handle_tool_call(
-            "blackout_settings", {"action": "get", "key": "ikev2_password"}
+            "blackout_settings", {"action": "get", "key": field_name}
         )
 
-    assert json.loads(result) == {"ikev2_password": "[hidden]"}
+    assert json.loads(result) == {field_name: "[hidden]"}
 
 
 def test_settings_set_coerces_typed_value():

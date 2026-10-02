@@ -7,6 +7,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ## [Unreleased]
 
 ### Added
+- **Blackout Operator foundation (local observability for AI agents and humans):**
+  - `blackout snapshot [--json]` — one canonical structured snapshot of local state (daemon, system proxy, vault health, per-engine readiness summary, stability, recent events, recovery hints) with explicit local-vs-remote scope flags.
+  - `blackout operator status [--watch]`, `blackout operator recommend`, `blackout operator actions` — deterministic (non-AI) recommendations derived from local evidence, each with a safety class (READ_ONLY, SAFE_REVERSIBLE, PRIVILEGED_REVERSIBLE, DISRUPTIVE, DESTRUCTIVE) and confirmation requirements; nothing is ever auto-executed.
+  - `blackoutkit/events.py` — typed local event bus: sanitized at publish (secrets and proxy/VPN/SSH URIs removed), thread-safe, observer-failure-isolated, with a bounded local JSONL journal (`~/.blackout-kit/events.jsonl`).
+  - `blackout events recent` and `blackout events serve` — inspect the journal or stream sanitized events over SSE; the bridge is opt-in, binds to 127.0.0.1 only, and has no control surface.
+  - `blackout support-bundle [--preview] [--output]` — sanitized bug-report bundles; credentials, tokens, private keys, PSKs, and proxy/VPN/SSH config URIs are removed (not masked), vault contents are never read, and nothing is uploaded.
+  - MCP: new read-only tools `blackout_snapshot`, `blackout_recommend`, `blackout_recent_events`, `blackout_support_bundle_preview`; `hotspot-shield` added to the MCP engine surface.
+  - Structured events now flow from connection start/stop/failure, daemon reconnect/recovery, and doctor runs.
+- Added `blackout help operator` topic documenting the whole surface.
+
+### Fixed
+- **Vault unreadable after Windows updates that removed `wmic`** (recent Windows 11 builds): the machine-bound vault key silently fell back to the hostname, making saved configs unreadable and blocking all engine starts. The identity chain now reads the same SMBIOS UUID through PowerShell CIM, and decryption tries documented historical identities (hostname fallback and old constant fallbacks, decrypt-only) so vaults written under any earlier behavior open again. Vault-related test coverage added.
+- `blackout start`/`blackout connect` no longer exit silently when local readiness blocks the engine; they now print which checks failed and how to inspect them.
+- `blackout doctor` no longer reports "Config Encryption OK" for a vault it cannot decrypt; vault health is now part of the check.
+
+### Added (docs)
+- SECURITY.md: Linux-only kill-switch qualifier, network-contact disclosure (no silent telemetry), local data inventory, Operator/support-bundle redaction policy. README/ROADMAP/user-guide/CONTRIBUTING aligned with the Operator layer and current engine catalog.
 - **Keyboard settings and config editors:** Bare `blackout settings` and `blackout config` now open Typer-backed keyboard workflows in interactive terminals. Settings are grouped and typed values are validated and saved through the existing APIs; config URIs can be added, safely replaced, removed, imported, exported, and protected without showing credentials in menu labels. Long lists use a keyboard-only bounded viewport; mouse scrolling and clicks do not select items.
 - **Keyboard-navigable terminal launcher:** Running `blackout` with no arguments now always opens a terminal chooser — **Terminal CLI**, **Windows App**, or **Exit** — fully navigable with all four arrow keys (Space/Enter/→ to select, ←/Esc to go back, Ctrl+C to quit) and a persistent on-screen control guide. New reusable `blackoutkit/terminal_menu.py` module backs this and the existing action/engine menus, replacing the old Windows-only, Up/Down-only `msvcrt` handling with cross-platform (Windows + POSIX) raw-key reading. Backing out of the Terminal CLI or closing the Windows App window now returns to the chooser instead of exiting the process.
 - **Wi-Fi MAC privacy controls:** New Windows-only `blackout tools mac status`, `randomize`, and `restore` commands for deliberate public-Wi-Fi privacy changes. The tool targets only an active physical Wi-Fi adapter, requires confirmation (or explicit non-interactive `--force`), accepts only locally administered unicast addresses, restarts only the selected adapter, preserves its first pre-Blackout `NetworkAddress` override, and restores that exact prior setting or hardware-default behavior. It never rotates automatically or changes firewall, DNS, proxy, routes, VPNs, or unrelated adapters.

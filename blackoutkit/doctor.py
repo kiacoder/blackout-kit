@@ -122,6 +122,7 @@ def _fix_process_stuck():
 def _fix_port_conflict():
     """Find free port and update configuration."""
     import random
+    import secrets
     # Dynamically fix port in settings
     s = cfg.load()
     ports_to_check = {
@@ -131,7 +132,7 @@ def _fix_port_conflict():
     }
 
     for key in ports_to_check:
-        new_port = random.randint(15000, 50000)
+        new_port = 15000 + secrets.randbelow(35001)
         cfg.set_value(key, new_port)
 
 
@@ -539,12 +540,25 @@ def check_internet() -> CheckResult:
     else:
         urls = ["http://cp.cloudflare.com/", "http://www.google.com/generate_204"]
     for url in urls:
+        probe_url = str(url)
+        if not probe_url or not _validated_probe_url(probe_url):
+            continue
         try:
-            urllib.request.urlopen(url, timeout=5)
+            urllib.request.urlopen(probe_url, timeout=5)
             return CheckResult("Direct internet", True, "Connected")
         except Exception:
             continue
     return CheckResult("Direct internet", False, "No connection detected")
+
+
+def _validated_probe_url(url: str) -> str:
+    """Return `url` only when it is a well-formed http(s) probe target."""
+    import urllib.parse
+
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("invalid connectivity probe URL")
+    return url
 
 
 def check_country_profile() -> CheckResult:
@@ -721,6 +735,19 @@ def check_binary_runnable() -> list[CheckResult]:
 def check_config_security() -> CheckResult:
     """Checks if the proxy configuration file is encrypted at rest (AES-256)."""
     from . import security as sec
+    from . import vault
+
+    # The machine-bound vault is the active config store; being encrypted at
+    # rest is not enough — it must also be decryptable on this machine.
+    vault_state = vault.vault_status()
+    if vault_state.get("active"):
+        if vault_state.get("healthy"):
+            return CheckResult("Config Encryption", True, "OK (AES-256 encrypted at rest)")
+        return CheckResult(
+            "Config Encryption", False,
+            f"Vault is present but unreadable: {vault_state.get('detail')}",
+        )
+
     if sec.configs_are_obfuscated():
         return CheckResult("Config Encryption", True, "OK (AES-256 encrypted at rest)")
     
@@ -992,9 +1019,9 @@ def check_ports_in_use() -> CheckResult:
     msg = ", ".join(f"{n} ({p}) by {proc}" for n, (p, proc) in in_use.items())
     
     def _fix_ports():
-        import random
+        import secrets
         for name in in_use:
-            new_port = random.randint(15000, 50000)
+            new_port = 15000 + secrets.randbelow(35001)
             if name == "SNI": cfg.set_value("sni_listen_port", new_port)
             elif name == "XRay SOCKS": cfg.set_value("xray_socks_port", new_port)
             elif name == "XRay HTTP": cfg.set_value("xray_http_port", new_port)
@@ -1115,6 +1142,7 @@ def run_local_checks(include_optional: bool = False) -> list[CheckResult]:
     all_results.extend(check_data_files())
     all_results.extend(check_python_deps())
     all_results.extend(check_bins_present())
+    _publish_doctor_events(all_results)
     return all_results
 
 
@@ -1177,7 +1205,40 @@ def run_all_checks(auto_fix: bool = False, include_optional: bool = False, show_
                     if show_progress:
                         console.print(f"  [error]✗[/error] {r.name} — fix failed: {e}")
 
+    _publish_doctor_events(all_results)
     return all_results
+
+
+def _publish_doctor_events(results: list[CheckResult]) -> None:
+    """Emit one summary event plus problem events; never raises."""
+    try:
+        from . import events
+
+        # Persist so `blackout events recent` (and MCP consumers in other
+        # processes) can see diagnostic history, not just the daemon's.
+        events.enable_default_persistence()
+        failed = [result for result in results if not result.ok]
+        events.publish({
+            "type": "doctor.check_completed",
+            "source": "doctor",
+            "severity": "info" if not failed else "warning",
+            "summary": f"{len(results) - len(failed)} checks passed, {len(failed)} reported problems",
+            "details": {
+                "total": len(results),
+                "failed": [result.name for result in failed[:20]],
+            },
+        })
+        for result in failed[:10]:
+            events.publish({
+                "type": "doctor.problem_detected",
+                "source": "doctor",
+                "severity": "warning",
+                "summary": f"{result.name}: {result.message}",
+                "details": {"check": result.name},
+            })
+    except Exception:
+        # Diagnostics must never break on observability failures.
+        pass
 
 
 def print_report(results: list[CheckResult], auto_fixed: bool = False, show_summary: bool = False):

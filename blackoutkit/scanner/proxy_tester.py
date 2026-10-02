@@ -7,6 +7,7 @@ import socket
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 # Lightweight test URLs — these return very small responses
@@ -17,15 +18,26 @@ TEST_URLS = [
 ]
 
 
+def _validated_probe_url(url: str) -> str:
+    """Return `url` only when it is a well-formed http(s) probe target."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ValueError("invalid connectivity probe URL")
+    return url
+
+
 def test_direct(timeout: int = 5) -> tuple[bool, float]:
     """
     Test direct internet connectivity (no proxy).
     Returns (connected: bool, latency_ms: float).
     """
     for url in TEST_URLS:
+        probe_url = str(url)
+        if not probe_url or not _validated_probe_url(probe_url):
+            continue
         try:
             start = time.monotonic()
-            urllib.request.urlopen(url, timeout=timeout)
+            urllib.request.urlopen(probe_url, timeout=timeout)
             return True, (time.monotonic() - start) * 1000
         except Exception:
             continue

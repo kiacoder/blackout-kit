@@ -6,6 +6,7 @@ Finds the lowest-latency reachable IP for the SNI engine.
 import asyncio
 import ipaddress
 import random
+import secrets
 import time
 
 # Official Cloudflare IPv4 CIDR ranges (from https://www.cloudflare.com/ips/)
@@ -114,7 +115,7 @@ def generate_cloudflare_ips(count: int = 100) -> list[str]:
                 num_addresses = network.num_addresses
                 sample_count = min(per_range, num_addresses)
                 for _ in range(sample_count):
-                    ip_obj = network[random.randrange(num_addresses)]
+                    ip_obj = network[secrets.randbelow(num_addresses)]
                     ip_str = str(ip_obj)
                     if ip_str not in seen:
                         ips.add(ip_str)

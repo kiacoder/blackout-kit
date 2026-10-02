@@ -198,9 +198,9 @@ def test_add_defender_exclusion_elevate(mock_kernel, mock_elevate, mock_run):
     original_mkstemp = tempfile.mkstemp
     def fake_mkstemp(*args, **kwargs):
         fd, path = original_mkstemp(*args, **kwargs)
-        # write OK to marker file so it succeeds
-        with open(path, "w") as f:
-            f.write("OK")
+        # write OK via the already-open descriptor so the marker exists
+        os.write(fd, b"OK")
+        os.lseek(fd, 0, 0)
         return fd, path
     
     with patch("tempfile.mkstemp", side_effect=fake_mkstemp):

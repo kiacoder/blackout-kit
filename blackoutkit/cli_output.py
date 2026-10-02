@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any, TextIO
 
 from rich.console import Console
+from rich.table import Table
 
 OUTPUT_SCHEMA_VERSION = 1
 DEFAULT_INPUT_LIMIT = 2 * 1024 * 1024
@@ -216,6 +217,182 @@ def safe_doctor_check(result: object) -> dict[str, object]:
 SAFE_SOURCE_LABELS = _SAFE_SOURCE_LABELS
 
 
+# ───────────────────── Blackout Operator renderers ─────────────────────
+# Human presentation for the structured snapshot / recommendation / event
+# layers. All data arrives already sanitized; renderers never compute state.
+
+_SEVERITY_STYLES = {
+    "debug": "dim",
+    "info": "cyan",
+    "warning": "yellow",
+    "error": "red",
+    "critical": "bold red",
+}
+
+
+def _kv_table(title: str) -> "Table":
+    table = Table(show_header=False, padding=(0, 2), title=title)
+    table.add_column("Field", style="bold cyan", no_wrap=True)
+    table.add_column("Value")
+    return table
+
+
+def render_snapshot(snapshot: dict[str, Any], *, console: Console) -> None:
+    """Render the canonical local snapshot."""
+    from rich.panel import Panel
+
+    engines = snapshot.get("engines") or {}
+    ready = engines.get("ready") or []
+    recommended = (engines.get("recommended") or {}).get("engine")
+    daemon_info = snapshot.get("daemon") or {}
+    proxy = snapshot.get("system_proxy") or {}
+    vault_info = snapshot.get("vault") or {}
+
+    overview = _kv_table("Local Snapshot")
+    overview.add_row("Generated", str(snapshot.get("generated_at", "")))
+    overview.add_row("Platform", f"{snapshot.get('platform', {}).get('system')} · "
+                                 f"admin={snapshot.get('privileges', {}).get('admin')}")
+    overview.add_row("Daemon", "running" if daemon_info.get("running") else "not running")
+    overview.add_row("Active engine", str(daemon_info.get("engine", "none")))
+    overview.add_row("System proxy", f"enabled={proxy.get('enabled')}"
+                                     f"{' (' + str(proxy.get('server')) + ')' if proxy.get('enabled') else ''}")
+    overview.add_row("Vault", str(vault_info.get("detail", "unknown")))
+    overview.add_row("Ready engines", ", ".join(ready) if ready else "none")
+    overview.add_row("Recommendation", str(recommended or "none"))
+    console.print(Panel(overview, border_style="panel.border"))
+    events_info = snapshot.get("events") or {}
+    render_events((events_info.get("recent") or [])[-5:], console=console)
+    console.print(f"[muted]{(snapshot.get('scope') or {}).get('note', '')}[/muted]")
+
+
+def render_recommendations(payload: dict[str, Any], *, console: Console) -> None:
+    """Render deterministic recommendations."""
+    from rich.panel import Panel
+    from rich.table import Table as RichTable
+
+    recs = payload.get("recommendations") or []
+    table = RichTable(show_header=True, header_style="bold cyan", padding=(0, 2),
+                      title="Deterministic Recommendations (local evidence only)")
+    table.add_column("Problem")
+    table.add_column("Action")
+    table.add_column("Safety")
+    table.add_column("Risk")
+    table.add_column("Conf.")
+    table.add_column("Reason")
+    for rec in recs:
+        table.add_row(
+            str(rec.get("problem", "")),
+            str(rec.get("recommended_action", "")),
+            str(rec.get("safety", "")),
+            str(rec.get("risk", "")),
+            f"{rec.get('confidence', 0):.2f}",
+            str(rec.get("reason", "")),
+        )
+    console.print(Panel(table, border_style="panel.border"))
+    console.print(f"[muted]{payload.get('note', '')}[/muted]")
+
+
+def render_operator_status(payload: dict[str, Any], *, console: Console) -> None:
+    """Render the live operator view: snapshot + top recommendation."""
+    render_snapshot(payload.get("snapshot") or {}, console=console)
+    recs = payload.get("recommendations") or []
+    if recs:
+        top = recs[0]
+        approval = ""
+        if top.get("requires_confirmation"):
+            approval = " · needs your confirmation before anyone applies it"
+        console.print(
+            f"[bold]Next:[/bold] {top.get('recommended_action')} "
+            f"[dim]({top.get('problem')}, risk={top.get('risk')}{approval})[/dim]"
+        )
+    pending = [
+        event for event in ((payload.get("snapshot") or {}).get("events") or {}).get("recent", [])
+        if event.get("type") == "user.approval_required"
+    ]
+    if pending:
+        console.print("[warning]⚠ Human input required (user.approval_required events pending)[/warning]")
+
+
+def render_action_catalog(payload: dict[str, Any], *, console: Console) -> None:
+    from rich.table import Table as RichTable
+
+    table = RichTable(show_header=True, header_style="bold cyan", padding=(0, 2),
+                      title="Action Catalog (safety classes)")
+    table.add_column("Action")
+    table.add_column("Safety")
+    table.add_column("Admin")
+    table.add_column("Confirmation")
+    table.add_column("Description")
+    for action in payload.get("actions", []):
+        table.add_row(
+            str(action.get("name", "")),
+            str(action.get("safety", "")),
+            "yes" if action.get("requires_admin") else "no",
+            "required" if action.get("requires_confirmation") else "not required",
+            str(action.get("description", "")),
+        )
+    console.print(table)
+
+
+def render_events(events: list[dict[str, Any]], *, console: Console) -> None:
+    from rich.table import Table as RichTable
+
+    if not events:
+        console.print("[muted]No local events recorded yet.[/muted]")
+        return
+    table = RichTable(show_header=True, header_style="bold cyan", padding=(0, 2),
+                      title="Recent Local Events")
+    table.add_column("Time")
+    table.add_column("Type")
+    table.add_column("Sev.")
+    table.add_column("Engine")
+    table.add_column("Summary")
+    for event in events:
+        style = _SEVERITY_STYLES.get(str(event.get("severity")), "white")
+        table.add_row(
+            str(event.get("timestamp", ""))[:19],
+            str(event.get("type", "")),
+            f"[{style}]{event.get('severity', 'info')}[/{style}]",
+            str(event.get("engine") or "—"),
+            str(event.get("summary") or ""),
+        )
+    console.print(table)
+
+
+def render_support_preview(payload: dict[str, Any], *, console: Console) -> None:
+    from rich.panel import Panel
+
+    snapshot_info = payload.get("snapshot") or {}
+    body = (
+        f"[bold]Support bundle preview[/bold] — nothing is written or uploaded by a preview.\n\n"
+        f"system: {payload.get('system', {}).get('platform')} · python {payload.get('system', {}).get('python')}\n"
+        f"install: {(payload.get('install') or {}).get('method')}\n"
+        f"versions: {len(payload.get('versions') or {})} entries\n"
+        f"snapshot: {snapshot_info.get('section_count')} sections "
+        f"({', '.join(snapshot_info.get('fields', [])[:8])}…)\n"
+        f"daemon_errors: {(payload.get('daemon_errors') or {}).get('line_count')} lines\n"
+        f"logs: daemon tail {(payload.get('logs') or {}).get('daemon_tail_chars')} chars\n"
+        f"recovery_history: {(payload.get('recovery_history') or {}).get('record_count')} records\n"
+        f"settings: {(payload.get('settings') or {}).get('key_count')} keys (sensitive values redacted)\n\n"
+        f"[bold]Redaction:[/bold] {payload.get('redaction_policy', {}).get('strategy')}\n"
+        f"[bold]Never included:[/bold]\n"
+        + "\n".join(f"  • {item}" for item in payload.get("excluded", []))
+    )
+    console.print(Panel(body, border_style="panel.border"))
+
+
+def render_support_summary(path: "Any", *, console: Console) -> None:
+    from rich.panel import Panel
+
+    console.print(Panel(
+        f"[success]✓ Support bundle written[/success]\n\n"
+        f"[bold]{path}[/bold]\n\n"
+        "Credentials, proxy/VPN/SSH URIs, and vault contents were removed.\n"
+        "Review the file before sharing it. Blackout Kit does not upload it anywhere.",
+        border_style="green",
+    ))
+
+
 __all__ = [
     "DEFAULT_INPUT_LIMIT",
     "OUTPUT_SCHEMA_VERSION",
@@ -232,6 +409,13 @@ __all__ = [
     "print_warning",
     "read_secret",
     "read_stdin",
+    "render_action_catalog",
+    "render_events",
+    "render_operator_status",
+    "render_recommendations",
+    "render_snapshot",
+    "render_support_preview",
+    "render_support_summary",
     "require_executable",
     "require_import",
     "safe_doctor_check",

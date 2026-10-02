@@ -36,8 +36,7 @@ def test_api_status_endpoint_uses_bound_origin(api_server):
 
 
 def test_api_metrics_endpoint(api_server):
-    url = f"{api_server}/api/metrics"
-    req = urllib.request.urlopen(url)
+    req = urllib.request.urlopen(f"{api_server}/api/metrics")
     assert req.status == 200
     data = json.loads(req.read().decode("utf-8"))
     assert "timestamp" in data
@@ -48,8 +47,7 @@ def test_api_metrics_endpoint(api_server):
 
 
 def test_api_connections_filtering(api_server):
-    url = f"{api_server}/api/connections?port=80"
-    req = urllib.request.urlopen(url)
+    req = urllib.request.urlopen(f"{api_server}/api/connections?port=80")
     assert req.status == 200
     data = json.loads(req.read().decode("utf-8"))
     assert "connections" in data
@@ -57,8 +55,7 @@ def test_api_connections_filtering(api_server):
 
 
 def test_api_bandwidth_endpoint(api_server):
-    url = f"{api_server}/api/bandwidth?interval=0.1"
-    req = urllib.request.urlopen(url)
+    req = urllib.request.urlopen(f"{api_server}/api/bandwidth?interval=0.1")
     assert req.status == 200
     data = json.loads(req.read().decode("utf-8"))
     assert "timestamp" in data

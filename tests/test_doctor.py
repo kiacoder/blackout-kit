@@ -225,15 +225,35 @@ def test_check_binary_runnable(mock_run, tmp_path):
         mock_run.side_effect = PermissionError()
         assert doc.check_binary_runnable()[0].ok is False
 
+@patch("blackoutkit.vault.vault_status", return_value={"active": False, "healthy": True, "detail": ""})
 @patch("blackoutkit.security.configs_are_obfuscated")
-def test_check_config_security(mock_obf):
+def test_check_config_security(mock_obf, _mock_vault):
     mock_obf.return_value = True
     assert doc.check_config_security().ok is True
-    
+
     mock_obf.return_value = False
     with patch("blackoutkit.config.manager.load_configs", return_value=["c"]):
         res = doc.check_config_security()
         assert res.ok is False
+
+
+def test_check_config_security_reports_unreadable_vault():
+    with patch(
+        "blackoutkit.vault.vault_status",
+        return_value={"active": True, "healthy": False, "detail": "cannot authenticate"},
+    ):
+        res = doc.check_config_security()
+    assert res.ok is False
+    assert "unreadable" in res.message
+
+
+def test_check_config_security_healthy_vault_passes():
+    with patch(
+        "blackoutkit.vault.vault_status",
+        return_value={"active": True, "healthy": True, "detail": "ok"},
+    ):
+        res = doc.check_config_security()
+    assert res.ok is True
 
 @patch("psutil.process_iter")
 @patch("os.getpid", return_value=123)

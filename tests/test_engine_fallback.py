@@ -153,8 +153,8 @@ def _configure_fallback_daemon_loop(monkeypatch, tmp_path, outcomes, waits, fall
             daemon._shutdown_requested = False
         cfg_lock = threading.Lock()
 
-        # Silence stdout/stderr
-        devnull = open("/dev/null", "w") if sys.platform.startswith("linux") else None
+        # Silence stdout/stderr (fdopen form; only meaningful on Linux)
+        devnull = os.fdopen(os.open(os.devnull, os.O_WRONLY), "w") if sys.platform.startswith("linux") else None
 
         # Import engines
         from blackoutkit.engines.xray import XRayEngine

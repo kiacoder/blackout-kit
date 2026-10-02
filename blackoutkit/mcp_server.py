@@ -30,7 +30,7 @@ from . import settings as cfg
 _MCP_ENGINES = frozenset({
     "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
     "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
-    "tuic", "awg", "legend",
+    "tuic", "awg", "legend", "hotspot-shield",
 })
 
 
@@ -86,7 +86,7 @@ TOOLS_MANIFEST = [
             "properties": {
                 "engine": {
                     "type": "string",
-                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend"]
+                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend", "hotspot-shield"]
                 }
             },
             "required": ["engine"]
@@ -100,7 +100,7 @@ TOOLS_MANIFEST = [
             "properties": {
                 "engine": {
                     "type": "string",
-                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend"],
+                    "enum": ["sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend", "hotspot-shield"],
                     "description": "Explicit engine choice. Linux supports only xray, tun, hysteria2, and tuic."
                 }
             }
@@ -267,6 +267,54 @@ TOOLS_MANIFEST = [
                     "description": "Security tier mode"
                 }
             }
+        }
+    },
+    {
+        "name": "blackout_snapshot",
+        "description": "Read one canonical structured snapshot of LOCAL Blackout Kit state (daemon, system proxy, vault health, per-engine readiness summary, stability, recent events, recovery hints). It never tests upstream reachability; local readiness is not remote success.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "include_adapters": {
+                    "type": "boolean",
+                    "description": "Include a network adapter summary (default true)",
+                    "default": True
+                }
+            }
+        }
+    },
+    {
+        "name": "blackout_recommend",
+        "description": "Deterministic local recommendations derived from the current snapshot, each with a safety class (READ_ONLY, SAFE_REVERSIBLE, PRIVILEGED_REVERSIBLE, DISRUPTIVE, DESTRUCTIVE) and confirmation requirements. This is rule-based analysis, not an AI model; recommendations are never auto-executed.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
+        "name": "blackout_recent_events",
+        "description": "Read recent sanitized local Blackout Kit events (in-process history plus the local event journal). Read-only; events never contain secrets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum events to return (1-200, default 20)",
+                    "default": 20
+                },
+                "type": {
+                    "type": "string",
+                    "description": "Optional event type prefix filter (e.g. engine.)"
+                }
+            }
+        }
+    },
+    {
+        "name": "blackout_support_bundle_preview",
+        "description": "Preview exactly what a sanitized support bundle would contain (structure and counts only, no content). Full bundles are exported only by the user running 'blackout support-bundle'; nothing is ever uploaded.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
         }
     }
 ]
@@ -511,6 +559,36 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                 security.apply_mode(mode)
                 return f"✓ Security mode applied: {mode}"
             return f"Current Security Mode: {security.get_current_mode()}"
+
+        elif tool_name == "blackout_snapshot":
+            from .snapshot import sanitized_snapshot
+
+            include_adapters = bool(args.get("include_adapters", True))
+            return json.dumps(
+                sanitized_snapshot(include_adapters=include_adapters),
+                indent=2, ensure_ascii=False,
+            )
+
+        elif tool_name == "blackout_recommend":
+            from .operator import build_recommendations
+
+            return json.dumps(build_recommendations(include_adapters=False), indent=2, ensure_ascii=False)
+
+        elif tool_name == "blackout_recent_events":
+            from .events import merged_recent_events
+
+            try:
+                limit = max(1, min(200, int(args.get("limit", 20))))
+            except (TypeError, ValueError):
+                limit = 20
+            type_prefix = args.get("type")
+            items = merged_recent_events(limit=limit, type_prefix=type_prefix)
+            return json.dumps({"count": len(items), "events": items}, indent=2, ensure_ascii=False)
+
+        elif tool_name == "blackout_support_bundle_preview":
+            from .support_bundle import preview as bundle_preview
+
+            return json.dumps(bundle_preview(), indent=2, ensure_ascii=False)
 
         return f"Unknown tool: {tool_name}"
     except Exception as exc:

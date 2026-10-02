@@ -16,6 +16,7 @@ import shutil
 import sys
 import tempfile
 import time
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -50,6 +51,8 @@ def check_for_update() -> dict | None:
     Returns release info dict on update available, None if up-to-date or no internet.
     """
     try:
+        if urllib.parse.urlparse(RELEASES_API).hostname != "api.github.com":
+            raise ValueError("unexpected releases endpoint")
         req = urllib.request.Request(
             RELEASES_API,
             headers={"User-Agent": f"blackout-kit/{__version__}"},
@@ -143,6 +146,9 @@ def download_and_apply(release: dict) -> bool:
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp_path = Path(tmp.name)
 
+        parsed_asset = urllib.parse.urlparse(url)
+        if parsed_asset.scheme != "https" or parsed_asset.hostname not in _UPDATE_TRUSTED_HOSTS:
+            raise ValueError("update asset URL failed trusted-host re-check")
         req = urllib.request.Request(url, headers={"User-Agent": f"blackout-kit/{__version__}"})
         hasher = hashlib.sha256()
         with urllib.request.urlopen(req, timeout=120) as resp:

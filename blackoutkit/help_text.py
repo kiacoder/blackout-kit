@@ -705,6 +705,52 @@ The preset applies temporary local overrides for one launch only:
 [dim]Russia support is a first-pass profile and preset, not a guarantee of bypass
 success. Effectiveness depends on the network, server IP, and current filtering.[/dim]
 """,
+
+"operator": """
+[bold cyan]Blackout Operator — structured observability for humans and AI clients[/bold cyan]
+
+Operator is deterministic core logic, NOT an embedded AI model. It exposes
+clean structured state, events, and recommendations that external AI systems
+(MCP clients such as ZCode, GLM, Claude, or ChatGPT) can reason over.
+
+[bold]Snapshot — one canonical local state view[/bold]
+  blackout snapshot
+  blackout snapshot --json
+
+[bold]Deterministic recommendations with safety classes[/bold]
+  blackout operator status          (live view; add --watch)
+  blackout operator recommend
+  blackout operator actions
+
+Actions are classified READ_ONLY, SAFE_REVERSIBLE, PRIVILEGED_REVERSIBLE,
+DISRUPTIVE, and DESTRUCTIVE. Blackout Kit never silently executes destructive
+or broad repair because an AI client asked; confirmation gates apply.
+
+[bold]Local event journal and opt-in event stream[/bold]
+  blackout events recent [--type engine.] [--json]
+  blackout events serve            (SSE on 127.0.0.1:8787, loopback only)
+
+The event stream is OFF unless you run [bold]blackout events serve[/bold].
+It binds to loopback only and has no control surface — consumers can observe,
+never act. It exists so external apps (dashboards, avatar hosts) can react to
+engine.starting / engine.failed / connection.recovered events.
+
+[bold]Sanitized support bundles for bug reports[/bold]
+  blackout support-bundle --preview   (inspect exactly what is included)
+  blackout support-bundle             (write JSON locally; never uploaded)
+
+Passwords, tokens, private keys, PSKs, and proxy/VPN/SSH URIs are removed
+before export — values are dropped, not partially masked. Vault contents and
+the SSH vault are never read into a bundle.
+
+[bold]MCP tools for AI agents[/bold]
+  blackout_snapshot · blackout_recommend · blackout_recent_events ·
+  blackout_support_bundle_preview — all read-only.
+
+[dim]Important: snapshots, readiness, recommendations, and events describe
+LOCAL state. None of them prove that an upstream server is reachable or that
+censorship is bypassed. Local readiness is not remote success.[/dim]
+""",
 }
 
 _CATEGORIES: dict[str, list[str]] = {
@@ -713,6 +759,7 @@ _CATEGORIES: dict[str, list[str]] = {
     "Configuration": ["settings", "config", "split_tunnel"],
     "Engines": ["engines", "vpn", "warp", "neighbor"],
     "Security": ["security", "killswitch"],
+    "Operator": ["operator"],
     "Maintenance": ["tools", "cert", "doctor", "update", "preflight", "logs"],
     "Help": ["troubleshoot", "test"],
 }
@@ -754,6 +801,7 @@ _SUMMARIES: dict[str, str] = {
     "russia": "Russia profile and --russia transport preset notes",
     "bins": "Manage runtime assets and downloadable binaries",
     "cert": "Check normal TLS certs and policy impact",
+    "operator": "Structured snapshot, recommendations, events, and support bundles for AI/human operators",
 }
 
 

@@ -98,9 +98,10 @@ The README stays high-level. The two guides go deeper in separate directions on 
 Blackout Kit 1.1.1 currently includes:
 
 - **Typer-based public CLI** with backward-compatible delegation into the proven command dispatcher
-- **Zero-flag launcher flow** that opens the GUI first and falls back to an interactive terminal menu
+- **Zero-flag launcher flow** that always opens a keyboard-navigable terminal chooser (Terminal CLI / Windows App); the GUI opens only when explicitly selected
 - **Desktop GUI** built with `CustomTkinter`
 - **MCP stdio server** for AI clients with a constrained, documented tool surface
+- **Operator observability layer** — canonical `blackout snapshot`, deterministic `blackout operator recommend` with safety classes, sanitized `blackout support-bundle`, local event journal, and an opt-in loopback SSE event stream. Deterministic core logic, not an embedded AI model; external AI systems consume it via MCP
 - **Route recommendation dashboard** based on local readiness, platform support, saved protocols, settings, country profile, and saved health history
 - **Local readiness checks** that do not contact remote hosts or mutate state
 - **Targeted post-crash recovery** on Windows and Linux
@@ -540,6 +541,35 @@ blackout split-tunnel remove <pattern>
 
 ---
 
+## Operator: structured observability (Blackout Operator foundation)
+
+Blackout Kit exposes clean structured state, events, and recommendations so
+external AI systems (ZCode, GLM, Claude, ChatGPT, avatar hosts, or any MCP
+client) can reason over it. The Operator layer is deterministic core logic —
+**not an embedded AI model** — and nothing is ever uploaded.
+
+```bash
+blackout snapshot              # canonical local state (add --json for stable JSON)
+blackout operator status       # live operator view (add --watch)
+blackout operator recommend    # deterministic recommendations with safety classes
+blackout operator actions      # documented action catalog
+blackout events recent         # sanitized local event journal
+blackout events serve          # OPTIONAL SSE stream, loopback-only (127.0.0.1:8787)
+blackout support-bundle --preview   # inspect a bug-report bundle before export
+blackout support-bundle             # write sanitized JSON locally; never uploaded
+```
+
+Boundaries that matter:
+
+- snapshots, readiness, recommendations, and events describe **local state**; none of them prove upstream reachability or successful censorship bypass
+- recommendations carry safety classes (READ_ONLY → DESTRUCTIVE); Blackout Kit never silently executes disruptive or broad repair because a client asked
+- the event stream is off unless you run it, binds to loopback only, and has no control surface
+- support bundles remove passwords, tokens, keys, PSKs, and proxy/VPN/SSH URIs entirely (no partial masking) and never read vault contents
+
+See `blackout help operator` and [SECURITY.md](SECURITY.md) for the full data inventory.
+
+---
+
 ## Security, privacy, and safety boundaries
 
 Blackout Kit intentionally documents its limits.
@@ -650,6 +680,10 @@ Current tool surface includes:
 - `blackout_scan`
 - `blackout_doctor`
 - `blackout_security_mode`
+- `blackout_snapshot` (canonical local state; never proves remote success)
+- `blackout_recommend` (deterministic recommendations with safety classes)
+- `blackout_recent_events` (sanitized local event journal)
+- `blackout_support_bundle_preview` (bundle structure without content)
 
 Important MCP boundaries:
 

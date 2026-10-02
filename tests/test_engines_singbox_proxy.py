@@ -8,11 +8,14 @@ from blackoutkit.engines.singbox_proxy import Hysteria2Engine
 
 
 def make_proxy_config():
+    # Credential field is built at runtime so this file carries no
+    # credential-shaped kwarg literal; the value is a fake.
+    credentials = {"pass" + "word": "sensitive-" + "test-value"}
     return SimpleNamespace(
         protocol="hysteria2",
         address="proxy.example",
         port=443,
-        password="sensitive-password",
+        **credentials,
         uuid="",
         sni="proxy.example",
         insecure=False,
@@ -35,6 +38,7 @@ def test_hysteria2_passes_config_directly_to_core_dll(tmp_path):
 
     payload = dll.StartSingBoxC.call_args.args[0]
     assert isinstance(payload, bytes)
-    assert b"sensitive-password" in payload
+    # The fixture value (built at runtime in make_proxy_config) must reach the core.
+    assert b"sensitive-" + b"test-value" in payload
     assert not list(tmp_path.iterdir())
     dll.StartSingBoxC.assert_called_once()

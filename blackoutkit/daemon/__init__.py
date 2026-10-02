@@ -682,7 +682,7 @@ def _run_daemon_loop(
     cfg_lock = _threading.Lock()
     devnull = None
     try:
-        devnull = open(os.devnull, "w")
+        devnull = os.fdopen(os.open(os.devnull, os.O_WRONLY), "w")
         sys.stdout = devnull
         sys.stderr = devnull
     except Exception as e:

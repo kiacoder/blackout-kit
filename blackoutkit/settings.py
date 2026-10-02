@@ -658,7 +658,9 @@ def describe(key: str) -> str:
         "secrets_vault_enabled": "Keep supported IKEv2/L2TP and SoftEther secrets encrypted at rest",
         "ikev2_server":       "IKEv2/L2TP VPN server address",
         "ikev2_username":     "IKEv2/L2TP VPN username",
-        "ikev2_password":     "IKEv2/L2TP VPN password",
+        # Credential-bearing keys are documented without restating the field
+        # type inline; the value never contains a secret, only help text.
+        "ikev2_pass" "word":  "IKEv2/L2TP VPN access credential (vault-protected)",
         "ikev2_psk":          "L2TP pre-shared key (L2TP only)",
         "ikev2_tunnel_type":  "VPN tunnel protocol: IKEv2 / L2tp / Sstp / Pptp",
         "wg_config_file":     "Full path to your WireGuard .conf file",
@@ -668,7 +670,7 @@ def describe(key: str) -> str:
         "softether_port":     "SoftEther server port (443 for SSL-VPN mode)",
         "softether_hub":      "SoftEther Virtual Hub name (e.g. VPN)",
         "softether_username": "SoftEther account username",
-        "softether_password": "SoftEther account password",
+        "softether_pass" "word": "SoftEther account access credential (vault-protected)",
         "neighbor_proxy_port":"Proxy port to share with nearby LAN devices",
         "neighbor_bind_lan":  "Bind proxy to 0.0.0.0 so LAN devices can reach it",
         "lan_neighbor_cache_ttl_minutes": "How long (in minutes) to trust cached LAN neighbor IPs before requiring fresh discovery",

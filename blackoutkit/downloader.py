@@ -920,27 +920,28 @@ def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = 
     
     tmp_path = None
     try:
+        # Download straight into the temp-file handle: the scratch file is
+        # created, written, and closed in one place with no path re-opening.
         with tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False) as tmp:
             tmp_path = Path(tmp.name)
 
-        req = urllib.request.Request(
-            download_url,
-            headers={"User-Agent": f"blackout-kit/{__version__}"},
-        )
-        
-        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
-            cl = resp.headers.get("Content-Length")
-            try:
-                total_size = int(cl) if cl else 0
-            except ValueError:
-                total_size = 0
-            downloaded = 0
-            with open(tmp_path, "wb") as f:
+            req = urllib.request.Request(
+                download_url,
+                headers={"User-Agent": f"blackout-kit/{__version__}"},
+            )
+
+            with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+                cl = resp.headers.get("Content-Length")
+                try:
+                    total_size = int(cl) if cl else 0
+                except ValueError:
+                    total_size = 0
+                downloaded = 0
                 while True:
                     chunk = resp.read(65536)
                     if not chunk:
                         break
-                    f.write(chunk)
+                    tmp.write(chunk)
                     downloaded += len(chunk)
                     if progress_callback:
                         progress_callback(downloaded, total_size or downloaded)
@@ -1009,27 +1010,28 @@ def _download_openvpn_binary(progress_callback: Callable[[int, int], None] | Non
     tmp_path = None
     temp_dir = None
     try:
+        # Download straight into the temp-file handle: the scratch file is
+        # created, written, and closed in one place with no path re-opening.
         with tempfile.NamedTemporaryFile(suffix=".msi", delete=False) as tmp:
             tmp_path = Path(tmp.name)
 
-        req = urllib.request.Request(
-            download_url,
-            headers={"User-Agent": f"blackout-kit/{__version__}"},
-        )
-        
-        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
-            cl = resp.headers.get("Content-Length")
-            try:
-                total_size = int(cl) if cl else 0
-            except ValueError:
-                total_size = 0
-            downloaded = 0
-            with open(tmp_path, "wb") as f:
+            req = urllib.request.Request(
+                download_url,
+                headers={"User-Agent": f"blackout-kit/{__version__}"},
+            )
+
+            with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+                cl = resp.headers.get("Content-Length")
+                try:
+                    total_size = int(cl) if cl else 0
+                except ValueError:
+                    total_size = 0
+                downloaded = 0
                 while True:
                     chunk = resp.read(65536)
                     if not chunk:
                         break
-                    f.write(chunk)
+                    tmp.write(chunk)
                     downloaded += len(chunk)
                     if progress_callback:
                         progress_callback(downloaded, total_size or downloaded)
@@ -1086,25 +1088,33 @@ def _download_psiphon_binary(progress_callback: Callable[[int, int], None] | Non
     download_url = "https://raw.githubusercontent.com/Psiphon-Inc/psiphon-tunnel-core/master/psiphon-tunnel-core-x86_64.exe"
     dest_path = BINS_DIR / "psiphon-tunnel-core.exe"
     BINS_DIR.mkdir(parents=True, exist_ok=True)
-    temp_dest = dest_path.with_suffix(".tmp")
+    temp_dest = dest_path.with_suffix(".tmp").resolve()
+    # Containment guard: the scratch file must stay inside the managed bins
+    # directory; the final rename targets the same directory.
+    if temp_dest.parent != BINS_DIR.resolve():
+        raise RuntimeError("download scratch file escaped the bins directory")
     try:
-        req = urllib.request.Request(
-            download_url,
-            headers={"User-Agent": f"blackout-kit/{__version__}"},
-        )
-        with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
-            cl = resp.headers.get("Content-Length")
-            try:
-                total_size = int(cl) if cl else 0
-            except ValueError:
-                total_size = 0
-            downloaded = 0
-            with open(temp_dest, "wb") as f:
+        # Download straight into the temp-file handle: the scratch file is
+        # created, written, and closed in one place with no path re-opening.
+        with tempfile.NamedTemporaryFile(dir=str(temp_dest.parent), prefix=temp_dest.stem, suffix=".tmp", delete=False) as scratch:
+            temp_dest = Path(scratch.name).resolve()
+
+            req = urllib.request.Request(
+                download_url,
+                headers={"User-Agent": f"blackout-kit/{__version__}"},
+            )
+            with urllib.request.urlopen(req, timeout=_DL_TIMEOUT) as resp:
+                cl = resp.headers.get("Content-Length")
+                try:
+                    total_size = int(cl) if cl else 0
+                except ValueError:
+                    total_size = 0
+                downloaded = 0
                 while True:
                     chunk = resp.read(65536)
                     if not chunk:
                         break
-                    f.write(chunk)
+                    scratch.write(chunk)
                     downloaded += len(chunk)
                     if progress_callback:
                         progress_callback(downloaded, total_size or downloaded)

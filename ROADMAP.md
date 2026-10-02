@@ -32,12 +32,32 @@
 | Desktop GUI | Done | Windows CustomTkinter |
 | Route dashboard | Done | Local-only engine recommendation |
 | Doctor diagnostics | Done | Full environment + runtime checks |
+| Additional engines | Done | Tor, SoftEther, IKEv2, OpenVPN, WireGuard, Appsscript bridge, Hotspot Shield (HssStore adapter detection) |
+| Robust machine identity | Done | Vault keys survive Windows builds without `wmic` (PowerShell CIM fallback + decrypt-only recovery candidates) |
 
-**VPN/bypass work is finished.** No new bypass engines planned. Existing capabilities stay.
+**VPN/bypass work is mature.** The core engine catalog is stable; new engines are
+considered only when a user-verified need appears. Existing capabilities stay.
 
 ---
 
 ## Where we're going
+
+### Operator Foundation (1.7.x) — shipped
+
+The Blackout Operator layer: structured observability that lets external AI
+systems and local UIs reason over Blackout Kit without embedding any AI model
+in the core. All local-only, all sanitized, all honest about local-vs-remote.
+
+| Feature | What it does | Status |
+|---|---|---|
+| Structured event system | Typed pub/sub bus (`blackoutkit/events.py`); sanitized at publish; failing observers can't break networking; daemon reconnect/recovery events wired | **Done** |
+| Canonical snapshot | `blackout snapshot [--json]` — stable documented schema separating local state from remote validation | **Done** |
+| Deterministic recommendations | `blackout operator recommend` — rules over snapshot evidence with READ_ONLY→DESTRUCTIVE safety classes; never auto-executed | **Done** |
+| Operator live view | `blackout operator status [--watch]` — state, last events, current recommendation, approval flags | **Done** |
+| Support bundles | `blackout support-bundle [--preview]` — sanitized bug-report export; credentials/URIs removed whole; never uploaded | **Done** |
+| MCP expansion | `blackout_snapshot`, `blackout_recommend`, `blackout_recent_events`, `blackout_support_bundle_preview` (all read-only) | **Done** |
+| Local event stream | `blackout events serve` — opt-in SSE on 127.0.0.1, no control surface, off by default | **Done** |
+| Future watcher hooks | Event/action contracts designed so external reviewer agents (PASS/SUGGEST/INTERRUPT/BLOCK) can be added without touching the engine system | **Design done** |
 
 ### Phase 1: Network analysis & diagnostics (1.3.x)
 
@@ -197,7 +217,7 @@ Before adding new features, the foundation must be reinforced:
 
 1. **One tool, many purposes** — like a Swiss army knife, not 10 separate apps
 2. **Terminal-first** — everything works from the CLI; GUI is a bonus
-3. **Local-only** — no cloud, no telemetry, no phone home
+3. **Local-only** — no cloud, no analytics/telemetry; network contact happens only for features you invoke (updates, scans, ISP detection, DoH, engine traffic)
 4. **Honest** — never claim a feature does more than it does
 5. **Fun to use** — NetworkChuck would want to make a video about it
 

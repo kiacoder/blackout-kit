@@ -712,8 +712,73 @@ class ConnectionService:
         )
 
     def _event(self, event_type: str, **payload: Any) -> None:
+        payload_dict: dict[str, Any] = {"type": event_type, **payload}
         if self.emit is not None:
-            self.emit({"type": event_type, **payload})
+            self.emit(payload_dict)
+        # The structured event bridge is unconditional: UI rendering and
+        # observability are independent sinks, so CLI/GUI/MCP all produce
+        # documented events regardless of which renderer is attached.
+        bus_emit_bridge(payload_dict)
+
+
+def bus_emit_bridge(payload: dict[str, Any]) -> None:
+    """Bridge internal connection events onto the documented event bus.
+
+    Used as the default `emit` sink so CLI/GUI/MCP connect activity produces
+    structured events without any UI coupling. Only a vetted subset of the
+    loose internal event types is bridged; everything else stays console-only.
+    """
+    try:
+        from . import events
+
+        event_type = str(payload.get("type", ""))
+        bridged: dict[str, Any] | None = None
+        if event_type == "engine_started":
+            bridged = {
+                "type": "engine.started",
+                "engine": payload.get("name") or payload.get("engine"),
+                "source": "connection_service",
+                "details": {"pid": payload.get("pid")},
+            }
+        elif event_type == "background":
+            bridged = {
+                "type": "engine.started",
+                "engine": payload.get("engine"),
+                "source": "daemon",
+                "summary": "Engine started in background daemon",
+                "details": {"pid": payload.get("pid"), "mode": "daemon"},
+            }
+        elif event_type == "stopping":
+            bridged = {
+                "type": "engine.stopped",
+                "engine": payload.get("engine"),
+                "source": "connection_service",
+                "details": {},
+            }
+        elif event_type == "error" and payload.get("code") == "daemon_start_failed":
+            bridged = {
+                "type": "engine.failed",
+                "engine": payload.get("engine"),
+                "source": "connection_service",
+                "severity": "error",
+                "summary": str(payload.get("message") or ""),
+                "details": {"code": payload.get("code")},
+            }
+        elif event_type == "proxy":
+            bridged = {
+                "type": "proxy.changed",
+                "source": "connection_service",
+                "details": {
+                    "configured": bool(payload.get("configured")),
+                    "host": payload.get("host"),
+                    "port": payload.get("port"),
+                },
+            }
+        if bridged is not None:
+            events.publish(bridged)
+    except Exception:
+        # Observability must never break connection transactions.
+        pass
 
 
 def _normalized_request(request: ConnectionRequest, operation: str) -> ConnectionRequest:

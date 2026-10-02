@@ -1525,6 +1525,19 @@ def _render_connection_result(result, options: OutputOptions) -> None:
         _print_cli_error("invalid_input", result.message or "invalid preset", options=options, exit_code=2)
         return
     if result.code == "not_ready":
+        if not _is_quiet(options) and not options.json_output:
+            failed = [
+                check.get("name")
+                for check in (result.readiness or [])
+                if isinstance(check, dict) and not check.get("ok") and check.get("blocking")
+            ]
+            detail = "; ".join(name for name in failed if name) or "local readiness checks failed"
+            console.print(
+                f"[error]✗ {result.operation} did not start: {result.engine or 'engine'} is not ready "
+                f"({detail}).[/error]"
+            )
+            console.print("[muted]Run [bold]blackout ready "
+                          f"{result.engine or '<engine>'}[/bold] for the full checklist.[/muted]")
         return
     if result.message:
         console.print(f"[error]{result.message}[/error]")
@@ -4496,6 +4509,223 @@ def ssh_sftp(
         console.print(res["stdout"])
     if res["stderr"]:
         console.print(f"[yellow]{res['stderr']}[/yellow]")
+
+
+# ─────────────────────────── Blackout Operator surface ───────────────────────────
+#
+# Structured, local-only observability for humans and external AI consumers:
+# canonical snapshot, deterministic recommendations, sanitized support bundles,
+# and the local event journal / opt-in loopback event stream. All read-only
+# unless an explicit mutating command says otherwise; local readiness is never
+# reported as remote success.
+
+operator_app = typer.Typer(help="Operator view: live status and deterministic recommendations", no_args_is_help=True)
+app.add_typer(operator_app, name="operator")
+
+events_app = typer.Typer(help="Inspect the local event journal or serve the loopback event stream", no_args_is_help=True)
+app.add_typer(events_app, name="events")
+
+
+@app.command("snapshot")
+def snapshot_cmd(
+    json_flag: bool = typer.Option(False, "--json", help="Emit stable machine-readable JSON"),
+    include_adapters: bool = typer.Option(True, "--adapters/--no-adapters", help="Include network adapter summary"),
+    ctx: typer.Context = None,
+):
+    """Show one canonical structured snapshot of local Blackout Kit state.
+
+    The snapshot describes local state only; it does not test upstream
+    reachability or prove that censorship is bypassed.
+    """
+    options = _output_options(ctx)
+    from .snapshot import build_snapshot
+
+    payload = build_snapshot(include_adapters=include_adapters)
+    if json_flag or options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    from .cli_output import render_snapshot
+
+    render_snapshot(payload, console=console)
+
+
+@app.command("support-bundle")
+def support_bundle_cmd(
+    preview_flag: bool = typer.Option(False, "--preview", help="Show exactly what an export would contain"),
+    output: str = typer.Option(None, "--output", "-o", help="Write the bundle JSON to this path"),
+    ctx: typer.Context = None,
+):
+    """Collect a sanitized local support bundle for bug reports.
+
+    Credentials, proxy/VPN/SSH URIs, and vault contents are removed before
+    export; use --preview to inspect first. Nothing is uploaded.
+    """
+    options = _output_options(ctx)
+    from . import support_bundle
+
+    if preview_flag:
+        payload = support_bundle.preview()
+        if options.json_output:
+            _print_json_enveloped(payload)
+            return
+        from .cli_output import render_support_preview
+
+        render_support_preview(payload, console=console)
+        return
+
+    try:
+        from pathlib import Path
+
+        from .cli_output import render_support_summary
+
+        target = support_bundle.export_bundle(
+            Path(output) if output else support_bundle.default_bundle_path()
+        )
+    except FileExistsError as exc:
+        _print_cli_error("output_exists", str(exc), options=options, exit_code=1)
+        return
+    if _is_quiet(options):
+        return
+    render_support_summary(target, console=console)
+
+
+@operator_app.command("status")
+def operator_status(
+    watch: bool = typer.Option(False, "--watch", "-w", help="Refresh until Ctrl+C"),
+    interval: float = typer.Option(2.0, "--interval", min=0.5, max=60.0, help="Refresh interval in seconds"),
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    ctx: typer.Context = None,
+):
+    """Live operator view: state, last events, and the current recommendation."""
+    options = _output_options(ctx)
+    from .operator import build_recommendations
+    from .cli_output import render_operator_status
+
+    interval_value = float(_option_value(interval, 2.0))
+    watch_value = bool(_option_value(watch, False))
+
+    def _once() -> dict:
+        return build_recommendations()
+
+    if json_flag or options.json_output:
+        _print_json_enveloped(_once())
+        return
+    if _is_quiet(options):
+        return
+    if watch_value:
+        try:
+            while True:
+                console.clear()
+                render_operator_status(_once(), console=console)
+                time.sleep(interval_value)
+        except KeyboardInterrupt:
+            return
+    render_operator_status(_once(), console=console)
+
+
+@operator_app.command("recommend")
+def operator_recommend(
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    ctx: typer.Context = None,
+):
+    """Show deterministic recommendations derived from local evidence."""
+    options = _output_options(ctx)
+    from .operator import build_recommendations
+    from .cli_output import render_recommendations
+
+    payload = build_recommendations()
+    if json_flag or options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    render_recommendations(payload, console=console)
+
+
+@operator_app.command("actions")
+def operator_actions(
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    ctx: typer.Context = None,
+):
+    """Show the documented action catalog with safety classes."""
+    options = _output_options(ctx)
+    from .operator import action_catalog_payload
+    from .cli_output import render_action_catalog
+
+    payload = action_catalog_payload()
+    if json_flag or options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    render_action_catalog(payload, console=console)
+
+
+@events_app.command("recent")
+def events_recent(
+    limit: int = typer.Option(20, "--limit", "-n", min=1, max=200, help="How many events to show"),
+    type_prefix: str = typer.Option(None, "--type", help="Filter by event type prefix (e.g. engine.)"),
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+    ctx: typer.Context = None,
+):
+    """Show recent local events (in-process plus the local event journal)."""
+    options = _output_options(ctx)
+    from .events import merged_recent_events
+
+    payload_events = merged_recent_events(
+        limit=int(_option_value(limit, 20)),
+        type_prefix=_option_value(type_prefix),
+    )
+    payload = {"events": payload_events, "count": len(payload_events)}
+    if json_flag or options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    from .cli_output import render_events
+
+    render_events(payload_events, console=console)
+
+
+@events_app.command("serve")
+def events_serve(
+    port: int = typer.Option(8787, "--port", min=1, max=65535, help="Loopback port for the SSE stream"),
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (loopback only by design)"),
+    ctx: typer.Context = None,
+):
+    """Serve sanitized events as Server-Sent Events on 127.0.0.1.
+
+    Opt-in by nature: nothing is served until this command runs. Endpoints:
+    GET /events (SSE stream) and GET /health. There is no control surface.
+    """
+    options = _output_options(ctx)
+    from . import event_bridge, events as ev
+
+    ev.enable_default_persistence()
+    try:
+        server, state = event_bridge.start_bridge(
+            host=_option_value(host, "127.0.0.1"),
+            port=int(_option_value(port, 8787)),
+        )
+    except ValueError as exc:
+        _print_cli_error("invalid_input", str(exc), options=options, exit_code=2)
+        return
+    except OSError as exc:
+        _print_cli_error("bind_failed", f"Could not bind event bridge: {exc}", options=options, exit_code=1)
+        return
+    resolved_host, resolved_port = server.server_address[:2]
+    console.print(
+        f"[success]✓ Event bridge[/success] listening on http://{resolved_host}:{resolved_port}/events "
+        f"(loopback only; /health for status; Ctrl+C to stop)"
+    )
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
 
 
 if __name__ == "__main__":

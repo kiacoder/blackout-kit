@@ -5,7 +5,7 @@ import click
 import pytest
 from typer.testing import CliRunner
 
-from blackoutkit import typer_cli
+from blackoutkit import typer_cli, vault
 
 
 runner = CliRunner()
@@ -1288,29 +1288,31 @@ def test_settings_list_json_is_parseable_and_masks_secrets(monkeypatch):
 
 
 def test_settings_get_json_masks_secret(monkeypatch):
+    fixture_field = vault.SECRET_KEYS[0]
+    fixture_value = "fixture-value-0"
     monkeypatch.setattr(
         "blackoutkit.settings.load",
-        lambda: {**typer_cli._safe_settings({}), "ikev2_password": "secret-password"},
+        lambda: {**typer_cli._safe_settings({}), fixture_field: fixture_value},
     )
 
-    result = runner.invoke(typer_cli.app, ["--json", "settings", "get", "ikev2_password"])
+    result = runner.invoke(typer_cli.app, ["--json", "settings", "get", fixture_field])
 
     assert result.exit_code == 0, result.output
     assert __import__("json").loads(result.output) == {
         "schema_version": 1,
         "ok": True,
         "data": {
-            "description": "IKEv2/L2TP VPN password",
-            "key": "ikev2_password",
+            "description": "IKEv2/L2TP VPN access credential (vault-protected)",
+            "key": fixture_field,
             "value": "[hidden]",
         },
     }
-    assert "secret-password" not in result.output
+    assert fixture_value not in result.output
 
 
 def test_status_json_redacts_system_proxy_and_settings(monkeypatch):
     snapshot = {
-        "settings": {**typer_cli._safe_settings({}), "ikev2_password": "secret-password"},
+        "settings": {**typer_cli._safe_settings({}), vault.SECRET_KEYS[0]: "fixture-value-0"},
         "pid": 123,
         "state": {"engine": "xray", "pid": 123},
         "proxy": {"enabled": True, "server": "secret-proxy.example:443"},

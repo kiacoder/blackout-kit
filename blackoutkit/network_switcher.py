@@ -9,7 +9,24 @@ import logging
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
+
+# Fixed, allowlisted ISP lookup endpoints.
+_ISP_LOOKUP_HOSTS = frozenset({"ip-api.com", "ipinfo.io"})
+
+
+def _validated_lookup_url(url: str) -> str:
+    """Return `url` only after allowlist validation; raises otherwise.
+
+    Keep this guard in-module so static analysis can see the full
+    validation-to-request flow.
+    """
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https") or parsed.hostname not in _ISP_LOOKUP_HOSTS:
+        raise ValueError("unexpected ISP lookup endpoint")
+    return url
+
 from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)
@@ -211,7 +228,7 @@ def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
     # ── Primary: ip-api.com ──
     try:
         req = urllib.request.Request(
-            "http://ip-api.com/json?fields=isp,org,as,city,country,countryCode",
+            _validated_lookup_url("http://ip-api.com/json?fields=isp,org,as,city,country,countryCode"),
             headers={"User-Agent": "blackout-kit/1.0"},
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -234,7 +251,7 @@ def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
     # ── Fallback: ipinfo.io ──
     try:
         req = urllib.request.Request(
-            "https://ipinfo.io/json",
+            _validated_lookup_url("https://ipinfo.io/json"),
             headers={"User-Agent": "blackout-kit/1.0"},
         )
         with urllib.request.urlopen(req, timeout=timeout) as resp:

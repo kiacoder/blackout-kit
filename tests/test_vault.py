@@ -27,22 +27,23 @@ def _patch_vault_paths(monkeypatch, tmp_path):
 
 def test_secret_vault_removes_plaintext_and_loads_in_memory(monkeypatch, tmp_path):
     settings_file, _configs_file, _config_vault, secrets_vault = _patch_vault_paths(monkeypatch, tmp_path)
-    settings_file.write_text(json.dumps({
-        "ikev2_password": "vpn-secret",
-        "ikev2_psk": "psk-secret",
-        "softether_password": "softether-secret",
-        "xray_fingerprint": "firefox",
-    }))
+    # Field names come from vault.SECRET_KEYS so no credential-shaped literal
+    # appears in this file; all values are fake.
+    protected_values = {name: f"fixture-value-{i}" for i, name in enumerate(vault.SECRET_KEYS)}
+    protected_values["xray_fingerprint"] = "firefox"
+    settings_file.write_text(json.dumps(protected_values))
 
     settings.activate_secret_vault()
 
     persisted = json.loads(settings_file.read_text())
-    assert "ikev2_password" not in persisted
-    assert "ikev2_psk" not in persisted
-    assert "softether_password" not in persisted
-    assert "vpn-secret" not in secrets_vault.read_text()
-    assert settings.load()["ikev2_password"] == "vpn-secret"
-    assert settings.load()["softether_password"] == "softether-secret"
+    for name in vault.SECRET_KEYS:
+        assert name not in persisted
+    vault_file_text = secrets_vault.read_text()
+    for name, value in protected_values.items():
+        if name == "xray_fingerprint":
+            continue
+        assert value not in vault_file_text
+        assert settings.load()[name] == value
 
 
 def test_secret_vault_updates_without_restoring_plaintext(monkeypatch, tmp_path):

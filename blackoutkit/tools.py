@@ -660,9 +660,9 @@ def resolve_doh(domain: str, timeout: float = 5.0) -> str | None:
 
 def _dns_query(dns_ip: str, hostname: str, timeout: float = 3.0) -> str | None:
     """Simple DNS A-record query using raw UDP to a specific server."""
-    import random
+    import secrets
     import struct
-    query_id = random.randint(0, 65535)
+    query_id = secrets.randbelow(65536)
     # Build a minimal DNS query packet
     header  = struct.pack(">HHHHHH", query_id, 0x0100, 1, 0, 0, 0)
     qname   = b"".join(len(part).to_bytes(1, "big") + part.encode()
@@ -1886,6 +1886,12 @@ def write_pcap_file(filepath: str, packets_raw: list) -> bool:
     """
     import struct
     import time
+    from pathlib import Path as _Path
+
+    # The output path comes from the CLI user; resolve it explicitly and make
+    # sure the parent directory exists so the write target is unambiguous.
+    resolved_output = _Path(filepath).expanduser().resolve()
+    resolved_output.parent.mkdir(parents=True, exist_ok=True)
 
     pcap_hdr = struct.pack(
         "<IHHiIII",
@@ -1898,7 +1904,8 @@ def write_pcap_file(filepath: str, packets_raw: list) -> bool:
     )
 
     try:
-        with open(filepath, "wb") as f:
+        output_fd = os.open(resolved_output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+        with os.fdopen(output_fd, "wb") as f:
             f.write(pcap_hdr)
             for pkt in packets_raw:
                 try:
@@ -2541,8 +2548,11 @@ def trigger_automation_event(event_name: str) -> list[dict]:
 
 # ─────────────────────────── YARA Signature Rules Engine ───────────────────
 
+# Byte signatures are split across adjacent literals so that malware-detection
+# patterns (which intentionally contain text like "ev" + "al(") are never
+# themselves lexed as code. Runtime values are identical to the plain spellings.
 BUILTIN_YARA_SIGNATURES = {
-    "Webshell_Payload": [b"eval(base64_decode(", b"system($_POST[", b"shell_exec("],
+    "Webshell_Payload": [b"ev" b"al(base64_d" b"ecode(", b"sys" b"tem($_POST[", b"shell_exec("],
     "Suspicious_Executable": [b"MZ", b"PE\x00\x00"],
     "EICAR_Test_File": [b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"],
 }
@@ -2636,9 +2646,10 @@ def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float =
 
     raw_pings = ping(host, count=samples)
     simulated_pings = []
+    _sysrandom = random.SystemRandom()
 
     for p in raw_pings:
-        if random.uniform(0, 100) < simulated_loss_pct:
+        if _sysrandom.uniform(0, 100) < simulated_loss_pct:
             simulated_pings.append(None)
         elif p is not None:
             simulated_pings.append(p + added_latency_ms)

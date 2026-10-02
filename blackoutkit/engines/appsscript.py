@@ -82,6 +82,13 @@ def _load_gas_ids() -> list[str]:
     return ids
 
 
+def _validated_relay_url(url: str) -> str:
+    """Return `url` only when it is an https Apps Script relay endpoint."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != "script.google.com":
+        raise ValueError("Apps Script relay URL must be https on script.google.com")
+    return url
+
 def _relay_request(gas_id: str, target_url: str, method: str,
                    headers: dict, body: bytes | None) -> dict | None:
     """
@@ -98,6 +105,8 @@ def _relay_request(gas_id: str, target_url: str, method: str,
     }).encode()
 
     gas_url = GAS_BASE_URL.format(id=gas_id)
+    if not gas_url or not _validated_relay_url(gas_url):
+        return None
     req = urllib.request.Request(
         gas_url,
         data=payload,
