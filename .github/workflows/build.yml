@@ -139,12 +139,17 @@ jobs:
     # unnoticed — v1's engine/ had no CI coverage at all.
     - name: Verify and build engine/v2 core
       shell: pwsh
+      working-directory: engine/v2
       run: |
-        go -C engine/v2 mod verify
-        go -C engine/v2 vet ./...
-        go -C engine/v2 test ./...
+        # pwsh keeps running after a failing native command unless told not to,
+        # so a red `go test` would otherwise be hidden by the build that follows.
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        go mod verify
+        go vet ./...
+        go test ./...
         $core = Join-Path $env:RUNNER_TEMP "blackout-core.exe"
-        go -C engine/v2 build -o $core ./cmd/blackout-core
+        go build -o $core ./cmd/blackout-core
         if (-not (Test-Path $core)) { throw "engine/v2 core build output is missing" }
         & $core -version
 
@@ -155,7 +160,31 @@ jobs:
         pip install pyinstaller pytest
 
     - name: Run Python tests
-      run: python -m pytest --rootdir=. tests
+      shell: pwsh
+      timeout-minutes: 30
+      env:
+        # Same text-encoding defaults as the Linux runner. Without them a piped
+        # child process falls back to the ANSI code page (cp1252).
+        PYTHONUTF8: "1"
+        PYTHONIOENCODING: "utf-8"
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        # Private temp root for this run, so tempfile and tmp_path output never
+        # shares the runner's temp directory.
+        $temp = Join-Path $env:RUNNER_TEMP "pytest-temp"
+        New-Item -ItemType Directory -Force $temp | Out-Null
+        $env:TEMP = $temp
+        $env:TMP = $temp
+        $env:TMPDIR = $temp
+        python -m pytest --rootdir=. tests -p no:cacheprovider `
+          "--basetemp=$(Join-Path $temp 'basetemp')" `
+          "--junitxml=$(Join-Path $env:RUNNER_TEMP 'pytest-junit.xml')"
+
+    - name: Annotate failing Python tests
+      if: failure()
+      shell: pwsh
+      run: python scripts/annotate_pytest_junit.py "$(Join-Path $env:RUNNER_TEMP 'pytest-junit.xml')"
 
     - name: Verify wheel installation
       shell: pwsh
@@ -216,12 +245,17 @@ jobs:
 
     # Also exercised on Linux so the Unix-domain-socket transport is covered;
     # the Windows job only ever hits the named-pipe path.
+    # working-directory keeps the -o output and the dist/ checks in one
+    # directory. `go -C engine/v2 build -o dist/...` wrote to engine/v2/dist/
+    # while `test -x dist/...` looked in the repository-root dist/, which failed
+    # the job right after the build.
     - name: Verify and build engine/v2 core
+      working-directory: engine/v2
       run: |
-        go -C engine/v2 mod verify
-        go -C engine/v2 vet ./...
-        go -C engine/v2 test ./...
-        go -C engine/v2 build -o dist/blackout-core-linux-amd64 ./cmd/blackout-core
+        go mod verify
+        go vet ./...
+        go test ./...
+        go build -o dist/blackout-core-linux-amd64 ./cmd/blackout-core
         test -x dist/blackout-core-linux-amd64
         ./dist/blackout-core-linux-amd64 -version
 
@@ -232,7 +266,21 @@ jobs:
         pip install pytest
 
     - name: Run Python tests
-      run: python -m pytest --rootdir=. tests
+      timeout-minutes: 30
+      env:
+        PYTHONUTF8: "1"
+        PYTHONIOENCODING: "utf-8"
+      run: |
+        # Private temp root for this run, matching the Windows job.
+        mkdir -p "$RUNNER_TEMP/pytest-temp"
+        export TMPDIR="$RUNNER_TEMP/pytest-temp"
+        python -m pytest --rootdir=. tests -p no:cacheprovider \
+          --basetemp="$RUNNER_TEMP/pytest-temp/basetemp" \
+          --junitxml="$RUNNER_TEMP/pytest-junit.xml"
+
+    - name: Annotate failing Python tests
+      if: failure()
+      run: python scripts/annotate_pytest_junit.py "$RUNNER_TEMP/pytest-junit.xml"
 
     - name: Verify wheel installation
       run: |

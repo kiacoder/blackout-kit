@@ -40,6 +40,10 @@ def test_daemon_ipc_metrics():
     assert "uptime" in metrics
 
 def test_gui_russia_mode():
+    # blackoutkit.gui_app wraps tkinter through customtkinter. Some Linux CI
+    # runners and headless sandboxes ship Python without python3-tk; skip there
+    # instead of failing the whole suite on a missing optional system package.
+    pytest.importorskip("tkinter")
     if not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
         # Headless environment, test GUI module importability
         import blackoutkit.gui_app as gui
