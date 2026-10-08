@@ -1,17 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import glob
+import os
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 datas_ctk, binaries_ctk, hiddenimports_ctk = collect_all("customtkinter")
 datas_typer, binaries_typer, hiddenimports_typer = collect_all("typer")
 hiddenimports_blackout = collect_submodules("blackoutkit")
 
+# Native DLLs are never committed (see bins/.gitkeep and .gitignore), so bundle
+# whichever ones are present on the build machine. A glob with no match aborts
+# PyInstaller, which broke clean CI checkouts.
+bundled_dlls = [(path, "bins") for path in sorted(glob.glob(os.path.join(SPECPATH, "bins", "*.dll")))]
+
 a = Analysis(
     ['blackout.py'],
     pathex=[],
     binaries=[] + binaries_ctk + binaries_typer,
     datas=[
-        ("bins/*.dll", "bins"),
         ("bins/icon.png", "bins"),
         ("assets/*", "assets"),
         ("data/cloudflare_ips.txt", "data"),
@@ -20,7 +27,7 @@ a = Analysis(
         # User configs are mutable and may contain credentials; never bundle them.
         ("blackoutkit/resources/data/*.txt", "blackoutkit/resources/data"),
         ("blackoutkit/resources/assets/*", "blackoutkit/resources/assets"),
-    ] + datas_ctk + datas_typer,
+    ] + bundled_dlls + datas_ctk + datas_typer,
     hiddenimports=["_overlapped", "asyncio"] + hiddenimports_ctk + hiddenimports_typer + hiddenimports_blackout,
     hookspath=[],
     hooksconfig={},
