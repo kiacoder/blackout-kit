@@ -29,6 +29,17 @@ XRAY_BIN_NAMES = [
 LINUX_RUNNER_NAMES = ["blackout-engine"]
 
 
+class XRayConfigError(RuntimeError):
+    """Raised when no usable outbound configuration can be resolved.
+
+    A previous revision shipped a hard-coded Trojan fallback (password ``humanity``
+    and SNI ``www.creationlong.org``) that was silently used whenever the caller
+    passed no explicit proxy config and no ``xray_config.json`` fallback existed.
+    That is a credential/endpoint leak, so the built-in fallback is gone: the caller
+    must supply an explicit proxy_config or a valid outbound file in the bins dir.
+    """
+
+
 class XRayEngine(Engine):
     name = "xray"
     description = "XRay proxy core — routes traffic through SNI spoofer"
@@ -173,7 +184,12 @@ class XRayEngine(Engine):
                     return config
                 except (json.JSONDecodeError, OSError):
                     pass  # Corrupt/unreadable fallback — fall through to default
-            outbound = self._default_outbound()
+            raise XRayConfigError(
+                "No proxy configuration available. The built-in fallback that shipped "
+                "hard-coded Trojan credentials has been removed for security. Provide an "
+                "explicit proxy_config (e.g. via select_proxy_config or a .json profile) or "
+                "drop a valid outbound config at bins/xray_config.json."
+            )
 
         # ── LEGEND Mode: Chain to Tor ────────────────────────────
         if mode == "legend":
@@ -337,23 +353,17 @@ class XRayEngine(Engine):
         return True
 
     def _default_outbound(self) -> dict:
-        """Use the built-in Trojan config from the SNI-Spoofer package."""
-        s = cfg.load()
-        out = {
-            "tag":      "proxy",
-            "protocol": "trojan",
-            "settings": {"servers": [{"address": "127.0.0.1", "port": s["sni_listen_port"], "password": "humanity"}]},
-            "streamSettings": {
-                "network":  "ws",
-                "security": "tls",
-                "tlsSettings": {
-                    "serverName":    "www.creationlong.org",
-                    "fingerprint":   s["xray_fingerprint"],
-                },
-                "wsSettings": {"path": "/assignment", "headers": {"Host": "www.creationlong.org"}},
-            },
-        }
-        return out
+        """Deprecated: the hard-coded Trojan fallback was removed for security.
+
+        Callers reach here only when no usable proxy configuration exists; the
+        previous implementation silently embedded credentials and a fixed SNI,
+        which is a leak. ``generate_config`` now raises ``XRayConfigError`` before
+        this would run, so this method is retained only as a typed guard.
+        """
+        raise XRayConfigError(
+            "No proxy configuration available. Supply an explicit proxy_config or a "
+            "valid bins/xray_config.json outbound instead of relying on built-in creds."
+        )
 
     def start(self) -> bool:
 
@@ -416,7 +426,11 @@ class XRayEngine(Engine):
             )
             return False
 
-        config = self.generate_config()
+        try:
+            config = self.generate_config()
+        except XRayConfigError as exc:
+            self._log.error("XRay config build failed: %s", exc)
+            return False
         config_path = self._config_dir / "xray_config.json"
         config_path.write_text(json.dumps(config, indent=2))
 

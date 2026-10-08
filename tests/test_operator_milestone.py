@@ -2,6 +2,7 @@
 suggestions, env restoration on bootstrap failure, and the interactive
 carrier picker."""
 import json
+import sys
 
 from typer.testing import CliRunner
 
@@ -188,7 +189,10 @@ def _picker_service(choose, detect=None, interactive=True):
 def test_picker_selection_applies_carrier_profile():
     svc = _picker_service(lambda: "ir-mci")
     result = svc.connect(ConnectionRequest(operation="connect"))
-    assert result.ok and result.engine == "sni"
+    # The SNI path is Windows-only; on Linux the same request resolves through
+    # resolve_engine_name() to the managed "tun" engine.
+    expected_engine = "sni" if sys.platform == "win32" else "tun"
+    assert result.ok and result.engine == expected_engine
     assert result.preset["name"] == "isp-profile"
     assert result.preset["overrides"]["BLACKOUT_COUNTRY"] == "IR"
 

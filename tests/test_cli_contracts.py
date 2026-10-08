@@ -6,8 +6,13 @@ import pytest
 from packaging.requirements import Requirement
 
 
-def test_all_feature_torrent_dependency_targets_supported_platforms():
+try:
     import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib
+
+
+def test_all_feature_torrent_dependency_targets_supported_platforms():
 
     metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     torrent_requirements = metadata["project"]["optional-dependencies"]["all"]

@@ -42,7 +42,7 @@ class SNIEngine(Engine):
 
     def _write_config(self) -> Path:
         config = {
-            "LISTEN_HOST":  "0.0.0.0",
+            "LISTEN_HOST":  "127.0.0.1",
             "LISTEN_PORT":  self.listen_port,
             "CONNECT_IP":   self.connect_ip,
             "CONNECT_PORT": 443,

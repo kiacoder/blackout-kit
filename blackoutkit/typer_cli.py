@@ -21,7 +21,7 @@ if not sys.stdout.isatty():
 
     _typer_rich_utils.FORCE_TERMINAL = False
 
-from . import __version__
+from . import __version__, APP_DATA_DIR
 from .cli_navigator import get_navigator
 from .cli_dispatch import ProfessionalCLIGroup, create_professional_app
 from .cli_enhancements import (

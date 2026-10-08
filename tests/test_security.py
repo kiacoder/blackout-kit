@@ -144,8 +144,12 @@ def test_atomic_write_bytes(tmp_path):
     assert target.read_bytes() == b"hello"
 
 @patch("blackoutkit.security.CONFIGS_FILE", MagicMock(exists=MagicMock(return_value=False)))
-def test_obfuscate_configs_no_file():
-    sec.obfuscate_configs()
+def test_obfuscate_configs_no_file(tmp_path):
+    # Keep the secret-vault file and settings out of the shared sandbox home so
+    # this test can't leak state into test_deobfuscate_configs_no_file.
+    with patch("blackoutkit.vault.ENC_SECRETS_FILE", tmp_path / "secrets.enc"), \
+         patch("blackoutkit.security.APP_DATA_DIR", tmp_path):
+        sec.obfuscate_configs()
 
 # Let's use real file operations via tmp_path for crypto tests
 def test_obfuscate_deobfuscate_configs_full(tmp_path):
@@ -155,7 +159,8 @@ def test_obfuscate_deobfuscate_configs_full(tmp_path):
     
     with patch("blackoutkit.security.CONFIGS_FILE", conf), \
          patch("blackoutkit.security.ENC_CONFIGS", enc), \
-         patch("blackoutkit.security.APP_DATA_DIR", tmp_path):
+         patch("blackoutkit.security.APP_DATA_DIR", tmp_path), \
+         patch("blackoutkit.vault.ENC_SECRETS_FILE", tmp_path / "secrets.enc"):
          
         sec.obfuscate_configs()
         assert not conf.exists()
@@ -167,8 +172,9 @@ def test_obfuscate_deobfuscate_configs_full(tmp_path):
         assert conf.exists()
         assert conf.read_bytes() == b"secret config"
 
-def test_deobfuscate_configs_no_file():
-    with patch("blackoutkit.security.ENC_CONFIGS", MagicMock(exists=MagicMock(return_value=False))):
+def test_deobfuscate_configs_no_file(tmp_path):
+    with patch("blackoutkit.security.ENC_CONFIGS", MagicMock(exists=MagicMock(return_value=False))), \
+         patch("blackoutkit.vault.ENC_SECRETS_FILE", tmp_path / "secrets.enc"):
         assert sec.deobfuscate_configs() is False
 
 # === AV EXCLUSION ===

@@ -66,9 +66,13 @@ FREE_TIER_SERVERS = {
     ],
 }
 
-# Credentials for Hotspot Shield account (free or paid tier)
-DEFAULT_FREE_TIER_USERNAME = "mojanabiri@gmail.com"
-DEFAULT_FREE_TIER_PASSWORD = "123456"
+class HotspotShieldConfigError(RuntimeError):
+    """Raised when the engine is asked to connect without usable credentials.
+
+    A previous revision shipped a hard-coded account here and silently used it
+    whenever the caller passed nothing. That is a credential-leak and an
+    account-sharing hazard, so missing credentials are now an explicit error.
+    """
 
 
 class HotspotShieldEngine(Engine):
@@ -85,8 +89,11 @@ class HotspotShieldEngine(Engine):
     ):
         super().__init__()
         self.account_type = account_type
-        self.username = username or DEFAULT_FREE_TIER_USERNAME
-        self.password = password or DEFAULT_FREE_TIER_PASSWORD
+        # No defaults. The free tier needs none: the installed Windows Store
+        # app owns its own signed-in session, and this engine only drives the
+        # app and watches the HssStore adapter.
+        self.username = username
+        self.password = password
         self.current_server: Optional[str] = None
         self._connected = False
         # Windows Store app package name

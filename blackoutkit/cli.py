@@ -27,6 +27,7 @@ from rich.progress import (
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.prompt import Prompt
 
 from . import __version__, daemon
 from . import settings as cfg

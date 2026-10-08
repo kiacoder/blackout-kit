@@ -78,3 +78,16 @@ ca.psiphon.PsiphonTunnel.tunnel-core/
 bins/psiphon_data/
 bins/ca.psiphon.PsiphonTunnel.tunnel-core/
 buildwheel-smoke/
+
+# Generated wheels and stray root artifacts (never track build outputs or scratch files)
+*.whl
+.coverage
+/query
+/print_debug.py
+.final-package-smoke/
+dist-ci-smoke/
+dist-lifecycle-smoke/
+dist-portability-smoke/
+pip/
+.mimosa/
+Microsoft/
