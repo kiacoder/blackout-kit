@@ -22,10 +22,15 @@ Scope note: tool calls can start/stop local engines, import remote subscriptions
 or modify local proxy/network settings. The MCP server exposes only the subset
 implemented below; descriptions must not imply unimplemented network operations.
 """
+import hmac
 import json
+import logging
+import os
 import sys
 
 from . import settings as cfg
+
+_log = logging.getLogger(__name__)
 
 _MCP_ENGINES = frozenset({
     "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
@@ -94,7 +99,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_connect",
-        "description": "Start an explicitly selected Blackout Kit engine. Supported engines depend on the platform, installed runtime, and saved configuration.",
+        "description": "Start an explicitly selected Blackout Kit engine. Supported engines depend on the platform, installed runtime, and saved configuration. Requires auth_token because it changes local network state (including TUN).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -215,7 +220,7 @@ TOOLS_MANIFEST = [
     },
     {
         "name": "blackout_net_tools",
-        "description": "Run supported network diagnostics and targeted recovery. Some operations can modify DNS, hotspot, or Blackout-owned network state.",
+        "description": "Run supported network diagnostics and targeted recovery. dns-set, dns-flush, netfix, and hotspot change DNS, hotspot, or network state and require auth_token; dns-bench, ping, netfix-preview, and netfix-history are read-only.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -319,27 +324,112 @@ TOOLS_MANIFEST = [
     }
 ]
 
-_MCP_AUTH_ENABLED = True  # Set to False only when explicitly disabled by user
+# ───────────────────────────── Authorization ─────────────────────────────
+# Privileged operations change settings, the daemon, DNS, hotspot, or network
+# state. They run only when the caller presents `auth_token` equal to the server
+# secret: BLACKOUT_MCP_TOKEN, or BLACKOUT_MCP_SECRET as a fallback. The secret is
+# read from the server's own environment, never from a tool argument. Every
+# failure path fails closed. Read-only actions need no token.
+
+_MCP_AUTH_ENABLED = True  # Keep True in production; only tests may disable it.
+_MCP_SECRET_ENV_VARS = ("BLACKOUT_MCP_TOKEN", "BLACKOUT_MCP_SECRET")
+_MCP_AUTH_ARGUMENT = "auth_token"
+
+_PRIVILEGED_TOOLS = frozenset({
+    "blackout_connect", "blackout_disconnect", "blackout_emergency",
+    "blackout_config", "blackout_settings", "blackout_net_tools",
+    "blackout_split_tunnel", "blackout_security_mode",
+})
+
+# Actions of privileged tools that only read state. Any action not listed here is
+# privileged (fail closed). DNS changes (dns-set, dns-flush), hotspot control
+# (hotspot), network recovery (netfix), and engine starts including TUN
+# (blackout_connect, blackout_emergency) are deliberately absent from this map.
+_READ_ONLY_OPERATIONS = {
+    "blackout_config": frozenset({"list"}),
+    "blackout_settings": frozenset({"get", "list"}),
+    "blackout_split_tunnel": frozenset({"list"}),
+    "blackout_net_tools": frozenset({"dns-bench", "ping", "netfix-preview", "netfix-history"}),
+}
+
+_AUTH_TOKEN_SCHEMA = {
+    "type": "string",
+    "description": (
+        "Authorization token for state-changing calls. Must equal the server's "
+        "BLACKOUT_MCP_TOKEN (or BLACKOUT_MCP_SECRET) environment value."
+    ),
+}
+for _tool in TOOLS_MANIFEST:
+    if _tool["name"] in _PRIVILEGED_TOOLS:
+        _tool["inputSchema"]["properties"][_MCP_AUTH_ARGUMENT] = dict(_AUTH_TOKEN_SCHEMA)
 
 
-def _check_mcp_authorization() -> bool:
-    """Gate privileged MCP operations. Return False to deny access."""
+def _configured_mcp_secret() -> str:
+    """Return the server secret from the environment, or '' when none is configured."""
+    for name in _MCP_SECRET_ENV_VARS:
+        value = os.environ.get(name, "")
+        if value:
+            return value
+    return ""
+
+
+def _check_mcp_authorization(presented_token: object = None) -> bool:
+    """Return True only when `presented_token` matches the configured server secret.
+
+    Fails closed: a missing secret, a missing or non-string token, or a mismatch
+    returns False. The comparison uses hmac.compare_digest to avoid timing leaks.
+    """
     if not _MCP_AUTH_ENABLED:
         return True
-    return True  # TODO: Implement token/callback-based authorization
+    expected = _configured_mcp_secret()
+    if not expected:
+        return False
+    if not isinstance(presented_token, str) or not presented_token:
+        return False
+    try:
+        return hmac.compare_digest(presented_token.encode("utf-8"), expected.encode("utf-8"))
+    except UnicodeEncodeError:
+        return False
+
+
+def _requires_mcp_authorization(tool_name: object, args: dict) -> bool:
+    """Return True when this concrete call changes state and therefore needs the token."""
+    if not isinstance(tool_name, str) or tool_name not in _PRIVILEGED_TOOLS:
+        return False
+    if tool_name == "blackout_security_mode":
+        return bool(args.get("mode"))  # reading the current mode is harmless
+    operation_key = "tool" if tool_name == "blackout_net_tools" else "action"
+    operation = args.get(operation_key)
+    return not (
+        isinstance(operation, str)
+        and operation in _READ_ONLY_OPERATIONS.get(tool_name, frozenset())
+    )
+
+
+def _access_denied_message() -> str:
+    """Return a denial that never echoes the presented token or the secret."""
+    if not _configured_mcp_secret():
+        return (
+            "Error: Access denied. Privileged MCP operations are disabled because "
+            "BLACKOUT_MCP_TOKEN (or BLACKOUT_MCP_SECRET) is not set on the server."
+        )
+    return (
+        "Error: Access denied. This operation changes local state and requires the "
+        "matching auth_token argument."
+    )
 
 
 def handle_tool_call(tool_name: str, args: dict) -> str:
     """Execute tool calls and return JSON or formatted string results for AI agents."""
-    # Gate privileged operations with authorization check
-    privileged_tools = {
-        "blackout_connect", "blackout_disconnect", "blackout_emergency",
-        "blackout_config", "blackout_settings", "blackout_net_tools",
-        "blackout_split_tunnel", "blackout_security_mode"
-    }
+    if not isinstance(args, dict):
+        args = {}
+    presented_token = args.get(_MCP_AUTH_ARGUMENT)
+    # The credential is consumed here and never forwarded to a tool handler.
+    args = {key: value for key, value in args.items() if key != _MCP_AUTH_ARGUMENT}
 
-    if tool_name in privileged_tools and not _check_mcp_authorization():
-        return "Error: Access denied. MCP authorization required for this operation. Enable via --allow-mcp flag and provide valid authorization token."
+    if _requires_mcp_authorization(tool_name, args) and not _check_mcp_authorization(presented_token):
+        _log.warning("Denied privileged MCP operation %r", tool_name)
+        return _access_denied_message()
 
     try:
         if tool_name == "blackout_ready":

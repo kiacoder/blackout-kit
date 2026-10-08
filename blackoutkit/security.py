@@ -10,7 +10,7 @@ Three user-selectable local configuration presets:
 
 Also handles:
   - Config file obfuscation (protect server credentials at rest)
-  - Windows Defender exclusion for bins/
+  - Windows Defender exclusion, limited to the isolated WinDivert driver folder
   - Kill switch with DoH/DoT leak protection (port 853 TCP+UDP)
   - Stability tracking with reset, bulk query, and alert helpers
   - Mode enforcement verification
@@ -32,7 +32,7 @@ from . import settings as cfg
 
 _log = logging.getLogger(__name__)
 
-from . import APP_DATA_DIR, BINS_DIR, DATA_DIR
+from . import APP_DATA_DIR, BINS_DIR, DATA_DIR, WINDIVERT_DIR, WINDIVERT_DRIVER_FILES
 
 CONFIGS_FILE  = DATA_DIR / "configs.txt"
 ENC_CONFIGS   = APP_DATA_DIR / "configs.enc"
@@ -444,109 +444,199 @@ def vault_is_active() -> bool:
 
 
 # ─────────────────────────── AV exclusion ────────────────────────
+#
+# Windows Defender exclusions are limited to the isolated WinDivert driver folder
+# (WINDIVERT_DIR). Nothing here runs automatically or silently. Adding or removing an
+# exclusion needs an explicit typed confirmation, and UAC is requested only after it.
+# The folder must hold nothing but the driver files, so the exclusion cannot widen to
+# bins/, to other executables, or to a parent folder.
 
-def add_defender_exclusion(path: Path | None = None) -> bool:
+DEFENDER_WARNING = """
+==============================================================================
+  WINDOWS DEFENDER EXCLUSION FOR THE WINDIVERT DRIVER - READ BEFORE CONTINUING
+==============================================================================
+Blackout's GoodbyeDPI engine uses WinDivert, a packet-capture driver. Windows
+Defender and other antivirus products often flag WinDivert, and tools built on
+it, as "hacking tools" or potentially unwanted software. For this use these
+detections are usually FALSE POSITIVES, but Blackout cannot verify them.
+
+If you confirm, Windows will show a UAC prompt to add ONE exclusion:
+    {folder}
+That folder must hold only the WinDivert driver files. The rest of bins\\ is still
+scanned, and Defender stays on. Remove the exclusion at any time with:
+    blackout config --remove-defender-exclusion
+
+Declining is safe: nothing changes, and you can keep using the SOCKS5/HTTP
+proxy modes (for example xray), which do not need the WinDivert driver.
+==============================================================================
+"""
+
+DEFENDER_FALLBACK_HINT = (
+    "Continue without the WinDivert driver: use a SOCKS5/HTTP mode that does not need it, "
+    "for example 'blackout connect xray' (SOCKS5 127.0.0.1:10808, HTTP 127.0.0.1:10809)."
+)
+
+
+def _normalize_windows_path(value) -> str:
+    return os.path.normcase(os.path.normpath(str(value))).rstrip("\\/")
+
+
+def same_windows_path(left, right) -> bool:
+    """Exact, case-insensitive path comparison. Substring matches never count."""
+    return _normalize_windows_path(left) == _normalize_windows_path(right)
+
+
+def path_listed(exclusions, path) -> bool:
+    return any(same_windows_path(item, path) for item in exclusions)
+
+
+def windivert_folder_excluded(exclusions=None) -> bool:
+    """Return True when Defender lists exactly the WinDivert driver folder."""
+    if exclusions is None:
+        exclusions = list_defender_exclusions()
+    return path_listed(exclusions, WINDIVERT_DIR)
+
+
+def _is_link_or_junction(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    is_junction = getattr(os.path, "isjunction", None)  # Python 3.12+ on Windows
+    return bool(is_junction and is_junction(str(path)))
+
+
+def windivert_folder_problem() -> str | None:
+    """Return why the WinDivert folder may not be excluded, or None when it is isolated."""
+    folder = WINDIVERT_DIR
+    if folder.name != "windivert" or folder.parent.resolve() != BINS_DIR.resolve():
+        return "the WinDivert folder is not bins/windivert"
+    if _is_link_or_junction(folder):
+        return "the WinDivert folder is a symbolic link or junction"
+    if not folder.is_dir():
+        return "the WinDivert folder does not exist (run: blackout bins download goodbyedpi)"
+    found = sorted(entry.name for entry in folder.iterdir())
+    expected = sorted(WINDIVERT_DRIVER_FILES)
+    if found != expected:
+        return (
+            "the WinDivert folder must contain only " + ", ".join(expected)
+            + " (found: " + (", ".join(found) or "nothing") + ")"
+        )
+    for name in WINDIVERT_DRIVER_FILES:
+        entry = folder / name
+        if _is_link_or_junction(entry) or not entry.is_file():
+            return f"{name} is not a regular file"
+    return None
+
+
+def _defender_exclusion_script(cmdlet: str, folder: Path) -> str:
+    """PowerShell that applies one exclusion change to exactly `folder`."""
+    quoted = str(folder).replace("'", "''")
+    return f"$ErrorActionPreference = 'Stop'\n{cmdlet} -ExclusionPath '{quoted}'\n"
+
+
+def _apply_defender_exclusion_change(cmdlet: str, want_present: bool) -> bool:
+    """Run Add-/Remove-MpPreference for the WinDivert folder. Callers must have confirmed.
+
+    The script travels as -EncodedCommand, so no path quoting can break out of it. A
+    non-elevated attempt runs first; UAC is requested only if that attempt did not
+    change the state, and the result is always re-read from Defender.
     """
-    Add the bins/ folder to Windows Defender exclusions.
-    Prevents Defender from flagging WinDivert, sni-spoofing.exe, etc.
-    Auto-elevates via UAC if not running as admin.
-    """
-    if sys.platform != "win32":
-        return False
-    target = str(path or BINS_DIR.resolve())
-    env = {**os.environ, "BLACKOUT_EXCL_PATH": target}
-    ps = 'Add-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; Write-Output "OK"'
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", ps],
-        capture_output=True, text=True, timeout=20, env=env,
-    )
-    if "OK" in result.stdout:
+    import base64
+    import ctypes
+
+    script = _defender_exclusion_script(cmdlet, WINDIVERT_DIR)
+    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+    args = ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded]
+    try:
+        subprocess.run(["powershell", *args], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log.info("Defender exclusion attempt without elevation failed: %s", exc)
+    if windivert_folder_excluded() == want_present:
         return True
 
-    _log.info("Defender exclusion needs admin — requesting elevation via UAC…")
-    fd, path = tempfile.mkstemp(suffix=".txt")
-    os.close(fd)
-    marker = Path(path)
-    ps_elevated = (
-        'Add-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; '
-        'Write-Output "OK" | Out-File -FilePath $env:BLACKOUT_MARKER_PATH -Encoding UTF8'
-    )
-    env = {**os.environ, "BLACKOUT_EXCL_PATH": target, "BLACKOUT_MARKER_PATH": str(marker)}
-    handle, _pid = elevate.launch_elevated(
-        "powershell.exe",
-        ["-NoProfile", "-Command", ps_elevated],
-        env=env,
-    )
-    if handle is None:
-        return False
-    import ctypes
-    ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
-    ctypes.windll.kernel32.CloseHandle(handle)
-    try:
-        ok = marker.exists() and "OK" in marker.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        ok = False
-    marker.unlink(missing_ok=True)
-    return ok
+    _log.info("Defender change needs administrator rights; requesting UAC after confirmation.")
+    handle, _pid = elevate.launch_elevated("powershell.exe", args)
+    if handle:
+        ctypes.windll.kernel32.WaitForSingleObject(handle, 60000)
+        ctypes.windll.kernel32.CloseHandle(handle)
+    return windivert_folder_excluded() == want_present
 
 
-def remove_defender_exclusion(path: Path | None = None) -> bool:
-    if sys.platform != "win32":
+def add_windivert_exclusion(*, confirmed: bool = False) -> bool:
+    """Add the exclusion for bins/windivert only.
+
+    Refuses unless `confirmed` is True and the folder passes windivert_folder_problem().
+    Nothing calls this without an explicit user confirmation.
+    """
+    if not confirmed or sys.platform != "win32":
         return False
-    target = str(path or BINS_DIR.resolve())
-    env = {**os.environ, "BLACKOUT_EXCL_PATH": target}
-    ps = 'Remove-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; Write-Output "OK"'
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", ps],
-        capture_output=True, text=True, timeout=20, env=env,
-    )
-    if "OK" in result.stdout:
+    if windivert_folder_problem() is not None:
+        return False
+    if windivert_folder_excluded():
         return True
+    return _apply_defender_exclusion_change("Add-MpPreference", want_present=True)
 
-    _log.info("Defender exclusion removal needs admin — requesting elevation via UAC…")
-    fd, path = tempfile.mkstemp(suffix=".txt")
-    os.close(fd)
-    marker = Path(path)
-    ps_elevated = (
-        'Remove-MpPreference -ExclusionPath $env:BLACKOUT_EXCL_PATH; '
-        'Write-Output "OK" | Out-File -FilePath $env:BLACKOUT_MARKER_PATH -Encoding UTF8'
-    )
-    env = {**os.environ, "BLACKOUT_EXCL_PATH": target, "BLACKOUT_MARKER_PATH": str(marker)}
-    handle, _pid = elevate.launch_elevated(
-        "powershell.exe",
-        ["-NoProfile", "-Command", ps_elevated],
-        env=env,
-    )
-    if handle is None:
+
+def remove_windivert_exclusion(*, confirmed: bool = False) -> bool:
+    """Remove the exclusion for bins/windivert only. Requires explicit confirmation."""
+    if not confirmed or sys.platform != "win32":
         return False
-    import ctypes
-    ctypes.windll.kernel32.WaitForSingleObject(handle, 30000)
-    ctypes.windll.kernel32.CloseHandle(handle)
-    try:
-        ok = marker.exists() and "OK" in marker.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        ok = False
-    marker.unlink(missing_ok=True)
-    return ok
+    if not windivert_folder_excluded():
+        return True
+    return _apply_defender_exclusion_change("Remove-MpPreference", want_present=False)
+
+
+def run_windivert_exclusion_setup(*, confirm, emit, remove: bool = False) -> str:
+    """Confirmation-gated setup or removal. Returns a status code and changes nothing unconfirmed.
+
+    `confirm()` must return True only for an explicit affirmative answer. It is called
+    before any UAC prompt. Status codes: unsupported, unsafe-folder, already-present,
+    not-present, declined, added, removed, failed.
+    """
+    if sys.platform != "win32":
+        emit("Defender exclusions are available only on Windows. No changes were made.")
+        return "unsupported"
+
+    if remove:
+        if not windivert_folder_excluded():
+            emit("The WinDivert folder has no Defender exclusion. No changes were made.")
+            return "not-present"
+        emit(f"This removes the Defender exclusion for {WINDIVERT_DIR}. Defender will scan it again.")
+        if not confirm():
+            emit("Cancelled. No changes were made.")
+            return "declined"
+        if remove_windivert_exclusion(confirmed=True):
+            emit("Defender exclusion removed.")
+            return "removed"
+        emit("The exclusion could not be removed (UAC was cancelled or Defender refused).")
+        return "failed"
+
+    problem = windivert_folder_problem()
+    if problem is not None:
+        emit(f"Refusing to add a Defender exclusion: {problem}. No changes were made.")
+        return "unsafe-folder"
+    if windivert_folder_excluded():
+        emit("The WinDivert driver folder is already excluded. No changes were made.")
+        return "already-present"
+
+    emit(DEFENDER_WARNING.format(folder=WINDIVERT_DIR))
+    if not confirm():
+        emit("Declined. No changes were made.")
+        emit(DEFENDER_FALLBACK_HINT)
+        return "declined"
+    if add_windivert_exclusion(confirmed=True):
+        emit(f"Defender exclusion added for {WINDIVERT_DIR} only.")
+        return "added"
+    emit("Windows did not confirm the exclusion (UAC was cancelled or Defender refused it).")
+    emit(DEFENDER_FALLBACK_HINT)
+    return "failed"
 
 
 def verify_exclusion_added(path: Path | None = None) -> bool:
-    """
-    Query Windows Defender to confirm the exclusion actually exists —
-    not just whether add_defender_exclusion() returned True.
-    Returns True if the path appears in the active exclusion list.
-    """
+    """Return True only if Defender lists exactly `path` (default: the WinDivert folder)."""
     if sys.platform != "win32":
         return False
-    target = str(path or BINS_DIR.resolve()).lower()
     try:
-        ps = "(Get-MpPreference).ExclusionPath -join '|'"
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps],
-            capture_output=True, text=True, timeout=15,
-        )
-        exclusions = result.stdout.strip().lower()
-        return target in exclusions
+        return path_listed(list_defender_exclusions(), path or WINDIVERT_DIR)
     except Exception:
         return False
 

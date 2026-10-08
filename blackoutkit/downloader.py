@@ -13,6 +13,7 @@ Epic features:
 import fnmatch
 import hashlib
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -87,10 +88,12 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         asset_exclude = None,
         extract_map   = {
             "*/goodbyedpi.exe":  "goodbyedpi.exe",
-            "*/WinDivert.dll":   "WinDivert.dll",
-            "*/WinDivert64.sys": "WinDivert64.sys",
+            "*/WinDivert.dll":   "windivert/WinDivert.dll",
+            "*/WinDivert64.sys": "windivert/WinDivert64.sys",
         },
-        output_bins   = ["goodbyedpi.exe", "WinDivert.dll", "WinDivert64.sys"],
+        # The driver lives in its own folder (bins/windivert) so Defender exclusions can
+        # target only that folder; see WINDIVERT_DIR in blackoutkit/__init__.py.
+        output_bins   = ["goodbyedpi.exe", "windivert/WinDivert.dll", "windivert/WinDivert64.sys"],
         required      = False,
         manual_url    = "https://github.com/ValdikSS/GoodbyeDPI/releases",
         manual_note   = "",
@@ -349,6 +352,7 @@ def _extract_from_zip(
                     resolved = dest.resolve()
                     if not resolved.is_relative_to(output_dir.resolve()):
                         return False, "unsafe_output_path"
+                    dest.parent.mkdir(parents=True, exist_ok=True)
                     dest.write_bytes(zf.read(matched))
                 except OSError as exc:
                     return False, f"write_error: {exc}"
@@ -651,6 +655,36 @@ def _write_provenance(records: list[dict[str, str]]) -> None:
         raise
 
 
+_LEGACY_WINDIVERT_OUTPUTS = ("WinDivert.dll", "WinDivert64.sys")
+
+
+def _remove_legacy_windivert_copies() -> None:
+    """Delete driver copies that older releases left directly in bins/.
+
+    The driver now lives only in bins/windivert/. A flat copy would be found first
+    (the executable's own folder is searched first) and would sit outside the isolated
+    folder, so it is removed along with its provenance record. A copy that is still
+    loaded by a running process cannot be deleted; it is left in place.
+    """
+    for name in _LEGACY_WINDIVERT_OUTPUTS:
+        try:
+            (BINS_DIR / name).unlink(missing_ok=True)
+        except OSError as exc:
+            logging.getLogger(__name__).warning("Could not remove legacy %s: %s", name, exc)
+    if not _PROVENANCE_FILE.is_file():
+        return
+    records = _read_provenance()
+    kept = [
+        record for record in records
+        if (record.get("output") or "") not in _LEGACY_WINDIVERT_OUTPUTS
+    ]
+    if len(kept) != len(records):
+        try:
+            _write_provenance(kept)
+        except OSError:
+            pass
+
+
 def _merge_provenance(records: list[dict[str, str]]) -> None:
     merged = _read_provenance()
     by_output = {
@@ -832,6 +866,8 @@ def _download_verified_binary(
             ok, message = _promote_staged_outputs(stage_dir, info.output_bins, provenance)
             if not ok:
                 return False, message
+            if info.key == "goodbyedpi":
+                _remove_legacy_windivert_copies()
             return True, f"Installed {info.display_name} ({tag}); SHA-256 verified"
         except urllib.error.URLError as exc:
             return False, f"Download failed: {exc.reason}"

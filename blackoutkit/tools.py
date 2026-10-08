@@ -23,7 +23,7 @@ __path__ = [str(Path(__file__).with_name("tools"))]
 _log = logging.getLogger(__name__)
 
 
-from . import APP_DATA_DIR, elevate
+from . import APP_DATA_DIR, WINDIVERT_DIR, elevate
 from .proxy_manager import is_admin as _is_admin
 from ._net_utils import reject_private_host
 
@@ -2827,17 +2827,15 @@ def get_windivert_shaper_status() -> dict:
         windir = os.environ.get("WINDIR", r"C:\Windows")
         sys32 = Path(windir) / "System32"
         sys32_drivers = sys32 / "drivers"
-        bins_dir = BASE_DIR / "bins"
-
         dll_candidates = [
             sys32 / "WinDivert.dll",
-            bins_dir / "WinDivert.dll",
+            WINDIVERT_DIR / "WinDivert.dll",
             Path("WinDivert.dll")
         ]
         sys_candidates = [
             sys32_drivers / "WinDivert64.sys",
             sys32_drivers / "WinDivert32.sys",
-            bins_dir / "WinDivert64.sys",
+            WINDIVERT_DIR / "WinDivert64.sys",
             Path("WinDivert64.sys")
         ]
 

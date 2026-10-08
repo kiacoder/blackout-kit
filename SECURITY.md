@@ -83,7 +83,7 @@ No site accepts arbitrary intranet access beyond what the user explicitly config
 
 ### Code Integrity
 - ✅ All releases built via GitHub Actions (reproducible)
-- ✅ Windows executable signed with build certificate (v1.1.1+)
+- ⚠️ The CI release job does not sign Windows executables or publish build-provenance attestations; see "Trust Boundaries and Hardening"
 - ✅ Source code audited for resource leaks, injection flaws, unsafe concurrency
 - ✅ CodeQL static analysis on every push
 - ✅ Dependency pinning for reproducible builds
@@ -117,6 +117,92 @@ Blackout Kit has no analytics or telemetry backend and never phones home on its 
 - ✅ Streaming file I/O for large YARA scans (not loaded into memory)
 - ✅ Graceful daemon shutdown (no orphaned processes)
 - ✅ Memory bounds for cache and buffer operations
+
+## Trust Boundaries and Hardening
+
+This section documents the controls for three areas that an external audit reviewed: the MCP
+server, release verification, and the WinDivert driver with Windows Defender.
+
+### MCP authorization
+
+**Threat:** a local MCP client, or an agent manipulated by untrusted content, invokes state-changing
+tools without the operator's consent. Those tools can change DNS, control the hotspot, run network
+recovery, start TUN interfaces, and rewrite settings or saved configs.
+
+**Control:** `blackoutkit/mcp_server.py` checks `auth_token` on every privileged call. The expected
+value is the server process's `BLACKOUT_MCP_TOKEN` (or `BLACKOUT_MCP_SECRET`). The comparison uses
+`hmac.compare_digest`. The check fails closed: no configured secret, a missing or non-string token,
+or a mismatch denies the call. The token is consumed by the dispatcher and never reaches a tool
+handler. Denial messages never echo the presented value, and denials are logged by tool name only.
+The privileged set and the read-only exemptions are listed in README.md under "MCP authorization".
+
+**Residual risks:**
+
+- The agent must hold the token to call privileged tools, so the token sits in that agent's context
+  and in the MCP transcript. Use a dedicated random value and rotate it if it may have leaked.
+- Read-only tools need no token. Any local process that can launch `blackout mcp` can read local
+  state through them. `blackout_snapshot` and the support-bundle preview are sanitized, but
+  `blackout_read_logs` is not separately filtered.
+- The gate is a code constant (`_MCP_AUTH_ENABLED`), not a runtime switch, so it cannot be turned
+  off from the environment. Tests disable it explicitly.
+
+### Release verification (SHA-256)
+
+Release jobs in `.github/workflows/build.yml` publish `blackout.exe`, `blackout-engine-linux-amd64`,
+`blackout-source.zip`, `checksums.txt` (sha256sum format, all assets), and `blackout.exe.sha256`.
+The release job runs `sha256sum -c` before publishing.
+
+`install.ps1` verifies the download before anything else touches it:
+
+1. It requires a checksum asset (`checksums.txt` preferred, otherwise `blackout.exe.sha256`). Without one it stops and installs nothing.
+2. It stages the download beside the install target and does not overwrite the installed binary.
+3. It computes the hash with `Get-FileHash -Algorithm SHA256` and compares it case-insensitively after trimming. A missing, ambiguous, or malformed checksum, or a mismatch, deletes the staged file and exits with status 1.
+4. On a match it prints `[OK] SHA-256 checksum verified: <hash>` and moves the file into place.
+
+Manual verification commands are in README.md under "Verify the release (SHA-256)".
+
+**Limits:** the checksum and the file come from the same release, so this protects against corruption
+and substitution in transit but not against a compromised release. The release job does not sign the
+assets or create build-provenance attestations; adding them is the next step to close that gap.
+
+**Known issue:** `choco/tools/chocolateyinstall.ps1` pins a `checksum64` value that contains
+non-hexadecimal characters, so the Chocolatey package cannot pass verification until it is
+regenerated from a real release. Do not publish that package in its current state.
+
+### WinDivert driver isolation and Windows Defender
+
+**Threat:** Defender exclusions widen what antivirus does not scan. A broad exclusion such as all of
+`bins/` would exempt every executable placed there, which is why earlier builds were audited.
+
+**Control:**
+
+- WinDivert files live only in `bins/windivert/` (`blackoutkit/__init__.py`, `WINDIVERT_DIR`). They are
+  installed only from SHA-256-verified release assets, and their provenance is recorded.
+- The exclusion target is that folder alone. `blackoutkit/security.py` refuses to add an exclusion unless
+  the folder is exactly `bins/windivert`, is not a symbolic link or junction, and contains exactly the two
+  driver files.
+- Adding or removing an exclusion is never automatic. `blackout doctor --fix` does not change Defender. The
+  confirmed flow (`blackout config --setup-defender-exclusion`, `--remove-defender-exclusion`, or `doctor --fix-av`)
+  needs an interactive terminal and a typed `yes`, and requests UAC only after that answer.
+- The elevated command travels as `-EncodedCommand`, so the path cannot break out of it. Success is verified
+  by reading Defender's exclusion list back with an exact, case-insensitive comparison.
+- If the user declines, Blackout changes nothing and points to SOCKS5/HTTP modes, which do not use WinDivert.
+
+**Residual risks:** Defender does not scan files placed in the excluded folder. The folder check limits what
+can sit there, but it cannot verify the driver's contents beyond the install-time SHA-256 check. An exclusion
+does not cover other executables such as `goodbyedpi.exe`, which Defender may still flag. Blackout does not
+prove that a WinDivert detection is a false positive.
+
+### Audit remediation status
+
+| Finding | Status | Where |
+|---|---|---|
+| MCP authorization gate returned `True` unconditionally | Fixed: token gate, constant-time comparison, fail closed | `blackoutkit/mcp_server.py`, `tests/test_mcp_server.py` |
+| `install.ps1` ran a downloaded `blackout.exe` without a checksum | Fixed: SHA-256 check before install; releases publish checksums | `install.ps1`, `.github/workflows/build.yml`, `tests/test_install_script.py` |
+| Defender exclusion of all of `bins/`, silent via `doctor --fix`, with UAC | Fixed: narrow driver-folder exclusion, typed confirmation, UAC only afterwards | `blackoutkit/security.py`, `blackoutkit/doctor.py`, `blackoutkit/typer_cli.py`, `tests/test_security.py` |
+| Security documentation did not describe the above | Updated | `README.md`, `SECURITY.md` |
+
+---
 
 ## Local Data Inventory
 

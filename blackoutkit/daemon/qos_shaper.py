@@ -15,6 +15,8 @@ import threading
 import time
 from pathlib import Path
 
+from .. import WINDIVERT_DIR
+
 _log = logging.getLogger(__name__)
 
 
@@ -33,6 +35,7 @@ class WinDivertHandle:
         program_files = Path(os.environ.get("ProgramFiles", "C:/Program Files"))
         program_files_x86 = Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)"))
         dll_paths = [
+            WINDIVERT_DIR / "WinDivert.dll",
             program_files / "WinDivert" / "WinDivert.dll",
             program_files_x86 / "WinDivert" / "WinDivert.dll",
             Path("C:/WinDivert/WinDivert.dll"),

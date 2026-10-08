@@ -12,9 +12,9 @@ import tempfile
 import time
 from pathlib import Path
 
-from .. import core
+from .. import WINDIVERT_DIR, core
 from .. import settings as cfg
-from .base import BINS_DIR, Engine
+from .base import Engine
 
 GDPI_BIN_NAMES = [
     "goodbyedpi.exe",
@@ -56,12 +56,14 @@ class _LegacyGoodbyeDPIEngine(Engine):
         if not binary:
             return False
 
-        windivert_dll = binary.parent / "WinDivert.dll"
-        windivert_sys = binary.parent / "WinDivert64.sys"
+        # The driver is loaded from its isolated folder: both launch paths below run
+        # with that folder as the working directory, which the Windows loader searches.
+        windivert_dll = WINDIVERT_DIR / "WinDivert.dll"
+        windivert_sys = WINDIVERT_DIR / "WinDivert64.sys"
         if not windivert_dll.exists() or not windivert_sys.exists():
             self._log.error(
-                "WinDivert DLLs not found next to goodbyedpi.exe. "
-                "Run: blackout bins download goodbyedpi"
+                "WinDivert driver not found in %s. Run: blackout bins download goodbyedpi",
+                WINDIVERT_DIR,
             )
             return False
 
@@ -136,7 +138,7 @@ class _LegacyGoodbyeDPIEngine(Engine):
         try:
             self._process = subprocess.Popen(
                 [str(binary)] + self.flags,
-                cwd=str(binary.parent),
+                cwd=str(WINDIVERT_DIR),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0,
@@ -162,7 +164,7 @@ class _LegacyGoodbyeDPIEngine(Engine):
         # Use environment variables instead of f-string interpolation to prevent injection
         env = {
             "GDPI_BINARY": str(binary),
-            "GDPI_WORKDIR": str(binary.parent),
+            "GDPI_WORKDIR": str(WINDIVERT_DIR),
             "GDPI_ARGS": subprocess.list2cmdline(self.flags),
             "GDPI_PID_FILE": str(self._pid_file),
         }
@@ -355,7 +357,7 @@ class _NativeGoodbyeDPIEngine(Engine):
 
         old_cwd = os.getcwd()
         try:
-            os.chdir(BINS_DIR)
+            os.chdir(WINDIVERT_DIR)
             rc = dll.StartGDPIC()
         finally:
             os.chdir(old_cwd)
