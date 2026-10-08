@@ -1,10 +1,22 @@
 # Binaries — download separately (see bins/.gitkeep for instructions)
+# v2 note: engine DLLs/EXEs are build artifacts, never tracked. Use
+# `git rm --cached <path>` if one ever gets added (already-tracked files
+# ignore these rules).
 bins/*.exe
+bins/*.exe~
 bins/*.dll
+bins/*.dll.bak
 bins/*.sys
 bins/*.so
 bins/*.dylib
+bins/*.bak
+bins/*~
+bins/**/*.exe
+bins/**/*.dll
 !bins/.gitkeep
+# cgo-generated ABI headers ARE tracked: they are the v1 contract surface
+!bins/blackout_core.h
+!bins/blackout_warp.h
 
 # Generated XRay/Psiphon configs (contain sensitive data)
 bins/active_xray_config.json
@@ -53,6 +65,11 @@ Thumbs.db
 
 # Go engine build artifacts
 engine/*.exe
+engine/*.dll
+engine/**/*.exe
+engine/**/*.dll
+engine/v2/cmd/blackout-core/blackout-core
+engine/v2/cmd/blackout-core/blackout-core.exe
 
 # Generated WARP/Psiphon runtime identity and datastore caches
 psiphon_cache/

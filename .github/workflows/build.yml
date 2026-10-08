@@ -120,7 +120,9 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.26.x'
-        cache-dependency-path: engine/warp/go.sum
+        cache-dependency-path: |
+          engine/warp/go.sum
+          engine/v2/go.sum
 
     - name: Verify WARP dependency graph
       shell: pwsh
@@ -130,6 +132,21 @@ jobs:
         $warpDll = Join-Path $env:RUNNER_TEMP "blackout_warp.dll"
         go -C engine/warp build -buildmode=c-shared -o $warpDll .
         if (-not (Test-Path $warpDll)) { throw "WARP DLL build output is missing" }
+
+    # engine/v2 is the supervised daemon that replaces the in-process
+    # blackout_core.dll. It is verified and built here on every push so the
+    # control channel, framing codec and daemon entrypoint cannot rot
+    # unnoticed — v1's engine/ had no CI coverage at all.
+    - name: Verify and build engine/v2 core
+      shell: pwsh
+      run: |
+        go -C engine/v2 mod verify
+        go -C engine/v2 vet ./...
+        go -C engine/v2 test ./...
+        $core = Join-Path $env:RUNNER_TEMP "blackout-core.exe"
+        go -C engine/v2 build -o $core ./cmd/blackout-core
+        if (-not (Test-Path $core)) { throw "engine/v2 core build output is missing" }
+        & $core -version
 
     - name: Install dependencies
       run: |
@@ -186,7 +203,9 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '1.26.x'
-        cache-dependency-path: engine/go.sum
+        cache-dependency-path: |
+          engine/go.sum
+          engine/v2/go.sum
 
     - name: Build Linux runtime
       run: |
@@ -194,6 +213,17 @@ jobs:
         go -C engine build -o ../dist/blackout-engine-linux-amd64 .
         test -x dist/blackout-engine-linux-amd64
         file dist/blackout-engine-linux-amd64 | grep -q ELF
+
+    # Also exercised on Linux so the Unix-domain-socket transport is covered;
+    # the Windows job only ever hits the named-pipe path.
+    - name: Verify and build engine/v2 core
+      run: |
+        go -C engine/v2 mod verify
+        go -C engine/v2 vet ./...
+        go -C engine/v2 test ./...
+        go -C engine/v2 build -o dist/blackout-core-linux-amd64 ./cmd/blackout-core
+        test -x dist/blackout-core-linux-amd64
+        ./dist/blackout-core-linux-amd64 -version
 
     - name: Install Python dependencies
       run: |
