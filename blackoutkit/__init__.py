@@ -45,6 +45,13 @@ else:
         BINS_DIR = APP_DATA_DIR / "bins"
         DATA_DIR = APP_DATA_DIR / "data"
 
+# Isolated folder that holds only the WinDivert driver files. It is the single
+# folder Blackout may ask Windows Defender to exclude (see blackoutkit/security.py),
+# so it must never hold executables or configuration.
+WINDIVERT_DIR = BINS_DIR / "windivert"
+WINDIVERT_DRIVER_FILES = ("WinDivert.dll", "WinDivert64.sys")
+
+
 def resource_path(relative_path: str) -> Path:
     """Return a bundled or source resource path without exposing package internals."""
     relative = Path(relative_path)

@@ -1344,7 +1344,11 @@ def _bins_payload() -> dict:
 def doctor(
     ctx: typer.Context,
     fix: bool = typer.Option(False, "--fix", help="Auto-fix every repairable issue"),
-    fix_av: bool = typer.Option(False, "--fix-av", help="Add Windows Defender exclusions"),
+    fix_av: bool = typer.Option(
+        False,
+        "--fix-av",
+        help="Set up the narrow WinDivert Defender exclusion (asks you to type yes first)",
+    ),
     local_only: bool = typer.Option(False, "--local-only", help="Inspect local state only; never probe the internet or execute engines"),
     include_optional: bool = typer.Option(
         False,
@@ -1881,10 +1885,59 @@ config_app = typer.Typer(help="Manage V2Ray proxy configs", no_args_is_help=Fals
 app.add_typer(config_app, name="config")
 
 
+def _defender_exclusion_command(ctx, options: "OutputOptions", *, setup: bool, remove: bool) -> None:
+    """Handle --setup-defender-exclusion and --remove-defender-exclusion (interactive only)."""
+    if setup and remove:
+        _print_cli_error(
+            "invalid_input",
+            "use either --setup-defender-exclusion or --remove-defender-exclusion, not both",
+            options=options,
+            exit_code=2,
+        )
+    if getattr(ctx, "invoked_subcommand", None) is not None:
+        _print_cli_error(
+            "invalid_input",
+            "the Defender exclusion flags cannot be combined with a config subcommand",
+            options=options,
+            exit_code=2,
+        )
+    if options.json_output:
+        _print_cli_error(
+            "invalid_input",
+            "the Defender exclusion flags are interactive and cannot be used with --json",
+            options=options,
+            exit_code=2,
+        )
+    from .cli import _run_defender_exclusion_setup
+
+    status = _run_defender_exclusion_setup(remove=remove)
+    if status == "non-interactive":
+        raise typer.Exit(code=2)
+    if status in {"failed", "unsafe-folder"}:
+        raise typer.Exit(code=1)
+
+
 @config_app.callback(invoke_without_command=True)
-def config_status(ctx: typer.Context):
+def config_status(
+    ctx: typer.Context,
+    setup_defender_exclusion: bool = typer.Option(
+        False,
+        "--setup-defender-exclusion",
+        help="Exclude only the WinDivert driver folder from Windows Defender (asks you to type yes first)",
+    ),
+    remove_defender_exclusion: bool = typer.Option(
+        False,
+        "--remove-defender-exclusion",
+        help="Remove the WinDivert driver-folder Defender exclusion (asks you to type yes first)",
+    ),
+):
     """Open the keyboard config manager when no subcommand is given."""
     options = _output_options(ctx)
+    setup = bool(_option_value(setup_defender_exclusion, False))
+    remove = bool(_option_value(remove_defender_exclusion, False))
+    if setup or remove:
+        _defender_exclusion_command(ctx, options, setup=setup, remove=remove)
+        return
     if ctx.invoked_subcommand is not None:
         _reject_group_json(ctx.invoked_subcommand, options, _CONFIG_JSON_COMMANDS)
         return

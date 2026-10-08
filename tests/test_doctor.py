@@ -165,15 +165,36 @@ def test_check_bins_present(mock_backend, tmp_path):
         res = doc.check_bins_present()
         assert not res[0].ok
 
-@patch("blackoutkit.doctor.BINS_DIR")
+@patch("blackoutkit.doctor.WINDIVERT_DIR")
 @patch("blackoutkit.doctor._gdpi_backend")
-def test_check_windivert(mock_backend, mock_bins):
+def test_check_windivert(mock_backend, mock_dir):
     mock_backend.return_value = "legacy"
-    mock_bins.__truediv__.return_value.exists.return_value = False
+    mock_dir.__truediv__.return_value.exists.return_value = False
     assert doc.check_windivert().ok is False
-    
-    mock_bins.__truediv__.return_value.exists.return_value = True
+
+    mock_dir.__truediv__.return_value.exists.return_value = True
     assert doc.check_windivert().ok is True
+
+
+@patch("sys.platform", "win32")
+@patch("blackoutkit.proxy_manager.is_admin", return_value=True)
+@patch("blackoutkit.security.list_defender_exclusions", return_value=[])
+def test_defender_check_is_informational_and_never_fixable(mock_list, mock_admin):
+    result = doc.check_firewall_exclusion()
+    assert result.ok is True
+    assert result.fixable is False
+    assert result.fix is None
+    assert "--setup-defender-exclusion" in result.message
+
+
+@patch("sys.platform", "win32")
+@patch("blackoutkit.proxy_manager.is_admin", return_value=True)
+@patch("blackoutkit.security.list_defender_exclusions")
+def test_defender_check_flags_broad_bins_exclusion_for_removal(mock_list, mock_admin):
+    mock_list.return_value = [str(doc.BINS_DIR)]
+    result = doc.check_firewall_exclusion()
+    assert result.fixable is False
+    assert "Remove-MpPreference" in result.message
 
 @patch("sys.platform", "win32")
 @patch("subprocess.run")

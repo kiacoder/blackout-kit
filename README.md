@@ -198,6 +198,38 @@ Notes:
 - the packaged executable still relies on local runtime files after extraction
 - Windows admin prompts can still appear for engines or actions that require elevation
 
+#### Verify the release (SHA-256)
+
+Every release publishes `checksums.txt` (SHA-256 for each release asset) and `blackout.exe.sha256`.
+`install.ps1` in the repository root downloads the latest `blackout.exe`, checks it against that
+checksum before anything is installed, and refuses to install if no checksum is published. Run it
+as a file: `powershell -ExecutionPolicy Bypass -File .\install.ps1`. A failed check exits non-zero,
+and piping the script into `Invoke-Expression` would end the shell that runs it.
+
+To verify a manual download in PowerShell:
+
+```powershell
+$base = "https://github.com/kiacoder/blackout-kit/releases/latest/download"
+Invoke-WebRequest -UseBasicParsing -Uri "$base/blackout.exe" -OutFile blackout.exe
+Invoke-WebRequest -UseBasicParsing -Uri "$base/checksums.txt" -OutFile checksums.txt
+$line = Get-Content checksums.txt | Where-Object { $_ -match '\sblackout\.exe$' } | Select-Object -First 1
+$expected = $line.Split(' ', [StringSplitOptions]::RemoveEmptyEntries)[0]
+$actual = (Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash
+if ($actual.Trim() -ieq $expected.Trim()) { "OK: $actual" } else { "MISMATCH: expected $expected, got $actual" }
+```
+
+On Linux, or with GNU coreutils available:
+
+```bash
+curl -fLO https://github.com/kiacoder/blackout-kit/releases/latest/download/blackout-engine-linux-amd64
+curl -fLO https://github.com/kiacoder/blackout-kit/releases/latest/download/checksums.txt
+sha256sum --ignore-missing -c checksums.txt
+```
+
+The checksum comes from the same release as the file. It catches corrupted or substituted downloads,
+but it cannot defend against a compromised release, which would change both files. For that risk,
+compare the hash with an independent source such as a previously verified release.
+
 ### Option 2 — source or package install for contributors and advanced users
 
 The installable core keeps GUI, packet capture, media, and torrent dependencies optional:
@@ -375,6 +407,8 @@ blackout setup --connect
 ```text
 blackout config                  # keyboard config manager
 blackout config edit             # keyboard config manager
+blackout config --setup-defender-exclusion    # exclude only bins/windivert from Defender (asks you to type yes)
+blackout config --remove-defender-exclusion   # undo that exclusion (asks you to type yes)
 blackout config list
 blackout config validate
 blackout config check-duplicates
@@ -473,10 +507,12 @@ No network probe is implied by the core-only local checks.
 
 ### Diagnostics and recovery
 
+`blackout doctor --fix` never changes Windows Defender settings. Defender exclusions are added only through the confirmed commands listed in the config section.
+
 ```text
 blackout doctor
 blackout doctor --fix
-blackout doctor --fix-av
+blackout doctor --fix-av           # same confirmed WinDivert-only exclusion as config --setup-defender-exclusion
 blackout fix
 blackout fix --preview
 blackout fix --history
@@ -621,6 +657,31 @@ REALITY is handled separately by XRay’s configured REALITY handshake and does 
 - **Linux:** supported, endpoint-scoped, Blackout-owned firewall tables/rules only
 - **Windows:** unsupported; legacy Windows rules are removed because Windows Firewall block rules override the per-process allow rules they would need
 
+### WinDivert driver and Windows Defender
+
+GoodbyeDPI uses WinDivert, a packet-capture driver. Windows Defender and other antivirus products
+often flag WinDivert and tools built on it. These detections are commonly false positives for this
+use, but Blackout cannot verify them, so it does not hide them.
+
+- **Isolated layout:** the driver files (`WinDivert.dll`, `WinDivert64.sys`) live only in
+  `bins/windivert/`. The GoodbyeDPI executable stays in `bins/`. Launches use `bins/windivert/` as
+  the working directory, so Windows loads the driver from there.
+- **Narrow exclusion only:** the only folder Blackout will ask Defender to exclude is `bins/windivert/`.
+  It refuses if the folder is not that path, is a symbolic link or junction, or contains anything other
+  than the two driver files. It never excludes `bins/`, a parent folder, or an executable.
+- **Never automatic:** `blackout doctor --fix` does not touch Defender. `blackout config
+  --setup-defender-exclusion` (or `doctor --fix-av`) prints a warning, then requires you to type `yes`.
+  Windows shows a UAC prompt only after that answer. Without an interactive terminal, nothing changes.
+- **Declining is safe:** nothing changes, and you can keep using SOCKS5/HTTP modes such as
+  `blackout connect xray`, which do not load WinDivert.
+- **Limits:** an exclusion does not turn Defender off, and it does not cover other files in `bins/`.
+  If Defender still flags `goodbyedpi.exe`, use a non-driver mode or review that detection yourself.
+  Remove the exclusion with `blackout config --remove-defender-exclusion`, or manually with
+  `Remove-MpPreference -ExclusionPath "<path>"`.
+- **Older installs:** earlier versions kept the driver in `bins/` and may have excluded all of `bins/`.
+  `blackout doctor` (run as administrator) reports that broad exclusion and shows how to remove it. Run
+  `blackout bins download goodbyedpi` once to move the driver into `bins/windivert/`.
+
 ### Recovery scope
 
 Default recovery is intentionally narrow. It does **not** behave like “reset everything” unless the user explicitly asks for the broader Windows-only reset flags.
@@ -692,7 +753,54 @@ Important MCP boundaries:
 - connect requires an explicit engine choice
 - the MCP layer does not expose the Iran profile toggle
 - `blackout_doctor` is currently read-only from MCP and does not forward a fix action
-- some MCP calls can still modify local networking or saved state
+- privileged MCP calls that change local networking, DNS, hotspot, or saved state require the
+  MCP authorization token described below
+
+### MCP authorization
+
+Privileged MCP tools change settings, the daemon, DNS, hotspot, or network state. They run only
+when the server has a secret and the caller presents it:
+
+- Set `BLACKOUT_MCP_TOKEN` (or `BLACKOUT_MCP_SECRET`, used when the first is unset) in the
+  environment of the MCP client that launches `blackout mcp`. The server reads it at call time.
+- Pass the same value as the `auth_token` argument of every privileged call.
+- The server compares the two values with `hmac.compare_digest`. If no secret is configured,
+  privileged calls are denied. The check fails closed.
+
+Client configuration with a token:
+
+```json
+{
+  "mcpServers": {
+    "blackout-kit": {
+      "command": "blackout",
+      "args": ["mcp"],
+      "env": { "BLACKOUT_MCP_TOKEN": "<long random value>" }
+    }
+  }
+}
+```
+
+Generate a value with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. The
+agent must receive the token to call privileged tools, so treat it like a password: anything
+that can read that agent's context can read it. Rotate it by changing the client's `env` value
+and restarting the client. The server never echoes the token and never logs it.
+
+Privileged calls (token required):
+
+- `blackout_connect` and `blackout_emergency` (including the `tun` engine, which creates a TUN interface)
+- `blackout_disconnect`
+- `blackout_config` with `add`, `import`, or `remove`
+- `blackout_settings` with `set` or `reset`
+- `blackout_split_tunnel` with `add` or `remove`
+- `blackout_security_mode` with a `mode`
+- `blackout_net_tools` with `dns-set`, `dns-flush` (DNS changes), `hotspot` (hotspot control), or `netfix` (network recovery)
+
+Read-only calls need no token: `blackout_ready`, `blackout_status`, `blackout_read_logs`,
+`blackout_doctor`, `blackout_scan`, `blackout_snapshot`, `blackout_recommend`,
+`blackout_recent_events`, `blackout_support_bundle_preview`, `list` and `get` actions of config,
+settings, and split tunnel, `blackout_security_mode` without a mode, and `blackout_net_tools` with
+`ping`, `dns-bench`, `netfix-preview`, or `netfix-history`.
 
 ---
 

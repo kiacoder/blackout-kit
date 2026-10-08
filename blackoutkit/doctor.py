@@ -18,7 +18,7 @@ from pathlib import Path
 from rich import box
 from rich.table import Table
 
-from . import APP_DATA_DIR, BINS_DIR, DATA_DIR, PROJECT_ROOT, resource_path
+from . import APP_DATA_DIR, BINS_DIR, DATA_DIR, PROJECT_ROOT, WINDIVERT_DIR, resource_path
 from . import settings as cfg
 from .engines.gdpi import GDPI_BIN_NAMES
 from .theme import console
@@ -385,19 +385,19 @@ def check_bins_present() -> list[CheckResult]:
 def check_windivert() -> CheckResult:
     """Check if WinDivert is present for the active GDPI backend and SNI tooling."""
     backend = _gdpi_backend()
-    dll = BINS_DIR / "WinDivert.dll"
-    sys_file = BINS_DIR / "WinDivert64.sys"
+    dll = WINDIVERT_DIR / "WinDivert.dll"
+    sys_file = WINDIVERT_DIR / "WinDivert64.sys"
     if dll.exists() and sys_file.exists():
-        return CheckResult("WinDivert (GoodbyeDPI driver)", True, f"Found ({backend} backend compatible)")
+        return CheckResult("WinDivert (GoodbyeDPI driver)", True, f"Found in bins/windivert ({backend} backend compatible)")
     if backend == "native":
         return CheckResult(
             "WinDivert (GoodbyeDPI driver)", False,
-            "Missing — native GDPI still depends on WinDivert. Build/install the native driver prerequisites.",
+            "Missing from bins/windivert — native GDPI still depends on WinDivert. Run: blackout bins download goodbyedpi",
             fixable=False,
         )
     return CheckResult(
         "WinDivert (GoodbyeDPI driver)", False,
-        "Missing — legacy GDPI requires the GoodbyeDPI package (goodbyedpi.exe + WinDivert files).",
+        "Missing from bins/windivert — legacy GDPI needs the GoodbyeDPI package. Run: blackout bins download goodbyedpi",
         fixable=False,
     )
 
@@ -1085,31 +1085,33 @@ def check_tun_adapter() -> CheckResult:
 
 
 def check_firewall_exclusion() -> CheckResult:
-    """Check if the Blackout bins directory is excluded from Windows Defender."""
+    """Report the Defender exclusion state for the WinDivert driver folder.
+
+    Informational and read-only: this check never adds an exclusion. Adding one needs
+    explicit confirmation through `blackout config --setup-defender-exclusion`.
+    """
     if sys.platform != "win32":
         return CheckResult("Windows Defender", True, "N/A")
     try:
         from .proxy_manager import is_admin
         if not is_admin():
             return CheckResult("Windows Defender", True, "OK (Skipped, needs admin)")
-            
-        r = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", "Get-MpPreference | Select-Object -ExpandProperty ExclusionPath"],
-            capture_output=True, text=True, errors="ignore", timeout=10
-        )
-        bins_str = str(BINS_DIR).lower()
-        if bins_str in r.stdout.lower():
-            return CheckResult("Windows Defender", True, "OK (bins/ is excluded)")
-            
-        def _fix_exclusion():
-            import shlex
-            ps_cmd = f"Add-MpPreference -ExclusionPath {shlex.quote(str(BINS_DIR))}"
-            subprocess.run(
-                ["powershell", "-NoProfile", "-Command", ps_cmd],
-                capture_output=True, timeout=10
+
+        from . import security as sec
+        exclusions = sec.list_defender_exclusions()
+        if sec.windivert_folder_excluded(exclusions):
+            return CheckResult("Windows Defender", True, "OK (WinDivert driver folder is excluded)")
+        if sec.path_listed(exclusions, BINS_DIR):
+            return CheckResult(
+                "Windows Defender", True,
+                "Broad bins/ exclusion from an older version is present. Remove it with: "
+                f"Remove-MpPreference -ExclusionPath '{BINS_DIR}'",
             )
-            
-        return CheckResult("Windows Defender", False, "bins/ directory is not excluded from AV scans. False positives may occur.", fixable=True, fix=_fix_exclusion)
+        return CheckResult(
+            "Windows Defender", True,
+            "WinDivert driver folder is not excluded (optional). Defender may flag WinDivert; "
+            "see: blackout config --setup-defender-exclusion",
+        )
     except Exception:
         return CheckResult("Windows Defender", True, "OK (Could not verify)")
 

@@ -3731,6 +3731,35 @@ def cmd_help(args):
     console.print(Panel(content, title="[bold]Blackout Kit — Help[/bold]", border_style="cyan"))
 
 
+def _run_defender_exclusion_setup(remove: bool = False) -> str:
+    """Run the confirmation-gated WinDivert Defender exclusion flow from a terminal.
+
+    Nothing is changed unless the user types 'yes' at an interactive prompt, and UAC
+    is requested only after that. Returns the status code from the security module,
+    or 'non-interactive' when there is no terminal to ask in.
+    """
+    from . import security as sec
+
+    if not is_interactive():
+        console.print(
+            "[warning]Defender exclusions need an interactive terminal so you can type 'yes' "
+            "before Windows asks for administrator rights. No changes were made.[/warning]"
+        )
+        return "non-interactive"
+
+    def emit(message: str) -> None:
+        console.print(message, markup=False, highlight=False)
+
+    def confirm_typed_yes() -> bool:
+        try:
+            answer = input("Type 'yes' to continue (anything else cancels): ")
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return answer.strip().lower() == "yes"
+
+    return sec.run_windivert_exclusion_setup(confirm=confirm_typed_yes, emit=emit, remove=remove)
+
+
 def cmd_doctor(args):
     auto_fix = getattr(args, "fix", False)
     fix_av   = getattr(args, "fix_av", False)
@@ -3745,12 +3774,7 @@ def cmd_doctor(args):
         return
 
     if fix_av:
-        console.print("[info]Adding bins/ folder to Windows Defender exclusions...[/info]")
-        ok = sec.add_defender_exclusion()
-        if ok:
-            console.print("[success]✓ Exclusion added! Defender will no longer flag binaries in bins/.[/success]")
-        else:
-            console.print("[error]Failed — run as administrator and try again.[/error]")
+        _run_defender_exclusion_setup(remove=False)
         return
 
     if auto_fix:

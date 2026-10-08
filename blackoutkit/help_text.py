@@ -546,6 +546,9 @@ Doctor is core-only by default. Use --include-optional to inspect Scapy and
 Npcap/libpcap packet-capture prerequisites. JSON mode is read-only and returns
 one compact versioned object; --fix and --fix-av are rejected with --json.
 
+--fix never changes Windows Defender. --fix-av sets up the narrow WinDivert driver-folder
+exclusion only after you type 'yes' (same as blackout config --setup-defender-exclusion).
+
 Doctor can inspect:
   • settings validity
   • runtime presence

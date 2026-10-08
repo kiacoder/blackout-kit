@@ -1,8 +1,5 @@
+import base64
 import pytest
-import sys
-import os
-import tempfile
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import blackoutkit.security as sec
@@ -177,46 +174,216 @@ def test_deobfuscate_configs_no_file(tmp_path):
          patch("blackoutkit.vault.ENC_SECRETS_FILE", tmp_path / "secrets.enc"):
         assert sec.deobfuscate_configs() is False
 
-# === AV EXCLUSION ===
+# === AV EXCLUSION: WinDivert driver folder only, never automatic ===
+@pytest.fixture
+def isolated_bins(tmp_path, monkeypatch):
+    """A bins/ layout with the isolated WinDivert driver folder holding only the driver."""
+    bins = tmp_path / "bins"
+    folder = bins / "windivert"
+    folder.mkdir(parents=True)
+    (folder / "WinDivert.dll").write_bytes(b"MZ")
+    (folder / "WinDivert64.sys").write_bytes(b"MZ")
+    monkeypatch.setattr(sec, "BINS_DIR", bins)
+    monkeypatch.setattr(sec, "WINDIVERT_DIR", folder)
+    return bins, folder
+
+
+def _encoded_script(mock_run) -> str:
+    args = mock_run.call_args.args[0]
+    return base64.b64decode(args[args.index("-EncodedCommand") + 1]).decode("utf-16-le")
+
+
 @patch("sys.platform", "linux")
-def test_defender_linux():
-    assert sec.add_defender_exclusion() is False
-    assert sec.remove_defender_exclusion() is False
+def test_defender_functions_are_noops_off_windows():
+    assert sec.add_windivert_exclusion(confirmed=True) is False
+    assert sec.remove_windivert_exclusion(confirmed=True) is False
+    assert sec.windivert_folder_excluded() is False
     assert sec.verify_exclusion_added() is False
     assert sec.list_defender_exclusions() == []
 
+
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
-def test_add_defender_exclusion_success(mock_run):
-    mock_run.return_value = MagicMock(stdout="OK")
-    assert sec.add_defender_exclusion(Path("C:\\bins")) is True
+def test_add_never_runs_without_explicit_confirmation(mock_run, isolated_bins):
+    assert sec.add_windivert_exclusion() is False
+    assert sec.add_windivert_exclusion(confirmed=False) is False
+    mock_run.assert_not_called()
 
-@pytest.mark.skipif(sys.platform != "win32", reason="Windows elevation test")
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+@patch("blackoutkit.elevate.launch_elevated", return_value=(None, None))
+def test_uac_is_not_requested_without_confirmation(mock_elevate, mock_run, isolated_bins):
+    with patch.object(sec, "list_defender_exclusions", return_value=[]):
+        assert sec.add_windivert_exclusion(confirmed=False) is False
+    mock_elevate.assert_not_called()
+    mock_run.assert_not_called()
+
+
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
 @patch("blackoutkit.elevate.launch_elevated")
-@patch("ctypes.windll.kernel32", create=True)
-def test_add_defender_exclusion_elevate(mock_kernel, mock_elevate, mock_run):
-    mock_run.return_value = MagicMock(stdout="")
-    mock_elevate.return_value = (123, 456)
-    
-    # We need to mock the marker file writing
-    original_mkstemp = tempfile.mkstemp
-    def fake_mkstemp(*args, **kwargs):
-        fd, path = original_mkstemp(*args, **kwargs)
-        # write OK via the already-open descriptor so the marker exists
-        os.write(fd, b"OK")
-        os.lseek(fd, 0, 0)
-        return fd, path
-    
-    with patch("tempfile.mkstemp", side_effect=fake_mkstemp):
-        assert sec.add_defender_exclusion(Path("C:\\bins")) is True
+def test_add_targets_only_the_driver_folder_and_requests_uac_last(mock_elevate, mock_run, isolated_bins):
+    bins, folder = isolated_bins
+    mock_run.return_value = MagicMock(stdout="", returncode=1)
+    mock_elevate.return_value = (None, None)
+    with patch.object(sec, "list_defender_exclusions", side_effect=[[], [], [str(folder)]]):
+        assert sec.add_windivert_exclusion(confirmed=True) is True
+    script = _encoded_script(mock_run)
+    assert f"Add-MpPreference -ExclusionPath '{folder}'" in script
+    assert f"-ExclusionPath '{bins}'" not in script  # never the broad bins/ parent
+    mock_elevate.assert_called_once()
+    elevated_script = base64.b64decode(
+        mock_elevate.call_args.args[1][-1]
+    ).decode("utf-16-le")
+    assert elevated_script == script
+
 
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
-def test_list_defender_exclusions(mock_run):
-    mock_run.return_value = MagicMock(stdout="C:\\bins\nD:\\tools\n")
-    assert sec.list_defender_exclusions() == ["C:\\bins", "D:\\tools"]
+def test_add_refuses_folder_holding_anything_besides_the_driver(mock_run, isolated_bins):
+    _bins, folder = isolated_bins
+    (folder / "goodbyedpi.exe").write_bytes(b"MZ")
+    assert "must contain only" in sec.windivert_folder_problem()
+    assert sec.add_windivert_exclusion(confirmed=True) is False
+    mock_run.assert_not_called()
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+def test_add_refuses_when_target_is_bins_itself(mock_run, tmp_path, monkeypatch):
+    bins = tmp_path / "bins"
+    bins.mkdir()
+    monkeypatch.setattr(sec, "BINS_DIR", bins)
+    monkeypatch.setattr(sec, "WINDIVERT_DIR", bins)
+    assert sec.windivert_folder_problem() is not None
+    assert sec.add_windivert_exclusion(confirmed=True) is False
+    mock_run.assert_not_called()
+
+
+def test_problem_reports_missing_and_linked_folders(tmp_path, monkeypatch):
+    bins = tmp_path / "bins"
+    bins.mkdir()
+    monkeypatch.setattr(sec, "BINS_DIR", bins)
+    monkeypatch.setattr(sec, "WINDIVERT_DIR", bins / "windivert")
+    assert "does not exist" in sec.windivert_folder_problem()
+
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    (real / "WinDivert.dll").write_bytes(b"MZ")
+    (real / "WinDivert64.sys").write_bytes(b"MZ")
+    try:
+        (bins / "windivert").symlink_to(real, target_is_directory=True)
+    except OSError:
+        pytest.skip("symlinks are unavailable on this platform")
+    assert "link or junction" in sec.windivert_folder_problem()
+
+
+def test_exclusion_match_is_exact_not_substring(isolated_bins):
+    _bins, folder = isolated_bins
+    assert sec.windivert_folder_excluded([f"{folder}2"]) is False
+    assert sec.windivert_folder_excluded([str(folder.parent)]) is False
+    assert sec.windivert_folder_excluded([str(folder)]) is True
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+def test_list_and_verify_read_defender_state(mock_run, isolated_bins):
+    _bins, folder = isolated_bins
+    mock_run.return_value = MagicMock(stdout=f"{folder}\nD:\\\\tools\n", returncode=0)
+    assert sec.verify_exclusion_added() is True
+    assert sec.list_defender_exclusions() == [str(folder), "D:\\\\tools"]
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+def test_setup_declined_changes_nothing_and_points_to_socks_modes(mock_run, isolated_bins):
+    messages = []
+    with patch.object(sec, "list_defender_exclusions", return_value=[]), \
+         patch("blackoutkit.elevate.launch_elevated") as mock_elevate:
+        status = sec.run_windivert_exclusion_setup(confirm=lambda: False, emit=messages.append)
+    assert status == "declined"
+    mock_run.assert_not_called()
+    mock_elevate.assert_not_called()
+    text = "\n".join(messages)
+    assert "No changes were made" in text
+    assert "SOCKS5" in text
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+@patch("blackoutkit.elevate.launch_elevated")
+def test_warning_is_shown_and_confirmed_before_uac(mock_elevate, mock_run, isolated_bins):
+    _bins, folder = isolated_bins
+    events = []
+    mock_run.return_value = MagicMock(stdout="", returncode=1)
+    mock_elevate.side_effect = lambda *a, **k: (events.append("uac"), (None, None))[1]
+
+    def emit(message):
+        events.append(("emit", message))
+
+    def confirm():
+        events.append("confirm")
+        return True
+
+    # reads: already-present check, pre-add check, after the non-elevated try (unchanged), after UAC
+    with patch.object(sec, "list_defender_exclusions", side_effect=[[], [], [], [str(folder)]]):
+        status = sec.run_windivert_exclusion_setup(confirm=confirm, emit=emit)
+    assert status == "added"
+    warning_index = next(i for i, e in enumerate(events) if isinstance(e, tuple) and "FALSE POSITIVES" in e[1])
+    assert warning_index < events.index("confirm") < events.index("uac")
+    warning = events[warning_index][1]
+    assert str(folder) in warning
+    assert "blackout config --remove-defender-exclusion" in warning
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+@patch("blackoutkit.elevate.launch_elevated")
+def test_setup_refuses_unsafe_folder_without_prompting(mock_elevate, mock_run, isolated_bins):
+    _bins, folder = isolated_bins
+    (folder / "extra.exe").write_bytes(b"MZ")
+    confirm = MagicMock(return_value=True)
+    status = sec.run_windivert_exclusion_setup(confirm=confirm, emit=lambda _m: None)
+    assert status == "unsafe-folder"
+    confirm.assert_not_called()
+    mock_run.assert_not_called()
+    mock_elevate.assert_not_called()
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+def test_setup_reports_existing_exclusion_without_changes(mock_run, isolated_bins):
+    _bins, folder = isolated_bins
+    with patch.object(sec, "list_defender_exclusions", return_value=[str(folder)]):
+        status = sec.run_windivert_exclusion_setup(confirm=lambda: True, emit=lambda _m: None)
+    assert status == "already-present"
+    mock_run.assert_not_called()
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+@patch("blackoutkit.elevate.launch_elevated", return_value=(None, None))
+def test_remove_is_narrow_and_confirmed(mock_elevate, mock_run, isolated_bins):
+    _bins, folder = isolated_bins
+    mock_run.return_value = MagicMock(stdout="", returncode=1)
+    # reads: present-check, pre-remove check, after the non-elevated try (still present), after UAC (gone)
+    with patch.object(sec, "list_defender_exclusions", side_effect=[[str(folder)], [str(folder)], [str(folder)], []]):
+        status = sec.run_windivert_exclusion_setup(confirm=lambda: True, emit=lambda _m: None, remove=True)
+    assert status == "removed"
+    assert f"Remove-MpPreference -ExclusionPath '{folder}'" in _encoded_script(mock_run)
+    mock_elevate.assert_called_once()
+
+
+@patch("sys.platform", "win32")
+@patch("subprocess.run")
+def test_remove_declined_changes_nothing(mock_run, isolated_bins):
+    _bins, folder = isolated_bins
+    with patch.object(sec, "list_defender_exclusions", return_value=[str(folder)]):
+        status = sec.run_windivert_exclusion_setup(confirm=lambda: False, emit=lambda _m: None, remove=True)
+    assert status == "declined"
+    mock_run.assert_not_called()
+
 
 # === STABILITY TRACKING ===
 def test_stability_tracker(tmp_path):

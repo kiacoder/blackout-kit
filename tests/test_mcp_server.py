@@ -1,9 +1,21 @@
+import io
 import json
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from blackoutkit import mcp_server as mcp
 from blackoutkit.vault import SECRET_KEYS
+
+FAKE_SECRET = "fixture-mcp-secret-value"  # test fixture, not a credential
+
+
+@pytest.fixture(autouse=True)
+def _handler_tests_bypass_gate(monkeypatch):
+    """Handler-behaviour tests call privileged tools directly. The authorization
+    gate is covered by TestMcpAuthorization, which re-enables it explicitly."""
+    monkeypatch.setattr(mcp, "_MCP_AUTH_ENABLED", False)
 
 
 def _masked_settings_fixture() -> dict:
@@ -277,3 +289,189 @@ def test_network_dns_flush_reports_failure():
         result = mcp.handle_tool_call("blackout_net_tools", {"tool": "dns-flush"})
 
     assert result == "✗ DNS cache flush failed"
+
+
+# Privileged calls covering every category the audit named: DNS changes, hotspot
+# control, network recovery, TUN/engine starts, plus the other state-changing tools.
+PRIVILEGED_CASES = [
+    ("dns-set", "blackout_net_tools", {"tool": "dns-set", "arg": "1.1.1.1"},
+     "blackoutkit.tools.set_dns", True),
+    ("dns-flush", "blackout_net_tools", {"tool": "dns-flush"},
+     "blackoutkit.tools.flush_dns", True),
+    ("hotspot", "blackout_net_tools", {"tool": "hotspot", "arg": "on"},
+     "blackoutkit.tools.toggle_hotspot", "Hotspot on"),
+    ("netfix", "blackout_net_tools", {"tool": "netfix"},
+     "blackoutkit.tools.run_network_recovery", []),
+    ("tun-connect", "blackout_connect", {"engine": "tun"},
+     "blackoutkit.daemon.start", 4242),
+    ("emergency", "blackout_emergency", {},
+     "blackoutkit.daemon.start", 4243),
+    ("settings-set", "blackout_settings", {"action": "set", "key": "kill_switch", "value": "false"},
+     "blackoutkit.settings.set_value", None),
+    ("config-remove", "blackout_config", {"action": "remove", "index": 1},
+     "blackoutkit.config.manager.remove_config", None),
+    ("split-tunnel-add", "blackout_split_tunnel", {"action": "add", "target": "10.0.0.0/8"},
+     "blackoutkit.split_tunnel.add_direct_route", None),
+    ("security-mode", "blackout_security_mode", {"mode": "private"},
+     "blackoutkit.security.apply_mode", None),
+    ("disconnect", "blackout_disconnect", {},
+     "blackoutkit.daemon.stop", False),
+]
+
+READ_ONLY_CASES = [
+    ("ping", "blackout_net_tools", {"tool": "ping", "arg": "example.com"},
+     "blackoutkit.tools.ping", [12.5]),
+    ("dns-bench", "blackout_net_tools", {"tool": "dns-bench"},
+     "blackoutkit.tools.benchmark_dns", {"best": "1.1.1.1"}),
+    ("netfix-preview", "blackout_net_tools", {"tool": "netfix-preview"},
+     "blackoutkit.tools.plan_network_recovery", []),
+    ("netfix-history", "blackout_net_tools", {"tool": "netfix-history"},
+     "blackoutkit.recovery_audit.history", []),
+    ("settings-list", "blackout_settings", {"action": "list"},
+     "blackoutkit.settings.load", {}),
+    ("settings-get", "blackout_settings", {"action": "get", "key": "kill_switch"},
+     "blackoutkit.settings.get", False),
+    ("config-list", "blackout_config", {"action": "list"},
+     "blackoutkit.config.manager.load_configs", []),
+    ("split-tunnel-list", "blackout_split_tunnel", {"action": "list"},
+     "blackoutkit.split_tunnel.load_split_rules", []),
+    ("security-mode-get", "blackout_security_mode", {},
+     "blackoutkit.security.get_current_mode", "speed"),
+]
+
+
+class TestMcpAuthorization:
+    @pytest.fixture(autouse=True)
+    def _gate_enabled(self, monkeypatch):
+        monkeypatch.setattr(mcp, "_MCP_AUTH_ENABLED", True)
+        monkeypatch.delenv("BLACKOUT_MCP_TOKEN", raising=False)
+        monkeypatch.delenv("BLACKOUT_MCP_SECRET", raising=False)
+
+    # ── _check_mcp_authorization: valid, invalid, and missing tokens ──
+
+    def test_valid_token_is_accepted(self, monkeypatch):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        assert mcp._check_mcp_authorization(FAKE_SECRET) is True
+
+    def test_secret_env_var_is_accepted_as_fallback(self, monkeypatch):
+        monkeypatch.setenv("BLACKOUT_MCP_SECRET", FAKE_SECRET)
+        assert mcp._check_mcp_authorization(FAKE_SECRET) is True
+
+    def test_token_env_var_takes_precedence_over_secret(self, monkeypatch):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", "primary-value")
+        monkeypatch.setenv("BLACKOUT_MCP_SECRET", "secondary-value")
+        assert mcp._check_mcp_authorization("primary-value") is True
+        assert mcp._check_mcp_authorization("secondary-value") is False
+
+    @pytest.mark.parametrize("presented", [
+        "wrong-value",
+        FAKE_SECRET[:-1],   # prefix of the secret
+        FAKE_SECRET + "x",  # secret with a suffix
+        FAKE_SECRET.upper(),
+        " " + FAKE_SECRET,
+    ])
+    def test_invalid_token_is_rejected(self, monkeypatch, presented):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        assert mcp._check_mcp_authorization(presented) is False
+
+    @pytest.mark.parametrize("presented", [None, "", 0, ["fixture"], {"token": FAKE_SECRET}])
+    def test_missing_or_non_string_token_is_rejected(self, monkeypatch, presented):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        assert mcp._check_mcp_authorization(presented) is False
+
+    def test_absent_token_argument_is_rejected(self, monkeypatch):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        assert mcp._check_mcp_authorization() is False
+
+    @pytest.mark.parametrize("presented", [FAKE_SECRET, "", None])
+    def test_missing_server_secret_fails_closed(self, monkeypatch, presented):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", "")
+        monkeypatch.setenv("BLACKOUT_MCP_SECRET", "")
+        assert mcp._check_mcp_authorization(presented) is False
+
+    def test_non_ascii_and_surrogate_tokens_do_not_raise(self, monkeypatch):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        assert mcp._check_mcp_authorization("pässwörd-☃") is False
+        assert mcp._check_mcp_authorization("\ud800") is False
+
+    def test_comparison_uses_hmac_compare_digest(self, monkeypatch):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        with patch.object(mcp.hmac, "compare_digest", wraps=mcp.hmac.compare_digest) as compare:
+            assert mcp._check_mcp_authorization(FAKE_SECRET) is True
+        compare.assert_called_once_with(FAKE_SECRET.encode("utf-8"), FAKE_SECRET.encode("utf-8"))
+
+    def test_disabled_gate_allows_calls_without_token(self, monkeypatch):
+        monkeypatch.setattr(mcp, "_MCP_AUTH_ENABLED", False)
+        assert mcp._check_mcp_authorization() is True
+
+    # ── handle_tool_call: privileged operations ──
+
+    @pytest.mark.parametrize("label, tool, args, target, returned", PRIVILEGED_CASES,
+                             ids=[case[0] for case in PRIVILEGED_CASES])
+    def test_privileged_operation_denied_without_valid_token(self, monkeypatch, label, tool, args, target, returned):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        with patch(target, return_value=returned) as handler, \
+             patch("blackoutkit.readiness.evaluate", return_value=[]):
+            missing = mcp.handle_tool_call(tool, dict(args))
+            invalid = mcp.handle_tool_call(tool, {**args, "auth_token": "wrong-value"})
+        handler.assert_not_called()
+        assert missing.startswith("Error: Access denied.")
+        assert invalid.startswith("Error: Access denied.")
+        assert "wrong-value" not in invalid
+
+    @pytest.mark.parametrize("label, tool, args, target, returned", PRIVILEGED_CASES,
+                             ids=[case[0] for case in PRIVILEGED_CASES])
+    def test_privileged_operation_runs_with_valid_token(self, monkeypatch, label, tool, args, target, returned):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        with patch(target, return_value=returned) as handler, \
+             patch("blackoutkit.readiness.evaluate", return_value=[]):
+            result = mcp.handle_tool_call(tool, {**args, "auth_token": FAKE_SECRET})
+        handler.assert_called_once()
+        assert not result.startswith("Error: Access denied")
+
+    def test_privileged_operation_fails_closed_when_server_has_no_secret(self, monkeypatch):
+        with patch("blackoutkit.tools.toggle_hotspot") as hotspot:
+            result = mcp.handle_tool_call("blackout_net_tools", {"tool": "hotspot", "auth_token": FAKE_SECRET})
+        hotspot.assert_not_called()
+        assert result.startswith("Error: Access denied.")
+        assert "BLACKOUT_MCP_TOKEN" in result
+
+    @pytest.mark.parametrize("label, tool, args, target, returned", READ_ONLY_CASES,
+                             ids=[case[0] for case in READ_ONLY_CASES])
+    def test_read_only_operation_needs_no_token(self, monkeypatch, label, tool, args, target, returned):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        with patch(target, return_value=returned) as handler:
+            result = mcp.handle_tool_call(tool, dict(args))
+        handler.assert_called_once()
+        assert not result.startswith("Error: Access denied")
+
+    def test_malformed_arguments_do_not_raise(self, monkeypatch):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        assert mcp.handle_tool_call("blackout_connect", None).startswith("Error: Access denied.")
+        assert mcp.handle_tool_call(["blackout_connect"], {}).startswith("Unknown tool")
+
+    def test_manifest_advertises_auth_token_only_on_privileged_tools(self):
+        manifest = {tool["name"]: tool for tool in mcp.TOOLS_MANIFEST}
+        for name in mcp._PRIVILEGED_TOOLS:
+            assert manifest[name]["inputSchema"]["properties"]["auth_token"]["type"] == "string"
+        assert "auth_token" not in manifest["blackout_snapshot"]["inputSchema"]["properties"]
+
+    @pytest.mark.parametrize("arguments, expect_hotspot_call", [
+        ({"tool": "hotspot"}, False),
+        ({"tool": "hotspot", "auth_token": "wrong-value"}, False),
+        ({"tool": "hotspot", "auth_token": FAKE_SECRET}, True),
+    ])
+    def test_stdio_tools_call_enforces_token(self, monkeypatch, arguments, expect_hotspot_call):
+        monkeypatch.setenv("BLACKOUT_MCP_TOKEN", FAKE_SECRET)
+        request = {"jsonrpc": "2.0", "id": 7, "method": "tools/call",
+                   "params": {"name": "blackout_net_tools", "arguments": arguments}}
+        monkeypatch.setattr(mcp, "real_stdin", io.StringIO(json.dumps(request) + "\n"))
+        stdout = io.StringIO()
+        monkeypatch.setattr(mcp, "real_stdout", stdout)
+        with patch("blackoutkit.tools.toggle_hotspot", return_value="Hotspot on") as hotspot:
+            mcp.run_mcp_server()
+        response = json.loads(stdout.getvalue())
+        assert response["id"] == 7
+        text = response["result"]["content"][0]["text"]
+        assert hotspot.called is expect_hotspot_call
+        assert text.startswith("Error: Access denied.") is (not expect_hotspot_call)

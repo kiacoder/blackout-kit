@@ -110,6 +110,18 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v4
 
+    - name: Parse install.ps1
+      shell: pwsh
+      run: |
+        $tokens = $null
+        $parseErrors = $null
+        $scriptPath = (Resolve-Path install.ps1).Path
+        [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
+        if ($parseErrors.Count -gt 0) {
+          $parseErrors | ForEach-Object { Write-Host "::error file=install.ps1::$($_.Message)" }
+          exit 1
+        }
+
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
       with:
@@ -356,6 +368,21 @@ jobs:
       run: |
         git archive --format=zip --prefix=blackout-kit/ -o dist/blackout-source.zip HEAD
 
+    - name: Generate and verify SHA-256 checksums
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd dist
+        for asset in blackout.exe blackout-engine-linux-amd64 blackout-source.zip; do
+          test -s "$asset" || { echo "::error::Release asset $asset is missing or empty"; exit 1; }
+        done
+        # checksums.txt covers every release asset (sha256sum format). blackout.exe.sha256
+        # is the single-file form; install.ps1 accepts either and fails closed without one.
+        sha256sum blackout.exe blackout-engine-linux-amd64 blackout-source.zip > checksums.txt
+        sha256sum blackout.exe > blackout.exe.sha256
+        sha256sum -c checksums.txt
+        cat checksums.txt
+
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
@@ -363,5 +390,7 @@ jobs:
           dist/blackout.exe
           dist/blackout-engine-linux-amd64
           dist/blackout-source.zip
+          dist/checksums.txt
+          dist/blackout.exe.sha256
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
