@@ -6,6 +6,7 @@ parser) under pwsh, which is present on the GitHub Actions runners and skipped
 elsewhere.
 """
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -124,8 +125,15 @@ _CHECKSUM_CASES = [
 ]
 
 
-@pytest.mark.skipif(shutil.which("pwsh") is None, reason="pwsh is not installed")
+# Locally the check is skipped without pwsh. On CI (GITHUB_ACTIONS/CI is set) it must
+# run, so a missing pwsh fails loudly instead of silently skipping the parser check.
+@pytest.mark.skipif(
+    shutil.which("pwsh") is None and not os.environ.get("CI"),
+    reason="pwsh is not installed",
+)
 def test_checksum_parser_behaviour(tmp_path):
+    if shutil.which("pwsh") is None:
+        pytest.fail("pwsh must be installed on CI runners so the install.ps1 checksum parser is exercised")
     script = tmp_path / "extract_and_run.ps1"
     script.write_text(_EXTRACT_AND_RUN, encoding="utf-8")
     cases_file = tmp_path / "cases.json"
@@ -136,8 +144,11 @@ def test_checksum_parser_behaviour(tmp_path):
     completed = subprocess.run(
         ["pwsh", "-NoProfile", "-NonInteractive", "-File", str(script), str(INSTALL_PS1), str(cases_file)],
         capture_output=True, text=True, timeout=120,
+        env={**os.environ, "POWERSHELL_TELEMETRY_OPTOUT": "1"},
     )
     assert completed.returncode == 0, completed.stderr
-    results = {item["id"]: item["hash"] for item in json.loads(completed.stdout)}
+    # The JSON is written last, on one line; ignore any informational lines before it.
+    payload = completed.stdout.strip().splitlines()[-1]
+    results = {item["id"]: item["hash"] for item in json.loads(payload)}
     for name, _text, expected in _CHECKSUM_CASES:
         assert results[name] == expected, name
