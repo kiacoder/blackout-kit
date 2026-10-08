@@ -144,13 +144,17 @@ def test_check_app_data_dir(mock_data, tmp_path):
     mock_data.exists.return_value = True
     assert doc.check_app_data_dir().ok is True
 
-@patch("builtins.__import__")
-def test_check_python_deps(mock_import):
+def test_check_python_deps():
     res = doc.check_python_deps()
     assert all(r.ok for r in res)
-    
-    mock_import.side_effect = ImportError("err")
-    res2 = doc.check_python_deps()
+
+    # Scope the builtins.__import__ patch to ONLY the call that depends on it.
+    # A function-wide @patch("builtins.__import__") breaks Python 3.10 because
+    # unittest.mock resolves its own patch targets via __import__ internally
+    # (e.g. the patch("subprocess.run") below), and the global stub makes that
+    # resolution fail. Keeping the stub local avoids touching mock machinery.
+    with patch("builtins.__import__", side_effect=ImportError("err")):
+        res2 = doc.check_python_deps()
     assert all(not r.ok for r in res2)
     with patch("subprocess.run"):
         res2[0].fix()

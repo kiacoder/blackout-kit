@@ -92,8 +92,8 @@ func StopMHRVC() {
 }
 
 //export StartNeighborC
-func StartNeighborC(listenPort C.int, targetPort C.int) int {
-	err := startNeighborInternal(int(listenPort), int(targetPort))
+func StartNeighborC(listenPort C.int, targetPort C.int, bindLan C.int) int {
+	err := startNeighborInternal(int(listenPort), int(targetPort), bindLan != 0)
 	if err != nil {
 		fmt.Println("StartNeighborC Error:", err)
 		return 1

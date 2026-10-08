@@ -55,7 +55,7 @@ def get_core_dll():
             _dll.StartMHRVC.restype = ctypes.c_int
             _dll.StopMHRVC.argtypes = []
 
-            _dll.StartNeighborC.argtypes = [ctypes.c_int, ctypes.c_int]
+            _dll.StartNeighborC.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
             _dll.StartNeighborC.restype = ctypes.c_int
             _dll.StopNeighborC.argtypes = []
 

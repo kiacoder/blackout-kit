@@ -15,7 +15,7 @@ var (
 	neighborWg     sync.WaitGroup
 )
 
-func startNeighborInternal(listenPort int, targetPort int) error {
+func startNeighborInternal(listenPort int, targetPort int, bindLan bool) error {
 	if neighborCancel != nil {
 		return fmt.Errorf("neighbor is already running")
 	}
@@ -26,7 +26,14 @@ func startNeighborInternal(listenPort int, targetPort int) error {
 	neighborWg.Add(1)
 	go func() {
 		defer neighborWg.Done()
-		listenAddr := fmt.Sprintf("0.0.0.0:%d", listenPort)
+		// Bind to loopback by default so the share proxy is only reachable
+		// from this machine. Only expose it on all interfaces when the user
+		// has explicitly opted in via the neighbor_bind_lan setting.
+		bindHost := "127.0.0.1"
+		if bindLan {
+			bindHost = "0.0.0.0"
+		}
+		listenAddr := fmt.Sprintf("%s:%d", bindHost, listenPort)
 		targetAddr := fmt.Sprintf("127.0.0.1:%d", targetPort)
 
 		l, err := net.Listen("tcp", listenAddr)
@@ -82,10 +89,10 @@ func startNeighborInternal(listenPort int, targetPort int) error {
 		defer c.Close()
 
 		payload := []byte(fmt.Sprintf("BLACKOUTKIT:v1:%d", listenPort))
-		
+
 		// Send one beacon immediately
 		c.Write(payload)
-		
+
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
 

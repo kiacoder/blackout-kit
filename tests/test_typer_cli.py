@@ -81,7 +81,7 @@ def test_theme_forwards_palette():
 
 def test_status_forwards_watch_settings():
     with patch("blackoutkit.cli.cmd_status") as cmd_status:
-        typer_cli.status(watch=True, interval=3.0)
+        typer_cli.status(ctx=None, watch=True, interval=3.0)
 
     args = cmd_status.call_args.args[0]
     assert args.watch is True
@@ -138,7 +138,7 @@ def test_noninteractive_connect_preserves_missing_engine_for_smart_resolution(mo
     service.connect.return_value = ConnectionResult(operation="connect", ok=True, status="stopped")
     monkeypatch.setattr(typer_cli, "_connection_service", lambda _options: service)
 
-    typer_cli.connect(pos_engine=None, engine=None, background=False, iran=False, russia=False)
+    typer_cli.connect(ctx=None, pos_engine=None, engine=None, background=False, iran=False, russia=False)
 
     request = service.connect.call_args.args[0]
     assert request.pos_engine is None
@@ -202,7 +202,7 @@ def test_documented_options_are_registered():
 def test_doctor_forwards_fix_options(monkeypatch):
     monkeypatch.setattr(typer_cli, "_output_options", lambda _ctx=None: typer_cli.OutputOptions())
     with patch("blackoutkit.cli.cmd_doctor") as cmd_doctor:
-        typer_cli.doctor(fix=True, fix_av=True)
+        typer_cli.doctor(ctx=None, fix=True, fix_av=True)
 
     args = cmd_doctor.call_args.args[0]
     assert args.fix is True
@@ -399,7 +399,7 @@ def test_qos_cli_rejects_retired_mode_with_supported_modes(monkeypatch):
 
 def test_country_set_forwards_code():
     with patch("blackoutkit.cli.cmd_country") as cmd_country:
-        typer_cli.country_set("RU")
+        typer_cli.country_set(None, "RU")
 
     args = cmd_country.call_args.args[0]
     assert args.country_command == "set"
@@ -414,7 +414,7 @@ def test_connect_builds_typed_request_without_legacy_dispatch(monkeypatch):
     monkeypatch.setattr(typer_cli, "_connection_service", lambda _options: service)
 
     with patch("blackoutkit.cli.cmd_connect") as legacy_connect:
-        typer_cli.connect(pos_engine="xray", engine="sni", background=True, iran=False, russia=True)
+        typer_cli.connect(ctx=None, pos_engine="xray", engine="sni", background=True, iran=False, russia=True)
 
     request = service.connect.call_args.args[0]
     assert request.pos_engine == "xray"
@@ -432,7 +432,7 @@ def test_start_builds_typed_request_without_legacy_dispatch(monkeypatch):
     monkeypatch.setattr(typer_cli, "_connection_service", lambda _options: service)
 
     with patch("blackoutkit.cli.cmd_start") as legacy_start:
-        typer_cli.start(pos_engine="xray", engine="sni", background=True, iran=False, russia=True)
+        typer_cli.start(ctx=None, pos_engine="xray", engine="sni", background=True, iran=False, russia=True)
 
     request = service.start.call_args.args[0]
     assert request.pos_engine == "xray"
@@ -465,7 +465,7 @@ def test_direct_connect_call_normalizes_omitted_typer_defaults():
     monkeypatch = pytest.MonkeyPatch()
     try:
         monkeypatch.setattr(typer_cli, "_connection_service", lambda _options: service)
-        typer_cli.connect(pos_engine=None, engine=None, background=False, iran=False)
+        typer_cli.connect(ctx=None, pos_engine=None, engine=None, background=False, iran=False)
     finally:
         monkeypatch.undo()
 
@@ -485,7 +485,7 @@ def test_direct_start_call_normalizes_omitted_typer_defaults(monkeypatch):
     service.start.return_value = ConnectionResult(operation="start", ok=True, status="stopped")
     monkeypatch.setattr(typer_cli, "_connection_service", lambda _options: service)
 
-    typer_cli.start(pos_engine=None, engine=None, background=False, iran=False, russia=False)
+    typer_cli.start(ctx=None, pos_engine=None, engine=None, background=False, iran=False, russia=False)
 
     request = service.start.call_args.args[0]
     assert request.pos_engine is None
@@ -528,7 +528,7 @@ def test_fix_forwards_explicit_network_reset_flags_without_legacy_dispatch(monke
     monkeypatch.setattr("blackoutkit.tools.run_network_recovery", executed)
 
     with patch("blackoutkit.cli.cmd_fix") as cmd_fix:
-        typer_cli.fix(full_route_reset=True, full_stack_reset=True, flush_arp=True)
+        typer_cli.fix(ctx=None, full_route_reset=True, full_stack_reset=True, flush_arp=True)
 
     cmd_fix.assert_not_called()
     planned.assert_called_once_with(
@@ -552,7 +552,7 @@ def test_fix_preview_calls_plan_only(monkeypatch):
     monkeypatch.setattr("blackoutkit.tools.run_network_recovery", executed)
     monkeypatch.setattr(typer_cli, "_output_options", lambda _ctx=None: typer_cli.OutputOptions())
 
-    typer_cli.fix(preview=True)
+    typer_cli.fix(ctx=None, preview=True)
 
     planned.assert_called_once_with(full_route_reset=False, full_stack_reset=False, flush_arp=False)
     executed.assert_not_called()
@@ -607,7 +607,7 @@ def test_fix_linux_normalizes_windows_only_flags(monkeypatch):
     monkeypatch.setattr("blackoutkit.tools.plan_network_recovery", planned)
     monkeypatch.setattr("blackoutkit.tools.run_network_recovery", executed)
 
-    typer_cli.fix(full_route_reset=True, full_stack_reset=True)
+    typer_cli.fix(ctx=None, full_route_reset=True, full_stack_reset=True)
 
     planned.assert_called_once_with(full_route_reset=False, full_stack_reset=False, flush_arp=False)
     executed.assert_called_once_with(
@@ -757,7 +757,7 @@ def test_tools_netfix_uses_native_targeted_recovery(monkeypatch):
     monkeypatch.setattr("blackoutkit.tools.run_network_recovery", executed)
 
     with patch("blackoutkit.cli.cmd_tools") as cmd_tools:
-        typer_cli.tools_netfix()
+        typer_cli.tools_netfix(ctx=None)
 
     cmd_tools.assert_not_called()
     planned.assert_called_once_with(
@@ -780,7 +780,7 @@ def test_tools_netfix_preview_calls_plan_only(monkeypatch):
     monkeypatch.setattr("blackoutkit.tools.plan_network_recovery", planned)
     monkeypatch.setattr("blackoutkit.tools.run_network_recovery", executed)
 
-    typer_cli.tools_netfix(preview=True)
+    typer_cli.tools_netfix(ctx=None, preview=True)
 
     planned.assert_called_once_with(
         full_route_reset=False,
@@ -1176,7 +1176,7 @@ def test_config_replace_forwards_to_manager(monkeypatch):
     replace_config = Mock(return_value=replacement)
     monkeypatch.setattr("blackoutkit.config.manager.replace_config", replace_config)
 
-    typer_cli.cfg_replace(2, "vless://new@example.com:443")
+    typer_cli.cfg_replace(None, 2, "vless://new@example.com:443")
 
     replace_config.assert_called_once_with(1, "vless://new@example.com:443")
 

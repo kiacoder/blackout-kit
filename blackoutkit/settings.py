@@ -103,6 +103,7 @@ DEFAULTS = {
     "security_mode":        "speed",     # speed / private / legend
     "kill_switch":          False,       # Enable the verified Linux endpoint-scoped firewall kill switch
     "secrets_vault_enabled": False,      # Keep supported VPN secrets encrypted at rest
+    "tls_allow_insecure":   False,      # Opt-in ONLY: disable XRay TLS cert verification (default-deny)
 
     # IKEv2 / Windows built-in VPN
     "ikev2_server":         "",
@@ -216,7 +217,7 @@ SETTING_GROUPS = {
     "Reconnect": ("engine_order", "retry_interval", "max_retries", "reconnect_initial_delay", "reconnect_max_delay"),
     "Daemon": ("daemon_log_lines",),
     "User Interface": ("show_banner", "show_disclaimer", "show_first_run", "color_theme", "terminal_theme"),
-    "Security": ("security_mode", "kill_switch", "secrets_vault_enabled"),
+    "Security": ("security_mode", "kill_switch", "secrets_vault_enabled", "tls_allow_insecure"),
     "IKEv2 / L2TP": ("ikev2_server", "ikev2_username", "ikev2_password", "ikev2_psk", "ikev2_tunnel_type"),
     "WireGuard": ("wg_config_file", "wg_interface"),
     "OpenVPN": ("openvpn_config",),
@@ -656,6 +657,7 @@ def describe(key: str) -> str:
         "security_mode":      "Active security mode: speed / private / legend",
         "kill_switch":        "Enable Linux endpoint-scoped firewall protection; unavailable on Windows",
         "secrets_vault_enabled": "Keep supported IKEv2/L2TP and SoftEther secrets encrypted at rest",
+        "tls_allow_insecure":   "SECURITY: when True, XRay skips TLS certificate verification (allowInsecure). Leave False unless you explicitly trust a host with a bad/expired cert.",
         "ikev2_server":       "IKEv2/L2TP VPN server address",
         "ikev2_username":     "IKEv2/L2TP VPN username",
         # Credential-bearing keys are documented without restating the field

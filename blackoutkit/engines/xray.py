@@ -32,11 +32,11 @@ LINUX_RUNNER_NAMES = ["blackout-engine"]
 class XRayConfigError(RuntimeError):
     """Raised when no usable outbound configuration can be resolved.
 
-    A previous revision shipped a hard-coded Trojan fallback (password ``humanity``
-    and SNI ``www.creationlong.org``) that was silently used whenever the caller
-    passed no explicit proxy config and no ``xray_config.json`` fallback existed.
-    That is a credential/endpoint leak, so the built-in fallback is gone: the caller
-    must supply an explicit proxy_config or a valid outbound file in the bins dir.
+    An earlier revision embedded hard-coded Trojan credentials and a fixed SNI
+    endpoint that were silently used whenever the caller passed no explicit proxy
+    config and no ``xray_config.json`` fallback existed. That is a
+    credential/endpoint leak, so the built-in fallback is gone: the caller must
+    supply an explicit proxy_config or a valid outbound file in the bins dir.
     """
 
 
@@ -406,7 +406,7 @@ class XRayEngine(Engine):
                     if not rec.cert_ok:
                         self._log.warning(
                             "PRIVATE mode cert warning for %s:%d: %s  "
-                            "(allowInsecure=True, connection proceeding)",
+                            "(TLS verification is ON by default; set tls_allow_insecure=True to bypass)",
                             h, p, rec.error,
                         )
                 threading.Thread(
@@ -414,7 +414,8 @@ class XRayEngine(Engine):
                     daemon=True, name=f"cert-probe-{host}",
                 ).start()
 
-            # SPEED: no probe, allowInsecure=True always — zero overhead
+            # SPEED: no probe; TLS certificate verification stays ON by default.
+            # Users must opt in via tls_allow_insecure to bypass verification.
 
         if sys.platform.startswith("linux") and (
             not self.proxy_config

@@ -13,16 +13,31 @@ import (
 
 // listenEndpoint opens a Windows named pipe in byte-stream mode.
 //
-// The security descriptor is deliberately left empty so go-winio applies its
-// default: full access to SYSTEM, the local Administrators group and the
-// creating user. That matters because this pipe accepts engine control
-// commands — leaving it world-writable would let any logon session start or
-// stop the bypass engine.
+// The pipe carries engine control commands, so its ACL must be tight: an
+// overly permissive descriptor would let any logon session start or stop the
+// bypass engine. We therefore set an explicit security descriptor instead of
+// relying on go-winio's default, which additionally grants SYSTEM and the local
+// Administrators group full control.
+//
+//	SecurityDescriptor: "D:(A;;GA;;;OW)"
+//
+// SDDL breakdown:
+//   - D:      — DACL (discretionary ACL)
+//   - (A;;GA;;;OW) — allow (A) generic-all (GA) to the object owner (OW)
+//
+// GA (generic all) maps to FILE_ALL_ACCESS for a named pipe, and OW is the
+// object's owner — i.e. the user that launched the daemon. No other principal
+// (SYSTEM, Administrators, or other logon sessions) receives access, so only
+// the owning user's processes can open the control channel.
 func listenEndpoint(addr string) (net.Listener, error) {
 	cfg := &winio.PipeConfig{
 		MessageMode:      false, // byte stream, not message mode
 		InputBufferSize:  64 * 1024,
 		OutputBufferSize: 64 * 1024,
+		// Restrict the pipe to the creating user (owner) only. An empty
+		// SecurityDescriptor would fall back to go-winio's built-in default that
+		// also grants SYSTEM and the local Administrators group full control.
+		SecurityDescriptor: "D:(A;;GA;;;OW)",
 	}
 	ln, err := winio.ListenPipe(addr, cfg)
 	if err != nil {

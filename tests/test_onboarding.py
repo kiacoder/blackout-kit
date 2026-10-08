@@ -83,7 +83,7 @@ def test_setup_connect_uses_final_recommended_engine(monkeypatch):
     monkeypatch.setattr(typer_cli, "confirm", confirm)
     monkeypatch.setattr(typer_cli, "_connection_service", lambda _options: service)
 
-    typer_cli.setup(connect=True)
+    typer_cli.setup(ctx=None, connect=True)
 
     run_setup.assert_called_once_with(console=typer_cli.console)
     confirm.assert_called_once()

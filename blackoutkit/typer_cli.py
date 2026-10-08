@@ -97,7 +97,7 @@ def _args(**values):
     return Namespace(**values)
 
 
-def _output_options(ctx: typer.Context | None = None) -> OutputOptions:
+def _output_options(ctx: typer.Context | None) -> OutputOptions:
     current = ctx
     while current is not None:
         obj = getattr(current, "obj", None)
@@ -782,8 +782,8 @@ def _render_capabilities(payload: dict) -> None:
 
 @app.command()
 def capabilities(
-    engine: str = typer.Argument(None, help="Show one capability (omit to show the full catalog)"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    engine: str = typer.Argument(None, help="Show one capability (omit to show the full catalog)")
 ):
     """Show the full engine capability matrix without starting anything."""
     engine = _option_value(engine)
@@ -799,7 +799,7 @@ def capabilities(
 
 
 @app.command()
-def demo(ctx: typer.Context = None):
+def demo(ctx: typer.Context):
     """Show a read-only simulation of the local Blackout Kit workflow."""
     from .demo import build_demo_report
 
@@ -824,8 +824,8 @@ def demo(ctx: typer.Context = None):
 
 @app.command()
 def setup(
-    connect: bool = typer.Option(False, "--connect", help="Ask for confirmation, then run the selected connection"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    connect: bool = typer.Option(False, "--connect", help="Ask for confirmation, then run the selected connection")
 ):
     """Run the beginner-friendly local setup checklist before connecting."""
     from .onboarding import build_current_setup_plan, render_setup_plan, run_setup
@@ -884,7 +884,7 @@ def setup(
 
 
 @app.command()
-def version(ctx: typer.Context = None):
+def version(ctx: typer.Context):
     """Show the Blackout Kit version."""
     options = _output_from_context(ctx)
     if options.json_output:
@@ -1073,6 +1073,7 @@ def _run_recovery_flow(
 
 @app.command()
 def fix(
+    ctx: typer.Context,
     full_route_reset: bool = typer.Option(
         False,
         "--full-route-reset",
@@ -1090,8 +1091,7 @@ def fix(
     ),
     preview: bool = typer.Option(False, "--preview", help="Show Blackout-owned recovery actions without changing anything"),
     history: bool = typer.Option(False, "--history", help="Show redacted local recovery audit history"),
-    history_lines: int = typer.Option(20, "--history-lines", min=1, max=100, help="Audit records to show with --history"),
-    ctx: typer.Context = None,
+    history_lines: int = typer.Option(20, "--history-lines", min=1, max=100, help="Audit records to show with --history")
 ):
     """Repair targeted post-crash Blackout network state."""
     from . import recovery_audit
@@ -1194,7 +1194,7 @@ def _forward_status(command: StatusArgs, options: OutputOptions) -> None:
 
 
 @app.command()
-def route(ctx: typer.Context = None):
+def route(ctx: typer.Context):
     """Show local, read-only engine recommendations."""
     from .cli import _routing_candidates, cmd_route
 
@@ -1232,9 +1232,9 @@ def theme(
 
 @app.command()
 def status(
+    ctx: typer.Context,
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh local status until Ctrl+C"),
-    interval: float = typer.Option(2.0, "--interval", min=0.5, max=60.0, help="Refresh interval in seconds"),
-    ctx: typer.Context = None,
+    interval: float = typer.Option(2.0, "--interval", min=0.5, max=60.0, help="Refresh interval in seconds")
 ):
     """Show daemon status and local connection health."""
     watch = bool(_option_value(watch, False))
@@ -1247,8 +1247,8 @@ def status(
 
 @app.command()
 def ready(
-    engine: str = typer.Argument("auto", help="Engine to validate locally (or auto)"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    engine: str = typer.Argument("auto", help="Engine to validate locally (or auto)")
 ):
     """Check local engine readiness without changing anything."""
     from . import readiness
@@ -1342,6 +1342,7 @@ def _bins_payload() -> dict:
 
 @app.command()
 def doctor(
+    ctx: typer.Context,
     fix: bool = typer.Option(False, "--fix", help="Auto-fix every repairable issue"),
     fix_av: bool = typer.Option(False, "--fix-av", help="Add Windows Defender exclusions"),
     local_only: bool = typer.Option(False, "--local-only", help="Inspect local state only; never probe the internet or execute engines"),
@@ -1349,8 +1350,7 @@ def doctor(
         False,
         "--include-optional",
         help="Include packet-capture checks for Scapy/Npcap/libpcap",
-    ),
-    ctx: typer.Context = None,
+    )
 ):
     """Diagnose and fix environment issues."""
     from . import doctor as doctor_module
@@ -1580,14 +1580,14 @@ def _render_connection_result(result, options: OutputOptions) -> None:
 
 @app.command()
 def connect(
+    ctx: typer.Context,
     pos_engine: str = typer.Argument(None, help="Engine to use (e.g. sni, psiphon, auto)"),
     engine: str = typer.Option(None, "--engine", help="Engine to use"),
     background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
     iran: bool = typer.Option(False, "--iran", help="TIC 2026 evasion profile"),
     russia: bool = typer.Option(False, "--russia", help="Russia transport preset"),
     sni_spoof: str = typer.Option(None, "--sni-spoof", metavar="DOMAIN", help="Use this fake SNI domain for this connection only (transient; saved settings untouched)"),
-    profile: str = typer.Option(None, "--profile", metavar="CODE", help="Apply an ISP sub-profile transiently (see: blackout isp list)"),
-    ctx: typer.Context = None,
+    profile: str = typer.Option(None, "--profile", metavar="CODE", help="Apply an ISP sub-profile transiently (see: blackout isp list)")
 ):
     """Smart connect — uses a recommendation when no engine is specified."""
     from .connection_service import ConnectionRequest
@@ -1612,14 +1612,14 @@ def connect(
 
 @app.command()
 def start(
+    ctx: typer.Context,
     pos_engine: str = typer.Argument(None, help="Engine to use"),
     engine: str = typer.Option(None, "--engine", help="Engine to use"),
     background: bool = typer.Option(False, "--background", "-d", help="Run as daemon"),
     iran: bool = typer.Option(False, "--iran", help="TIC 2026 profile"),
     russia: bool = typer.Option(False, "--russia", help="Russia transport preset"),
     sni_spoof: str = typer.Option(None, "--sni-spoof", metavar="DOMAIN", help="Use this fake SNI domain for this run only (transient; saved settings untouched)"),
-    profile: str = typer.Option(None, "--profile", metavar="CODE", help="Apply an ISP sub-profile transiently (see: blackout isp list)"),
-    ctx: typer.Context = None,
+    profile: str = typer.Option(None, "--profile", metavar="CODE", help="Apply an ISP sub-profile transiently (see: blackout isp list)")
 ):
     """Start a selected bypass engine."""
     from .connection_service import ConnectionRequest
@@ -1718,7 +1718,7 @@ def add_to_path():
         console.print(f"[info]Blackout Kit ({target_dir}) is already in your PATH.[/info]")
 
 @app.command(hidden=True)
-def gui(ctx: typer.Context = None):
+def gui(ctx: typer.Context):
     """Start the native desktop app (install blackout-kit[gui])."""
     options = _output_options(ctx)
     try:
@@ -1911,7 +1911,7 @@ def config_status(ctx: typer.Context):
     run_config_menu()
 
 @config_app.command("list")
-def cfg_list(ctx: typer.Context = None):
+def cfg_list(ctx: typer.Context):
     """List saved configs without exposing credentials."""
     from .config.manager import load_configs
 
@@ -1924,7 +1924,7 @@ def cfg_list(ctx: typer.Context = None):
 
 
 @config_app.command("validate")
-def cfg_validate(ctx: typer.Context = None):
+def cfg_validate(ctx: typer.Context):
     """Validate saved proxy records using local parser checks only."""
     from .config.manager import load_configs, validate_configs
 
@@ -1959,7 +1959,7 @@ def cfg_validate(ctx: typer.Context = None):
 
 
 @config_app.command("check-duplicates")
-def cfg_check_duplicates(ctx: typer.Context = None):
+def cfg_check_duplicates(ctx: typer.Context):
     """Find duplicate saved proxy records without printing their URIs."""
     from .config.manager import duplicate_config_indexes, load_configs
 
@@ -1984,7 +1984,7 @@ def cfg_check_duplicates(ctx: typer.Context = None):
 
 
 @config_app.command("compatibility")
-def cfg_compatibility(ctx: typer.Context = None):
+def cfg_compatibility(ctx: typer.Context):
     """Report local engine and saved-proxy compatibility without network probes."""
     from .config.manager import load_configs
 
@@ -2013,8 +2013,8 @@ def cfg_compatibility(ctx: typer.Context = None):
 
 @config_app.command("diff")
 def cfg_diff(
-    setup: str = typer.Argument(..., help="Base64-encoded setup to compare locally"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    setup: str = typer.Argument(..., help="Base64-encoded setup to compare locally")
 ):
     """Compare a setup against local config and settings without applying it."""
     from . import settings as cfg
@@ -2049,10 +2049,10 @@ def cfg_diff(
 
 @config_app.command("add")
 def cfg_add(
+    ctx: typer.Context,
     uri: str = typer.Argument(None, help="V2Ray URI to add (vmess://, vless://, etc)"),
     prompt: bool = typer.Option(False, "--prompt", help="Read the URI without echoing it"),
-    stdin_input: bool = typer.Option(False, "--stdin", help="Read the URI from stdin without echoing it"),
-    ctx: typer.Context = None,
+    stdin_input: bool = typer.Option(False, "--stdin", help="Read the URI from stdin without echoing it")
 ):
     """Add a V2Ray URI without echoing credential-bearing input."""
     from .config.manager import add_config, load_configs, parse_v2ray_uri
@@ -2092,7 +2092,7 @@ def cfg_add(
 
 
 @config_app.command("import")
-def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import"), ctx: typer.Context = None):
+def cfg_import(ctx: typer.Context, url: str = typer.Argument(None, help="Subscription URL to import")):
     """Import and merge configs from a subscription URL."""
     from .config.manager import import_and_merge
     from .validation import validate_url, ValidationError
@@ -2145,9 +2145,9 @@ def cfg_import(url: str = typer.Argument(None, help="Subscription URL to import"
 
 @config_app.command("replace")
 def cfg_replace(
+    ctx: typer.Context,
     num: int = typer.Argument(..., help="Config number to replace"),
-    uri: str = typer.Argument(..., help="Replacement V2Ray URI"),
-    ctx: typer.Context = None,
+    uri: str = typer.Argument(..., help="Replacement V2Ray URI")
 ):
     """Replace one saved V2Ray URI."""
     from .config.manager import replace_config
@@ -2171,7 +2171,7 @@ def cfg_replace(
 
 
 @config_app.command("remove")
-def cfg_remove(num: int = typer.Argument(None, help="Config number to remove"), ctx: typer.Context = None):
+def cfg_remove(ctx: typer.Context, num: int = typer.Argument(None, help="Config number to remove")):
     """Remove a config by number."""
     from .config.manager import remove_config
     from .validation import validate_config_number, ValidationError
@@ -2211,7 +2211,7 @@ def cfg_remove(num: int = typer.Argument(None, help="Config number to remove"), 
 
 
 @config_app.command("encrypt")
-def cfg_encrypt(ctx: typer.Context = None):
+def cfg_encrypt(ctx: typer.Context):
     """Encrypt saved proxy configs and supported secrets at rest."""
     from . import security as sec
 
@@ -2233,7 +2233,7 @@ def cfg_encrypt(ctx: typer.Context = None):
 
 
 @config_app.command("decrypt")
-def cfg_decrypt(ctx: typer.Context = None):
+def cfg_decrypt(ctx: typer.Context):
     """Restore encrypted configs and supported secrets for recovery."""
     from . import security as sec
 
@@ -2254,9 +2254,9 @@ def cfg_decrypt(ctx: typer.Context = None):
 
 @config_app.command("export")
 def cfg_export(
+    ctx: typer.Context,
     output: str = typer.Option(None, "--output", "-o", help="Save to file (required for machine-readable output)"),
-    force: bool = typer.Option(False, "--force", "-f", help="Explicitly allow plaintext setup export"),
-    ctx: typer.Context = None,
+    force: bool = typer.Option(False, "--force", "-f", help="Explicitly allow plaintext setup export")
 ):
     """Export a plaintext setup only after an explicit safety confirmation."""
     output = _option_value(output)
@@ -2308,10 +2308,10 @@ def cfg_export(
 
 @config_app.command("profile-export")
 def cfg_profile_export(
+    ctx: typer.Context,
     output: str = typer.Option(..., "--output", "-o", help="Destination for the encrypted profile"),
     prompt: bool = typer.Option(False, "--prompt", help="Read the passphrase without echoing it"),
-    stdin_input: bool = typer.Option(False, "--stdin", help="Read the passphrase from stdin without echoing it"),
-    ctx: typer.Context = None,
+    stdin_input: bool = typer.Option(False, "--stdin", help="Read the passphrase from stdin without echoing it")
 ):
     """Export an authenticated portable profile without printing its contents."""
     from . import vault
@@ -2336,11 +2336,11 @@ def cfg_profile_export(
 
 @config_app.command("profile-import")
 def cfg_profile_import(
+    ctx: typer.Context,
     profile: str = typer.Argument(..., help="Encrypted profile file to import"),
     prompt: bool = typer.Option(False, "--prompt", help="Read the passphrase without echoing it"),
     stdin_input: bool = typer.Option(False, "--stdin", help="Read the passphrase from stdin without echoing it"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip the overwrite confirmation"),
-    ctx: typer.Context = None,
+    force: bool = typer.Option(False, "--force", "-f", help="Skip the overwrite confirmation")
 ):
     """Authenticate and import a portable profile after complete validation."""
     from . import vault
@@ -2387,9 +2387,9 @@ def cfg_profile_import(
 
 @config_app.command("import-setup")
 def cfg_import_setup(
+    ctx: typer.Context,
     setup_string: str = typer.Argument(None, help="Base64-encoded setup string"),
-    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
-    ctx: typer.Context = None,
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt")
 ):
     """Validate and import configs and selected settings from a setup string."""
     setup_string = _option_value(setup_string)
@@ -2644,11 +2644,11 @@ def report_status(ctx: typer.Context):
 
 @report_app.command("export")
 def report_export(
+    ctx: typer.Context,
     format: str = typer.Option(..., "--format", help="Export format: pdf or csv"),
     output: str = typer.Option(..., "--output", "-o", help="Destination file"),
     compliance: str = typer.Option(None, "--compliance", help="Compliance profile: gdpr, hipaa, or soc2"),
-    hours: int = typer.Option(24, "--hours", help="Include evidence from the last N hours"),
-    ctx: typer.Context = None,
+    hours: int = typer.Option(24, "--hours", help="Include evidence from the last N hours")
 ):
     """Export local network, anomaly, audit, and compliance evidence."""
     from .reporting import ReportGenerator
@@ -2795,8 +2795,8 @@ def tools_mac(
 
 @tools_app.command("netfix")
 def tools_netfix(
-    preview: bool = typer.Option(False, "--preview", help="Show Blackout-owned recovery actions without changing anything"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    preview: bool = typer.Option(False, "--preview", help="Show Blackout-owned recovery actions without changing anything")
 ):
     """Safely repair post-crash network state (admin may be requested)."""
     options = _output_options(ctx)
@@ -3007,10 +3007,10 @@ def tools_traffic_log(
 
 @tools_app.command("anomaly-check")
 def tools_anomaly_check(
+    ctx: typer.Context,
     hours: int = typer.Option(24, "--hours", help="Analyze traffic from the last N hours"),
     limit: int = typer.Option(1000, "--limit", help="Maximum traffic records to analyze"),
-    z_threshold: float = typer.Option(3.0, "--z-threshold", help="Statistical anomaly threshold"),
-    ctx: typer.Context = None,
+    z_threshold: float = typer.Option(3.0, "--z-threshold", help="Statistical anomaly threshold")
 ):
     """Analyze local traffic history for unusual patterns without changing it."""
     options = _output_options(ctx)
@@ -3034,10 +3034,10 @@ def tools_anomaly_check(
 
 @tools_app.command("anomaly-log")
 def tools_anomaly_log(
+    ctx: typer.Context,
     hours: int = typer.Option(24, "--hours", help="Show alerts from the last N hours"),
     limit: int = typer.Option(100, "--limit", help="Maximum alerts to show"),
-    severity: str = typer.Option(None, "--severity", help="Filter: low, medium, high, or critical"),
-    ctx: typer.Context = None,
+    severity: str = typer.Option(None, "--severity", help="Filter: low, medium, high, or critical")
 ):
     """Show persisted anomaly alerts."""
     options = _output_options(ctx)
@@ -3062,11 +3062,11 @@ def tools_anomaly_log(
 
 @tools_app.command("predict")
 def tools_predict(
+    ctx: typer.Context,
     hours: int = typer.Option(168, "--hours", help="Analyze traffic from the last N hours"),
     limit: int = typer.Option(10000, "--limit", help="Maximum traffic records to analyze"),
     transport: str = typer.Option("https", "--transport", help="Current transport"),
-    dns: str = typer.Option("8.8.8.8", "--dns", help="Current primary DNS"),
-    ctx: typer.Context = None,
+    dns: str = typer.Option("8.8.8.8", "--dns", help="Current primary DNS")
 ):
     """Predict peak periods and suggest local network optimizations."""
     options = _output_options(ctx)
@@ -3130,7 +3130,7 @@ def threat_feeds_status(ctx: typer.Context):
 
 
 @threat_feeds_app.command("list")
-def threat_feeds_list(ctx: typer.Context = None):
+def threat_feeds_list(ctx: typer.Context):
     """List configured threat intelligence feeds."""
     from dataclasses import asdict
 
@@ -3169,10 +3169,10 @@ def threat_feeds_list(ctx: typer.Context = None):
 
 @threat_feeds_app.command("add")
 def threat_feeds_add(
+    ctx: typer.Context,
     name: str = typer.Argument(..., help="Unique feed name"),
     url: str = typer.Option(..., "--url", help="HTTP(S) feed URL"),
-    feed_type: str = typer.Option(..., "--type", help="Feed type: ip or domain"),
-    ctx: typer.Context = None,
+    feed_type: str = typer.Option(..., "--type", help="Feed type: ip or domain")
 ):
     """Add a custom IP or domain threat feed."""
     from .threat_feeds import ThreatFeed, ThreatFeedsManager
@@ -3198,8 +3198,8 @@ def threat_feeds_add(
 
 @threat_feeds_app.command("remove")
 def threat_feeds_remove(
-    name: str = typer.Argument(..., help="Feed name to remove"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Feed name to remove")
 ):
     """Remove a configured threat feed."""
     from .threat_feeds import ThreatFeedsManager
@@ -3216,7 +3216,7 @@ def threat_feeds_remove(
 
 
 @threat_feeds_app.command("update")
-def threat_feeds_update(ctx: typer.Context = None):
+def threat_feeds_update(ctx: typer.Context):
     """Download and merge every enabled threat feed."""
     from .threat_feeds import ThreatFeedsManager
 
@@ -3327,12 +3327,12 @@ def tools_qos(
 
 @tools_app.command("capture")
 def tools_capture(
+    ctx: typer.Context,
     iface: str = typer.Argument(None, help="Interface name to capture on (see `tools adapters`); omit for auto"),
     count: int = typer.Option(0, "--count", "-c", help="Stop after N packets (0 = unbounded, Ctrl+C to stop)"),
     filter: str = typer.Option(None, "--filter", "-f", help="Raw BPF filter expression (e.g. 'tcp port 443')"),
     host: str = typer.Option(None, "--host", help="Shorthand filter for traffic to/from this host"),
-    pcap: str = typer.Option(None, "--pcap", "-p", help="Export packet trace to standard .pcap binary file for Wireshark"),
-    ctx: typer.Context = None,
+    pcap: str = typer.Option(None, "--pcap", "-p", help="Export packet trace to standard .pcap binary file for Wireshark")
 ):
     """Capture packets locally; install `blackout-kit[capture]` and Npcap/libpcap first."""
     options = _output_options(ctx)
@@ -3495,8 +3495,8 @@ def country_status(ctx: typer.Context):
 
 @country_app.command("set")
 def country_set(
-    code: str = typer.Argument(..., help="Country code: IR, RU, CN, IQ, GB, US, or EU"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    code: str = typer.Argument(..., help="Country code: IR, RU, CN, IQ, GB, US, or EU")
 ):
     """Pin the active country profile."""
     from . import country_profiles as profiles
@@ -3520,7 +3520,7 @@ def country_set(
 
 
 @country_app.command("reset")
-def country_reset(ctx: typer.Context = None):
+def country_reset(ctx: typer.Context):
     """Return to ISP-based country auto-detection."""
     from . import settings as cfg
 
@@ -3533,13 +3533,13 @@ def country_reset(ctx: typer.Context = None):
 
 
 @country_app.command("show", hidden=True)
-def country_show(ctx: typer.Context = None):
+def country_show(ctx: typer.Context):
     """Show the active country profile."""
     country_status(ctx)
 
 
 @country_app.command("list")
-def country_list(ctx: typer.Context = None):
+def country_list(ctx: typer.Context):
     """List built-in country profiles without network detection."""
     from . import country_profiles as profiles
 
@@ -3835,7 +3835,7 @@ def config_edit():
 
 
 @settings_app.command("list")
-def settings_list(ctx: typer.Context = None):
+def settings_list(ctx: typer.Context):
     """List all settings with sensitive values masked."""
 
     from . import settings as cfg
@@ -3852,8 +3852,8 @@ def settings_list(ctx: typer.Context = None):
 
 @settings_app.command("get")
 def settings_get(
-    key: str = typer.Argument(..., help="Setting key"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    key: str = typer.Argument(..., help="Setting key")
 ):
     """Get one setting with its description."""
     from rich.markup import escape
@@ -3882,11 +3882,11 @@ def settings_get(
 
 @settings_app.command("set")
 def settings_set(
+    ctx: typer.Context,
     key: str = typer.Argument(..., help="Setting key"),
     value: str = typer.Argument(None, help="New value (omit with --prompt or --stdin)"),
     prompt: bool = typer.Option(False, "--prompt", help="Read a sensitive value without echoing it"),
-    stdin_input: bool = typer.Option(False, "--stdin", help="Read a value from stdin without echoing it"),
-    ctx: typer.Context = None,
+    stdin_input: bool = typer.Option(False, "--stdin", help="Read a value from stdin without echoing it")
 ):
     """Change one setting after type and bounds validation."""
     from . import settings as cfg
@@ -3931,7 +3931,7 @@ def settings_set(
 
 
 @settings_app.command("reset")
-def settings_reset(ctx: typer.Context = None):
+def settings_reset(ctx: typer.Context):
     """Reset all settings to defaults."""
     from . import settings as cfg
 
@@ -3965,7 +3965,7 @@ def bins_status(ctx: typer.Context):
 
 
 @bins_app.command("list")
-def bins_list(ctx: typer.Context = None):
+def bins_list(ctx: typer.Context):
     """List local binary status without downloads or system changes."""
     options = _output_options(ctx)
     payload = _bins_payload()
@@ -4054,7 +4054,7 @@ def app_callback(
         False,
         "--no-color",
         help="Disable terminal styling",
-    ),
+    )
 ):
     console.no_color = _DEFAULT_NO_COLOR
     json_output = bool(_option_value(json_output, False))
@@ -4576,12 +4576,12 @@ app.add_typer(tune_app, name="tune")
 
 @tune_app.command("fragment")
 def tune_fragment(
+    ctx: typer.Context,
     ip: str = typer.Option(None, "--ip", help="Target a specific clean IP (default: cached best, else a quick scan)"),
     sni: str = typer.Option(None, "--sni", help="Fake SNI to probe with (default: saved sni_fake_sni)"),
     count: int = typer.Option(20, "--count", min=1, max=500, help="IPs to try when scanning for a target"),
     apply: bool = typer.Option(False, "--apply", help="Write the winning IP + fragment into settings"),
-    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    ctx: typer.Context = None,
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON")
 ):
     """Test TLS record fragmentation candidates against a clean IP and bind the winner.
 
@@ -4656,8 +4656,8 @@ def tune_fragment(
 
 @isp_app.command("list")
 def isp_list(
-    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON")
 ):
     """List the cataloged ISP sub-profiles (read-only; applies nothing)."""
     options = _output_options(ctx)
@@ -4693,9 +4693,9 @@ def isp_list(
 
 @isp_app.command("show")
 def isp_show(
+    ctx: typer.Context,
     code: str = typer.Argument(..., help="Profile code (e.g. ir-mci)"),
-    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    ctx: typer.Context = None,
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON")
 ):
     """Show one ISP sub-profile in detail (read-only; applies nothing)."""
     options = _output_options(ctx)
@@ -4734,9 +4734,9 @@ def isp_show(
 
 @app.command("snapshot")
 def snapshot_cmd(
+    ctx: typer.Context,
     json_flag: bool = typer.Option(False, "--json", help="Emit stable machine-readable JSON"),
-    include_adapters: bool = typer.Option(True, "--adapters/--no-adapters", help="Include network adapter summary"),
-    ctx: typer.Context = None,
+    include_adapters: bool = typer.Option(True, "--adapters/--no-adapters", help="Include network adapter summary")
 ):
     """Show one canonical structured snapshot of local Blackout Kit state.
 
@@ -4759,9 +4759,9 @@ def snapshot_cmd(
 
 @app.command("support-bundle")
 def support_bundle_cmd(
+    ctx: typer.Context,
     preview_flag: bool = typer.Option(False, "--preview", help="Show exactly what an export would contain"),
-    output: str = typer.Option(None, "--output", "-o", help="Write the bundle JSON to this path"),
-    ctx: typer.Context = None,
+    output: str = typer.Option(None, "--output", "-o", help="Write the bundle JSON to this path")
 ):
     """Collect a sanitized local support bundle for bug reports.
 
@@ -4799,10 +4799,10 @@ def support_bundle_cmd(
 
 @operator_app.command("status")
 def operator_status(
+    ctx: typer.Context,
     watch: bool = typer.Option(False, "--watch", "-w", help="Refresh until Ctrl+C"),
     interval: float = typer.Option(2.0, "--interval", min=0.5, max=60.0, help="Refresh interval in seconds"),
-    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    ctx: typer.Context = None,
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON")
 ):
     """Live operator view: state, last events, and the current recommendation."""
     options = _output_options(ctx)
@@ -4833,8 +4833,8 @@ def operator_status(
 
 @operator_app.command("recommend")
 def operator_recommend(
-    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON")
 ):
     """Show deterministic recommendations derived from local evidence."""
     options = _output_options(ctx)
@@ -4852,8 +4852,8 @@ def operator_recommend(
 
 @operator_app.command("actions")
 def operator_actions(
-    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    ctx: typer.Context = None,
+    ctx: typer.Context,
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON")
 ):
     """Show the documented action catalog with safety classes."""
     options = _output_options(ctx)
@@ -4871,10 +4871,10 @@ def operator_actions(
 
 @events_app.command("recent")
 def events_recent(
+    ctx: typer.Context,
     limit: int = typer.Option(20, "--limit", "-n", min=1, max=200, help="How many events to show"),
     type_prefix: str = typer.Option(None, "--type", help="Filter by event type prefix (e.g. engine.)"),
-    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
-    ctx: typer.Context = None,
+    json_flag: bool = typer.Option(False, "--json", help="Emit machine-readable JSON")
 ):
     """Show recent local events (in-process plus the local event journal)."""
     options = _output_options(ctx)
@@ -4897,9 +4897,9 @@ def events_recent(
 
 @events_app.command("serve")
 def events_serve(
+    ctx: typer.Context,
     port: int = typer.Option(8787, "--port", min=1, max=65535, help="Loopback port for the SSE stream"),
-    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (loopback only by design)"),
-    ctx: typer.Context = None,
+    host: str = typer.Option("127.0.0.1", "--host", help="Bind address (loopback only by design)")
 ):
     """Serve sanitized events as Server-Sent Events on 127.0.0.1.
 

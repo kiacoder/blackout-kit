@@ -50,7 +50,9 @@ class NeighborShareEngine(Engine):
     """
     Share mode: Broadcasts a LAN beacon so nearby guests can discover you.
     Does NOT start a proxy itself — you must already be running an engine.
-    Also rebinds the proxy to 0.0.0.0 so LAN devices can reach it.
+    The share proxy binds to loopback (127.0.0.1) by default so only this
+    machine can reach it. Set neighbor_bind_lan=True to expose it on all
+    interfaces (0.0.0.0) for other LAN devices to connect.
     """
     name = "neighbor-share"
     description = "Share your bypass proxy with nearby LAN devices"
@@ -61,11 +63,13 @@ class NeighborShareEngine(Engine):
         s = cfg.load()
         self.target_port = proxy_port or s.get("xray_http_port", 10809)
         self.listen_port = s.get("neighbor_proxy_port", 10809)
+        # Loopback by default; only expose on all interfaces when the user
+        # explicitly opts in via neighbor_bind_lan.
+        self.bind_lan = bool(s.get("neighbor_bind_lan", False))
         if self.listen_port == self.target_port:
-            # If the proxy is already bound to 0.0.0.0, binding again will fail.
-            # But the Go forwarder needs to bind on listen_port.
-            # If they match, we could either assume the existing proxy is accessible,
-            # or we offset the listen port. Let's offset it so the Go reverse proxy is always used.
+            # The Go forwarder must bind its own listener on listen_port. When it
+            # collides with the target proxy port we offset it so the reverse proxy
+            # is always used (whether bound to loopback or all interfaces).
             self.listen_port = self.target_port + 1
         
         self._running   = False
@@ -78,10 +82,11 @@ class NeighborShareEngine(Engine):
             return False
 
         self._log.info("Starting high-performance Go reverse proxy for LAN sharing...")
-        if dll.StartNeighborC(self.listen_port, self.target_port) == 0:
+        if dll.StartNeighborC(self.listen_port, self.target_port, 1 if self.bind_lan else 0) == 0:
             self._dll_stop_func = dll.StopNeighborC
             self._running = True
-            self._log.info("Neighbor LAN sharing active on port %d (forwarding to %d)", self.listen_port, self.target_port)
+            bind_note = "0.0.0.0 (LAN)" if self.bind_lan else "127.0.0.1 (loopback)"
+            self._log.info("Neighbor LAN sharing active on %s port %d (forwarding to %d)", bind_note, self.listen_port, self.target_port)
             return True
         else:
             self._log.error("Native DLL StartNeighborC failed")

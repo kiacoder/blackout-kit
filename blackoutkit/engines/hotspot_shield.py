@@ -94,6 +94,12 @@ class HotspotShieldEngine(Engine):
         # app and watches the HssStore adapter.
         self.username = username
         self.password = password
+        # A paid/premium account requires explicit credentials. A previous
+        # revision silently substituted a hard-coded account here, which is a
+        # credential leak and an account-sharing hazard. We now fail loudly
+        # instead of passing through with no usable credentials.
+        if account_type != "free" and not (username and password):
+            raise HotspotShieldConfigError("Credentials missing or unconfigured")
         self.current_server: Optional[str] = None
         self._connected = False
         # Windows Store app package name

@@ -4,13 +4,13 @@ Blackout Kit - TLS certificate bypass policy.
 Legendary features:
   - check_host_cert(): proactive TLS handshake — gets cert details even on failure
   - HostCertRecord: persisted per-host cert status in ~/.blackout-kit/cert_records.json
-  - should_allow_insecure(): per-mode policy enforcement
-      SPEED  → always allowInsecure=True (silent, maximum compatibility)
-      PRIVATE → always allowInsecure=True but surface a warning if cert is bad
-      LEGEND → allowInsecure=False when cert is KNOWN bad (hard fail)
+  - should_allow_insecure(): per-connection policy enforcement
+      DEFAULT-DENY: TLS certificate verification is ON unless the user has explicitly
+      opted in via the `tls_allow_insecure` setting. We do NOT disable verification by
+      default for remote hosts.
+      Local addresses (127.0.0.1, localhost) are always exempt — they need allowInsecure
+      because the local SNI spoofer never presents a valid cert for the remote hostname.
   - scan_xray_line(): detect cert error phrases in xray stderr output
-  - Local addresses (127.0.0.1, localhost) are always exempt — they need allowInsecure
-    because the local SNI spoofer never presents a valid cert for the remote hostname.
 """
 from __future__ import annotations
 
@@ -161,6 +161,20 @@ def clear_all() -> None:
 
 # ──────────────────────────── Policy ─────────────────────────────
 
+def _bypass_enabled() -> bool:
+    """
+    True ONLY when the user has explicitly opted into insecure TLS bypass.
+
+    Verification is ENABLED by default. We never disable it for remote hosts
+    unless `tls_allow_insecure` is explicitly set True in the settings.
+    """
+    try:
+        from . import settings as cfg
+        return bool(cfg.load().get("tls_allow_insecure", False))
+    except Exception:
+        return False
+
+
 def should_allow_insecure(host: str, port: int, mode: str) -> tuple[bool, str]:
     """
     Determine if xray's tlsSettings.allowInsecure should be True for this connection.
@@ -168,47 +182,41 @@ def should_allow_insecure(host: str, port: int, mode: str) -> tuple[bool, str]:
     Returns (allow_insecure: bool, warning_message: str).
     warning_message is "" unless there's something to surface to the user.
 
-    Local addresses (127.0.0.1 etc.) are always True — the local SNI spoofer
-    never presents a cert that would pass host validation.
+    SECURITY: TLS certificate verification is ENABLED by default. We do NOT disable
+    it for remote hosts unless the user has explicitly opted in via the
+    `tls_allow_insecure` setting. Local proxy endpoints (127.0.0.1 / localhost / ::1)
+    are always exempt because the local SNI spoofer never presents a cert that would
+    pass host validation for the remote hostname.
 
-    Policy per mode:
-      SPEED   → always (True, "")
-      PRIVATE → always (True, warn_msg) where warn_msg is "" if cert is OK
-      LEGEND  → (False, fail_msg) ONLY if we KNOW the cert is bad and not manually allowed
-                (True, "") if no data or cert is valid
+    Policy:
+      - Local addresses       → always True (loopback spoofer, exempt)
+      - tls_allow_insecure    → True (explicit user opt-in to bypass verification)
+      - cert record valid     → True (no allowInsecure needed; xray verifies normally)
+      - cert manually allowed → True
+      - otherwise             → False (default-deny; verification stays on)
     """
     # Local proxy endpoints are always exempt
     if host in LOCAL_ADDRS:
         return True, ""
 
-    # SPEED — zero friction, just connect
-    if mode == "speed":
-        return True, ""
+    # Explicit opt-in bypass flag takes precedence over the default-deny stance.
+    if _bypass_enabled():
+        return True, "TLS certificate verification disabled by user (tls_allow_insecure=True)"
 
     record = get_record(host, port)
 
-    # No cert data yet — can't make an informed decision
+    # No cert data yet — default to verification ON (False). xray will verify the
+    # cert; if it is valid the connection succeeds, otherwise the user must opt in.
     if record is None:
-        return True, ""
+        return False, ""
 
-    # Cert is valid or user manually allowed it
+    # Cert is valid or the user has manually allowed this host → no allowInsecure needed.
     if record.cert_ok or record.manually_allowed:
         return True, ""
 
-    # Cert is known bad
+    # Known-bad cert with no opt-in → deny (hard fail) and surface the reason.
     reason = record.error or "TLS certificate validation failed"
-
-    if mode == "legend":
-        return (
-            False,
-            f"LEGEND mode: refusing insecure connection to {host}:{port} — {reason}",
-        )
-
-    # PRIVATE
-    return (
-        True,
-        f"PRIVATE warning: {host}:{port} has a certificate issue — {reason}",
-    )
+    return False, f"Refusing insecure connection to {host}:{port} — {reason}"
 
 
 # ──────────────────────────── Cert probe ─────────────────────────
