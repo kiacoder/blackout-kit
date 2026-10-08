@@ -31,14 +31,22 @@ def test_documented_commands_are_registered():
 
 
 def test_late_registered_commands_are_available_when_run_as_module():
+    import os
     import subprocess
     import sys
 
+    # Pin the child's stdio to UTF-8 and decode its output the same way. A piped
+    # child on Windows otherwise uses the ANSI code page (cp1252), which cannot
+    # encode the Rich help glyphs, so the CLI exits 1 before the assertions run.
+    child_env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     for command in (("ssh", "--help"), ("tools", "audit", "--help")):
         result = subprocess.run(
             [sys.executable, "-m", "blackoutkit.typer_cli", *command],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=child_env,
             check=False,
         )
         assert result.returncode == 0, result.stderr or result.stdout
