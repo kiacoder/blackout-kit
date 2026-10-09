@@ -720,11 +720,15 @@ def _run_daemon_loop(
     _ensure_dir()
     cleanup_stale_records(APP_DATA_DIR)
 
+    from ..log_redaction import RedactingFormatter
+
     # Setup rotating logs
     handler = logging.handlers.RotatingFileHandler(
         LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
     )
-    handler.setFormatter(logging.Formatter(
+    # Credentials are removed at write time, so daemon.log and daemon.out never
+    # hold a password, token, or proxy URI for anything that reads them later.
+    handler.setFormatter(RedactingFormatter(
         "%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"
     ))
 
@@ -732,7 +736,9 @@ def _run_daemon_loop(
     log.setLevel(logging.INFO)
     log.addHandler(handler)
     # Also log to stderr so it goes to CRASH_LOG for debugging startup
-    log.addHandler(logging.StreamHandler())
+    stderr_handler = logging.StreamHandler()
+    stderr_handler.setFormatter(RedactingFormatter("%(levelname)s: %(message)s"))
+    log.addHandler(stderr_handler)
 
     # Spawn the watchdog process to handle forceful termination (End Task).
     try:

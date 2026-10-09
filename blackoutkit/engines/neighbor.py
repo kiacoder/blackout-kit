@@ -74,6 +74,18 @@ class NeighborShareEngine(Engine):
         
         self._running   = False
 
+    @property
+    def bind_address(self) -> str:
+        """Address the share listener binds to.
+
+        Loopback by default: the share proxy is reachable from this machine only
+        and no LAN peer can use it. `0.0.0.0` appears solely when the operator
+        opts in through the `neighbor_bind_lan` setting, and the native forwarder
+        receives the same flag (`bind_lan`) that this property reports, so the two
+        can never disagree.
+        """
+        return "0.0.0.0" if self.bind_lan else "127.0.0.1"
+
     def start(self) -> bool:
         from ..core import get_core_dll
         dll = get_core_dll()
@@ -85,7 +97,7 @@ class NeighborShareEngine(Engine):
         if dll.StartNeighborC(self.listen_port, self.target_port, 1 if self.bind_lan else 0) == 0:
             self._dll_stop_func = dll.StopNeighborC
             self._running = True
-            bind_note = "0.0.0.0 (LAN)" if self.bind_lan else "127.0.0.1 (loopback)"
+            bind_note = f"{self.bind_address} ({'LAN' if self.bind_lan else 'loopback'})"
             self._log.info("Neighbor LAN sharing active on %s port %d (forwarding to %d)", bind_note, self.listen_port, self.target_port)
             return True
         else:

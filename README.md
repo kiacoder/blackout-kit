@@ -227,8 +227,32 @@ sha256sum --ignore-missing -c checksums.txt
 ```
 
 The checksum comes from the same release as the file. It catches corrupted or substituted downloads,
-but it cannot defend against a compromised release, which would change both files. For that risk,
-compare the hash with an independent source such as a previously verified release.
+but on its own it cannot defend against a compromised release, which would change both files.
+
+#### Verify build provenance (GitHub Sigstore)
+
+Every release asset — `blackout.exe`, `blackout-engine-linux-amd64`, `blackout-source.zip`,
+`checksums.txt`, `blackout.exe.sha256` — is covered by a signed SLSA build-provenance attestation
+produced by this repository's own Actions workflow (`.github/workflows/build.yml`,
+`actions/attest-build-provenance@v2`). Verify the file you downloaded against it:
+
+```powershell
+# 1. Verify cryptographic provenance via GitHub Sigstore:
+gh attestation verify blackout.exe --repo kiacoder/blackout-kit
+
+# 2. Verify SHA-256 checksum:
+(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -eq (Get-Content .\blackout.exe.sha256).Trim()
+```
+
+```bash
+gh attestation verify blackout.exe --repo kiacoder/blackout-kit --format json | jq '.[0].verificationResult'
+sha256sum -c checksums.txt
+```
+
+Provenance answers the question a digest cannot: it states which repository, commit, and workflow run
+produced these bytes, signed by a short-lived Sigstore certificate. Releases tagged before this change
+carry no attestation — for those, verify the checksum and compare it against an independent copy of
+`checksums.txt`. See [SECURITY.md](SECURITY.md) for the full assurance matrix.
 
 ### Option 2 — source or package install for contributors and advanced users
 
@@ -686,7 +710,7 @@ use, but Blackout cannot verify them, so it does not hide them.
 
 Default recovery is intentionally narrow. It does **not** behave like “reset everything” unless the user explicitly asks for the broader Windows-only reset flags.
 
-For deeper details, read [SECURITY.md](SECURITY.md).
+For deeper details, read [SECURITY.md](SECURITY.md). For the complete list of outbound connections Blackout Kit can make — none of them telemetry — read [NETWORK_PRIVACY.md](NETWORK_PRIVACY.md).
 
 ---
 
@@ -765,7 +789,8 @@ when the server has a secret and the caller presents it:
   environment of the MCP client that launches `blackout mcp`. The server reads it at call time.
 - Pass the same value as the `auth_token` argument of every privileged call.
 - The server compares the two values with `hmac.compare_digest`. If no secret is configured,
-  privileged calls are denied. The check fails closed.
+  privileged calls are denied. The check fails closed, and a denied call comes back as a failed
+  result (`isError`) rather than text an agent could misread as success.
 
 Client configuration with a token:
 
@@ -893,6 +918,7 @@ See the user guide’s troubleshooting section for the browser-side QUIC explana
 
 - Product direction and future work: [ROADMAP.md](ROADMAP.md)
 - Security posture and disclosure: [SECURITY.md](SECURITY.md)
+- Exactly which network contacts exist and when: [NETWORK_PRIVACY.md](NETWORK_PRIVACY.md)
 - End-user setup and workflows: [docs/user-guide.md](docs/user-guide.md)
 - Contributor and maintainer workflows: [CONTRIBUTING.md](CONTRIBUTING.md)
 

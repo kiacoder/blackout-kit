@@ -11,8 +11,12 @@ jobs:
   package-smoke:
     name: Package and CLI contract smoke
     runs-on: ubuntu-latest
+    # id-token/attestations let the job sign SLSA provenance for the wheel and
+    # sdist it builds. contents stays read: this job publishes nothing.
     permissions:
       contents: read
+      id-token: write
+      attestations: write
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
@@ -26,6 +30,18 @@ jobs:
       run: |
         python -m pip install --upgrade pip build
         python -m build --wheel --sdist --outdir dist
+
+    # Sigstore-signed build provenance for exactly the bytes that were built
+    # here. Skipped on pull_request, where a fork's token cannot mint an OIDC
+    # certificate — an attestation step must never be downgraded to
+    # "unsigned but green" to keep CI passing.
+    - name: Attest Build Provenance (Sigstore)
+      if: github.event_name != 'pull_request'
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: |
+          dist/*.whl
+          dist/*.tar.gz
 
     - name: Install core wheel in clean environment
       run: |
@@ -103,8 +119,10 @@ jobs:
     name: Build Windows Executable
     runs-on: windows-latest
     permissions:
-      contents: read
+      contents: write
       actions: read
+      id-token: write
+      attestations: write
 
     steps:
     - name: Check out repository
@@ -113,13 +131,18 @@ jobs:
     - name: Parse install.ps1
       shell: pwsh
       run: |
-        $tokens = $null
-        $parseErrors = $null
-        $scriptPath = (Resolve-Path install.ps1).Path
-        [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
-        if ($parseErrors.Count -gt 0) {
-          $parseErrors | ForEach-Object { Write-Host "::error file=install.ps1::$($_.Message)" }
-          exit 1
+        # Both shipped PowerShell entry points are parsed: install.ps1 (manual
+        # installs) and choco/tools/chocolateyinstall.ps1 (package installs), so a
+        # checksum literal that no verifier could parse never ships again.
+        foreach ($script in @('install.ps1', 'choco/tools/chocolateyinstall.ps1')) {
+          $tokens = $null
+          $parseErrors = $null
+          $scriptPath = (Resolve-Path $script).Path
+          [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Host "::error file=$script::$($_.Message)" }
+            exit 1
+          }
         }
 
     - name: Set up Python 3.12
@@ -218,6 +241,16 @@ jobs:
     - name: Smoke test executable
       run: .\dist\blackout.exe version
 
+    # Attest the executable right after it is produced, before it is uploaded.
+    # `gh attestation verify blackout.exe --repo kiacoder/blackout-kit` then
+    # resolves the downloaded file to this workflow run and this commit.
+    - name: Attest Build Provenance (Sigstore)
+      if: github.event_name != 'pull_request'
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: |
+          dist/blackout.exe
+
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
@@ -228,7 +261,9 @@ jobs:
     name: Build Linux Runtime
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+      id-token: write
+      attestations: write
 
     steps:
     - name: Check out repository
@@ -301,6 +336,15 @@ jobs:
         /tmp/blackout-wheel-smoke/bin/pip install dist/*.whl
         /tmp/blackout-wheel-smoke/bin/blackout version
 
+    - name: Attest Build Provenance (Sigstore)
+      if: github.event_name != 'pull_request'
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: |
+          dist/blackout-engine-linux-amd64
+          dist/*.whl
+          engine/v2/dist/blackout-core-linux-amd64
+
     - name: Upload Linux runtime artifact
       uses: actions/upload-artifact@v4
       with:
@@ -344,7 +388,11 @@ jobs:
     needs: [build-windows, build-linux]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    # id-token: write mints the OIDC certificate Sigstore signs the provenance
+    # with; attestations: write persists it. See SECURITY.md, "Build provenance".
     permissions:
+      id-token: write
+      attestations: write
       contents: write
 
     steps:
@@ -382,6 +430,21 @@ jobs:
         sha256sum blackout.exe > blackout.exe.sha256
         sha256sum -c checksums.txt
         cat checksums.txt
+
+    # Attest every release asset immediately after the artifacts and their
+    # checksums exist, and before the release is published, so the signature
+    # binds the exact bytes that users download. `checksums.txt` is attested
+    # too: the manifest that install.ps1 trusts is now signed as well.
+    - name: Attest Build Provenance (Sigstore)
+      if: github.event_name != 'pull_request'
+      uses: actions/attest-build-provenance@v2
+      with:
+        subject-path: |
+          dist/blackout.exe
+          dist/checksums.txt
+          dist/blackout.exe.sha256
+          dist/blackout-engine-linux-amd64
+          dist/blackout-source.zip
 
     - name: Create Release
       uses: softprops/action-gh-release@v2

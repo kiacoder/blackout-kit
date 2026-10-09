@@ -1,5 +1,9 @@
 [build-system]
-requires = ["setuptools>=61.0.0", "wheel"]
+# Build-time dependencies are part of the supply chain: these floors are the
+# versions that fixed the published advisories (setuptools CVE-2026-59890,
+# CVE-2025-47273, CVE-2024-6345; wheel CVE-2026-24049), so an isolated
+# `python -m build` cannot resolve a vulnerable setuptools from a stale index.
+requires = ["setuptools>=83.0.0", "wheel>=0.46.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -16,14 +20,24 @@ classifiers = [
     "Operating System :: POSIX :: Linux",
 ]
 requires-python = ">=3.10"
+# Direct-runtime floors are security minimums, tracked against the GitHub Advisory
+# database (see SECURITY.md, "SBOM & Dependency Audit"). `>=` means "at least this",
+# so a resolvable, patched version is always chosen; the floor only stops a stale
+# lockfile or index from installing a version with a known CVE.
 dependencies = [
     "rich>=13.7.1",
     "httpx[socks,http2]>=0.28.0",
     "psutil>=6.0.0",
-    "cryptography>=43.0.0",
+    # >=50.0.0: CVE-2026-69247 (PKCS#7 Bleichenbacher oracle) and the 49.0.0
+    # X.509 wildcard / intermediate-chain issues, on top of the older 43.0.1 floor.
+    "cryptography>=50.0.0",
+    # The TLS trust store httpx uses. Held explicitly so a transitive resolve
+    # cannot drift back below the CVE-2024-39689 / CVE-2023-37920 fixes.
+    "certifi>=2024.7.4",
     "typer>=0.12.0",
     "click>=8.1.7",
-    "PyYAML>=6.0.0",
+    # 6.0.1 closes the remaining CVE-2020-1747 full-cover payload path.
+    "PyYAML>=6.0.1",
     "reportlab>=4.0.0",
     "python-dateutil>=2.8.2",
 ]
@@ -31,24 +45,31 @@ dependencies = [
 [project.optional-dependencies]
 gui = [
     "customtkinter>=5.2.2",
-    "Pillow>=10.0.0",
+    # >=12.3.0: the 2026-07-20 Pillow batch (CVE-2026-59205/-59204/-59200,
+    # CVE-2026-59199/-59198/-59197 and others) all fixed in this release.
+    "Pillow>=12.3.0",
     "pystray>=0.19.3",
 ]
 capture = [
+    # No patched release exists for the scapy session-load pickle issue
+    # (arbitrary code execution via untrusted .session files). Blackout never
+    # loads a session file it did not create; treat captured files as untrusted.
     "scapy>=2.5.0",
 ]
 media = [
-    "yt-dlp>=2024.01.01",
+    # >=2026.7.4: CVE-2026-55404 command injection, plus the 2026.6.9 batch
+    # (aria2c manifest RCE, --exec injection, cookie leak).
+    "yt-dlp>=2026.7.4",
 ]
 torrent = [
     "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
 ]
 all = [
     "customtkinter>=5.2.2",
-    "Pillow>=10.0.0",
+    "Pillow>=12.3.0",
     "pystray>=0.19.3",
     "scapy>=2.5.0",
-    "yt-dlp>=2024.01.01",
+    "yt-dlp>=2026.7.4",
     "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
 ]
 test = [

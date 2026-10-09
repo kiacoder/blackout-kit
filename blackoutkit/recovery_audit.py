@@ -10,8 +10,13 @@ from . import APP_DATA_DIR
 
 AUDIT_FILE = APP_DATA_DIR / "recovery_audit.jsonl"
 MAX_RECORDS = 100
+# Key names that mark a value as a credential. Deliberately wider than the
+# recovery step text needs: `authorization` and `bearer` were the two shapes
+# that could carry a live token through a "failed to set header" detail.
 _SECRET_PATTERN = re.compile(
-    r"(?i)([\"']?(?:password|psk|token|secret)[\"']?\s*(?:=|:)\s*)([\"']?)([^\n\"')\]]*?)(\2)(?=\s*[,;}\)\]\n]|$)",
+    r"(?i)([\"']?(?:password|passwd|passphrase|psk|token|secret|authorization"
+    r"|bearer|api[_-]?key|private[_-]?key|cookie)[\"']?\s*(?:=|:)\s*)"
+    r"([\"']?)([^\n\"')\]]*?)(\2)(?=\s*[,;}\)\]\n]|$)",
     re.MULTILINE,
 )
 _URI_CREDENTIAL_PATTERN = re.compile(r"([a-z][a-z0-9+.-]*://)[^\s/@]+@", re.IGNORECASE)
