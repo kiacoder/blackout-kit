@@ -1,186 +1,397 @@
 {
-  "spdxVersion": "SPDX-2.3",
-  "dataLicense": "CC0-1.0",
-  "SPDXID": "SPDXRef-DOCUMENT",
-  "name": "Blackout Kit v1.1.1 - Software Bill of Materials",
-  "documentNamespace": "https://github.com/kiacoder/blackout-kit/sbom/v1.1.1",
-  "creationInfo": {
-    "created": "2026-09-04T00:00:00Z",
-    "creators": ["Tool: blackout-kit v1.1.1"],
-    "licenseListVersion": "3.21"
-  },
-  "packages": [
-    {
-      "SPDXID": "SPDXRef-BlackoutKit",
-      "name": "blackout-kit",
-      "versionInfo": "1.1.1",
-      "downloadLocation": "https://github.com/kiacoder/blackout-kit",
-      "filesAnalyzed": false,
-      "licenseDeclared": "MIT",
-      "licenseConcluded": "MIT",
-      "description": "Local network coordination toolkit for proxy/VPN engines"
-    },
-    {
-      "SPDXID": "SPDXRef-httpx",
-      "name": "httpx",
-      "versionInfo": "0.27.0",
-      "downloadLocation": "https://pypi.org/project/httpx/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "BSD-3-Clause",
-      "licenseConcluded": "BSD-3-Clause",
-      "description": "HTTP client with SOCKS support"
-    },
-    {
-      "SPDXID": "SPDXRef-cryptography",
-      "name": "cryptography",
-      "versionInfo": "43.0.0",
-      "downloadLocation": "https://pypi.org/project/cryptography/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "Apache-2.0 OR BSD-3-Clause",
-      "licenseConcluded": "Apache-2.0 OR BSD-3-Clause",
-      "description": "Cryptographic recipes and primitives"
-    },
-    {
-      "SPDXID": "SPDXRef-click",
-      "name": "click",
-      "versionInfo": "8.1.7",
-      "downloadLocation": "https://pypi.org/project/click/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "BSD-3-Clause",
-      "licenseConcluded": "BSD-3-Clause",
-      "description": "Create beautiful command line interfaces (pinned for help rendering stability)"
-    },
-    {
-      "SPDXID": "SPDXRef-rich",
-      "name": "rich",
-      "versionInfo": "13.7.1",
-      "downloadLocation": "https://pypi.org/project/rich/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "MIT",
-      "licenseConcluded": "MIT",
-      "description": "Rich text and beautiful formatting in the terminal"
-    },
-    {
-      "SPDXID": "SPDXRef-typer",
-      "name": "typer",
-      "versionInfo": "0.12.0",
-      "downloadLocation": "https://pypi.org/project/typer/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "MIT",
-      "licenseConcluded": "MIT",
-      "description": "Typer: build great CLIs with just type hints"
-    },
-    {
-      "SPDXID": "SPDXRef-psutil",
-      "name": "psutil",
-      "versionInfo": "6.0.0",
-      "downloadLocation": "https://pypi.org/project/psutil/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "BSD-3-Clause",
-      "licenseConcluded": "BSD-3-Clause",
-      "description": "Cross-platform lib for retrieving info on running processes and system utilization"
-    },
-    {
-      "SPDXID": "SPDXRef-singbox",
-      "name": "singbox",
-      "versionInfo": "1.8.0",
-      "downloadLocation": "https://github.com/SagerNet/sing-box",
-      "filesAnalyzed": false,
-      "licenseDeclared": "GPL-3.0-only",
-      "licenseConcluded": "GPL-3.0-only",
-      "description": "The universal proxy platform (Go binary, bundled for Linux runtime)"
-    },
-    {
-      "SPDXID": "SPDXRef-xray",
-      "name": "xray-core",
-      "versionInfo": "1.8.6",
-      "downloadLocation": "https://github.com/XTLS/Xray-core",
-      "filesAnalyzed": false,
-      "licenseDeclared": "MPL-2.0",
-      "licenseConcluded": "MPL-2.0",
-      "description": "Proxy platform focusing on performance and simplicity (vendored engine option)"
-    },
-    {
-      "SPDXID": "SPDXRef-wireguard",
-      "name": "wireguard",
-      "versionInfo": "1.0.20240427",
-      "downloadLocation": "https://git.zx2c4.com/wireguard-go",
-      "filesAnalyzed": false,
-      "licenseDeclared": "MIT",
-      "licenseConcluded": "MIT",
-      "description": "Fast, modern VPN protocol (bundled via sing-box)"
-    },
-    {
-      "SPDXID": "SPDXRef-openssl",
-      "name": "openssl",
-      "versionInfo": "1.1.1w",
-      "downloadLocation": "https://www.openssl.org/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "Apache-2.0",
-      "licenseConcluded": "Apache-2.0",
-      "description": "Cryptography library (vendored for Windows runtime)"
-    },
-    {
-      "SPDXID": "SPDXRef-pyinstaller",
-      "name": "PyInstaller",
-      "versionInfo": "6.4.0",
-      "downloadLocation": "https://pypi.org/project/PyInstaller/",
-      "filesAnalyzed": false,
-      "licenseDeclared": "GPL-2.0-or-later",
-      "licenseConcluded": "GPL-2.0-or-later",
-      "description": "Build tool for creating standalone Python executables (Windows .exe build)"
-    }
+ "spdxVersion": "SPDX-2.3",
+ "dataLicense": "CC0-1.0",
+ "SPDXID": "SPDXRef-DOCUMENT",
+ "name": "Blackout Kit v1.1.1 - Software Bill of Materials",
+ "documentNamespace": "https://github.com/kiacoder/blackout-kit/sbom/v1.1.1",
+ "creationInfo": {
+  "created": "2026-10-09T00:00:00Z",
+  "creators": [
+   "Tool: blackout-kit v1.1.1"
   ],
-  "relationships": [
-    {
-      "spdxElementId": "SPDXRef-DOCUMENT",
-      "relationshipType": "DESCRIBES",
-      "relatedSpdxElement": "SPDXRef-BlackoutKit"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-httpx"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-cryptography"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-click"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-rich"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-typer"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-psutil"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-singbox"
-    },
-    {
-      "spdxElementId": "SPDXRef-BlackoutKit",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-xray"
-    },
-    {
-      "spdxElementId": "SPDXRef-singbox",
-      "relationshipType": "DEPENDS_ON",
-      "relatedSpdxElement": "SPDXRef-wireguard"
-    }
-  ]
+  "licenseListVersion": "3.21",
+  "comment": "versionInfo records the declared install floor from pyproject.toml, which is the security minimum validated against the GitHub Advisory database (GHSA) - it is not a lockfile pin. Requests and urllib3 are absent on purpose: Blackout Kit imports neither, so their CVE floors (requests>=2.32.3, urllib3>=2.2.2) do not apply, and no unused package is added to pin them."
+ },
+ "packages": [
+  {
+   "SPDXID": "SPDXRef-BlackoutKit",
+   "name": "blackout-kit",
+   "versionInfo": "1.1.1",
+   "downloadLocation": "https://github.com/kiacoder/blackout-kit",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "Local network coordination toolkit for proxy/VPN engines"
+  },
+  {
+   "SPDXID": "SPDXRef-httpx",
+   "name": "httpx",
+   "versionInfo": "0.28.0",
+   "downloadLocation": "https://pypi.org/project/httpx/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "BSD-3-Clause",
+   "licenseConcluded": "BSD-3-Clause",
+   "description": "HTTP client with SOCKS and HTTP/2 support (update checks, DoH helpers)",
+   "comment": "Declared floor 0.28.0 in pyproject.toml; httpx[socks,http2] extras are installed."
+  },
+  {
+   "SPDXID": "SPDXRef-cryptography",
+   "name": "cryptography",
+   "versionInfo": "50.0.0",
+   "downloadLocation": "https://pypi.org/project/cryptography/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "Apache-2.0 OR BSD-3-Clause",
+   "licenseConcluded": "Apache-2.0 OR BSD-3-Clause",
+   "description": "Cryptographic recipes and primitives"
+  },
+  {
+   "SPDXID": "SPDXRef-click",
+   "name": "click",
+   "versionInfo": "8.1.7",
+   "downloadLocation": "https://pypi.org/project/click/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "BSD-3-Clause",
+   "licenseConcluded": "BSD-3-Clause",
+   "description": "Create beautiful command line interfaces (pinned for help rendering stability)"
+  },
+  {
+   "SPDXID": "SPDXRef-rich",
+   "name": "rich",
+   "versionInfo": "13.7.1",
+   "downloadLocation": "https://pypi.org/project/rich/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "Rich text and beautiful formatting in the terminal"
+  },
+  {
+   "SPDXID": "SPDXRef-typer",
+   "name": "typer",
+   "versionInfo": "0.12.0",
+   "downloadLocation": "https://pypi.org/project/typer/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "Typer: build great CLIs with just type hints"
+  },
+  {
+   "SPDXID": "SPDXRef-psutil",
+   "name": "psutil",
+   "versionInfo": "6.0.0",
+   "downloadLocation": "https://pypi.org/project/psutil/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "BSD-3-Clause",
+   "licenseConcluded": "BSD-3-Clause",
+   "description": "Cross-platform lib for retrieving info on running processes and system utilization"
+  },
+  {
+   "SPDXID": "SPDXRef-singbox",
+   "name": "singbox",
+   "versionInfo": "1.8.0",
+   "downloadLocation": "https://github.com/SagerNet/sing-box",
+   "filesAnalyzed": false,
+   "licenseDeclared": "GPL-3.0-only",
+   "licenseConcluded": "GPL-3.0-only",
+   "description": "The universal proxy platform (Go binary, bundled for Linux runtime)"
+  },
+  {
+   "SPDXID": "SPDXRef-xray",
+   "name": "xray-core",
+   "versionInfo": "1.8.6",
+   "downloadLocation": "https://github.com/XTLS/Xray-core",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MPL-2.0",
+   "licenseConcluded": "MPL-2.0",
+   "description": "Proxy platform focusing on performance and simplicity (vendored engine option)"
+  },
+  {
+   "SPDXID": "SPDXRef-wireguard",
+   "name": "wireguard",
+   "versionInfo": "1.0.20240427",
+   "downloadLocation": "https://git.zx2c4.com/wireguard-go",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "Fast, modern VPN protocol (bundled via sing-box)"
+  },
+  {
+   "SPDXID": "SPDXRef-openssl",
+   "name": "openssl",
+   "versionInfo": "provided-by-cpython-build",
+   "downloadLocation": "https://www.openssl.org/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "Apache-2.0",
+   "licenseConcluded": "Apache-2.0",
+   "description": "TLS implementation reached only through the CPython ssl/_ssl extension of the interpreter used by the packaging job",
+   "comment": "No OpenSSL is vendored in this repository: the earlier '1.1.1w' line was stale. Audit the interpreter in the build log; a Go engine (sing-box, xray-core, WARP) uses Go's crypto/tls instead and links no OpenSSL at all."
+  },
+  {
+   "SPDXID": "SPDXRef-pyinstaller",
+   "name": "PyInstaller",
+   "versionInfo": "6.0.0",
+   "downloadLocation": "https://pypi.org/project/PyInstaller/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "GPL-2.0-or-later",
+   "licenseConcluded": "GPL-2.0-or-later",
+   "description": "Build tool for creating standalone Python executables (Windows .exe build)",
+   "comment": "Declared floor from the pyproject.toml dev extra; the packaging job installs the newest 6.x release."
+  },
+  {
+   "SPDXID": "SPDXRef-certifi",
+   "name": "certifi",
+   "versionInfo": "2024.7.4",
+   "downloadLocation": "https://pypi.org/project/certifi/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MPL-2.0",
+   "licenseConcluded": "MPL-2.0",
+   "description": "Mozilla CA bundle used as the TLS trust store by httpx",
+   "comment": "Declared install floor from pyproject.toml (security minimum), not a lockfile pin."
+  },
+  {
+   "SPDXID": "SPDXRef-pyyaml",
+   "name": "pyyaml",
+   "versionInfo": "6.0.1",
+   "downloadLocation": "https://pypi.org/project/pyyaml/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "YAML parser for local configuration and profile files",
+   "comment": "Declared install floor from pyproject.toml (security minimum), not a lockfile pin."
+  },
+  {
+   "SPDXID": "SPDXRef-reportlab",
+   "name": "reportlab",
+   "versionInfo": "4.0.0",
+   "downloadLocation": "https://pypi.org/project/reportlab/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "BSD-3-Clause",
+   "licenseConcluded": "BSD-3-Clause",
+   "description": "PDF report generation (offline reports only)",
+   "comment": "Declared install floor from pyproject.toml (security minimum), not a lockfile pin."
+  },
+  {
+   "SPDXID": "SPDXRef-python-dateutil",
+   "name": "python-dateutil",
+   "versionInfo": "2.8.2",
+   "downloadLocation": "https://pypi.org/project/python-dateutil/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "Apache-2.0 OR BSD-3-Clause",
+   "licenseConcluded": "Apache-2.0 OR BSD-3-Clause",
+   "description": "Date parsing helpers for local history files",
+   "comment": "Declared install floor from pyproject.toml (security minimum), not a lockfile pin."
+  },
+  {
+   "SPDXID": "SPDXRef-customtkinter",
+   "name": "customtkinter",
+   "versionInfo": "5.2.2",
+   "downloadLocation": "https://pypi.org/project/customtkinter/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "NOASSERTION",
+   "licenseConcluded": "NOASSERTION",
+   "description": "customtkinter optional dependency",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-pillow",
+   "name": "pillow",
+   "versionInfo": "12.3.0",
+   "downloadLocation": "https://pypi.org/project/pillow/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT-CMU",
+   "licenseConcluded": "MIT-CMU",
+   "description": "Image handling for the optional GUI and dashboard assets",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-pystray",
+   "name": "pystray",
+   "versionInfo": "0.19.3",
+   "downloadLocation": "https://pypi.org/project/pystray/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "NOASSERTION",
+   "licenseConcluded": "NOASSERTION",
+   "description": "pystray optional dependency",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-scapy",
+   "name": "scapy",
+   "versionInfo": "2.5.0",
+   "downloadLocation": "https://pypi.org/project/scapy/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "GPL-2.0-only",
+   "licenseConcluded": "GPL-2.0-only",
+   "description": "Packet capture/dissection for optional analysis tools",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-yt-dlp",
+   "name": "yt-dlp",
+   "versionInfo": "2026.7.4",
+   "downloadLocation": "https://pypi.org/project/yt-dlp/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "Unlicense",
+   "licenseConcluded": "Unlicense",
+   "description": "Media downloader invoked only by the explicit media command",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-pytest",
+   "name": "pytest",
+   "versionInfo": "8.0.0",
+   "downloadLocation": "https://pypi.org/project/pytest/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "NOASSERTION",
+   "licenseConcluded": "NOASSERTION",
+   "description": "pytest optional dependency",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-pytest-asyncio",
+   "name": "pytest-asyncio",
+   "versionInfo": "0.23.0",
+   "downloadLocation": "https://pypi.org/project/pytest-asyncio/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "NOASSERTION",
+   "licenseConcluded": "NOASSERTION",
+   "description": "pytest-asyncio optional dependency",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-build",
+   "name": "build",
+   "versionInfo": "1.2.0",
+   "downloadLocation": "https://pypi.org/project/build/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "NOASSERTION",
+   "licenseConcluded": "NOASSERTION",
+   "description": "build optional dependency",
+   "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
+  },
+  {
+   "SPDXID": "SPDXRef-setuptools",
+   "name": "setuptools",
+   "versionInfo": "83.0.0",
+   "downloadLocation": "https://pypi.org/project/setuptools/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "Build-system dependency (sdist/wheel metadata)",
+   "comment": "Build-system floor: the version that fixed the published advisory for this packaging tool."
+  },
+  {
+   "SPDXID": "SPDXRef-wheel",
+   "name": "wheel",
+   "versionInfo": "0.46.2",
+   "downloadLocation": "https://pypi.org/project/wheel/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "Build-system dependency (wheel packaging)",
+   "comment": "Build-system floor: the version that fixed the published advisory for this packaging tool."
+  },
+  {
+   "SPDXID": "SPDXRef-libtorrent",
+   "name": "libtorrent",
+   "versionInfo": "2.0.11",
+   "downloadLocation": "https://pypi.org/project/libtorrent/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "BSD-3-Clause",
+   "licenseConcluded": "BSD-3-Clause",
+   "description": "BitTorrent engine used only by the explicit torrent command",
+   "comment": "Pinned exactly (==2.0.11) for available Linux wheels, Linux only and Python < 3.14. No GitHub Advisory is published for this package; treat magnet links from untrusted sources as hostile input."
+  }
+ ],
+ "relationships": [
+  {
+   "spdxElementId": "SPDXRef-DOCUMENT",
+   "relationshipType": "DESCRIBES",
+   "relatedSpdxElement": "SPDXRef-BlackoutKit"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-httpx"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-cryptography"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-click"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-rich"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-typer"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-psutil"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-singbox"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-xray"
+  },
+  {
+   "spdxElementId": "SPDXRef-singbox",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-wireguard"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-httpx-socks-http2-"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-certifi"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-pyyaml"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-reportlab"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-python-dateutil"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-setuptools"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "DEPENDS_ON",
+   "relatedSpdxElement": "SPDXRef-wheel"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "OPTIONAL_DEPENDENCY_OF",
+   "relatedSpdxElement": "SPDXRef-libtorrent"
+  }
+ ]
 }

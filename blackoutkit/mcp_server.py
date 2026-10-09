@@ -419,6 +419,18 @@ def _access_denied_message() -> str:
     )
 
 
+# A tool result starting with one of these prefixes is a failure, not output.
+# Kept in one place so the stdio layer and tests agree on what "denied" looks
+# like: MCP clients decide whether a call succeeded from `isError`, and a denial
+# that looks like a plain text result can be read as success by an agent.
+_FAILURE_PREFIXES = ("Error:", "\u2717")  # "Error:" / "✗"
+
+
+def call_failed(text: str) -> bool:
+    """Return True when a tool result must be reported to the client as a failure."""
+    return isinstance(text, str) and text.startswith(_FAILURE_PREFIXES)
+
+
 def handle_tool_call(tool_name: str, args: dict) -> str:
     """Execute tool calls and return JSON or formatted string results for AI agents."""
     if not isinstance(args, dict):
@@ -724,12 +736,15 @@ def run_mcp_server():
             tool_name = params.get("name")
             tool_args = params.get("arguments", {})
             output_text = handle_tool_call(tool_name, tool_args)
+            result: dict = {"content": [{"type": "text", "text": output_text}]}
+            if call_failed(output_text):
+                # Fail closed at the protocol layer: the client sees a failed
+                # call, not a text payload it has to interpret.
+                result["isError"] = True
             send_response({
                 "jsonrpc": "2.0",
                 "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": output_text}]
-                }
+                "result": result
             })
         else:
             if msg_id is not None:

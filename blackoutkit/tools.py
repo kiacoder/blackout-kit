@@ -2046,6 +2046,18 @@ def run_honeypot_listener(ports: list[int] | None = None, duration: float = 60.0
 
 # ─────────────────────────── Secure DoH DNS Proxy Engine ───────────────────
 
+# The listener faces this machine only. Tests assert these defaults and the
+# loopback guard below, so an accidental widening to a wildcard bind shows up as
+# a failing test rather than an open UDP resolver on a LAN interface.
+DOH_PROXY_DEFAULT_HOST = "127.0.0.1"
+DOH_PROXY_DEFAULT_PORT = 5300
+DOH_PROXY_DEFAULT_UPSTREAM = "https://1.1.1.1/dns-query"
+# Addresses that may host the local listener. Hostnames are not accepted: the
+# guard resolves nothing, so `localhost` cannot be pointed at a routable
+# interface through /etc/hosts. Anything outside this set is refused.
+DOH_PROXY_ALLOWED_BINDS = frozenset({"127.0.0.1", "::1"})
+
+
 def _validate_doh_upstream(url: str) -> bool:
     """Validate DoH upstream URL: must be https://, no user credentials, valid global IP."""
     try:
@@ -2065,7 +2077,7 @@ def _validate_doh_upstream(url: str) -> bool:
     except Exception:
         return False
 
-def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh: str = "https://1.1.1.1/dns-query", duration: float = 0.0, stop_event=None) -> None:
+def run_doh_proxy_server(host: str = DOH_PROXY_DEFAULT_HOST, port: int = DOH_PROXY_DEFAULT_PORT, upstream_doh: str = DOH_PROXY_DEFAULT_UPSTREAM, duration: float = 0.0, stop_event=None) -> None:
     """
     🌐 Secure DoH DNS Proxy Engine:
     Runs a local UDP DNS proxy server on 127.0.0.1:5300 (or custom port).
@@ -2081,7 +2093,7 @@ def run_doh_proxy_server(host: str = "127.0.0.1", port: int = 5300, upstream_doh
     # Validate that the bind address is loopback (to prevent unauthenticated open relay)
     try:
         bind_addr = ipaddress.ip_address(host)
-        if not bind_addr.is_loopback:
+        if str(bind_addr) not in DOH_PROXY_ALLOWED_BINDS or not bind_addr.is_loopback:
             _log.error("DoH proxy must bind to a loopback address (127.0.0.1 or ::1), got %s", host)
             return
     except ValueError:

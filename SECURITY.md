@@ -8,6 +8,62 @@
 | 1.1.0   | ⚠️ Maintenance | 2027-02-04 |
 | 1.0.x   | ⚠️ End-of-Life | 2026-12-04 |
 
+## Security Assurance & Verification Matrix
+
+Every claim below is enforced by code plus a test, and each row names the mechanism an auditor
+can run. Status is honest: 🟢 means implemented and verified, ⚪ means out of our control.
+
+| Component / Claim | Verification Mechanism | Status |
+| :--- | :--- | :--- |
+| **Build Provenance** | GitHub Sigstore Attestation (`gh attestation verify`) | 🟢 Cryptographically Verified |
+| **File Integrity** | SHA-256 digest matching (`checksums.txt`) | 🟢 Enforced in `install.ps1` |
+| **MCP Authorization** | Fail-closed `hmac.compare_digest` with `BLACKOUT_MCP_TOKEN` | 🟢 Gated & Unit Tested |
+| **Antivirus Safety** | Isolated `bins/windivert/` + explicit typed user opt-in | 🟢 Isolated |
+| **Socket Exposure** | Strict `127.0.0.1` loopback binding default | 🟢 Enforced |
+| **Remote Server Trust** | Upstream VPN / proxy nodes | ⚪ User-supplied (untrusted by default) |
+| **Credential Redaction** | `RedactingFormatter` at log write time + bundle re-scrub | 🟢 Boundary-tested |
+| **Egress Disclosure** | `NETWORK_PRIVACY.md`, row-by-row code references | 🟢 Documented, 0 telemetry |
+| **Windows Authenticode / notarization** | — | 🔴 Not implemented (attestation is the current proof of origin) |
+
+### Verify a release yourself
+
+```powershell
+# 1. Verify cryptographic provenance via GitHub Sigstore:
+gh attestation verify blackout.exe --repo kiacoder/blackout-kit
+
+# 2. Verify SHA-256 checksum:
+(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -eq (Get-Content .\blackout.exe.sha256).Trim()
+```
+
+The same integrity check on Linux/macOS, and the machine-readable provenance statement:
+
+```bash
+sha256sum -c checksums.txt                       # verifies every published asset
+shasum -a 256 blackout.exe | grep -f blackout.exe.sha256 || echo "MISMATCH"
+gh attestation verify blackout.exe --repo kiacoder/blackout-kit --format json | jq '.[0].verificationResult'
+```
+
+What each verification actually establishes:
+
+- `gh attestation verify` proves the file was produced by a run of this repository's
+  `.github/workflows/build.yml`, for the commit the tag points at, on GitHub-hosted runners —
+  a signature over the build's identity, not a claim by a maintainer. It requires GitHub CLI ≥ 2.22
+  and network access to the Sigstore transparency log; it works for releases published from
+  `v1.1.2` onward, because no attestation exists for earlier tags.
+- The SHA-256 comparison proves the bytes you downloaded are the bytes the release job hashed.
+  It does **not** prove who built them — that is the job of the attestation above, which is why
+  both are published.
+- `install.ps1` refuses to install without a checksum asset, and `blackout bins download` refuses an
+  asset with no published digest; both delete the staged download and abort non-zero.
+
+### Negative boundary tests
+
+`tests/test_security_boundaries.py` is the executable form of this matrix: it drives the failure
+paths (invalid, empty and missing MCP tokens; credential-bearing log lines and bundles; wildcard
+bind attempts; checksum-mismatch installer aborts; a workflow that publishes without attesting)
+and asserts the controls refuse, redact, unstage, or fail. Each test carries a control case, so
+removing a defence turns the suite red instead of leaving it silently green.
+
 ## Reporting Security Vulnerabilities
 
 **Do not open public GitHub issues for security vulnerabilities.** Instead:
@@ -83,7 +139,8 @@ No site accepts arbitrary intranet access beyond what the user explicitly config
 
 ### Code Integrity
 - ✅ All releases built via GitHub Actions (reproducible)
-- ⚠️ The CI release job does not sign Windows executables or publish build-provenance attestations; see "Trust Boundaries and Hardening"
+- ✅ Every release asset carries a signed GitHub Sigstore build-provenance attestation (`actions/attest-build-provenance@v2`); verify with `gh attestation verify`
+- ⚠️ Windows executables are not Authenticode-signed and Linux binaries are not notarized — provenance attestation is the available proof of origin, not a replacement for code signing
 - ✅ Source code audited for resource leaks, injection flaws, unsafe concurrency
 - ✅ CodeQL static analysis on every push
 - ✅ Dependency pinning for reproducible builds
@@ -91,7 +148,7 @@ No site accepts arbitrary intranet access beyond what the user explicitly config
 ### Credential Safety
 - ✅ Proxy credentials passed directly to native engines (no temp files)
 - ✅ Settings encrypted at rest if vault enabled (`secrets_vault_enabled: true`)
-- ✅ No credentials logged to daemon output (verified by smoke tests)
+- ✅ No credentials in daemon output: `blackoutkit/log_redaction.py` redacts at log write time and the support bundle re-scrubs at export; bearer tokens, URL userinfo credentials, and proxy/VPN/SSH URIs are covered by `tests/test_security_boundaries.py`
 - ✅ SSH profile passwords excluded from JSON exports
 - ✅ Config rotation isolates failed endpoints automatically
 
@@ -100,10 +157,13 @@ No site accepts arbitrary intranet access beyond what the user explicitly config
 - ✅ **Linux-only** kill switch (endpoint-scoped nftables/iptables) to stop network if the proxy disconnects; Windows kill-switch support is intentionally retired — legacy Windows Firewall rules are removed because block rules override the per-process allow rules they would need
 - ✅ Loopback-only dashboard CORS (no external access)
 - ✅ Optional Operator event stream binds to loopback only and is off unless explicitly started (`blackout events serve`); it is read-only with no control surface. It has **no authentication**: any local process or user session on this machine can connect and read sanitized events; remote peers cannot.
-- ✅ DNS queries validated against upstream DoH proxy
+- ✅ DNS queries validated against upstream DoH proxy; the local DoH listener refuses any bind address outside `127.0.0.1`/`::1`, requires HTTPS upstream without embedded credentials, and re-validates redirect targets against the SSRF guard
 - ✅ All transports support obfuscation (SNI spoofing, XRay fragmentation, XHTTP)
 
 ### Network Contact Disclosure (no silent telemetry)
+The complete, row-by-row egress inventory lives in [`NETWORK_PRIVACY.md`](NETWORK_PRIVACY.md):
+every endpoint, the command that reaches it, and how to confirm it. Nothing there runs on a timer.
+
 Blackout Kit has no analytics or telemetry backend and never phones home on its own. It does contact external hosts when **you** invoke features that require it: update checks (GitHub releases), Cloudflare IP scanning, ISP/country detection (ip-api.com), DNS-over-HTTPS queries, engine traffic to servers you configure, and subscription imports you request. No results are reported anywhere.
 
 ### Operator Observability & Support Bundles
@@ -134,6 +194,9 @@ value is the server process's `BLACKOUT_MCP_TOKEN` (or `BLACKOUT_MCP_SECRET`). T
 `hmac.compare_digest`. The check fails closed: no configured secret, a missing or non-string token,
 or a mismatch denies the call. The token is consumed by the dispatcher and never reaches a tool
 handler. Denial messages never echo the presented value, and denials are logged by tool name only.
+A refused call is also reported as a failure in the JSON-RPC envelope (`result.isError`), so a client
+that ignores prose cannot treat a denial as an executed operation; `blackoutkit/mcp_server.py` decides
+this in one place (`call_failed`).
 The privileged set and the read-only exemptions are listed in README.md under "MCP authorization".
 
 **Residual risks:**
@@ -161,13 +224,18 @@ The release job runs `sha256sum -c` before publishing.
 
 Manual verification commands are in README.md under "Verify the release (SHA-256)".
 
-**Limits:** the checksum and the file come from the same release, so this protects against corruption
-and substitution in transit but not against a compromised release. The release job does not sign the
-assets or create build-provenance attestations; adding them is the next step to close that gap.
+**Limits:** the checksum and the file come from the same release, so digest matching alone protects
+against corruption and substitution in transit, not against a compromised release. That second case is
+what the build-provenance attestation closes: the release job attests `blackout.exe`,
+`blackout-engine-linux-amd64`, `blackout-source.zip`, `checksums.txt`, and `blackout.exe.sha256`
+immediately after the checksums are generated and before the release is published, so the signature
+binds the exact bytes that ship.
 
-**Known issue:** `choco/tools/chocolateyinstall.ps1` pins a `checksum64` value that contains
-non-hexadecimal characters, so the Chocolatey package cannot pass verification until it is
-regenerated from a real release. Do not publish that package in its current state.
+**Chocolatey package:** `choco/tools/chocolateyinstall.ps1` carries a syntactically valid placeholder
+digest (`0`×64) instead of the malformed non-hexadecimal value an audit previously flagged. The
+placeholder cannot match any real binary, so the package fails closed rather than looking
+installable: the maintainer must replace it with the published digest of the release being packaged
+before the package is pushed.
 
 ### WinDivert driver isolation and Windows Defender
 
@@ -201,6 +269,11 @@ prove that a WinDivert detection is a false positive.
 | `install.ps1` ran a downloaded `blackout.exe` without a checksum | Fixed: SHA-256 check before install; releases publish checksums | `install.ps1`, `.github/workflows/build.yml`, `tests/test_install_script.py` |
 | Defender exclusion of all of `bins/`, silent via `doctor --fix`, with UAC | Fixed: narrow driver-folder exclusion, typed confirmation, UAC only afterwards | `blackoutkit/security.py`, `blackoutkit/doctor.py`, `blackoutkit/typer_cli.py`, `tests/test_security.py` |
 | Security documentation did not describe the above | Updated | `README.md`, `SECURITY.md` |
+| Release assets had no signed provenance | Fixed: GitHub Sigstore attestations for every release asset, in the build jobs and the release job | `.github/workflows/build.yml`, `tests/test_security_boundaries.py` |
+| Denials reached MCP clients as ordinary text results | Fixed: failed tool calls carry `isError` in the JSON-RPC envelope | `blackoutkit/mcp_server.py`, `tests/test_security_boundaries.py` |
+| Bearer tokens and URL userinfo credentials survived log scrubbing | Fixed: assignment values redact to end of line, URI credentials masked, redaction applied at log write time | `blackoutkit/log_redaction.py`, `blackoutkit/support_bundle.py`, `blackoutkit/recovery_audit.py`, `blackoutkit/daemon*/` |
+| No documented egress inventory | Added `NETWORK_PRIVACY.md`, verified row by row against the code | `NETWORK_PRIVACY.md` |
+| Dependency floors below advisory-patched versions | Raised (cryptography 50.0.0, Pillow 12.3.0, PyYAML 6.0.1, plus floor comments) | `pyproject.toml`, `requirements.txt`, `SBOM.json` |
 
 ---
 
@@ -227,15 +300,29 @@ Uninstalling means deleting `~/.blackout-kit/`; no data is stored elsewhere and 
 
 ## SBOM & Dependency Audit
 
-See `SBOM.json` for complete software bill of materials (generated per release).
+`SBOM.json` is the maintained bill of materials, refreshed in-tree with the release it describes.
+Its `versionInfo` fields record the **declared install floor** from `pyproject.toml` — the security
+minimum, not a lockfile pin — and `tests/test_security_boundaries.py::test_declared_dependency_floors_match_the_sbom`
+fails if the two ever drift apart.
 
-**Notable dependencies:**
-- **httpx[socks,http2]** (0.27+): HTTP client for XRay/DoH
-- **cryptography** (43.0+): TLS cert handling, SSH
-- **click** (8.1.7–8.3.1): CLI framework (pinned for stability)
-- **rich** (13.7.1–14.2): Terminal rendering (pinned for help text)
-- **typer** (0.12+): CLI router
-- **psutil** (6.0+): Process/network monitoring
+**Notable dependencies and why their floors are where they are:**
+
+| Package | Declared floor | Reason |
+|---|---|---|
+| **cryptography** | `>=50.0.0` | CVE-2026-69247 (PKCS#7 Bleichenbacher oracle), CVE-2026-69248/69249 (X.509 wildcard / chain handling), and the earlier wheel-bundled OpenSSL and `43.0.1` fixes underneath it |
+| **certifi** | `>=2024.7.4` | TLS trust store used by httpx; removes the GLOBALTRUST root (CVE-2024-39689) and the e-Tugra root before it |
+| **httpx[socks,http2]** | `>=0.28.0` | HTTP client for engine/DoH paths; above CVE-2021-41945 |
+| **PyYAML** | `>=6.0.1` | Closes the remaining CVE-2020-1747 full-cover payload; only `safe_load` is used |
+| **Pillow** (gui extra) | `>=12.3.0` | The 2026-07-20 batch (CVE-2026-59205/-59204/-59200/-59199 and friends) |
+| **yt-dlp** (media extra) | `>=2026.7.4` | CVE-2026-55404 plus the 2026.6.9 aria2c/`--exec`/cookie-leak batch |
+| **setuptools / wheel** (build system) | `>=83.0.0` / `>=0.46.2` | CVE-2026-59890, CVE-2025-47273, CVE-2024-6345, CVE-2026-24049 — build-time code is supply chain too |
+| **scapy** (capture extra) | `>=2.5.0` | No fixed release exists for the untrusted-session pickle issue; Blackout never loads a `.session` file it did not create |
+| **click**, **rich**, **typer**, **psutil**, **reportlab** | 8.1.7 / 13.7.1 / 0.12 / 6.0 / 4.0 | Above every published advisory for those projects; the CLI pair is kept low because help rendering is version-sensitive |
+
+`requests` and `urllib3` are **not** dependencies and are deliberately not added: Blackout Kit imports
+neither, so their advisory floors (`requests>=2.32.3`, `urllib3>=2.2.2`) do not apply, and pinning an
+unused package would only widen the surface. HTTP paths use `httpx` or the standard library's
+`urllib` + `ssl`.
 
 ## Compliance
 

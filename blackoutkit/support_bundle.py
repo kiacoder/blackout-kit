@@ -11,6 +11,11 @@ aggressive redaction:
 - log lines containing those patterns are dropped
 - vault contents and the SSH vault are never read into the bundle
 
+Log scrubbing lives in `blackoutkit.log_redaction` and is the same code the
+daemon's log formatter uses, so a credential is redacted when it is written and
+again when it is read back into a bundle. `scrub_line`, `scrub_text` and
+`scrub_lines` are re-exported here for callers that read the bundle path only.
+
 Bundles are written only where the user asks. Nothing is uploaded, ever.
 `preview()` lets the user inspect exactly what an export will contain before
 any file is created.
@@ -20,26 +25,19 @@ from __future__ import annotations
 import importlib.metadata
 import json
 import platform as platform_module
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from . import settings as cfg
-from .events import _SECRET_URI_SCHEMES, REDACTED, sanitize_details
+from .events import REDACTED, sanitize_details
+from .log_redaction import scrub_line, scrub_lines, scrub_text
 
 BUNDLE_SCHEMA_VERSION = 1
 
 _LOG_TAIL_LINES = 200
 _DAEMON_ERROR_LINES = 50
-
-_SENSITIVE_LINE_RE = re.compile(
-    r"([\w-]*(?:password|passwd|secret|token|psk|passphrase|"
-    r"api[_-]?key|private[_-]?key|authorization)[\w-]*)"
-    r"\s*[:=]\s*\S+",
-    re.IGNORECASE,
-)
 
 # Dependency set surfaced for bug reports; failures degrade to "not installed".
 _DEPENDENCIES = (
@@ -54,29 +52,6 @@ _EXCLUDED = (
     "full daemon configuration dumps",
     "environment variables",
 )
-
-
-def scrub_line(line: str) -> str | None:
-    """Return a safe log line, or None when the line must be dropped.
-
-    Prefer removal over clever masking: a line containing a proxy URI is
-    dropped whole; key/value secret assignments keep the key and replace the
-    value with the redaction marker.
-    """
-    lowered = line.lower()
-    if any(scheme in lowered for scheme in _SECRET_URI_SCHEMES):
-        return None
-    return _SENSITIVE_LINE_RE.sub(lambda m: m.group(1) + "=" + REDACTED, line)
-
-
-def scrub_text(text: str) -> str:
-    """Scrub a multi-line log body line by line."""
-    lines = [scrubed for line in text.splitlines() if (scrubed := scrub_line(line)) is not None]
-    return "\n".join(lines)
-
-
-def scrub_lines(lines: list[str]) -> list[str]:
-    return [scrubed for line in lines if (scrubed := scrub_line(line)) is not None]
 
 
 def sanitized_settings() -> dict[str, Any]:
@@ -171,6 +146,8 @@ def collect() -> dict[str, Any]:
             "strategy": "removal, not partial masking",
             "removed_whole": ["proxy/VPN/SSH config URIs", "credential key/value lines"],
             "marker": REDACTED,
+            "applied_at": ["log write time (RedactingFormatter)", "bundle export time (scrub_text)"],
+            "uri_credentials": "userinfo in scheme://user:pass@host is replaced by the marker",
         },
         "excluded": list(_EXCLUDED),
         "uploaded": False,
