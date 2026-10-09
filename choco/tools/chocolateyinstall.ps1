@@ -1,7 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $packageName = 'blackout-kit'
 $url64 = 'https://github.com/kiacoder/blackout-kit/releases/download/v1.1.1/blackout.exe'
-$checksum64 = 'b4d8e4c3f2c0a1e5d7f9a8c2e4f6h8j0k2m4n6p8q0s2t4v6w8y0a2b4c6d8e0'
+# Placeholder digest: 64 zero characters. This is NOT a real artifact hash and is substituted with
+# the release SHA-256 by release automation before the package is published. Because it can never
+# match a real binary, the install fails closed instead of accepting an unverified download.
+# Do not publish this package while the placeholder is still in place.
+$checksum64 = '0' * 64
 $toolsDir = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
 
 Get-ChocolateyWebFile -PackageName "$packageName" `

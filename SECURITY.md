@@ -83,7 +83,7 @@ No site accepts arbitrary intranet access beyond what the user explicitly config
 
 ### Code Integrity
 - ✅ All releases built via GitHub Actions (reproducible)
-- ⚠️ The CI release job does not sign Windows executables or publish build-provenance attestations; see "Trust Boundaries and Hardening"
+- ⚠️ The CI release job does not sign Windows executables or publish build-provenance attestations; see "Trust Boundaries and Hardening" and the **Build Provenance** row of the Security Assurance & Verification Matrix
 - ✅ Source code audited for resource leaks, injection flaws, unsafe concurrency
 - ✅ CodeQL static analysis on every push
 - ✅ Dependency pinning for reproducible builds
@@ -106,6 +106,8 @@ No site accepts arbitrary intranet access beyond what the user explicitly config
 ### Network Contact Disclosure (no silent telemetry)
 Blackout Kit has no analytics or telemetry backend and never phones home on its own. It does contact external hosts when **you** invoke features that require it: update checks (GitHub releases), Cloudflare IP scanning, ISP/country detection (ip-api.com), DNS-over-HTTPS queries, engine traffic to servers you configure, and subscription imports you request. No results are reported anywhere.
 
+**[`NETWORK_PRIVACY.md`](NETWORK_PRIVACY.md)** is the authoritative, exhaustive egress disclosure: it enumerates every external destination with its trigger, transport, and source location, and openly lists the six known weaknesses in that posture (notably the plaintext-HTTP ISP lookup and the Cloudflare-default DoH resolver) rather than glossing over them.
+
 ### Operator Observability & Support Bundles
 - Structured events, snapshots, and recommendations are **local only**; nothing is uploaded by Blackout Kit, ever.
 - The event journal (`~/.blackout-kit/events.jsonl`) and MCP/event-stream consumers receive sanitized events: secret-bearing fields and proxy/VPN/SSH URIs are removed at publish time, before any observer or file sees them. The journal is best-effort across concurrent processes; a bounded rotation keeps it small.
@@ -117,6 +119,77 @@ Blackout Kit has no analytics or telemetry backend and never phones home on its 
 - ✅ Streaming file I/O for large YARA scans (not loaded into memory)
 - ✅ Graceful daemon shutdown (no orphaned processes)
 - ✅ Memory bounds for cache and buffer operations
+
+## Security Assurance & Verification Matrix
+
+Each control below is independently verifiable. The "Verification Mechanism" column names the
+command or source location an auditor should inspect rather than asking them to trust this table.
+
+| Component / Claim | Verification Mechanism | Status |
+| :--- | :--- | :--- |
+| **Build Provenance** | GitHub Sigstore Attestation (`gh attestation verify`) | ⚪ **Not Yet Implemented** — roadmap item |
+| **File Integrity** | SHA-256 Digest Matching (`checksums.txt`) | 🟢 Enforced in `install.ps1` |
+| **MCP Authorization** | Fail-Closed `hmac.compare_digest` with `BLACKOUT_MCP_TOKEN` | 🟢 Gated & Unit Tested |
+| **Antivirus Safety** | Isolated `bins/windivert/` + Explicit Typed User Opt-In | 🟢 Isolated |
+| **Socket Exposure** | Strict `127.0.0.1` Loopback Binding Default | 🟢 Enforced |
+| **Remote Server Trust** | Upstream VPN / Proxy Nodes | ⚪ User-Supplied (Untrusted by Default) |
+
+### ⚠️ Build Provenance is NOT yet verifiable
+
+This row is deliberately **not** marked verified, because it is not true yet. As of this writing:
+
+- `.github/workflows/build.yml` contains **no** `actions/attest-build-provenance`, `sigstore`, or
+  `cosign` step. Confirm with:
+  ```bash
+  grep -rniE "attestation|sigstore|attest|cosign" .github/workflows/
+  # → no matches
+  ```
+- The release job publishes checksums but **does not sign assets or create provenance
+  attestations**, as also stated under "Release verification (SHA-256)" below.
+
+The `gh attestation verify` command in the block that follows is documented **so that it is ready
+to use**, but it will fail against current releases because no attestation has been published.
+Closing this gap requires adding `actions/attest-build-provenance` to the release job in
+`.github/workflows/build.yml`; until then, SHA-256 checksum matching is the strongest available
+integrity guarantee, and it does not protect against a compromised release.
+
+### Verification Commands (Users & Auditors)
+
+```powershell
+# 1. Verify cryptographic provenance via GitHub Sigstore:
+#    NOTE: expected to FAIL until the release job publishes attestations (see above).
+gh attestation verify blackout.exe --repo kiacoder/blackout-kit
+
+# 2. Verify SHA-256 checksum:
+(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -eq (Get-Content .\blackout.exe.sha256).Trim()
+```
+
+```bash
+# 3. Verify all release assets against the published manifest (Linux / macOS / Git Bash):
+sha256sum -c checksums.txt
+
+# 4. Confirm the MCP token gate fails closed and uses constant-time comparison:
+grep -nE "compare_digest|BLACKOUT_MCP_TOKEN|_MCP_AUTH_ENABLED" blackoutkit/mcp_server.py
+
+# 5. Confirm the Defender exclusion is confined to bins/windivert and needs typed confirmation:
+grep -nE "WINDIVERT_DIR|windivert_folder_problem|confirmed" blackoutkit/security.py
+
+# 6. Confirm loopback-only binding defaults:
+grep -rnE "DEFAULT_HOST|must bind to a loopback|127\.0\.0\.1" blackoutkit/event_bridge.py blackoutkit/tools.py
+
+# 7. Confirm zero telemetry and zero daemon egress (see NETWORK_PRIVACY.md for the full matrix):
+grep -rniE --include="*.py" "telemetry|analytics|sentry|posthog|mixpanel|amplitude" blackoutkit/
+grep -rnE --include="*.py" "urlopen|httpx|requests\.|urllib" blackoutkit/daemon/
+```
+
+Command 2 compares case-sensitively. `install.ps1` compares **case-insensitively after trimming**;
+if it returns `False` against an all-lowercase `blackout.exe.sha256`, use:
+
+```powershell
+(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -ieq (Get-Content .\blackout.exe.sha256).Trim()
+```
+
+See [`NETWORK_PRIVACY.md`](NETWORK_PRIVACY.md) for the exhaustive outbound-egress inventory.
 
 ## Trust Boundaries and Hardening
 
@@ -159,15 +232,19 @@ The release job runs `sha256sum -c` before publishing.
 3. It computes the hash with `Get-FileHash -Algorithm SHA256` and compares it case-insensitively after trimming. A missing, ambiguous, or malformed checksum, or a mismatch, deletes the staged file and exits with status 1.
 4. On a match it prints `[OK] SHA-256 checksum verified: <hash>` and moves the file into place.
 
-Manual verification commands are in README.md under "Verify the release (SHA-256)".
+Manual verification commands are in README.md under "Verify the release (SHA-256)" and in the
+"Verification Commands (Users & Auditors)" block of the Security Assurance & Verification Matrix
+above.
 
 **Limits:** the checksum and the file come from the same release, so this protects against corruption
 and substitution in transit but not against a compromised release. The release job does not sign the
 assets or create build-provenance attestations; adding them is the next step to close that gap.
 
-**Known issue:** `choco/tools/chocolateyinstall.ps1` pins a `checksum64` value that contains
-non-hexadecimal characters, so the Chocolatey package cannot pass verification until it is
-regenerated from a real release. Do not publish that package in its current state.
+**Known issue:** `choco/tools/chocolateyinstall.ps1` pins a **placeholder** `checksum64` value
+(64 zero characters, i.e. `'0' * 64`). It is syntactically valid and intentionally **cannot match**
+any real artifact, so the package fails closed rather than installing an unverified binary.
+Release automation must substitute the real SHA-256 before publishing. **Do not publish the
+Chocolatey package until that substitution is in place.**
 
 ### WinDivert driver isolation and Windows Defender
 
@@ -231,7 +308,7 @@ See `SBOM.json` for complete software bill of materials (generated per release).
 
 **Notable dependencies:**
 - **httpx[socks,http2]** (0.27+): HTTP client for XRay/DoH
-- **cryptography** (43.0+): TLS cert handling, SSH
+- **cryptography** (43.0.1+): TLS cert handling, SSH
 - **click** (8.1.7–8.3.1): CLI framework (pinned for stability)
 - **rich** (13.7.1–14.2): Terminal rendering (pinned for help text)
 - **typer** (0.12+): CLI router
