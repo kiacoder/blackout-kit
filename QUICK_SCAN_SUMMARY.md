@@ -40,8 +40,8 @@
 
 ---
 
-### Windows Compatibility: **~95% Safe**
-**Status:** Excellent platform abstraction!
+### Windows Compatibility: **3 blocking issues**
+**Status:** Platform abstraction is applied consistently; the defects found are concrete and localized.
 
 #### CRITICAL Issues (Will Break)
 | Issue | File | Fix Time | Impact |
@@ -54,7 +54,7 @@
 | Hardcoded `Program Files` (locale) | 4 files | **20m** | Won't find software |
 | Executable validation (no .exe check) | multiple | **1h** | Can't validate binaries |
 
-#### VERIFIED SAFE ✅
+#### Reviewed, no defects found
 - Path handling (all using pathlib)
 - File locking (has platform guards)
 - Subprocess creation (correct flags)
