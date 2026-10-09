@@ -7,7 +7,11 @@ require (
 	github.com/google/gopacket v1.1.19
 	github.com/imgk/divert-go v0.1.0
 	github.com/sagernet/sing-box v1.13.14
-	github.com/xtls/xray-core v1.260327.0
+	// GHSA-5wf9-h793-w73c: pinnedPeerCertSha256 without serverName allows CA-pinned MITM.
+	// Affected: >= v1.260113.0 and < v1.260327.1-0.20260710210335-64fada32b5b9 (fix: upstream commit 64fada32b5b9).
+	// Tagged alternative containing the fix: v26.7.28 (not adopted here; untested without Go proxy access).
+	// go.sum has NOT been regenerated: run `go mod tidy` (and `go mod verify`) with Go module proxy access.
+	github.com/xtls/xray-core v1.260327.1-0.20260710210335-64fada32b5b9
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 )
 
