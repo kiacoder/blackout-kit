@@ -31,9 +31,13 @@ can run. Status is honest: 🟢 means implemented and verified, ⚪ means out of
 # 1. Verify cryptographic provenance via GitHub Sigstore:
 gh attestation verify blackout.exe --repo kiacoder/blackout-kit
 
-# 2. Verify SHA-256 checksum:
-(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -eq (Get-Content .\blackout.exe.sha256).Trim()
+# 2. Verify SHA-256 checksum. blackout.exe.sha256 holds "<hash>  blackout.exe", so take the first field:
+$expected = ((Get-Content .\blackout.exe.sha256) -split '\s+')[0]
+(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -ieq $expected
 ```
+
+`Get-FileHash` emits uppercase hex, while `.sha256` and `checksums.txt` use lowercase. Compare with
+`-ieq` (or `.ToLowerInvariant()` on both sides). `-ceq` is case-sensitive and reports a false mismatch.
 
 The same integrity check on Linux/macOS, and the machine-readable provenance statement:
 

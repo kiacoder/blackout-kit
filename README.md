@@ -35,6 +35,7 @@
 
 ## Table of contents
 
+- [Security & Privilege Model](#security--privilege-model)
 - [What Blackout Kit is](#what-blackout-kit-is)
 - [Choose your guide](#choose-your-guide)
 - [Current feature map](#current-feature-map)
@@ -52,6 +53,47 @@
 - [Troubleshooting](#troubleshooting)
 - [Roadmap and contributing](#roadmap-and-contributing)
 - [Disclaimer](#disclaimer)
+
+---
+
+## Security & Privilege Model
+
+**Standard userspace proxying needs no administrator rights.** Starting an engine that exposes a
+local SOCKS5 or HTTP proxy, and pointing the system proxy at it, runs from an ordinary user account:
+
+- **Zero admin or root.** No elevation prompt and no `sudo`.
+- **No drivers.** Nothing is installed into the kernel or added as a network adapter.
+- **No Defender exclusions.** Connecting never adds one. An exclusion is only ever created when you
+  run `blackout config --setup-defender-exclusion` and type `yes`.
+- **Per-user proxy setting.** On Windows the system proxy is written under `HKEY_CURRENT_USER`.
+
+Engines in this userspace group are `xray`, `hysteria2`, `tuic`, and `appsscript`. The code confirms
+that none of them appears in the elevation lists (`ENGINES_REQUIRING_ADMIN` and
+`_WINDOWS_ELEVATED_ENGINES`) and none loads the WinDivert driver.
+
+```bash
+# Unprivileged quick start: a local SOCKS5/HTTP proxy, no elevation
+blackout config add --prompt             # paste the URI you already have (not echoed, not in shell history)
+blackout connect xray                    # start the userspace XRay proxy
+```
+
+**Elevated privileges are opt-in.** Blackout asks Windows for elevation (UAC), or requires root on
+Linux, only when you start an engine or feature that needs it:
+
+| Capability | Engines or features | Why it needs elevation |
+|---|---|---|
+| Packet interception | `gdpi` (legacy GoodbyeDPI) | Captures and rewrites packets through the WinDivert driver. See [WinDivert driver and Windows Defender](#windivert-driver-and-windows-defender) |
+| Virtual network interface | `tun` (Windows admin, Linux root), `wireguard`, `openvpn`, `softether`, `ikev2` | Creates a tunnel adapter and changes routes |
+| Launcher elevation on Windows | `warp` | Blackout elevates this engine on Windows even though it serves a local proxy. That is a launcher policy, not a packet-level requirement |
+| Firewall rules on Linux | `kill_switch` setting (off by default) | Programs firewall tables; the Linux kill switch runs only as root |
+
+Elevation is therefore not limited to packet-level engines and TUN. It also covers VPN adapter engines,
+the Windows `warp` launch policy, and the Linux kill switch. The userspace guarantee above holds only
+for the engines listed in its group.
+
+Userspace does not mean private. A local proxy still sends traffic to whichever upstream you
+configure. See [NETWORK_PRIVACY.md](NETWORK_PRIVACY.md) for every outbound connection and
+[SECURITY.md](SECURITY.md) for the full threat model.
 
 ---
 
@@ -240,9 +282,13 @@ produced by this repository's own Actions workflow (`.github/workflows/build.yml
 # 1. Verify cryptographic provenance via GitHub Sigstore:
 gh attestation verify blackout.exe --repo kiacoder/blackout-kit
 
-# 2. Verify SHA-256 checksum:
-(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -eq (Get-Content .\blackout.exe.sha256).Trim()
+# 2. Verify SHA-256 checksum. blackout.exe.sha256 holds "<hash>  blackout.exe", so take the first field:
+$expected = ((Get-Content .\blackout.exe.sha256) -split '\s+')[0]
+(Get-FileHash -Algorithm SHA256 .\blackout.exe).Hash -ieq $expected
 ```
+
+`Get-FileHash` emits uppercase hex, while `.sha256` and `checksums.txt` use lowercase. Compare with
+`-ieq` (or `.ToLowerInvariant()` on both sides). `-ceq` is case-sensitive and reports a false mismatch.
 
 ```bash
 gh attestation verify blackout.exe --repo kiacoder/blackout-kit --format json | jq '.[0].verificationResult'

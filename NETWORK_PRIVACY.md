@@ -189,6 +189,34 @@ before any file is written.
 If you find an egress path that is not documented here, that is a bug: report it through the
 process in `SECURITY.md`.
 
+## 12. Remediation candidates and unwired settings
+
+Known trade-offs in the current egress surface. These are **candidates for future hardening**, not
+scheduled work, and none of them changes behavior today. Each row names the code so the claim can
+be checked.
+
+### 12.1 Remediation candidates
+
+| # | Surface | Where in code | Current behavior | Trade-off | Candidate hardening |
+|---|---|---|---|---|---|
+| R1 | Plaintext-HTTP ISP / country lookup | `blackoutkit/network_switcher.py` — `http://ip-api.com/json?fields=isp,org,as,city,country,countryCode` | Plain HTTP. The free endpoint has no TLS: the [ip-api documentation](https://ip-api.com/docs/api:json) states that "256-bit SSL encryption is not available for this free API" | An on-path observer can read the lookup and the IP it concerns. The answer only picks a profile and is then discarded | Make the lookup HTTPS-only (for example promote the existing `https://ipinfo.io/json` fallback to primary), or use a local GeoIP database |
+| R2 | Default upstream DoH resolver | `blackoutkit/tools.py` — `DOH_PROXY_DEFAULT_UPSTREAM`; `blackoutkit/typer_cli.py` — `--upstream` default | `https://1.1.1.1/dns-query` | A single well-known anycast address avoids a bootstrap loop through the system resolver. It is also one fixed third party that sees every query forwarded by the local DoH proxy | Offer a configurable resolver list with a disclosed default |
+| R3 | Hardcoded bootstrap resolver | `blackoutkit/tools.py` — `resolve_doh()` | Resolves one name through `https://1.1.1.1/dns-query?name=<host>&type=A`, hardcoded rather than read from the `--upstream` setting | Same bootstrap trade-off as R2, plus a second hardcoded copy of the endpoint that can drift from it | Route bootstrap through the configured DoH upstream and remove the duplicate literal |
+| R4 | Diagnostic HTTP probes | `blackoutkit/doctor.py` — `check_internet()` | `http://cp.cloudflare.com/` and `http://www.google.com/generate_204` over plain HTTP | Captive-portal detection depends on unencrypted HTTP, so an HTTPS probe answers a different question. A probe also reveals that a diagnostic ran | Keep plain HTTP only for the portal check and label it as such, or add an HTTPS reachability check as the primary result |
+| R5 | Third-party CDN script in the local web dashboard | `blackoutkit/tools.py` — `run_web_api_dashboard()`, the `/` page | `<script src="https://cdn.jsdelivr.net/npm/chart.js">` with no `integrity=` attribute. The dashboard binds `127.0.0.1` by default | Opening the page makes the browser fetch and run code from jsDelivr. A compromised CDN release would execute in the dashboard's origin | Vendor `chart.js` into the package, or pin the version with an SRI `integrity` hash |
+
+### 12.2 Unwired background setting: `adblock_auto_update_interval_hours`
+
+`blackoutkit/settings.py` defines `adblock_auto_update_interval_hours` (default `24`) and lists it in
+the "Ad Blocking" settings category. **No code reads it.** No daemon loop, thread, timer, or
+scheduler is wired to it. The only caller of a blocklist refresh is `update_all_blocklists()`, which
+runs only when you invoke `blackout tools adblock update`.
+
+You can confirm this with `grep -rn adblock_auto_update_interval_hours blackoutkit/`. The matches
+should be the definition and the category entry, and nothing else. Setting the value therefore
+creates no background egress. If a scheduler is ever added, this section and §6 must be updated in
+the same change.
+
 ---
 
 Related: [`SECURITY.md`](SECURITY.md) · [`README.md`](README.md) · [`docs/privacy.html`](docs/privacy.html)
