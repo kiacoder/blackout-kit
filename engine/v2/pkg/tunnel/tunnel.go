@@ -36,8 +36,8 @@ var ErrBadListen = errors.New("tunnel: listen address must be a loopback literal
 // helloReadTimeout bounds how long the tunnel waits for the client's first
 // bytes after a successful CONNECT before falling back to transparent
 // relaying. A client that sends nothing is still relayed; it just never gets
-// shaped.
-const helloReadTimeout = 10 * time.Second
+// shaped. Package-level so tests can shorten it.
+var helloReadTimeout = 10 * time.Second
 
 // Config configures one tunnel server.
 type Config struct {
@@ -57,6 +57,12 @@ type Server struct {
 
 	wg     sync.WaitGroup
 	closed atomic.Bool
+
+	// serving is set when Serve begins; serveDone is closed when it returns.
+	// Close waits on serveDone only if Serve ever started, so a server that
+	// was constructed but never served can still Close immediately.
+	serving   atomic.Bool
+	serveDone chan struct{}
 
 	// conns tracks live session sockets so Close can terminate them instead
 	// of waiting for the peers to hang up first.
@@ -83,7 +89,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tunnel: listen: %w", err)
 	}
-	s := &Server{cfg: cfg, ln: ln, conns: make(map[net.Conn]struct{})}
+	s := &Server{cfg: cfg, ln: ln, serveDone: make(chan struct{}), conns: make(map[net.Conn]struct{})}
 	s.dialer.Store(&cfg.Dialer)
 	return s, nil
 }
@@ -102,8 +108,12 @@ func (s *Server) BytesIn() uint64 { return s.bytesIn.Load() }
 // BytesOut reports bytes relayed upstream -> client.
 func (s *Server) BytesOut() uint64 { return s.bytesOut.Load() }
 
-// Serve accepts sessions until ctx is cancelled or the listener closes.
+// Serve accepts sessions until ctx is cancelled or the listener closes. It
+// closes serveDone on return so Close can order its force-close sweep after
+// the accept loop has stopped spawning sessions.
 func (s *Server) Serve(ctx context.Context) error {
+	s.serving.Store(true)
+	defer close(s.serveDone)
 	go func() {
 		<-ctx.Done()
 		_ = s.ln.Close()
@@ -116,7 +126,13 @@ func (s *Server) Serve(ctx context.Context) error {
 			}
 			return fmt.Errorf("tunnel: accept: %w", err)
 		}
+		// Register synchronously in the accept loop: every conn handed to a
+		// session goroutine is already tracked, so a later Close sweep can
+		// never miss one that is still between Add and registration.
 		s.wg.Add(1)
+		s.connsMu.Lock()
+		s.conns[conn] = struct{}{}
+		s.connsMu.Unlock()
 		go func() {
 			defer s.wg.Done()
 			s.serveConn(conn)
@@ -127,10 +143,14 @@ func (s *Server) Serve(ctx context.Context) error {
 // Close stops the listener, terminates live sessions, and waits for the
 // session goroutines to exit. Relays are pipes, not protocols: a relay only
 // ends when one peer closes, so a graceful drain would block until the
-// clients hang up. Force-closing is the honest stop semantics.
+// clients hang up. Force-closing is the honest stop semantics. Waiting for
+// Serve to exit first guarantees no accepted-but-untracked conn survives.
 func (s *Server) Close() error {
 	s.closed.Store(true)
 	err := s.ln.Close()
+	if s.serving.Load() {
+		<-s.serveDone
+	}
 	s.connsMu.Lock()
 	for conn := range s.conns {
 		_ = conn.Close()
@@ -141,9 +161,6 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) serveConn(conn net.Conn) {
-	s.connsMu.Lock()
-	s.conns[conn] = struct{}{}
-	s.connsMu.Unlock()
 	defer func() {
 		s.connsMu.Lock()
 		delete(s.conns, conn)
@@ -219,15 +236,24 @@ func (s *Server) sniffHello(client net.Conn) (first []byte, isHello bool) {
 	head := make([]byte, 5)
 	n, err := io.ReadFull(client, head)
 	if err != nil {
+		// Deadline cleared: whatever this session is, it relays onward with
+		// no lingering timeout that would kill it mid-stream later.
+		_ = client.SetReadDeadline(time.Time{})
 		return head[:n], false
 	}
 	if head[0] != 0x16 { // not a TLS handshake record
+		_ = client.SetReadDeadline(time.Time{})
 		return head, false
 	}
 	recLen := int(head[3])<<8 | int(head[4])
 	body := make([]byte, recLen)
 	if _, err := io.ReadFull(client, body); err != nil {
-		return head, false
+		// A record that promised bytes it never delivered means the stream
+		// is already corrupted: shaping cannot proceed and relaying the
+		// truncated head would silently drop part of the client's bytes.
+		// Tear the session down instead.
+		_ = client.Close()
+		return nil, false
 	}
 	_ = client.SetReadDeadline(time.Time{})
 	return append(head, body...), true

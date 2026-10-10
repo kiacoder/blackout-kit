@@ -193,3 +193,32 @@ func echoTLSServer(t *testing.T, host string) string {
 	}()
 	return ln.Addr().String()
 }
+
+// TestControllerTuneKeepsZeroFields mirrors ipc.MemController semantics: a
+// tune call that only sets one field must not reset the others to minimums.
+func TestControllerTuneKeepsZeroFields(t *testing.T) {
+	c := newController()
+	first, err := c.Tune(context.Background(), ipc.TuneParams{
+		MinChunk: 16,
+		MaxChunk: 48,
+		MinDelay: 200,
+		MaxDelay: 800,
+		FakeSNI:  "first.example",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := c.Tune(context.Background(), ipc.TuneParams{FakeSNI: "second.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.MinChunk != first.MinChunk || second.MaxChunk != first.MaxChunk {
+		t.Fatalf("zero tune reset chunks: %+v vs %+v", second, first)
+	}
+	if second.MinDelay != first.MinDelay || second.MaxDelay != first.MaxDelay {
+		t.Fatalf("zero tune reset delays: %+v vs %+v", second, first)
+	}
+	if second.FakeSNI != "second.example" {
+		t.Fatalf("FakeSNI not applied: %q", second.FakeSNI)
+	}
+}

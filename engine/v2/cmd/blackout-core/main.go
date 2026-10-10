@@ -87,7 +87,22 @@ func (c *controller) startTunnelLocked(p ipc.StartParams) (ipc.StartResult, erro
 		return ipc.StartResult{}, &ipc.Error{Code: ipc.CodeBadRequest, Message: err.Error()}
 	}
 	srv.Log = func(msg string) { log.Print(msg) }
-	go func() { _ = srv.Serve(context.Background()) }()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- srv.Serve(context.Background()) }()
+	go func() {
+		// A background-context Serve only returns on its own if the accept
+		// loop dies unexpectedly (Close makes it return nil). Do not let the
+		// status keep claiming a tunnel that is gone.
+		if err := <-serveErr; err != nil {
+			log.Printf("blackout-core: socks-tunnel stopped: %v", err)
+			c.mu.Lock()
+			if c.tunnel == srv {
+				c.tunnel = nil
+				c.status = ipc.StatusFailed
+			}
+			c.mu.Unlock()
+		}
+	}()
 	c.tunnel = srv
 	c.engine = p.Engine
 	c.status = ipc.StatusRunning
@@ -116,12 +131,25 @@ func (c *controller) Tune(_ context.Context, p ipc.TuneParams) (ipc.TuneResult, 
 	defer c.mu.Unlock()
 
 	// Normalize, never reject: a bad tune value should clamp, not kill the
-	// engine that is currently keeping the user online.
-	c.cfg.MinChunk = p.MinChunk
-	c.cfg.MaxChunk = p.MaxChunk
-	c.cfg.MinDelay = time.Duration(p.MinDelay) * time.Microsecond
-	c.cfg.MaxDelay = time.Duration(p.MaxDelay) * time.Microsecond
-	c.cfg.FakeSNI = p.FakeSNI
+	// engine that is currently keeping the user online. Zero means "keep the
+	// current value" — the same semantics ipc.MemController applies — so a
+	// client tuning only FakeSNI cannot accidentally reset chunking to the
+	// minimum by sending zeroed, unset fields.
+	if p.MinChunk > 0 {
+		c.cfg.MinChunk = p.MinChunk
+	}
+	if p.MaxChunk > 0 {
+		c.cfg.MaxChunk = p.MaxChunk
+	}
+	if p.MinDelay > 0 {
+		c.cfg.MinDelay = time.Duration(p.MinDelay) * time.Microsecond
+	}
+	if p.MaxDelay > 0 {
+		c.cfg.MaxDelay = time.Duration(p.MaxDelay) * time.Microsecond
+	}
+	if p.FakeSNI != "" {
+		c.cfg.FakeSNI = p.FakeSNI
+	}
 	if p.Fragments != nil {
 		c.cfg.Fragments = *p.Fragments
 	}

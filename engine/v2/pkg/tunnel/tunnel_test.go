@@ -515,3 +515,82 @@ func portOf(addr string) int {
 	}
 	return p
 }
+
+func TestNonTLSSessionSurvivesHelloTimeout(t *testing.T) {
+	old := helloReadTimeout
+	helloReadTimeout = 150 * time.Millisecond
+	defer func() { helloReadTimeout = old }()
+
+	upLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upLn.Close()
+	seen := make(chan []byte, 1)
+	go func() {
+		conn, err := upLn.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		var acc []byte
+		buf := make([]byte, 256)
+		for {
+			n, err := conn.Read(buf)
+			if n > 0 {
+				acc = append(acc, buf[:n]...)
+				seen <- append([]byte(nil), acc...)
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
+	srv := startTunnel(t, Config{Listen: "127.0.0.1:0", Dialer: dialer.DefaultConfig()})
+	conn := socksConnect(t, srv.Addr().String(), hostOf(upLn.Addr().String()), portOf(upLn.Addr().String()))
+	if _, err := conn.Write([]byte("GET / HTTP/1.1\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	// Cross the hello timeout while the session sits idle, then keep using it.
+	time.Sleep(300 * time.Millisecond)
+	if _, err := conn.Write([]byte("Host: after-timeout\r\n\r\n")); err != nil {
+		t.Fatalf("session died across the hello timeout: %v", err)
+	}
+	var got []byte
+	for got == nil || !strings.Contains(string(got), "Host: after-timeout") {
+		select {
+		case got = <-seen:
+		case <-time.After(3 * time.Second):
+			t.Fatalf("bytes sent after the hello timeout never reached upstream; got %q", got)
+		}
+	}
+}
+
+func TestCloseDuringActiveHandshakes(t *testing.T) {
+	for i := 0; i < 30; i++ {
+		srv, err := New(Config{Listen: "127.0.0.1:0"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() { _ = srv.Serve(ctx) }()
+		time.Sleep(5 * time.Millisecond)
+
+		// A client parked mid-CONNECT: an in-flight session Close must not
+		// wait on, and the shutdown must complete promptly regardless of the
+		// accept/registration interleaving.
+		conn, err := net.DialTimeout("tcp", srv.Addr().String(), time.Second)
+		if err == nil {
+			_, _ = conn.Write([]byte{0x05, 0x01, 0x00})
+		}
+		cancel()
+		done := make(chan error, 1)
+		go func() { done <- srv.Close() }()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("iteration %d: Close deadlocked with a live session", i)
+		}
+	}
+}
