@@ -9,6 +9,7 @@ import logging
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -30,6 +31,16 @@ def _validated_lookup_url(url: str) -> str:
     if parsed.scheme != "https" or parsed.hostname not in _ISP_LOOKUP_HOSTS:
         raise ValueError("unexpected ISP lookup endpoint")
     return url
+
+
+class _ISPRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.URLError("ISP lookup redirects are not allowed")
+
+
+def _open_isp_lookup(request: urllib.request.Request, *, timeout: float):
+    opener = urllib.request.build_opener(_ISPRedirectHandler())
+    return opener.open(request, timeout=timeout)
 
 from dataclasses import dataclass
 
@@ -235,7 +246,7 @@ def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
                 _validated_lookup_url(endpoint),
                 headers={"User-Agent": "blackout-kit/1.0"},
             )
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with _open_isp_lookup(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode())
 
             if not isinstance(data, dict):
