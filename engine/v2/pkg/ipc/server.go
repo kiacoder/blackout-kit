@@ -151,6 +151,7 @@ type Server struct {
 	ctrl     Controller
 
 	ln     *Listener
+	lnMu   sync.Mutex // guards ln: Serve assigns it, Shutdown reads it
 	hub    *hub
 	seq    atomic.Uint64
 	pid    int
@@ -193,7 +194,9 @@ func (s *Server) Serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	s.lnMu.Lock()
 	s.ln = ln
+	s.lnMu.Unlock()
 	defer func() { _ = ln.Close() }()
 
 	// Watch ctx so a cancelled parent tears down the listener.
@@ -237,8 +240,11 @@ func (s *Server) Serve(ctx context.Context) error {
 // Shutdown stops accepting, closes every session and waits for them to drain.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.once.Do(func() { close(s.closed) })
-	if s.ln != nil {
-		_ = s.ln.Close()
+	s.lnMu.Lock()
+	ln := s.ln
+	s.lnMu.Unlock()
+	if ln != nil {
+		_ = ln.Close()
 	}
 
 	s.mu.Lock()
