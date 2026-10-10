@@ -15,7 +15,7 @@ from pathlib import Path
 
 # ─────────────────────────── Package metadata ────────────────────────────────
 
-__version__        = "1.1.1"
+__version__        = "1.3.0"
 __author__         = "Kiacoder & contributors"
 __description__    = "Network security and bypass toolkit"
 __license__        = "MIT"

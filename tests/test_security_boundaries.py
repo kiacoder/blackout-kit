@@ -748,6 +748,14 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10
     import tomli as tomllib
 
 
+def test_release_version_metadata_matches_package_version():
+    from blackoutkit import __version__
+
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert metadata["project"]["version"] == "1.3.0"
+    assert __version__ == "1.3.0"
+
+
 def test_choco_installer_checksum_is_parser_safe_and_fails_closed():
     """The Chocolatey digest is a well-formed SHA-256 literal (so linters and
     `choco pack` parse it) and it cannot install anything until it is real."""

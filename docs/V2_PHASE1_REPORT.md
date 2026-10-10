@@ -180,7 +180,12 @@ Verified with `yaml.safe_load` — both jobs parse and the new steps are present
 - No real engine implementations behind `ipc.Controller` (only `MemController` and the
   daemon's policy controller). `start` records state; it does not yet move packets.
 - `pkg/dialer` has the primitives but no connection loop that reads a ClientHello off a socket
-  and calls `WriteHello` — that lands with the first real engine.
+  and calls `WriteHello` — that lands with the first real engine. `SplitAtSNIBoundary` provides
+  parser-derived, randomized segmentation as a standalone primitive; it is not yet used by a live
+  outbound connection.
+- `pkg/hyperpulse` provides standalone GF(256) parity encoding/recovery and an adaptive parity
+  policy. It does not transmit parity, define a peer wire format, or integrate with VLESS/Trojan/
+  VMess or any other proxy transport.
 - No C# HUD, no Python client for the v2 protocol. The protocol is stable enough to start both.
 - v1 `engine/` is untouched and still built only manually; it is now the legacy fallback.
 - Binaries must be distributed out-of-band (see §2).

@@ -4,7 +4,17 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-10
+
+### Security
+- ISP inspection now uses HTTPS-only `ipapi.co` with `ipinfo.io` fallback; redirects are rejected, TLS verification stays enabled, and failed lookups remain best-effort.
+- DoH bootstrap accepts only an allow-listed HTTPS resolver override, rejects query/fragment injection and redirects, and falls back through Cloudflare, Quad9, and Google.
+
+### Added
+- Go v2 dialer can segment ClientHello data so a parser-identified SNI hostname is split at a seeded, randomized offset within the configured chunk bounds. The v2 daemon remains a policy/IPC scaffold; this primitive is not wired into a live outbound connection loop.
+- Standalone HyperPulse GF(256) parity encoding, recovery, and bounded adaptive parity policy. These primitives are not transmitted to proxy peers and do not claim compatible wire framing.
+- Early local HTTP/SOCKS proxy health probes run during the first five seconds after engine start at 100 ms cadence, with a 200 ms total request deadline; two consecutive local failures can trigger config rotation.
+
 
 ### Security
 - **`xray-core` bumped past GHSA-5wf9-h793-w73c:** `engine/go.mod` moves from `v1.260327.0` to the patched commit `64fada32b5b9` (`v1.260327.1-0.20260710210335-64fada32b5b9`). `go.sum` is not yet regenerated, so run `go mod tidy` before building.

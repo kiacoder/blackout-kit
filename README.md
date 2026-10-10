@@ -21,7 +21,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.1.1-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.3.0-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
@@ -137,7 +137,7 @@ The README stays high-level. The two guides go deeper in separate directions on 
 
 ## Current feature map
 
-Blackout Kit 1.1.1 currently includes:
+Blackout Kit 1.3.0 currently includes:
 
 - **Typer-based public CLI** with backward-compatible delegation into the proven command dispatcher
 - **Zero-flag launcher flow** that always opens a keyboard-navigable terminal chooser (Terminal CLI / Windows App); the GUI opens only when explicitly selected
