@@ -218,6 +218,60 @@ func findHostName(exts []byte) (string, bool) {
 	return "", false
 }
 
+// clientHelloSNIHostBounds returns the hostname's byte offsets in the original
+// record. It shares the existing ClientHello and extension framing parsers so
+// callers do not infer boundaries from an unvalidated byte search.
+func clientHelloSNIHostBounds(b []byte) (int, int, bool) {
+	_, hs, err := splitHandshake(b)
+	if err != nil {
+		return 0, 0, false
+	}
+	extLenOff, exts, err := parseExtensions(hs)
+	if err != nil {
+		return 0, 0, false
+	}
+	extensionsStart := recordHeaderLen + handshakeHeaderLen + extLenOff + 2
+	for off := 0; off+4 <= len(exts); {
+		typ := binary.BigEndian.Uint16(exts[off : off+2])
+		length := int(binary.BigEndian.Uint16(exts[off+2 : off+4]))
+		if off+4+length > len(exts) {
+			return 0, 0, false
+		}
+		if typ == extensionServerName {
+			data := exts[off+4 : off+4+length]
+			if start, end, ok := firstHostNameByteBounds(data); ok {
+				return extensionsStart + off + 4 + start, extensionsStart + off + 4 + end, true
+			}
+		}
+		off += 4 + length
+	}
+	return 0, 0, false
+}
+
+func firstHostNameByteBounds(data []byte) (int, int, bool) {
+	if len(data) < 2 {
+		return 0, 0, false
+	}
+	listEnd := 2 + int(binary.BigEndian.Uint16(data[:2]))
+	if listEnd > len(data) {
+		return 0, 0, false
+	}
+	for off := 2; off+3 <= listEnd; {
+		nameType := data[off]
+		nameLen := int(binary.BigEndian.Uint16(data[off+1 : off+3]))
+		nameStart := off + 3
+		nameEnd := nameStart + nameLen
+		if nameEnd > listEnd {
+			return 0, 0, false
+		}
+		if nameType == serverNameTypeHost {
+			return nameStart, nameEnd, true
+		}
+		off = nameEnd
+	}
+	return 0, 0, false
+}
+
 // firstHostName reads the first host_name entry out of a server_name_list.
 func firstHostName(data []byte) (string, bool) {
 	if len(data) < 2 {

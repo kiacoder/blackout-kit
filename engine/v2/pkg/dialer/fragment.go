@@ -105,12 +105,7 @@ func Split(data []byte, min, max int, rnd *rand.Rand) [][]byte {
 	if len(data) == 0 {
 		return nil
 	}
-	if min < 1 {
-		min = 1
-	}
-	if max < min {
-		max = min
-	}
+	min, max = normalizeChunkBounds(min, max)
 	segments := make([][]byte, 0, (len(data)/min)+1)
 	for off := 0; off < len(data); {
 		size := min
@@ -125,6 +120,121 @@ func Split(data []byte, min, max int, rnd *rand.Rand) [][]byte {
 		off = end
 	}
 	return segments
+}
+
+func normalizeChunkBounds(min, max int) (int, int) {
+	if min < 1 {
+		min = 1
+	}
+	if max < min {
+		max = min
+	}
+	return min, max
+}
+
+// SplitAtSNIBoundary segments a ClientHello so an edge falls 3–12 bytes into
+// its parsed hostname when a chunk-bounded partition can place it there. If
+// parsing or bounds make that impossible, it behaves exactly like Split.
+func SplitAtSNIBoundary(data []byte, min, max int, rnd *rand.Rand) [][]byte {
+	if len(data) == 0 {
+		return nil
+	}
+	min, max = normalizeChunkBounds(min, max)
+	hostStart, hostEnd, ok := clientHelloSNIHostBounds(data)
+	if !ok {
+		return Split(data, min, max, rnd)
+	}
+
+	type boundary struct {
+		target int
+		prior  []int
+	}
+	var candidates []boundary
+	for offset := 3; offset <= 12 && hostStart+offset <= hostEnd; offset++ {
+		target := hostStart + offset
+		candidate := boundary{target: target}
+		firstPrior := target - max
+		if firstPrior < 0 {
+			firstPrior = 0
+		}
+		lastPrior := target - min
+		if lastPrior > hostStart {
+			lastPrior = hostStart
+		}
+		for prior := firstPrior; prior <= lastPrior; prior++ {
+			if chunkLengthPartitionable(prior, min, max) {
+				candidate.prior = append(candidate.prior, prior)
+			}
+		}
+		if len(candidate.prior) > 0 {
+			candidates = append(candidates, candidate)
+		}
+	}
+	if len(candidates) == 0 {
+		return Split(data, min, max, rnd)
+	}
+
+	chosen := candidates[0]
+	if rnd != nil && len(candidates) > 1 {
+		chosen = candidates[rnd.Intn(len(candidates))]
+	}
+	prior := chosen.prior[0]
+	if rnd != nil && len(chosen.prior) > 1 {
+		prior = chosen.prior[rnd.Intn(len(chosen.prior))]
+	}
+
+	segments := make([][]byte, 0, len(data)/min+2)
+	off := 0
+	for _, size := range partitionChunkLengths(prior, min, max, rnd) {
+		segments = append(segments, data[off:off+size])
+		off += size
+	}
+	segments = append(segments, data[prior:chosen.target])
+	return append(segments, Split(data[chosen.target:], min, max, rnd)...)
+}
+
+func chunkLengthPartitionable(length, min, max int) bool {
+	if length == 0 {
+		return true
+	}
+	return (length+max-1)/max <= length/min
+}
+
+func partitionChunkLengths(length, min, max int, rnd *rand.Rand) []int {
+	if length == 0 {
+		return nil
+	}
+	minCount := (length + max - 1) / max
+	maxCount := length / min
+	count := minCount
+	if rnd != nil && maxCount > minCount {
+		count += rnd.Intn(maxCount - minCount + 1)
+	}
+
+	lengths := make([]int, count)
+	for i := range lengths {
+		lengths[i] = min
+	}
+	extra := length - count*min
+	capacity := max - min
+	for i := range lengths {
+		remaining := len(lengths) - i - 1
+		lowest := extra - remaining*capacity
+		if lowest < 0 {
+			lowest = 0
+		}
+		highest := extra
+		if highest > capacity {
+			highest = capacity
+		}
+		add := lowest
+		if rnd != nil && highest > lowest {
+			add += rnd.Intn(highest - lowest + 1)
+		}
+		lengths[i] += add
+		extra -= add
+	}
+	return lengths
 }
 
 // SegmentCount reports how many writes Split would produce, without
@@ -174,7 +284,10 @@ func WriteFragmented(w io.Writer, data []byte, cfg Config, rnd *rand.Rand) (int,
 	} else {
 		segments = [][]byte{data}
 	}
+	return writeSegments(w, segments, cfg, rnd)
+}
 
+func writeSegments(w io.Writer, segments [][]byte, cfg Config, rnd *rand.Rand) (int, error) {
 	written := 0
 	for i, seg := range segments {
 		if i > 0 {
@@ -214,5 +327,8 @@ func WriteHello(w io.Writer, hello []byte, cfg Config, rnd *rand.Rand) (int, err
 			return 0, fmt.Errorf("dialer: rewrite SNI: %w", err)
 		}
 	}
-	return WriteFragmented(w, payload, cfg, rnd)
+	if !cfg.Fragments {
+		return WriteFragmented(w, payload, cfg, rnd)
+	}
+	return writeSegments(w, SplitAtSNIBoundary(payload, cfg.MinChunk, cfg.MaxChunk, rnd), cfg, rnd)
 }

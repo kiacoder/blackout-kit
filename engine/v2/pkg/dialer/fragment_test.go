@@ -46,6 +46,110 @@ func TestSplitCoversAllBytes(t *testing.T) {
 	}
 }
 
+func TestSplitAtSNIBoundaryPlacesSeededEdgeInsideHostname(t *testing.T) {
+	const host = "blocked.example.com"
+	hello := buildHello(t, host, true)
+	hostStart := bytes.Index(hello, []byte(host))
+	if hostStart < 0 {
+		t.Fatal("fixture does not contain its hostname")
+	}
+
+	seenOffsets := make(map[int]bool)
+	for seed := int64(1); seed <= 30; seed++ {
+		segments := SplitAtSNIBoundary(hello, 8, 24, rand.New(rand.NewSource(seed)))
+		var joined []byte
+		boundary := -1
+		for _, segment := range segments {
+			joined = append(joined, segment...)
+			if boundary < 0 && len(joined) > hostStart {
+				boundary = len(joined)
+			}
+		}
+		if !bytes.Equal(joined, hello) {
+			t.Fatalf("seed %d: reassembled bytes differ from ClientHello", seed)
+		}
+		if boundary < hostStart+3 || boundary > hostStart+12 {
+			t.Fatalf("seed %d: first edge after hostname start is at %d, want %d..%d", seed, boundary, hostStart+3, hostStart+12)
+		}
+		seenOffsets[boundary-hostStart] = true
+	}
+	if len(seenOffsets) < 2 {
+		t.Fatalf("seeded helper chose only one hostname offset: %v", seenOffsets)
+	}
+
+	first := SplitAtSNIBoundary(hello, 8, 24, rand.New(rand.NewSource(17)))
+	replay := SplitAtSNIBoundary(hello, 8, 24, rand.New(rand.NewSource(17)))
+	if len(first) != len(replay) {
+		t.Fatalf("same seed produced %d and %d segments", len(first), len(replay))
+	}
+	for i := range first {
+		if !bytes.Equal(first[i], replay[i]) {
+			t.Fatalf("same seed produced different segment %d", i)
+		}
+	}
+}
+
+func TestSplitAtSNIBoundaryFallsBackWithoutValidParsedPartition(t *testing.T) {
+	withSNI := buildHello(t, "blocked.example.com", true)
+	withoutSNI := buildHello(t, "", false)
+	cases := []struct {
+		name string
+		data []byte
+		min  int
+		max  int
+	}{
+		{name: "no feasible SNI partition", data: withSNI, min: 30, max: 30},
+		{name: "no SNI extension", data: withoutSNI, min: 8, max: 24},
+		{name: "malformed ClientHello", data: []byte{recordTypeHandshake, 0x03}, min: 8, max: 24},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := SplitAtSNIBoundary(tc.data, tc.min, tc.max, rand.New(rand.NewSource(23)))
+			want := Split(tc.data, tc.min, tc.max, rand.New(rand.NewSource(23)))
+			if len(got) != len(want) {
+				t.Fatalf("got %d segments, fallback produced %d", len(got), len(want))
+			}
+			for i := range want {
+				if !bytes.Equal(got[i], want[i]) {
+					t.Fatalf("segment %d differs from existing split fallback", i)
+				}
+			}
+		})
+	}
+}
+
+func TestWriteHelloSegmentsInsideParsedSNIHostname(t *testing.T) {
+	const host = "blocked.example.com"
+	hello := buildHello(t, host, true)
+	hostStart := bytes.Index(hello, []byte(host))
+	cfg := DefaultConfig()
+	cfg.MinChunk, cfg.MaxChunk = 8, 24
+	cfg.MinDelay, cfg.MaxDelay = 0, 0
+
+	writer := &recordingWriter{}
+	if n, err := WriteHello(writer, hello, cfg, rand.New(rand.NewSource(17))); err != nil {
+		t.Fatalf("WriteHello: %v", err)
+	} else if n != len(hello) {
+		t.Fatalf("WriteHello wrote %d bytes, want %d", n, len(hello))
+	}
+	if !bytes.Equal(writer.joined(), hello) {
+		t.Fatal("WriteHello changed ClientHello bytes while segmenting")
+	}
+
+	boundary := -1
+	written := 0
+	for _, segment := range writer.segments {
+		written += len(segment)
+		if written > hostStart {
+			boundary = written
+			break
+		}
+	}
+	if boundary < hostStart+3 || boundary > hostStart+12 {
+		t.Fatalf("WriteHello edge is at %d, want %d..%d bytes into hostname", boundary, hostStart+3, hostStart+12)
+	}
+}
+
 // TestSplitRespectsBounds is the Bug #11 assertion: segment size is bounded by
 // config, never hardcoded.
 func TestSplitRespectsBounds(t *testing.T) {

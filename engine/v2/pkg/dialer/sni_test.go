@@ -78,6 +78,28 @@ func TestExtractSNI(t *testing.T) {
 	}
 }
 
+func TestClientHelloSNIHostBounds(t *testing.T) {
+	const host = "blocked.example.com"
+	hello := buildHello(t, host, true)
+	wantStart := bytes.Index(hello, []byte(host))
+	wantEnd := wantStart + len(host)
+
+	start, end, ok := clientHelloSNIHostBounds(hello)
+	if !ok {
+		t.Fatal("clientHelloSNIHostBounds did not find the parsed hostname")
+	}
+	if start != wantStart || end != wantEnd {
+		t.Fatalf("hostname bounds = [%d,%d), want [%d,%d)", start, end, wantStart, wantEnd)
+	}
+
+	if _, _, ok := clientHelloSNIHostBounds(buildHello(t, "", false)); ok {
+		t.Fatal("clientHelloSNIHostBounds found a hostname without an SNI extension")
+	}
+	if _, _, ok := clientHelloSNIHostBounds([]byte{recordTypeHandshake, 0x03}); ok {
+		t.Fatal("clientHelloSNIHostBounds accepted a malformed ClientHello")
+	}
+}
+
 // TestRewriteSNI is the Bug #12 regression test. v1 parsed FAKE_SNI and never
 // put it on the wire; this asserts the name actually changes and that the
 // record is still internally consistent afterwards.
