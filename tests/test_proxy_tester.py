@@ -25,6 +25,40 @@ def test_http_proxy_client_cache_separates_probe_timeouts():
     proxy_tester._cleanup_httpx_clients()
 
 
+def test_http_proxy_enforces_total_probe_deadline(monkeypatch):
+    clock = [0.0]
+
+    class SlowResponse:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def iter_bytes(self):
+            yield b"first"
+            clock[0] += 0.15
+            yield b"second"
+            clock[0] += 0.15
+            yield b"third"
+
+    class SlowClient:
+        def get(self, _url):
+            clock[0] += 0.3
+            return SlowResponse()
+
+        def stream(self, _method, _url, *, timeout):
+            assert timeout == 0.2
+            return SlowResponse()
+
+    monkeypatch.setattr(proxy_tester, "_get_httpx_client", lambda *_args: SlowClient())
+    monkeypatch.setattr(proxy_tester.time, "monotonic", lambda: clock[0])
+
+    assert proxy_tester.test_http_proxy(timeout=0.2) is None
+
+
 def test_http_proxy_cache_reuses_matching_timeout():
     proxy_tester._cleanup_httpx_clients()
     with patch("httpx.Client") as client_factory:

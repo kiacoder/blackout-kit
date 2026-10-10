@@ -787,8 +787,10 @@ def _run_daemon_loop(
         }
     s = cfg.load()
     traffic_monitor = None
+    engine_started_at = None
 
     def try_start_engines(name: str) -> list:
+        nonlocal engine_started_at
         factory = ENGINE_MAP.get(name)
         if not factory:
             log.error(f"Unknown engine: {name} — check available engines via 'blackout capabilities'")
@@ -816,6 +818,7 @@ def _run_daemon_loop(
         import concurrent.futures
         engines = list(factory())
         started = []
+        started_at = None
         failed = False
 
         spinner = Spinner(f"Starting {name}...")
@@ -829,6 +832,8 @@ def _run_daemon_loop(
                     try:
                         success = future.result()
                         if success:
+                            if started_at is None:
+                                started_at = _monotonic()
                             log.info(f"{eng.name} started (PID {eng.pid})")
                             started.append(eng)
                         else:
@@ -861,6 +866,8 @@ def _run_daemon_loop(
                 sec.clear_linux_kill_switch_endpoint(name)
             return []
 
+        if started_at is not None:
+            engine_started_at = started_at
         return engines
 
     active_engine_name = engine_name
@@ -919,7 +926,6 @@ def _run_daemon_loop(
     early_probe_window = 5.0
     early_probe_interval = 0.1
     early_probe_timeout = 0.2
-    engine_started_at = _monotonic()
     max_restarts = s.get("max_retries", 3)
     initial_reconnect_delay = s.get("reconnect_initial_delay", 2)
     maximum_reconnect_delay = s.get("reconnect_max_delay", 60)
@@ -1061,13 +1067,16 @@ def _run_daemon_loop(
             startup_proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
         early_probe_deadline = (
             engine_started_at + early_probe_window
-            if startup_proxy_info and s.get("config_rotation", True)
-            else engine_started_at
+            if engine_started_at is not None and startup_proxy_info and s.get("config_rotation", True)
+            else _monotonic()
         )
         next_early_probe = engine_started_at + early_probe_interval
 
         while next_early_probe <= early_probe_deadline:
-            remaining = next_early_probe - _monotonic()
+            now = _monotonic()
+            if now >= early_probe_deadline:
+                break
+            remaining = next_early_probe - now
             if remaining > 0:
                 if _daemon_shutdown_requested(my_pid, generation):
                     break
@@ -1080,6 +1089,9 @@ def _run_daemon_loop(
             if not alive:
                 if not _reconnect("All engines stopped unexpectedly."):
                     break
+                engine_started_at = _monotonic()
+                early_probe_deadline = engine_started_at + early_probe_window
+                next_early_probe = engine_started_at + early_probe_interval
                 data_phase_failures = 0
                 continue
 
@@ -1087,10 +1099,12 @@ def _run_daemon_loop(
                 early_proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
             if early_proxy_info and s.get("config_rotation", True):
                 early_host, early_port = early_proxy_info
-                if isinstance(early_host, str) and early_host.startswith("socks="):
+                is_socks_proxy = isinstance(early_host, str) and early_host.startswith("socks=")
+                if is_socks_proxy:
                     early_host = early_host.split("=", 1)[1]
-                from ..scanner.proxy_tester import test_http_proxy
-                if test_http_proxy(early_host, early_port, timeout=early_probe_timeout) is None:
+                from ..scanner.proxy_tester import test_http_proxy, test_socks5_proxy
+                probe = test_socks5_proxy if is_socks_proxy else test_http_proxy
+                if probe(early_host, early_port, timeout=early_probe_timeout) is None:
                     data_phase_failures += 1
                     log.warning(
                         "Local HTTP proxy probe failed during startup (%d consecutive failure(s)).",
@@ -1101,8 +1115,9 @@ def _run_daemon_loop(
                         data_phase_failures = 0
                         if not _reconnect("Early data-phase drop (local proxy probe failed)."):
                             break
-                        early_probe_deadline = _monotonic()
-                        next_early_probe = early_probe_deadline + early_probe_interval
+                        engine_started_at = _monotonic()
+                        early_probe_deadline = engine_started_at + early_probe_window
+                        next_early_probe = engine_started_at + early_probe_interval
                         continue
                 elif data_phase_failures:
                     log.info("Local HTTP proxy recovered after %d startup probe failure(s).", data_phase_failures)

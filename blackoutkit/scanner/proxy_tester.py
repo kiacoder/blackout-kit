@@ -83,7 +83,7 @@ def test_http_proxy(
     proxy_host: str = "127.0.0.1",
     proxy_port: int = 10809,
     test_url: str = "http://cp.cloudflare.com/",
-    timeout: int = 10,
+    timeout: float = 10,
 ) -> float | None:
     """
     Test HTTP proxy connectivity with connection pooling.
@@ -93,9 +93,16 @@ def test_http_proxy(
         proxy_url = f"http://{proxy_host}:{proxy_port}"
         client = _get_httpx_client(proxy_url, timeout)
         start = time.monotonic()
-        resp = client.get(test_url)
-        if resp.status_code < 400:
-            return (time.monotonic() - start) * 1000
+        deadline = start + timeout
+        with client.stream("GET", test_url) as response:
+            if response.status_code >= 400:
+                return None
+            for _chunk in response.iter_bytes():
+                if time.monotonic() >= deadline:
+                    return None
+            if time.monotonic() >= deadline:
+                return None
+        return (time.monotonic() - start) * 1000
     except ImportError:
         # Fallback to urllib if httpx is missing
         proxy_url = f"http://{proxy_host}:{proxy_port}"
@@ -129,9 +136,16 @@ def test_socks5_proxy(
         proxy_url = f"socks5://{proxy_host}:{proxy_port}"
         client = _get_httpx_client(proxy_url, timeout)
         start = time.monotonic()
-        resp = client.get(test_url)
-        if resp.status_code < 400:
-            return (time.monotonic() - start) * 1000
+        deadline = start + timeout
+        with client.stream("GET", test_url) as response:
+            if response.status_code >= 400:
+                return None
+            for _chunk in response.iter_bytes():
+                if time.monotonic() >= deadline:
+                    return None
+            if time.monotonic() >= deadline:
+                return None
+        return (time.monotonic() - start) * 1000
     except Exception:
         pass
     return None
