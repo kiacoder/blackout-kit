@@ -68,16 +68,14 @@ bind attempts; checksum-mismatch installer aborts; a workflow that publishes wit
 and asserts the controls refuse, redact, unstage, or fail. Each test carries a control case, so
 removing a defence turns the suite red instead of leaving it silently green.
 
-## Reporting Security Vulnerabilities
+## Reporting a Vulnerability
 
-**Do not open public GitHub issues for security vulnerabilities.** Instead:
+You can report security issues, bugs, or vulnerabilities through either of the following channels:
+- **GitHub Issues:** Open an issue at [https://github.com/kiacoder/blackout-kit/issues](https://github.com/kiacoder/blackout-kit/issues)
+- **Email:** kiacoder62@gmail.com
 
-1. Email: security@kiacoder.dev
-2. GitHub Security Advisory: https://github.com/kiacoder/blackout-kit/security/advisories
-3. Response target: Within 48 hours
-
-Include:
-- Description of the vulnerability
+Please include:
+- Description of the issue or vulnerability
 - Steps to reproduce
 - Potential impact
 - Suggested fix (if any)
@@ -337,6 +335,5 @@ unused package would only widen the surface. HTTP paths use `httpx` or the stand
 
 ## Contact
 
-- **Security:** security@kiacoder.dev
-- **GitHub:** https://github.com/kiacoder/blackout-kit/security/advisories
-- **Issues:** https://github.com/kiacoder/blackout-kit/issues (non-security only)
+- **Email:** kiacoder62@gmail.com
+- **GitHub Issues:** [https://github.com/kiacoder/blackout-kit/issues](https://github.com/kiacoder/blackout-kit/issues)
