@@ -58,6 +58,11 @@ type Server struct {
 	wg     sync.WaitGroup
 	closed atomic.Bool
 
+	// conns tracks live session sockets so Close can terminate them instead
+	// of waiting for the peers to hang up first.
+	connsMu sync.Mutex
+	conns   map[net.Conn]struct{}
+
 	// Log, when set, receives shaping failures for one session. Sessions are
 	// never failed loudly — the relay ends quietly, like any TCP proxy.
 	Log func(msg string)
@@ -78,7 +83,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("tunnel: listen: %w", err)
 	}
-	s := &Server{cfg: cfg, ln: ln}
+	s := &Server{cfg: cfg, ln: ln, conns: make(map[net.Conn]struct{})}
 	s.dialer.Store(&cfg.Dialer)
 	return s, nil
 }
@@ -119,16 +124,32 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 }
 
-// Close stops the listener and waits for in-flight sessions to drain.
+// Close stops the listener, terminates live sessions, and waits for the
+// session goroutines to exit. Relays are pipes, not protocols: a relay only
+// ends when one peer closes, so a graceful drain would block until the
+// clients hang up. Force-closing is the honest stop semantics.
 func (s *Server) Close() error {
 	s.closed.Store(true)
 	err := s.ln.Close()
+	s.connsMu.Lock()
+	for conn := range s.conns {
+		_ = conn.Close()
+	}
+	s.connsMu.Unlock()
 	s.wg.Wait()
 	return err
 }
 
 func (s *Server) serveConn(conn net.Conn) {
-	defer conn.Close()
+	s.connsMu.Lock()
+	s.conns[conn] = struct{}{}
+	s.connsMu.Unlock()
+	defer func() {
+		s.connsMu.Lock()
+		delete(s.conns, conn)
+		s.connsMu.Unlock()
+		conn.Close()
+	}()
 
 	if err := conn.SetDeadline(time.Time{}); err != nil {
 		return

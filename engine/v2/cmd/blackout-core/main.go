@@ -25,6 +25,7 @@ import (
 	"blackout-engine-v2/pkg/dialer"
 	"blackout-engine-v2/pkg/ipc"
 	"blackout-engine-v2/pkg/sentinel"
+	"blackout-engine-v2/pkg/tunnel"
 )
 
 // controller is the daemon's engine state. It is deliberately small: the real
@@ -39,6 +40,7 @@ type controller struct {
 	bytesIn   atomic.Uint64
 	bytesOut  atomic.Uint64
 	rttMs     atomic.Uint64 // float64 bits
+	tunnel    *tunnel.Server
 }
 
 func newController() *controller {
@@ -54,10 +56,47 @@ func (c *controller) Start(_ context.Context, p ipc.StartParams) (ipc.StartResul
 	if p.Engine == "" {
 		return ipc.StartResult{}, &ipc.Error{Code: ipc.CodeBadRequest, Message: "start requires 'engine'"}
 	}
+	if p.Engine == "socks-tunnel" {
+		res, err := c.startTunnelLocked(p)
+		if err != nil {
+			return ipc.StartResult{}, err
+		}
+		return res, nil
+	}
 	c.engine = p.Engine
 	c.status = ipc.StatusRunning
 	c.startedAt = time.Now()
 	return ipc.StartResult{Engine: p.Engine, Status: string(c.status)}, nil
+}
+
+// defaultTunnelListen is the loopback bind used when StartParams carries no
+// explicit "listen" value. The tunnel package refuses anything non-loopback
+// regardless of what is configured.
+const defaultTunnelListen = "127.0.0.1:18080"
+
+func (c *controller) startTunnelLocked(p ipc.StartParams) (ipc.StartResult, error) {
+	if c.tunnel != nil {
+		return ipc.StartResult{}, &ipc.Error{Code: ipc.CodeBadRequest, Message: "socks-tunnel is already running; stop it first"}
+	}
+	listen := p.Config["listen"]
+	if listen == "" {
+		listen = defaultTunnelListen
+	}
+	srv, err := tunnel.New(tunnel.Config{Listen: listen, Dialer: c.cfg})
+	if err != nil {
+		return ipc.StartResult{}, &ipc.Error{Code: ipc.CodeBadRequest, Message: err.Error()}
+	}
+	srv.Log = func(msg string) { log.Print(msg) }
+	go func() { _ = srv.Serve(context.Background()) }()
+	c.tunnel = srv
+	c.engine = p.Engine
+	c.status = ipc.StatusRunning
+	c.startedAt = time.Now()
+	return ipc.StartResult{
+		Engine: p.Engine,
+		Status: string(c.status),
+		Listen: srv.Addr().String(),
+	}, nil
 }
 
 func (c *controller) Stop(_ context.Context) (ipc.EngineStatus, error) {
@@ -65,6 +104,10 @@ func (c *controller) Stop(_ context.Context) (ipc.EngineStatus, error) {
 	defer c.mu.Unlock()
 	c.status = ipc.StatusStopped
 	c.startedAt = time.Time{}
+	if c.tunnel != nil {
+		_ = c.tunnel.Close()
+		c.tunnel = nil
+	}
 	return c.status, nil
 }
 
@@ -83,6 +126,9 @@ func (c *controller) Tune(_ context.Context, p ipc.TuneParams) (ipc.TuneResult, 
 		c.cfg.Fragments = *p.Fragments
 	}
 	c.cfg = c.cfg.Normalize()
+	if c.tunnel != nil {
+		c.tunnel.SetDialer(c.cfg)
+	}
 
 	return ipc.TuneResult{
 		MinChunk:  c.cfg.MinChunk,
@@ -103,15 +149,30 @@ func (c *controller) Status() (ipc.EngineStatus, string) {
 func (c *controller) Snapshot() ipc.Telemetry {
 	c.mu.Lock()
 	engine, status := c.engine, c.status
+	var tunnelIn, tunnelOut uint64
+	if c.tunnel != nil {
+		tunnelIn, tunnelOut = c.tunnel.BytesIn(), c.tunnel.BytesOut()
+	}
 	c.mu.Unlock()
 	return ipc.Telemetry{
 		Engine:   engine,
 		Status:   status,
 		RTTMs:    math.Float64frombits(c.rttMs.Load()),
-		BytesIn:  c.bytesIn.Load(),
-		BytesOut: c.bytesOut.Load(),
+		BytesIn:  c.bytesIn.Load() + tunnelIn,
+		BytesOut: c.bytesOut.Load() + tunnelOut,
 		At:       time.Now().UnixMilli(),
 	}
+}
+
+// tunnelAddr exposes the bound tunnel address for tests and diagnostics; it
+// is empty when no tunnel is running.
+func (c *controller) tunnelAddr() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tunnel == nil {
+		return ""
+	}
+	return c.tunnel.Addr().String()
 }
 
 func (c *controller) setRTT(ms float64) { c.rttMs.Store(math.Float64bits(ms)) }

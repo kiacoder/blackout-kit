@@ -148,6 +148,9 @@ type StartParams struct {
 type StartResult struct {
 	Engine string `json:"engine"`
 	Status string `json:"status"`
+	// Listen is the bound address when the engine is a local listener
+	// (socks-tunnel); empty otherwise.
+	Listen string `json:"listen,omitempty"`
 }
 
 // TuneParams carries live tuning knobs. The defaults mirror the v2 dialer
