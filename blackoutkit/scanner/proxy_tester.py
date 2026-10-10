@@ -59,6 +59,7 @@ def test_tcp_port(host: str, port: int, timeout: float = 3.0) -> float | None:
 
 _httpx_clients = {}
 _httpx_lock = threading.Lock()
+_proxy_probe_slots = threading.BoundedSemaphore(4)
 
 def _get_httpx_client(proxy_url: str, timeout: float):
     import httpx
@@ -81,6 +82,8 @@ atexit.register(_cleanup_httpx_clients)
 
 
 def _bounded_proxy_request(client, test_url: str, timeout: float) -> float | None:
+    if not _proxy_probe_slots.acquire(blocking=False):
+        return None
     completed = threading.Event()
     result: list[float | None] = [None]
 
@@ -100,6 +103,7 @@ def _bounded_proxy_request(client, test_url: str, timeout: float) -> float | Non
             pass
         finally:
             completed.set()
+            _proxy_probe_slots.release()
 
     threading.Thread(target=request, daemon=True).start()
     if not completed.wait(timeout):

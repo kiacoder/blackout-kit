@@ -61,6 +61,59 @@ def test_http_proxy_enforces_total_probe_deadline(monkeypatch):
     never_release.set()
 
 
+def test_http_proxy_caps_outstanding_blocked_probe_workers(monkeypatch):
+    import threading
+    import time
+
+    release_workers = threading.Event()
+    started = []
+    start_lock = threading.Lock()
+
+    class BlockingResponse:
+        status_code = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def iter_bytes(self):
+            release_workers.wait()
+            yield b"done"
+
+    class BlockingClient:
+        def stream(self, *_args, **_kwargs):
+            with start_lock:
+                started.append(True)
+            release_workers.wait()
+            return BlockingResponse()
+
+    monkeypatch.setattr(proxy_tester, "_proxy_probe_slots", threading.BoundedSemaphore(4))
+    monkeypatch.setattr(proxy_tester, "_get_httpx_client", lambda *_args: BlockingClient())
+
+    results = []
+    callers = [
+        threading.Thread(
+            target=lambda: results.append(
+                proxy_tester.test_http_proxy(timeout=0.05)
+            )
+        )
+        for _ in range(4)
+    ]
+    for caller in callers:
+        caller.start()
+    for caller in callers:
+        caller.join()
+
+    started_before_extra_probe = len(started)
+    assert started_before_extra_probe == 4
+    assert proxy_tester.test_http_proxy(timeout=0.05) is None
+    assert len(started) == started_before_extra_probe
+    release_workers.set()
+    assert results == [None] * 4
+
+
 def test_http_proxy_cache_reuses_matching_timeout():
     proxy_tester._cleanup_httpx_clients()
     with patch("httpx.Client") as client_factory:
