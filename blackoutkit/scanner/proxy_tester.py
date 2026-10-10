@@ -79,6 +79,34 @@ def _cleanup_httpx_clients():
 
 atexit.register(_cleanup_httpx_clients)
 
+
+def _bounded_proxy_request(client, test_url: str, timeout: float) -> float | None:
+    completed = threading.Event()
+    result: list[float | None] = [None]
+
+    def request() -> None:
+        start = time.monotonic()
+        try:
+            with client.stream("GET", test_url, timeout=timeout) as response:
+                if response.status_code >= 400:
+                    return
+                for _chunk in response.iter_bytes():
+                    if time.monotonic() - start >= timeout:
+                        return
+                elapsed = time.monotonic() - start
+                if elapsed < timeout:
+                    result[0] = elapsed * 1000
+        except Exception:
+            pass
+        finally:
+            completed.set()
+
+    threading.Thread(target=request, daemon=True).start()
+    if not completed.wait(timeout):
+        return None
+    return result[0]
+
+
 def test_http_proxy(
     proxy_host: str = "127.0.0.1",
     proxy_port: int = 10809,
@@ -92,17 +120,7 @@ def test_http_proxy(
     try:
         proxy_url = f"http://{proxy_host}:{proxy_port}"
         client = _get_httpx_client(proxy_url, timeout)
-        start = time.monotonic()
-        deadline = start + timeout
-        with client.stream("GET", test_url) as response:
-            if response.status_code >= 400:
-                return None
-            for _chunk in response.iter_bytes():
-                if time.monotonic() >= deadline:
-                    return None
-            if time.monotonic() >= deadline:
-                return None
-        return (time.monotonic() - start) * 1000
+        return _bounded_proxy_request(client, test_url, timeout)
     except ImportError:
         # Fallback to urllib if httpx is missing
         proxy_url = f"http://{proxy_host}:{proxy_port}"
@@ -135,17 +153,7 @@ def test_socks5_proxy(
     try:
         proxy_url = f"socks5://{proxy_host}:{proxy_port}"
         client = _get_httpx_client(proxy_url, timeout)
-        start = time.monotonic()
-        deadline = start + timeout
-        with client.stream("GET", test_url) as response:
-            if response.status_code >= 400:
-                return None
-            for _chunk in response.iter_bytes():
-                if time.monotonic() >= deadline:
-                    return None
-            if time.monotonic() >= deadline:
-                return None
-        return (time.monotonic() - start) * 1000
+        return _bounded_proxy_request(client, test_url, timeout)
     except Exception:
         pass
     return None
