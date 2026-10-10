@@ -79,7 +79,7 @@ class _FakeXRayEngine:
         return self.running
 
 
-def _configure_daemon_loop(monkeypatch, tmp_path, outcomes, waits):
+def _configure_daemon_loop(monkeypatch, tmp_path, outcomes, waits, *, config_rotation=True):
     from blackoutkit.engines import xray
     from blackoutkit import settings
     from blackoutkit import tray
@@ -95,6 +95,7 @@ def _configure_daemon_loop(monkeypatch, tmp_path, outcomes, waits):
         "reconnect_initial_delay": 2,
         "reconnect_max_delay": 60,
         "gdpi_backend": "legacy",
+        "config_rotation": config_rotation,
     })
     monkeypatch.setattr(readiness, "evaluate", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(tray, "start_tray", lambda *_args: None)
@@ -105,6 +106,7 @@ def _configure_daemon_loop(monkeypatch, tmp_path, outcomes, waits):
     monkeypatch.setattr(daemon, "STATE_FILE", tmp_path / "daemon_state.json")
     monkeypatch.setattr(daemon, "LOG_FILE", tmp_path / "daemon.log")
     monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: next(waits))
+    monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: 1.0)
 
 
 def _run_failed_proxy_reconnect(monkeypatch, tmp_path, outcomes, waits):
@@ -241,6 +243,100 @@ def test_daemon_waits_with_configured_backoff_before_follow_up_attempt(monkeypat
 
     recovery.assert_called_once_with(from_daemon=True)
     assert recorded_delays == [1, 2, 1]
+
+
+def _run_early_proxy_probes(
+    monkeypatch, tmp_path, probe_results, *, engine="xray", proxy_available=True, stop_after=1, shutdown=False
+):
+    from blackoutkit import settings
+    from blackoutkit.scanner import proxy_tester
+
+    outcomes = [True, True] if any(result is None for result in probe_results[:2]) else [True]
+    _configure_daemon_loop(monkeypatch, tmp_path, outcomes, iter(()), config_rotation=True)
+    monkeypatch.setattr(
+        settings,
+        "get_engine_proxy_details",
+        lambda *_args: ("127.0.0.1", 10809) if proxy_available else None,
+    )
+    monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
+    monkeypatch.delenv("BLACKOUT_CONFIG_OFFSET", raising=False)
+
+    now = [0.0]
+    probe_times = []
+    probe_timeouts = []
+    start_offsets = []
+    shutdown_requested = [shutdown or stop_after == 0]
+    shutdown_after_reconnect = [False]
+    original_start = _FakeXRayEngine.start
+
+    def advance_time(seconds):
+        now[0] += seconds
+
+    def record_probe(_host, _port, timeout):
+        probe_times.append(now[0])
+        probe_timeouts.append(timeout)
+        index = len(probe_times) - 1
+        result = probe_results[min(index, len(probe_results) - 1)] if probe_results else None
+        if stop_after > 0 and len(probe_times) == stop_after:
+            shutdown_requested[0] = not any(result is None for result in probe_results[:2])
+        return result
+
+    def record_start_offset(instance):
+        offset = os.environ.get("BLACKOUT_CONFIG_OFFSET")
+        start_offsets.append(offset)
+        if offset is not None:
+            shutdown_after_reconnect[0] = True
+        return original_start(instance)
+
+    monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: False)
+    monkeypatch.setattr(
+        daemon,
+        "_daemon_shutdown_requested",
+        lambda *_args: shutdown_after_reconnect[0] or shutdown_requested[0],
+    )
+    monkeypatch.setattr(daemon, "_monotonic", lambda: now[0])
+    monkeypatch.setattr(daemon, "_sleep", advance_time)
+    monkeypatch.setattr(proxy_tester, "test_http_proxy", record_probe)
+    monkeypatch.setattr(_FakeXRayEngine, "start", record_start_offset)
+    recovery = MagicMock()
+    monkeypatch.setattr("blackoutkit.tools.run_network_recovery", recovery)
+
+    daemon.run_daemon_loop(engine)
+    return probe_times, probe_timeouts, start_offsets, recovery
+
+
+def test_early_data_phase_failures_rotate_after_two_bounded_probes(monkeypatch, tmp_path):
+    probe_times, probe_timeouts, start_offsets, recovery = _run_early_proxy_probes(
+        monkeypatch, tmp_path, [None, None], stop_after=2
+    )
+
+    assert len(probe_times) == 2
+    assert probe_times[0] < 5.0
+    assert probe_times[1] - probe_times[0] == pytest.approx(0.1)
+    assert probe_timeouts == [0.2, 0.2]
+    assert start_offsets == [None, "1"]
+    recovery.assert_not_called()
+
+
+def test_early_data_phase_single_failure_does_not_rotate_and_success_resets(monkeypatch, tmp_path):
+    _probe_times, _probe_timeouts, start_offsets, recovery = _run_early_proxy_probes(
+        monkeypatch, tmp_path, [None, 5.0], stop_after=2
+    )
+
+    assert start_offsets == [None]
+    recovery.assert_not_called()
+
+
+def test_early_probe_skips_network_level_engine_and_shutdown(monkeypatch, tmp_path):
+    probe_times, _timeouts, _offsets, _recovery = _run_early_proxy_probes(
+        monkeypatch, tmp_path, [], proxy_available=False, stop_after=0
+    )
+    assert probe_times == []
+
+    probe_times, _timeouts, _offsets, _recovery = _run_early_proxy_probes(
+        monkeypatch, tmp_path, [], shutdown=True, stop_after=0
+    )
+    assert probe_times == []
 
 
 def test_reconnect_delay_settings_are_bounded():

@@ -76,6 +76,8 @@ def _lease_is_current(pid: int, generation: str) -> bool:
 _shutdown_requested = False
 _shutdown_lock = _threading.Lock()
 cfg_lock = None
+_monotonic = time.monotonic
+_sleep = time.sleep
 
 
 def _ensure_dir():
@@ -914,6 +916,10 @@ def _run_daemon_loop(
 
     log.info("Daemon running. Monitoring engines...")
     retry_interval = s.get("retry_interval", 30)
+    early_probe_window = 5.0
+    early_probe_interval = 0.1
+    early_probe_timeout = 0.2
+    engine_started_at = _monotonic()
     max_restarts = s.get("max_retries", 3)
     initial_reconnect_delay = s.get("reconnect_initial_delay", 2)
     maximum_reconnect_delay = s.get("reconnect_max_delay", 60)
@@ -1051,6 +1057,57 @@ def _run_daemon_loop(
         accumulated_rx = 0
         accumulated_tx = 0
         data_phase_failures = 0
+        with cfg_lock:
+            startup_proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
+        early_probe_deadline = (
+            engine_started_at + early_probe_window
+            if startup_proxy_info and s.get("config_rotation", True)
+            else engine_started_at
+        )
+        next_early_probe = engine_started_at + early_probe_interval
+
+        while next_early_probe <= early_probe_deadline:
+            remaining = next_early_probe - _monotonic()
+            if remaining > 0:
+                if _daemon_shutdown_requested(my_pid, generation):
+                    break
+                _sleep(min(remaining, early_probe_interval))
+                continue
+
+            if _daemon_shutdown_requested(my_pid, generation):
+                break
+            alive = [engine for engine in active if engine.is_running()]
+            if not alive:
+                if not _reconnect("All engines stopped unexpectedly."):
+                    break
+                data_phase_failures = 0
+                continue
+
+            with cfg_lock:
+                early_proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
+            if early_proxy_info and s.get("config_rotation", True):
+                early_host, early_port = early_proxy_info
+                if isinstance(early_host, str) and early_host.startswith("socks="):
+                    early_host = early_host.split("=", 1)[1]
+                from ..scanner.proxy_tester import test_http_proxy
+                if test_http_proxy(early_host, early_port, timeout=early_probe_timeout) is None:
+                    data_phase_failures += 1
+                    log.warning(
+                        "Local HTTP proxy probe failed during startup (%d consecutive failure(s)).",
+                        data_phase_failures,
+                    )
+                    if data_phase_failures >= 2:
+                        log.warning("Early data-phase failure confirmed — rotating to next config.")
+                        data_phase_failures = 0
+                        if not _reconnect("Early data-phase drop (local proxy probe failed)."):
+                            break
+                        early_probe_deadline = _monotonic()
+                        next_early_probe = early_probe_deadline + early_probe_interval
+                        continue
+                elif data_phase_failures:
+                    log.info("Local HTTP proxy recovered after %d startup probe failure(s).", data_phase_failures)
+                    data_phase_failures = 0
+            next_early_probe += early_probe_interval
 
         while (
             _wait_for_daemon_delay(retry_interval, my_pid)

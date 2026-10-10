@@ -60,12 +60,13 @@ def test_tcp_port(host: str, port: int, timeout: float = 3.0) -> float | None:
 _httpx_clients = {}
 _httpx_lock = threading.Lock()
 
-def _get_httpx_client(proxy_url: str, timeout: int):
+def _get_httpx_client(proxy_url: str, timeout: float):
     import httpx
+    key = (proxy_url, timeout)
     with _httpx_lock:
-        if proxy_url not in _httpx_clients:
-            _httpx_clients[proxy_url] = httpx.Client(proxy=proxy_url, timeout=timeout)
-        return _httpx_clients[proxy_url]
+        if key not in _httpx_clients:
+            _httpx_clients[key] = httpx.Client(proxy=proxy_url, timeout=timeout)
+        return _httpx_clients[key]
 
 def _cleanup_httpx_clients():
     with _httpx_lock:

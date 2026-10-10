@@ -1,0 +1,36 @@
+from unittest.mock import MagicMock, patch
+
+from blackoutkit.scanner import proxy_tester
+
+
+def test_http_proxy_client_cache_separates_probe_timeouts():
+    proxy_tester._cleanup_httpx_clients()
+    clients = []
+
+    def make_client(*, proxy, timeout):
+        client = MagicMock()
+        client.proxy = proxy
+        client.timeout = timeout
+        clients.append(client)
+        return client
+
+    with patch("httpx.Client", side_effect=make_client):
+        long_timeout = proxy_tester._get_httpx_client("http://127.0.0.1:10809", 5)
+        bounded_timeout = proxy_tester._get_httpx_client("http://127.0.0.1:10809", 0.2)
+
+    assert long_timeout is not bounded_timeout
+    assert long_timeout.timeout == 5
+    assert bounded_timeout.timeout == 0.2
+    assert len(clients) == 2
+    proxy_tester._cleanup_httpx_clients()
+
+
+def test_http_proxy_cache_reuses_matching_timeout():
+    proxy_tester._cleanup_httpx_clients()
+    with patch("httpx.Client") as client_factory:
+        first = proxy_tester._get_httpx_client("http://127.0.0.1:10809", 0.2)
+        second = proxy_tester._get_httpx_client("http://127.0.0.1:10809", 0.2)
+
+    assert second is first
+    client_factory.assert_called_once_with(proxy="http://127.0.0.1:10809", timeout=0.2)
+    proxy_tester._cleanup_httpx_clients()
