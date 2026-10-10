@@ -340,7 +340,7 @@ def test_early_probe_window_starts_when_engine_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(daemon, "_monotonic", lambda: 0.0)
     probes = []
     monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: probes.append(True) or 1.0)
-    monotonic_values = iter([10.0, 16.0])
+    monotonic_values = iter([10.0, 10.0, 16.0])
     monkeypatch.setattr(daemon, "_monotonic", lambda: next(monotonic_values, 16.0))
     monkeypatch.setattr(daemon, "_sleep", lambda *_args: None)
     monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: False)
@@ -361,7 +361,6 @@ def test_early_probe_uses_socks_tester_for_socks_engine(monkeypatch, tmp_path):
     socks_probes = []
     monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: http_probes.append(True) or 1.0)
     monkeypatch.setattr(proxy_tester, "test_socks5_proxy", lambda *_args, **_kwargs: socks_probes.append(True) or 1.0)
-    monkeypatch.setattr(daemon, "_daemon_shutdown_requested", lambda *_args: False)
     monotonic_values = iter([0.0, 0.0, 0.1, 5.1])
     monkeypatch.setattr(daemon, "_monotonic", lambda: next(monotonic_values, 5.2))
     monkeypatch.setattr(daemon, "_sleep", lambda *_args: None)
@@ -383,7 +382,7 @@ def test_early_probe_restarts_window_after_successful_rotation(monkeypatch, tmp_
     probes = []
     monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: probes.append(True) or (None if len(probes) == 1 else 1.0))
     monkeypatch.setattr(daemon, "_daemon_shutdown_requested", lambda *_args: False)
-    monotonic_values = iter([0.0, 0.1, 0.2, 0.3, 5.4, 5.5])
+    monotonic_values = iter([0.0, 0.0, 0.1, 0.2, 0.3, 5.4, 5.5])
     monkeypatch.setattr(daemon, "_monotonic", lambda: next(monotonic_values, 5.6))
     monkeypatch.setattr(daemon, "_sleep", lambda _duration: None)
     monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: False)
