@@ -2,6 +2,7 @@ package dialer
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"math/rand"
 	"testing"
@@ -91,6 +92,31 @@ func TestSplitAtSNIBoundaryPlacesSeededEdgeInsideHostname(t *testing.T) {
 
 func TestSplitAtSNIBoundaryFallsBackWithoutValidParsedPartition(t *testing.T) {
 	withSNI := buildHello(t, "blocked.example.com", true)
+	malformedSNI := append([]byte(nil), withSNI...)
+	hostStart := bytes.Index(malformedSNI, []byte("blocked.example.com"))
+	if hostStart < 0 {
+		t.Fatal("fixture does not contain its hostname")
+	}
+	extensionStart := hostStart - 9
+	extensionLength := int(binary.BigEndian.Uint16(malformedSNI[extensionStart+2 : extensionStart+4]))
+	listLength := int(binary.BigEndian.Uint16(malformedSNI[extensionStart+4 : extensionStart+6]))
+	hostLength := len("blocked.example.com")
+	malformedSNI = append(malformedSNI[:hostStart+hostLength], append([]byte{serverNameTypeHost, 0x00, 0x10, 'x'}, malformedSNI[hostStart+hostLength:]...)...)
+	binary.BigEndian.PutUint16(malformedSNI[extensionStart+2:extensionStart+4], uint16(extensionLength+4))
+	binary.BigEndian.PutUint16(malformedSNI[extensionStart+4:extensionStart+6], uint16(listLength+4))
+	_, handshake, err := splitHandshake(withSNI)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extensionLengthOffset, _, err := parseExtensions(handshake)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originalExtensionsLength := int(binary.BigEndian.Uint16(handshake[extensionLengthOffset : extensionLengthOffset+2]))
+	binary.BigEndian.PutUint16(malformedSNI[recordHeaderLen+handshakeHeaderLen+extensionLengthOffset:recordHeaderLen+handshakeHeaderLen+extensionLengthOffset+2], uint16(originalExtensionsLength+4))
+	binary.BigEndian.PutUint16(malformedSNI[3:5], uint16(len(malformedSNI)-recordHeaderLen))
+	malformedSNI[6] = byte((len(malformedSNI) - recordHeaderLen - handshakeHeaderLen) >> 16)
+	binary.BigEndian.PutUint16(malformedSNI[7:9], uint16(len(malformedSNI)-recordHeaderLen-handshakeHeaderLen))
 	withoutSNI := buildHello(t, "", false)
 	cases := []struct {
 		name string
@@ -99,6 +125,7 @@ func TestSplitAtSNIBoundaryFallsBackWithoutValidParsedPartition(t *testing.T) {
 		max  int
 	}{
 		{name: "no feasible SNI partition", data: withSNI, min: 30, max: 30},
+		{name: "malformed later SNI entry", data: malformedSNI, min: 8, max: 24},
 		{name: "no SNI extension", data: withoutSNI, min: 8, max: 24},
 		{name: "malformed ClientHello", data: []byte{recordTypeHandshake, 0x03}, min: 8, max: 24},
 	}

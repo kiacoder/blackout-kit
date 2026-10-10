@@ -256,7 +256,12 @@ func firstHostNameByteBounds(data []byte) (int, int, bool) {
 	if listEnd > len(data) {
 		return 0, 0, false
 	}
-	for off := 2; off+3 <= listEnd; {
+	hostStart, hostEnd := 0, 0
+	foundHost := false
+	for off := 2; off < listEnd; {
+		if off+3 > listEnd {
+			return 0, 0, false
+		}
 		nameType := data[off]
 		nameLen := int(binary.BigEndian.Uint16(data[off+1 : off+3]))
 		nameStart := off + 3
@@ -264,12 +269,16 @@ func firstHostNameByteBounds(data []byte) (int, int, bool) {
 		if nameEnd > listEnd {
 			return 0, 0, false
 		}
-		if nameType == serverNameTypeHost {
-			return nameStart, nameEnd, true
+		if nameType == serverNameTypeHost && !foundHost {
+			hostStart, hostEnd = nameStart, nameEnd
+			foundHost = true
 		}
 		off = nameEnd
 	}
-	return 0, 0, false
+	if !foundHost {
+		return 0, 0, false
+	}
+	return hostStart, hostEnd, true
 }
 
 // firstHostName reads the first host_name entry out of a server_name_list.
