@@ -14,6 +14,7 @@ import socket
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -631,30 +632,86 @@ def benchmark_dns(domain: str = "www.google.com", repeat: int = 3) -> list[tuple
     return results
 
 
+_DOH_DEFAULT_RESOLVERS = (
+    "https://1.1.1.1/dns-query",
+    "https://9.9.9.9/dns-query",
+    "https://8.8.8.8/dns-query",
+)
+_DOH_ALLOWED_RESOLVER_HOSTS = {"1.1.1.1", "9.9.9.9", "8.8.8.8"}
+
+
+def _doh_resolvers() -> tuple[str, ...]:
+    """Return one valid configured resolver or the ordered built-in defaults."""
+    configured = os.environ.get("BLACKOUT_DOH_RESOLVER")
+    if configured:
+        try:
+            parsed = urllib.parse.urlsplit(configured)
+            if (
+                parsed.scheme.lower() == "https"
+                and parsed.hostname in _DOH_ALLOWED_RESOLVER_HOSTS
+                and parsed.port in (None, 443)
+                and parsed.username is None
+                and parsed.password is None
+                and "?" not in configured
+                and "#" not in configured
+            ):
+                return (configured,)
+        except ValueError:
+            pass
+    return _DOH_DEFAULT_RESOLVERS
+
+
+class _DoHNoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Reject DoH redirects so requests cannot leave the trusted endpoint."""
+
+    handler_order = 400
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(req.full_url, code, msg, headers, fp)
+
+
 def resolve_doh(domain: str, timeout: float = 5.0) -> str | None:
-    """Resolve a domain to an IP using Cloudflare DoH (DNS over HTTPS)."""
-    import ipaddress
-    import json
-    import urllib.request
+    """Resolve a domain to an IPv4 address using ordered HTTPS DoH resolvers."""
     try:
         ipaddress.ip_address(domain)
         return domain
     except ValueError:
         pass
 
-    try:
-        req = urllib.request.Request(
-            f"https://1.1.1.1/dns-query?name={domain}&type=A",
-            headers={"accept": "application/dns-json"}
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            if data.get("Status") == 0 and data.get("Answer"):
-                for answer in data["Answer"]:
-                    if answer.get("type") == 1:  # A record
-                        return answer["data"]
-    except Exception as e:
-        _log.warning("DoH bootstrap failed for %s: %s", domain, e)
+    for endpoint in _doh_resolvers():
+        parts = urllib.parse.urlsplit(endpoint)
+        query = urllib.parse.urlencode({"name": domain, "type": "A"})
+        url = urllib.parse.urlunsplit((
+            parts.scheme,
+            parts.netloc,
+            parts.path,
+            f"{parts.query}&{query}" if parts.query else query,
+            "",
+        ))
+        req = urllib.request.Request(url, headers={"Accept": "application/dns-json"})
+        try:
+            opener = urllib.request.build_opener(_DoHNoRedirectHandler())
+            with opener.open(req, timeout=timeout) as resp:
+                if resp.getcode() != 200:
+                    raise ValueError(f"unexpected HTTP status {resp.getcode()}")
+                data = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(data, dict) or data.get("Status") != 0:
+                raise ValueError("invalid DoH response status")
+            answers = data.get("Answer")
+            if not isinstance(answers, list):
+                raise ValueError("DoH response has no answer list")
+            for answer in answers:
+                if not isinstance(answer, dict) or answer.get("type") != 1:
+                    continue
+                try:
+                    address = ipaddress.ip_address(answer.get("data", ""))
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(address, ipaddress.IPv4Address):
+                    return str(address)
+            raise ValueError("DoH response has no IPv4 A answer")
+        except Exception as exc:
+            _log.warning("DoH bootstrap failed for %s via %s: %s", domain, endpoint, exc)
     return None
 
 
