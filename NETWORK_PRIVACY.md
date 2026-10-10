@@ -137,6 +137,7 @@ build, and a proxy operator can see the traffic it carries. Route selection is d
 | Dashboard / REST | `127.0.0.1` | 8080 | `blackout api start` |
 | Operator event stream (SSE) | `127.0.0.1` | 8787 | `blackout events serve` — off unless started, read-only, unauthenticated (any local process can read it) |
 | Core daemon control channel | Windows named pipe `\\.\pipe\blackout_ipc`, Linux Unix socket `/tmp/blackout.sock` | — | the supervised engine daemon; local IPC only, no TCP socket |
+| v2 SOCKS tunnel (blackout-core) | `127.0.0.1` or `[::1]` only — non-loopback binds are refused in code | 18080 (IPC `listen` override) | `start {"engine":"socks-tunnel"}` over the control channel; loopback-only SOCKS5 CONNECT forwarder that shapes the outbound ClientHello |
 | Neighbour share forwarder | `127.0.0.1` **unless** you set `neighbor_bind_lan` | 10809 | `blackout neighbor share` |
 | Neighbour discovery beacon | UDP multicast `239.255.42.99:51820` | — | `blackout neighbor share` / `discover`; LAN-local, no internet |
 | Honeypot decoy listener | `0.0.0.0` (see note) | 22, 80, 445, 3389, 8080 | **Only** `blackout tools honeypot`, and that is the point of the feature |

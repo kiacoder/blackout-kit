@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-10-10
+
+### Added
+- **The v2 dialer primitives now have a live outbound path.** New Go package `engine/v2/pkg/tunnel` is a loopback-only SOCKS5 CONNECT forwarder: it sniffs the client's first record, and when it is a TLS ClientHello it writes that record upstream through `dialer.WriteHello` — fake-SNI rewriting plus randomized SNI-boundary segmentation with configured chunk/delay bounds — then relays everything else bidirectionally with byte counters. Plain non-TLS first bytes pass through unshaped. This is pure userspace TCP relaying: no raw packets, no forged TCP flags, no zero-window packets, and no FEC frames on the wire.
+- **blackout-core can start and stop the tunnel over IPC.** `start {"engine":"socks-tunnel","listen":"127.0.0.1:18080"}` opens the forwarder (non-loopback binds are refused at both the IPC and tunnel layers), `StartResult.Listen` carries the bound address, relayed bytes flow into `Telemetry.bytes_in`/`bytes_out`, `tune` takes effect without a restart, and `stop` force-closes live sessions (a TCP relay only ends when a peer hangs up, so graceful draining would stall). Honest scope: the tunnel is reachable through the v2 control channel only; the Python CLI does not yet launch or manage it.
+
+### Fixed
+- **IPC server race caught by `-race`:** `ipc.Server.Serve` assigned the listener handle while `Shutdown` read it without a shared lock; both sides are now guarded.
+- **Tunnel hardening from the pre-release review:** a session whose opening bytes are not a clean ClientHello kept a stale 10-second read deadline that later killed mid-stream relays (fixed — the deadline is cleared on every fallback path, and a record that promises bytes it never delivers now tears the session down instead of silently truncating it); a `Close` racing the accept loop could strand a live untracked session (fixed — sessions register synchronously in the accept loop and `Close` waits for `Serve` to exit before its force-close sweep); an unexpected accept-loop death no longer leaves `status=running` pointing at a dead tunnel; and `tune` now mirrors `ipc.MemController` semantics, treating zeroed fields as "keep current" so tuning only the fake SNI cannot reset chunking to the minimum.
+
+### Not in scope (unchanged from 1.3.0)
+- TCP-flag spoofing and zero-window manipulation remain unimplemented: they require raw packet injection (WinDivert/NFQUEUE), which the userspace v2 architecture deliberately does not perform.
+- HyperPulse FEC is still a standalone codec/policy; no peer wire protocol exists, so nothing transmits parity shards.
+
 ## [1.3.0] - 2026-10-10
 
 ### Security

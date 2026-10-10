@@ -3,6 +3,7 @@ import json
 import urllib.error
 import urllib.request
 from unittest.mock import patch
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -283,3 +284,17 @@ def test_resolve_doh_returns_ipv4_literal_without_network(monkeypatch):
         assert tools.resolve_doh("192.0.2.9") == "192.0.2.9"
 
     urlopen.assert_not_called()
+
+
+def test_release_version_metadata_consistent():
+    """pyproject and the package must both carry the release version."""
+    import tomllib  # noqa: PLC0415
+
+    import blackoutkit  # noqa: PLC0415
+
+    pyproject = Path(__file__).resolve().parent.parent / "pyproject.toml"
+    with pyproject.open("rb") as fh:
+        data = tomllib.load(fh)
+
+    assert data["project"]["version"] == "1.4.0"
+    assert blackoutkit.__version__ == "1.4.0"
