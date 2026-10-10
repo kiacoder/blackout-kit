@@ -276,7 +276,10 @@ def _run_early_proxy_probes(monkeypatch, tmp_path, probe_results, *, proxy_url="
         return probe_results[min(index, len(probe_results) - 1)] if probe_results else None
 
     def record_start_offset(instance):
-        start_offsets.append(os.environ.get("BLACKOUT_CONFIG_OFFSET"))
+        offset = os.environ.get("BLACKOUT_CONFIG_OFFSET")
+        start_offsets.append(offset)
+        if offset is not None:
+            shutdown_requested[0] = True
         return original_start(instance)
 
     monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: False)
