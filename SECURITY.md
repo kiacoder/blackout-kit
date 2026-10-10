@@ -166,7 +166,7 @@ No site accepts arbitrary intranet access beyond what the user explicitly config
 The complete, row-by-row egress inventory lives in [`NETWORK_PRIVACY.md`](NETWORK_PRIVACY.md):
 every endpoint, the command that reaches it, and how to confirm it. Nothing there runs on a timer.
 
-Blackout Kit has no analytics or telemetry backend and never phones home on its own. It does contact external hosts when **you** invoke features that require it: update checks (GitHub releases), Cloudflare IP scanning, ISP/country detection (ip-api.com), DNS-over-HTTPS queries, engine traffic to servers you configure, and subscription imports you request. No results are reported anywhere.
+Blackout Kit has no analytics or telemetry backend and never phones home on its own. It does contact external hosts when **you** invoke features that require it: update checks (GitHub releases), Cloudflare IP scanning, ISP/country detection (`https://ipapi.co/json/`, then `https://ipinfo.io/json` over HTTPS), DNS-over-HTTPS queries, engine traffic to servers you configure, and subscription imports you request. ISP lookup uses default TLS certificate verification and is best-effort: provider/network/HTTP-status (including rate-limit)/JSON/schema failures advance to the next provider, and returns no result if both fail. No results are reported anywhere.
 
 ### Operator Observability & Support Bundles
 - Structured events, snapshots, and recommendations are **local only**; nothing is uploaded by Blackout Kit, ever.

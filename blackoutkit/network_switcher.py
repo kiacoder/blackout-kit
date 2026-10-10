@@ -12,18 +12,22 @@ import time
 import urllib.parse
 import urllib.request
 
-# Fixed, allowlisted ISP lookup endpoints.
-_ISP_LOOKUP_HOSTS = frozenset({"ip-api.com", "ipinfo.io"})
+# Fixed, HTTPS-only ISP lookup endpoints in priority order.
+_ISP_LOOKUP_HOSTS = frozenset({"ipapi.co", "ipinfo.io"})
+_ISP_LOOKUP_ENDPOINTS = (
+    ("ipapi", "https://ipapi.co/json/"),
+    ("ipinfo", "https://ipinfo.io/json"),
+)
 
 
 def _validated_lookup_url(url: str) -> str:
-    """Return `url` only after allowlist validation; raises otherwise.
+    """Return `url` only after HTTPS and host allowlist validation; raises otherwise.
 
     Keep this guard in-module so static analysis can see the full
     validation-to-request flow.
     """
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in ("http", "https") or parsed.hostname not in _ISP_LOOKUP_HOSTS:
+    if parsed.scheme != "https" or parsed.hostname not in _ISP_LOOKUP_HOSTS:
         raise ValueError("unexpected ISP lookup endpoint")
     return url
 
@@ -221,55 +225,60 @@ def get_wifi_signal() -> int | None:
 
 def get_isp_info(timeout: float = 6.0) -> IspInfo | None:
     """
-    Look up current ISP via ip-api.com (fallback: ipinfo.io).
+    Look up current ISP via ipapi.co (fallback: ipinfo.io), using HTTPS only.
     Both APIs auto-detect the requesting IP — no key needed.
     Returns IspInfo or None if all APIs fail.
     """
-    # ── Primary: ip-api.com ──
-    try:
-        req = urllib.request.Request(
-            _validated_lookup_url("http://ip-api.com/json?fields=isp,org,as,city,country,countryCode"),
-            headers={"User-Agent": "blackout-kit/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode())
+    for provider, endpoint in _ISP_LOOKUP_ENDPOINTS:
+        try:
+            req = urllib.request.Request(
+                _validated_lookup_url(endpoint),
+                headers={"User-Agent": "blackout-kit/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode())
 
-        raw_as = data.get("as", "")            # e.g. "AS197207 Mobile ..."
-        asn = raw_as.split()[0] if raw_as else ""
-        isp_name = data.get("isp", "Unknown")
-        return IspInfo(
-            isp=isp_name,
-            isp_short=_ISP_SHORT.get(asn, isp_name),
-            asn=asn,
-            city=data.get("city", ""),
-            country=data.get("country", ""),
-            country_code=data.get("countryCode", ""),
-        )
-    except Exception as e:
-        _log.debug("ip-api.com lookup failed: %s", e)
+            if not isinstance(data, dict):
+                raise ValueError("unexpected ISP lookup response shape")
 
-    # ── Fallback: ipinfo.io ──
-    try:
-        req = urllib.request.Request(
-            _validated_lookup_url("https://ipinfo.io/json"),
-            headers={"User-Agent": "blackout-kit/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode())
+            if provider == "ipapi":
+                asn = data.get("asn")
+                isp_name = data.get("org")
+                city = data.get("city", "")
+                country = data.get("country_name", "")
+                country_code = data.get("country_code", "")
+            else:
+                org = data.get("org")
+                if isinstance(org, str) and org.strip():
+                    asn, _, isp_name = org.strip().partition(" ")
+                    isp_name = isp_name.strip()
+                else:
+                    asn, isp_name = "", ""
+                city = data.get("city", "")
+                country_code = data.get("country", "")
+                country = country_code
 
-        org = data.get("org", "")              # e.g. "AS44244 MTN Irancell"
-        asn = org.split()[0] if org else ""
-        isp_name = " ".join(org.split()[1:]) if " " in org else org
-        return IspInfo(
-            isp=isp_name or "Unknown",
-            isp_short=_ISP_SHORT.get(asn, isp_name or "Unknown"),
-            asn=asn,
-            city=data.get("city", ""),
-            country=data.get("country", ""),
-            country_code=data.get("country", ""),
-        )
-    except Exception as e:
-        _log.debug("ipinfo.io lookup failed: %s", e)
+            if (
+                not isinstance(asn, str)
+                or not asn.strip()
+                or not isinstance(isp_name, str)
+                or not isp_name.strip()
+                or not all(isinstance(value, str) for value in (city, country, country_code))
+            ):
+                raise ValueError("unexpected ISP lookup response schema")
+
+            asn = asn.strip()
+            isp_name = isp_name.strip()
+            return IspInfo(
+                isp=isp_name,
+                isp_short=_ISP_SHORT.get(asn, isp_name),
+                asn=asn,
+                city=city,
+                country=country,
+                country_code=country_code,
+            )
+        except Exception as e:
+            _log.debug("%s lookup failed: %s", provider, e)
 
     _log.debug("All ISP lookup APIs failed — no internet or both endpoints unreachable.")
     return None
