@@ -334,6 +334,7 @@ def test_early_probe_window_starts_when_engine_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "get_engine_proxy_details", lambda *_args: ("127.0.0.1", 10809))
     monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
     monkeypatch.setattr(daemon, "_daemon_shutdown_requested", lambda *_args: False)
+    monkeypatch.setattr(daemon, "_monotonic", lambda: 0.0)
     probes = []
     monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: probes.append(True) or 1.0)
     monotonic_values = iter([10.0, 16.0])
