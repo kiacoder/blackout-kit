@@ -293,6 +293,9 @@ class XRayEngine(Engine):
                 "shortId": c.short_id,
                 "spiderX": c.spider_x,
             }
+        elif str(c.security).lower() == "none":
+            # Plain-TCP/WS transport (e.g. self-hosted test nodes): no TLS layer.
+            stream["security"] = "none"
         else:
             mode = _sec.get_current_mode()
             allow_insecure, _warn = _cb.should_allow_insecure(c.address, c.port, mode)

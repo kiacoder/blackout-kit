@@ -238,6 +238,9 @@ def _parse_vmess(uri: str) -> ProxyConfig:
         host      = data.get("host", ""),
         path      = data.get("path", "/"),
         transport = data.get("net", "ws"),
+        # V2Ray share URIs carry "" for plain connections and "tls" for TLS;
+        # defaulting to TLS broke every security:none VMess config.
+        security  = "tls" if str(data.get("tls", "")).lower() == "tls" else "none",
         name      = data.get("ps", ""),
         raw_uri   = uri,
     )
