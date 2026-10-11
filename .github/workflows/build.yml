@@ -275,7 +275,7 @@ jobs:
         $PSNativeCommandUseErrorActionPreference = $true
         go build -o ../../dist/blackout-core-windows-amd64.exe ./cmd/blackout-core
         if (-not (Test-Path ../../dist/blackout-core-windows-amd64.exe)) { throw "blackout-core build output is missing" }
-        & ..\\dist\blackout-core-windows-amd64.exe -version
+        & ../../dist/blackout-core-windows-amd64.exe -version
 
     # Attest the executable right after it is produced, before it is uploaded.
     # `gh attestation verify blackout.exe --repo kiacoder/blackout-kit` then
