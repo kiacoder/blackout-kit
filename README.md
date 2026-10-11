@@ -21,7 +21,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.4.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.5.0-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
@@ -137,13 +137,14 @@ The README stays high-level. The two guides go deeper in separate directions on 
 
 ## Current feature map
 
-Blackout Kit 1.4.0 currently includes:
+Blackout Kit 1.5.0 currently includes:
 
 - **Typer-based public CLI** with backward-compatible delegation into the proven command dispatcher
 - **Zero-flag launcher flow** that always opens a keyboard-navigable terminal chooser (Terminal CLI / Windows App); the GUI opens only when explicitly selected
 - **Desktop GUI** built with `CustomTkinter`
 - **MCP stdio server** for AI clients with a constrained, documented tool surface
 - **Iranian ISP sub-profiles** — `blackout isp list`, transient `--profile ir-mci|ir-irancell|...` carrier presets, an interactive carrier picker on bare `blackout connect` (with ASN auto-detect), a one-connection `--sni-spoof <domain>` flag, and `blackout tune fragment` which pairs a clean IP with a TLS fragmentation setting measured through real handshakes; all overrides ride the temporary mechanism and never rewrite saved settings
+- **v2 socks-tunnel engine** — `blackout start socks-tunnel` supervises the Go `blackout-core` daemon over its local IPC channel and exposes a loopback SOCKS5 tunnel with fake-SNI rewrite and randomized SNI-boundary segmentation (`v2_tunnel_port`, default 18080). Build the daemon with `go -C engine/v2 build -o bins/blackout-core.exe ./cmd/blackout-core` or set `BLACKOUT_CORE_BIN`
 - **Operator observability layer** — canonical `blackout snapshot`, deterministic `blackout operator recommend` with safety classes, sanitized `blackout support-bundle`, local event journal, and an opt-in loopback SSE event stream. Deterministic core logic, not an embedded AI model; external AI systems consume it via MCP
 - **Route recommendation dashboard** based on local readiness, platform support, saved protocols, settings, country profile, and saved health history
 - **Local readiness checks** that do not contact remote hosts or mutate state

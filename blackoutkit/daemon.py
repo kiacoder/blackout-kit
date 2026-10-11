@@ -458,6 +458,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
                 logging.debug("Failed to close devnull file: %s", close_e)
 
     from .engines.amneziawg import AmneziaWGEngine
+    from .engines.socks_tunnel import SocksTunnelEngine
     from .engines.singbox_proxy import Hysteria2Engine, TuicEngine
     from .engines.tun import TUNEngine
     from .engines.xray import XRayEngine
@@ -540,6 +541,7 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         "softether":  lambda: (SoftEtherEngine(),),
         "hysteria2":  lambda: (Hysteria2Engine(),),
         "tuic":       lambda: (TuicEngine(),),
+        "socks-tunnel": lambda: (SocksTunnelEngine(),),
         "awg":        lambda: (AmneziaWGEngine(),),
         "legend":     lambda: (TorEngine(), SNIEngine(), XRayEngine()),
     }

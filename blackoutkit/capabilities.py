@@ -26,6 +26,7 @@ PUBLIC_ENGINE_NAMES = (
     "awg",
     "hotspot-shield",
     "legend",
+    "socks-tunnel",
 )
 
 
@@ -243,6 +244,15 @@ _CAPABILITIES: dict[str, EngineCapability] = {
         privilege="none", system_effects=("process", "system_proxy"),
         remote_actions=("upstream VPN connection",),
         notes="Uses Windows native RRAS VPN stack. Free tier includes 95 servers across 4 CDN networks.",
+    ),
+    "socks-tunnel": EngineCapability(
+        "socks-tunnel", "v2 socks-tunnel", "DPI bypass", "v2 loopback SOCKS5 tunnel with fake-SNI rewrite and randomized SNI-boundary segmentation (blackout-core daemon)",
+        ("win32",), upstream_requirement="none", local_proxy=True,
+        listeners=("SOCKS5 tunnel (v2_tunnel_port)",),
+        local_ports=("v2_tunnel_port",),
+        system_effects=("process", "system_proxy"),
+        remote_actions=("optional Cloudflare relay via shaped ClientHello",),
+        notes="Requires the blackout-core binary. Userspace TCP relaying only: no raw packets, no forged flags, no zero-window, no FEC on the wire.",
     ),
 }
 

@@ -137,7 +137,7 @@ def test_direct(*args, **kwargs):
 
 # ──────────────────────────── Engine map ─────────────────────────
 
-ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend"]
+ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend", "socks-tunnel"]
 
 def _get_engine_classes(name: str) -> tuple:
     if sys.platform.startswith("linux") and name == "tun":

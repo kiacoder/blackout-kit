@@ -24,6 +24,7 @@ from .psiphon import PsiphonEngine
 from .singbox_proxy import Hysteria2Engine, SingBoxProxyEngine, TuicEngine
 from .sni import SNIEngine
 from .softether import SoftEtherEngine
+from .socks_tunnel import SocksTunnelEngine
 from .tor import TorEngine
 from .tun import TUNEngine
 from .warp import WARPEngine
@@ -53,6 +54,7 @@ ENGINE_REGISTRY: dict[str, type[Engine]] = {
     "tuic":       TuicEngine,
     "awg":        AmneziaWGEngine,
     "hotspot-shield": HotspotShieldEngine,
+    "socks-tunnel": SocksTunnelEngine,
 }
 
 

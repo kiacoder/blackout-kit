@@ -47,6 +47,7 @@ DEFAULTS = {
     "xray_http_port":       10809,
     "psiphon_http_port":    8081,
     "psiphon_socks_port":   1081,
+    "v2_tunnel_port":       18080,
 
     # SNI Engine
     "sni_connect_ip":       "104.19.229.21",
@@ -202,7 +203,7 @@ SETTING_GROUPS = {
     "Network Ports": (
         "sni_listen_port", "sni_connect_port", "xray_socks_port", "xray_http_port",
         "psiphon_http_port", "psiphon_socks_port", "proxy_port", "neighbor_proxy_port",
-        "gas_proxy_port", "softether_port",
+        "gas_proxy_port", "softether_port", "v2_tunnel_port",
     ),
     "SNI Engine": (
         "sni_connect_ip", "sni_custom_fakes", "sni_fake_sni", "sni_always_test_all_ips",
@@ -302,6 +303,7 @@ _VALIDATORS: dict[str, tuple] = {
     "xray_http_port":     (int,   *_PORT_RANGE),
     "psiphon_http_port":  (int,   *_PORT_RANGE),
     "psiphon_socks_port": (int,   *_PORT_RANGE),
+    "v2_tunnel_port":     (int,   *_PORT_RANGE),
     "sni_connect_port":   (int,   *_PORT_RANGE),
     "proxy_port":         (int,   *_PORT_RANGE),
     "softether_port":     (int,   *_PORT_RANGE),
@@ -626,6 +628,7 @@ def describe(key: str) -> str:
     descriptions = {
         "sni_listen_port":    "Local port the SNI spoofer listens on",
         "xray_socks_port":    "XRay SOCKS5 proxy port",
+        "v2_tunnel_port":     "v2 socks-tunnel loopback port (blackout-core)",
         "xray_http_port":     "XRay HTTP proxy port (auto-set as system proxy)",
         "sni_connect_ip":     "Cloudflare IP the SNI spoofer connects to",
         "sni_connect_port":   "Port to connect on Cloudflare side (443)",
@@ -713,6 +716,8 @@ def get_engine_proxy_details(engine_name: str, settings: dict | None = None) -> 
         return "socks=127.0.0.1", 9050
     elif engine_name == "warp":
         return "socks=127.0.0.1", 1080
+    elif engine_name == "socks-tunnel":
+        return "socks=127.0.0.1", s.get("v2_tunnel_port", 18080)
     elif engine_name in ("hysteria2", "tuic"):
         return "socks=127.0.0.1", s.get("xray_socks_port", 10808)
     return None
