@@ -724,7 +724,8 @@ def test_release_job_attests_every_published_asset():
     subjects = str(attests[0]["with"]["subject-path"])
     for asset in ("dist/blackout.exe", "dist/checksums.txt",
                   "dist/blackout-engine-linux-amd64", "dist/blackout-source.zip",
-                  "dist/blackout.exe.sha256"):
+                  "dist/blackout.exe.sha256",
+                  "dist/blackout-core-windows-amd64.exe", "dist/blackout-core-linux-amd64"):
         assert asset in subjects, f"{asset} is published but never attested"
 
     # Provenance binds the exact bytes that get published: attest once the

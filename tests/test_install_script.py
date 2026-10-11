@@ -76,12 +76,14 @@ def test_release_job_generates_and_publishes_checksums():
     steps = workflow["jobs"]["release"]["steps"]
     names = [step.get("name", "") for step in steps]
     generate = steps[names.index("Generate and verify SHA-256 checksums")]["run"]
-    assert "sha256sum blackout.exe blackout-engine-linux-amd64 blackout-source.zip > checksums.txt" in generate
+    assert "sha256sum blackout.exe blackout-core-windows-amd64.exe blackout-engine-linux-amd64 blackout-core-linux-amd64 blackout-source.zip > checksums.txt" in generate
     assert "sha256sum blackout.exe > blackout.exe.sha256" in generate
     assert "sha256sum -c checksums.txt" in generate
     publish = steps[names.index("Create Release")]["with"]["files"]
     assert "dist/checksums.txt" in publish
     assert "dist/blackout.exe.sha256" in publish
+    assert "dist/blackout-core-windows-amd64.exe" in publish
+    assert "dist/blackout-core-linux-amd64" in publish
     # The checksum step must run after the artifacts exist and before publishing.
     assert names.index("Generate and verify SHA-256 checksums") < names.index("Create Release")
 
