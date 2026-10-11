@@ -331,6 +331,10 @@ def test_check_installed_covers_blackout_core(tmp_path, monkeypatch):
         import pytest
         pytest.skip("PE structural check is Windows-shaped")
     monkeypatch.setattr(downloader, "BINS_DIR", tmp_path)
+    provenance = tmp_path / ".provenance.json"
+    provenance.write_text("{}", encoding="utf-8")
+    if hasattr(downloader, "_PROVENANCE_FILE"):
+        monkeypatch.setattr(downloader, "_PROVENANCE_FILE", provenance)
     import struct
     # Minimal PE: "MZ" + padding + e_lfanew pointing EXACTLY at "PE\0\0".
     e_lfanew = 0x40

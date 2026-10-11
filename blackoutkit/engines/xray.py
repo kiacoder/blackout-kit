@@ -210,8 +210,13 @@ class XRayEngine(Engine):
             self._log.info("LEGEND mode: Chaining XRay outbound through Tor (127.0.0.1:9050)")
 
         # ── Fragment Mode (TIC 2026 Evasion) ─────────────────────
+        # NOTE: never fragment a TLS/REALITY outbound — splitting the records
+        # of a real TLS handshake corrupts it (verified: every fetch times out
+        # with fragment+TLS, works instantly without). Fragmentation is only
+        # meaningful for plaintext outbounds, where it hides protocol shapes.
         frag = s.get("xray_fragment")
-        if frag and "," in frag:
+        uses_tls = str(getattr(self.proxy_config, "security", "")).lower() in ("tls", "reality")
+        if frag and "," in frag and not uses_tls:
             try:
                 parts = frag.split(",")
                 fragment_settings = {}
@@ -454,6 +459,27 @@ class XRayEngine(Engine):
                 self.stop()
                 return False
             self._log.info("XRay ready via Linux runner socks=%d http=%d.", self.socks_port, self.http_port)
+            return True
+
+        # Prefer the standalone xray.exe: it is current Xray-core (REALITY,
+        # modern uTLS), while the embedded core DLL carries an old xray that
+        # cannot build REALITY outbounds. The DLL stays as the fallback for
+        # installations without the standalone binary.
+        standalone = self.find_binary(["xray.exe"] if sys.platform == "win32" else ["xray"])
+        if standalone:
+            self._log.info("Launching standalone Xray (%s)", standalone)
+            if not self.start_process(self.binary_command(standalone, "run", "--config", str(config_path))):
+                return False
+            if not self.wait_for_port(self.http_port, timeout=10.0):
+                self._log.error("Standalone Xray did not open HTTP port %d within 10s.", self.http_port)
+                self.stop()
+                return False
+            if not self._is_reality_config():
+                self._start_cert_monitor(mode)
+            self._log.info(
+                "XRay ready (standalone) socks=%d http=%d.",
+                self.socks_port, self.http_port,
+            )
             return True
 
         from ..core import get_core_dll
