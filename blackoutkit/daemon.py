@@ -526,6 +526,15 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
 
     log.info(f"Daemon starting (PID {os.getpid()}). Engine: {engine_name}")
 
+    # Safety net: whatever way this process ends (clean stop, exception, kill
+    # from Task Manager reaching Python first), the system proxy must never
+    # keep pointing at a dead local port. force_clear_dead_proxy only acts
+    # when the proxy targets a Blackout port with NO listener, so a healthy
+    # tunnel or an unrelated user proxy is never touched.
+    import atexit
+    from .proxy_manager import force_clear_dead_proxy
+    atexit.register(force_clear_dead_proxy)
+
     ENGINE_MAP = {
         "sni":        lambda: (SNIEngine(), XRayEngine()),
         "xray":       lambda: (XRayEngine(),),

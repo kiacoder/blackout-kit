@@ -139,6 +139,64 @@ def _restore_environment_proxy_snapshot(status: dict) -> bool:
     return True
 
 
+def force_clear_dead_proxy(ports: tuple[int, ...] | None = None) -> bool:
+    """Clear the system proxy when it points at a dead local Blackout port.
+
+    This is the safety net for the kill/crash path: if ProxyEnable=1 and
+    ProxyServer targets 127.0.0.1 on one of our known proxy ports while
+    NOTHING is listening there, every app on the machine is blackholed.
+    Ownership does not matter in that state — the setting is broken by
+    definition. Only fires when the target port is genuinely unreachable,
+    so a healthy unrelated proxy (or a live Blackout tunnel) is never touched.
+    """
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+    except ImportError:
+        return False
+    key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
+    try:
+        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_READ)
+        try:
+            enabled = winreg.QueryValueEx(key, "ProxyEnable")[0]
+            server = str(winreg.QueryValueEx(key, "ProxyServer")[0] or "")
+        finally:
+            winreg.CloseKey(key)
+    except (FileNotFoundError, OSError):
+        return False
+    if not enabled or "=" in server or ":" not in server:
+        return False
+    host, _, port_str = server.rpartition(":")
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return False
+    try:
+        port = int(port_str)
+    except ValueError:
+        return False
+    if ports is None:
+        from . import settings as cfg
+        ports = (
+            cfg.DEFAULTS.get("xray_http_port", 10809),
+            cfg.DEFAULTS.get("xray_socks_port", 10808),
+            cfg.DEFAULTS.get("sni_listen_port", 40443),
+            cfg.DEFAULTS.get("v2_tunnel_port", 18080),
+        )
+        try:
+            ports = ports + (int(cfg.load().get("xray_http_port", 10809)),)
+        except Exception:
+            pass
+    if port not in ports:
+        return False
+    import socket
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=0.5).close()
+        return False  # something IS listening — not dead, leave it alone
+    except OSError:
+        pass
+    return clear_system_proxy()
+
+
 def cleanup_owned_system_proxy() -> bool:
     """Restore an owned proxy only when no other process changed it."""
     record = _read_proxy_ownership()

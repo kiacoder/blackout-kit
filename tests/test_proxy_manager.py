@@ -227,3 +227,97 @@ def test_install_console_close_handler_linux():
 @patch("ctypes.windll.kernel32.SetConsoleCtrlHandler", side_effect=Exception("err"))
 def test_install_console_close_handler_win32_exception(mock_set, mock_func):
     install_console_close_handler()
+
+
+# ── force_clear_dead_proxy safety net ────────────────────────────────────────
+
+def _set_win_proxy(enabled: int, server: str, monkeypatch):
+    """Drive force_clear_dead_proxy's registry reads through a fake winreg."""
+    import types
+
+    class FakeKey:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def QueryValueEx(self, name):
+            if name == "ProxyEnable":
+                return enabled, None
+            if name == "ProxyServer":
+                return server, None
+            raise FileNotFoundError(name)
+
+        def SetValueEx(self, *a):
+            pass
+
+        def Close(self):
+            pass
+
+    fake = types.ModuleType("winreg")
+    fake.OpenKey = lambda *a, **k: FakeKey()
+    fake.CloseKey = lambda key: None
+
+    def _query(key, name):
+        return key.QueryValueEx(name)
+
+    fake.QueryValueEx = _query
+    fake.KEY_READ = fake.KEY_WRITE = 0
+    fake.REG_DWORD = fake.REG_SZ = 0
+    fake.HKEY_CURRENT_USER = 0
+    fake.FileNotFoundError = FileNotFoundError
+    monkeypatch.setitem(__import__("sys").modules, "winreg", fake)
+
+
+def test_force_clear_ignores_disabled_proxy(monkeypatch):
+    from blackoutkit import proxy_manager as pm
+    _set_win_proxy(0, "127.0.0.1:10809", monkeypatch)
+    called = {"clear": 0}
+    monkeypatch.setattr(pm, "clear_system_proxy", lambda: called.__setitem__("clear", called["clear"] + 1) or True)
+    assert pm.force_clear_dead_proxy() is False
+    assert called["clear"] == 0
+
+
+def test_force_clear_ignores_external_proxy_host(monkeypatch):
+    from blackoutkit import proxy_manager as pm
+    _set_win_proxy(1, "192.168.1.10:8080", monkeypatch)
+    called = {"clear": 0}
+    monkeypatch.setattr(pm, "clear_system_proxy", lambda: called.__setitem__("clear", 1) or True)
+    assert pm.force_clear_dead_proxy() is False
+    assert called["clear"] == 0
+
+
+def test_force_clear_ignores_live_listener(monkeypatch):
+    """If something IS listening on the target port, never touch the proxy."""
+    import socket
+    from blackoutkit import proxy_manager as pm
+    blocker = socket.socket()
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(1)
+    port = blocker.getsockname()[1]
+    try:
+        _set_win_proxy(1, f"127.0.0.1:{port}", monkeypatch)
+        called = {"clear": 0}
+        monkeypatch.setattr(pm, "clear_system_proxy", lambda: called.__setitem__("clear", 1) or True)
+        assert pm.force_clear_dead_proxy(ports=(port,)) is False
+        assert called["clear"] == 0
+    finally:
+        blocker.close()
+
+
+def test_force_clear_fires_on_dead_blackout_port(monkeypatch):
+    """The broken state from the 2026-10-11 incident: proxy enabled, pointing
+    at a Blackout port with no listener — must be cleared."""
+    import socket
+    from blackoutkit import proxy_manager as pm
+    # grab a definitely-free port then release it
+    probe = socket.socket()
+    probe.bind(("127.0.0.1", 0))
+    dead_port = probe.getsockname()[1]
+    probe.close()
+    _set_win_proxy(1, f"127.0.0.1:{dead_port}", monkeypatch)
+    called = {"clear": 0}
+    monkeypatch.setattr(pm, "clear_system_proxy", lambda: called.__setitem__("clear", 1) or True)
+    assert pm.force_clear_dead_proxy(ports=(dead_port,)) is True
+    assert called["clear"] == 1

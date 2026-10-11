@@ -1220,10 +1220,19 @@ def _run_daemon_loop(
             except Exception as exc:
                 log.warning("Traffic monitor could not stop cleanly: %s", exc)
         _stop_active_engines()
+        def _proxy_cleanup_with_fallback():
+            # Owned restore first; if the record is gone or the registry was
+            # touched manually (state mismatch), still clear a proxy that
+            # points at a dead Blackout port so the machine is never blackholed.
+            if s.get("auto_set_proxy", True):
+                cleanup_owned_system_proxy()
+            from ..proxy_manager import force_clear_dead_proxy
+            force_clear_dead_proxy()
+
         _cleanup_daemon_state(
             my_pid,
             generation,
-            cleanup_owned_system_proxy if s.get("auto_set_proxy", True) else None,
+            _proxy_cleanup_with_fallback if s.get("auto_set_proxy", True) else None,
             sec.disable_kill_switch if s.get("kill_switch", False) else None,
             sec.clear_linux_kill_switch_endpoint if s.get("kill_switch", False) else None,
         )
