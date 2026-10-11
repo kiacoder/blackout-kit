@@ -210,10 +210,6 @@ jobs:
         go mod verify
         go vet ./...
         go test ./...
-        New-Item -ItemType Directory -Force ../dist | Out-Null
-        go build -o ../dist/blackout-core-windows-amd64.exe ./cmd/blackout-core
-        if (-not (Test-Path ../dist/blackout-core-windows-amd64.exe)) { throw "engine/v2 core build output is missing" }
-        & ../dist/blackout-core-windows-amd64.exe -version
 
     - name: Install dependencies
       run: |
@@ -267,6 +263,19 @@ jobs:
 
     - name: Smoke test executable
       run: .\dist\blackout.exe version
+
+    # Built AFTER PyInstaller on purpose: `pyinstaller --clean` wipes dist/,
+    # which silently dropped a core binary built earlier in the job (the
+    # v1.6.0 tag run failed its release job exactly this way).
+    - name: Build blackout-core release asset
+      working-directory: engine/v2
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        go build -o ../../dist/blackout-core-windows-amd64.exe ./cmd/blackout-core
+        if (-not (Test-Path ../../dist/blackout-core-windows-amd64.exe)) { throw "blackout-core build output is missing" }
+        & ..\dist\blackout-core-windows-amd64.exe -version
 
     # Attest the executable right after it is produced, before it is uploaded.
     # `gh attestation verify blackout.exe --repo kiacoder/blackout-kit` then
