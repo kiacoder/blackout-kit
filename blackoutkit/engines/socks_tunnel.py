@@ -69,8 +69,9 @@ class SocksTunnelEngine(Engine):
         binary = self.find_core_binary()
         if binary is None:
             self._log.error(
-                "blackout-core binary not found. Build it with: go -C engine/v2 build "
-                "-o bins/blackout-core.exe ./cmd/blackout-core (or set BLACKOUT_CORE_BIN)."
+                "blackout-core binary not found. Install it with: blackout bins download "
+                "blackout-core — or build it with: go -C engine/v2 build -o bins/blackout-core.exe "
+                "./cmd/blackout-core (or set BLACKOUT_CORE_BIN)."
             )
             return False
 

@@ -247,7 +247,8 @@ _CAPABILITIES: dict[str, EngineCapability] = {
     ),
     "socks-tunnel": EngineCapability(
         "socks-tunnel", "v2 socks-tunnel", "DPI bypass", "v2 loopback SOCKS5 tunnel with fake-SNI rewrite and randomized SNI-boundary segmentation (blackout-core daemon)",
-        ("win32",), upstream_requirement="none", local_proxy=True,
+        ("win32",), runtime_requirements=(("win32", ("blackout-core",)),),
+        upstream_requirement="none", local_proxy=True,
         listeners=("SOCKS5 tunnel (v2_tunnel_port)",),
         local_ports=("v2_tunnel_port",),
         system_effects=("process", "system_proxy"),

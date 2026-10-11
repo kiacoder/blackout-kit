@@ -6,7 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **`blackout-core` ships as a release asset.** CI now builds the v2 daemon into `dist/` on both platforms (`blackout-core-windows-amd64.exe`, `blackout-core-linux-amd64`), attests it with Sigstore provenance, covers it in `checksums.txt`, and publishes it with every release. A `blackout bins download blackout-core` registry entry (self-hosted, SHA-256-verified, structural PE check) installs it, so the socks-tunnel engine no longer requires a local Go toolchain. Readiness reports a `Runtime: blackout-core` check for the engine, and `blackout doctor` gains a fixable bins check via the generic registry loop.
+- **CI action pins refreshed:** `actions/checkout` v4 → v5 (Node 20 deprecation warning on every run).
+
 
 ## [1.5.0] - 2026-10-11
 

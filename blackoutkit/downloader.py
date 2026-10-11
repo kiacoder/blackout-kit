@@ -65,6 +65,25 @@ class BinInfo:
 
 BIN_REGISTRY: dict[str, BinInfo] = {
 
+    "blackout-core": BinInfo(
+        key           = "blackout-core",
+        display_name  = "blackout-core (v2 daemon)",
+        description   = "v2 supervised Go daemon: loopback socks-tunnel with ClientHello shaping",
+        github_repo   = "kiacoder/blackout-kit",
+        # Self-hosted from our own releases; the asset name is platform-specific
+        # and matches what build.yml uploads.
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {
+            ("blackout-core-windows-amd64.exe" if sys.platform == "win32"
+             else "blackout-core-linux-amd64"): ("blackout-core.exe" if sys.platform == "win32" else "blackout-core"),
+        },
+        output_bins   = ["blackout-core.exe" if sys.platform == "win32" else "blackout-core"],
+        required      = False,
+        manual_url    = "https://github.com/kiacoder/blackout-kit/releases",
+        manual_note   = "Build from source: go -C engine/v2 build -o bins/blackout-core.exe ./cmd/blackout-core",
+    ),
+
     "linux_engine": BinInfo(
         key           = "linux_engine",
         display_name  = "Blackout Engine (Linux x86_64)",
@@ -849,6 +868,10 @@ def _download_verified_binary(
                     ok, message = _verify_download_digest(staged, selected)
                     if not ok:
                         return False, message
+                    if not staged.suffix and os.name == "posix":
+                        # Extensionless outputs (e.g. blackout-core on Linux) must
+                        # keep their executable bit through the staging promote.
+                        staged.chmod(staged.stat().st_mode | 0o111)
                     valid, detail = verify_binary(staged)
                     if not valid:
                         return False, f"Structural verification failed for {output_name}: {detail}"

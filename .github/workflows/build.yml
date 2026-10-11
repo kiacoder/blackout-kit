@@ -19,7 +19,7 @@ jobs:
       attestations: write
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
@@ -120,7 +120,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
@@ -153,7 +153,7 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Parse install.ps1
       shell: pwsh
@@ -210,10 +210,10 @@ jobs:
         go mod verify
         go vet ./...
         go test ./...
-        $core = Join-Path $env:RUNNER_TEMP "blackout-core.exe"
-        go build -o $core ./cmd/blackout-core
-        if (-not (Test-Path $core)) { throw "engine/v2 core build output is missing" }
-        & $core -version
+        New-Item -ItemType Directory -Force ../dist | Out-Null
+        go build -o ../dist/blackout-core-windows-amd64.exe ./cmd/blackout-core
+        if (-not (Test-Path ../dist/blackout-core-windows-amd64.exe)) { throw "engine/v2 core build output is missing" }
+        & ../dist/blackout-core-windows-amd64.exe -version
 
     - name: Install dependencies
       run: |
@@ -277,12 +277,15 @@ jobs:
       with:
         subject-path: |
           dist/blackout.exe
+          dist/blackout-core-windows-amd64.exe
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
       with:
         name: blackout-windows-exe
-        path: dist/blackout.exe
+        path: |
+          dist/blackout.exe
+          dist/blackout-core-windows-amd64.exe
 
   build-linux:
     name: Build Linux Runtime
@@ -294,7 +297,7 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Set up Python 3.12
       uses: actions/setup-python@v5
@@ -332,6 +335,7 @@ jobs:
         go build -o dist/blackout-core-linux-amd64 ./cmd/blackout-core
         test -x dist/blackout-core-linux-amd64
         ./dist/blackout-core-linux-amd64 -version
+        cp -v dist/blackout-core-linux-amd64 ../../dist/
 
     - name: Install Python dependencies
       run: |
@@ -370,13 +374,15 @@ jobs:
         subject-path: |
           dist/blackout-engine-linux-amd64
           dist/*.whl
-          engine/v2/dist/blackout-core-linux-amd64
+          dist/blackout-core-linux-amd64
 
     - name: Upload Linux runtime artifact
       uses: actions/upload-artifact@v4
       with:
         name: blackout-linux-engine
-        path: dist/blackout-engine-linux-amd64
+        path: |
+          dist/blackout-engine-linux-amd64
+          dist/blackout-core-linux-amd64
 
   linux-distro-smoke:
     name: Linux distro smoke (${{ matrix.name }})
@@ -398,7 +404,7 @@ jobs:
       image: ${{ matrix.image }}
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Install Python
       run: ${{ matrix.install }}
@@ -424,7 +430,7 @@ jobs:
 
     steps:
     - name: Check out repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
 
     - name: Download Windows build artifact
       uses: actions/download-artifact@v4
@@ -448,12 +454,12 @@ jobs:
       run: |
         set -euo pipefail
         cd dist
-        for asset in blackout.exe blackout-engine-linux-amd64 blackout-source.zip; do
+        for asset in blackout.exe blackout-core-windows-amd64.exe blackout-engine-linux-amd64 blackout-core-linux-amd64 blackout-source.zip; do
           test -s "$asset" || { echo "::error::Release asset $asset is missing or empty"; exit 1; }
         done
         # checksums.txt covers every release asset (sha256sum format). blackout.exe.sha256
         # is the single-file form; install.ps1 accepts either and fails closed without one.
-        sha256sum blackout.exe blackout-engine-linux-amd64 blackout-source.zip > checksums.txt
+        sha256sum blackout.exe blackout-core-windows-amd64.exe blackout-engine-linux-amd64 blackout-core-linux-amd64 blackout-source.zip > checksums.txt
         sha256sum blackout.exe > blackout.exe.sha256
         sha256sum -c checksums.txt
         cat checksums.txt
@@ -468,9 +474,11 @@ jobs:
       with:
         subject-path: |
           dist/blackout.exe
+          dist/blackout-core-windows-amd64.exe
           dist/checksums.txt
           dist/blackout.exe.sha256
           dist/blackout-engine-linux-amd64
+          dist/blackout-core-linux-amd64
           dist/blackout-source.zip
 
     - name: Create Release
@@ -478,7 +486,9 @@ jobs:
       with:
         files: |
           dist/blackout.exe
+          dist/blackout-core-windows-amd64.exe
           dist/blackout-engine-linux-amd64
+          dist/blackout-core-linux-amd64
           dist/blackout-source.zip
           dist/checksums.txt
           dist/blackout.exe.sha256

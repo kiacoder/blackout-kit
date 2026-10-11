@@ -282,3 +282,59 @@ def test_setting_registered():
     assert "v2_tunnel_port" in settings.DEFAULTS
     assert settings.validate("v2_tunnel_port", 18080)[0] is True
     assert settings.validate("v2_tunnel_port", "not-a-port")[0] is False
+
+
+# ── release-asset download path ──────────────────────────────────────────────
+
+def test_blackout_core_registry_entry_is_platform_correct():
+    import sys
+    from blackoutkit.downloader import BIN_REGISTRY
+    info = BIN_REGISTRY["blackout-core"]
+    assert info.github_repo == "kiacoder/blackout-kit"
+    if sys.platform == "win32":
+        assert info.output_bins == ["blackout-core.exe"]
+        assert list(info.extract_map) == ["blackout-core-windows-amd64.exe"]
+    else:
+        assert info.output_bins == ["blackout-core"]
+        assert list(info.extract_map) == ["blackout-core-linux-amd64"]
+
+
+def test_blackout_core_registry_key_is_downloadable():
+    from blackoutkit.downloader import BIN_REGISTRY
+    # The verified download path requires a trusted github_repo and an
+    # extract_map pattern per output; anything else is manual-only.
+    info = BIN_REGISTRY["blackout-core"]
+    assert info.github_repo and info.extract_map
+    assert len(info.extract_map) == len(info.output_bins)
+
+
+def test_readiness_requires_blackout_core_runtime():
+    from blackoutkit import readiness
+    checks = readiness._binary_checks(
+        "socks-tunnel", installed={}, platform="win32", settings={})
+    names = [check.name for check in checks]
+    assert "Runtime: blackout-core" in names
+    missing = next(check for check in checks if check.name == "Runtime: blackout-core")
+    assert missing.ok is False
+
+    present = readiness._binary_checks(
+        "socks-tunnel", installed={"blackout-core": True}, platform="win32", settings={})
+    ok = next(check for check in present if check.name == "Runtime: blackout-core")
+    assert ok.ok is True
+
+
+def test_check_installed_covers_blackout_core(tmp_path, monkeypatch):
+    """A PE-valid blackout-core.exe in bins/ counts as installed."""
+    import sys
+    from blackoutkit import downloader
+    if sys.platform != "win32":
+        import pytest
+        pytest.skip("PE structural check is Windows-shaped")
+    monkeypatch.setattr(downloader, "BINS_DIR", tmp_path)
+    import struct
+    # Minimal PE: "MZ" + padding + e_lfanew pointing EXACTLY at "PE\0\0".
+    e_lfanew = 0x40
+    data = b"MZ" + b"\x00" * (e_lfanew - 6) + struct.pack("<I", e_lfanew) + b"PE\x00\x00"
+    (tmp_path / "blackout-core.exe").write_bytes(data)
+    installed = downloader.check_installed()
+    assert installed.get("blackout-core") is True
