@@ -115,6 +115,33 @@ jobs:
           dist/*
           startup-benchmark.json
 
+  security-scan:
+    name: Security scanning (Bandit + pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.12
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install scanners and the project
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install bandit pip-audit
+        pip install .
+
+    # Gate is HIGH severity only: the codebase carries ~261 accepted LOW
+    # findings (assert usage, subprocess needles). Raising the gate later is
+    # easy; failing CI on known-accepted noise is not.
+    - name: Bandit static analysis (fail on HIGH)
+      run: bandit -r blackoutkit -lll
+
+    - name: pip-audit dependency vulnerabilities
+      run: pip-audit --skip-editable
+
   build-windows:
     name: Build Windows Executable
     runs-on: windows-latest

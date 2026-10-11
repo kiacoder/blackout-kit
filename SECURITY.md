@@ -4,7 +4,8 @@
 
 | Version | Status | Support Until |
 |---------|--------|----------------|
-| 1.4.0   | ✅ Current | 2027-10-10 |
+| 1.5.0   | ✅ Current | 2027-10-11 |
+| 1.4.0   | ⚠️ Maintenance | 2027-10-10 |
 | 1.3.0   | ⚠️ Maintenance | 2027-10-10 |
 | 1.1.1   | ⚠️ Maintenance | 2027-09-04 |
 | 1.1.0   | ⚠️ Maintenance | 2027-02-04 |

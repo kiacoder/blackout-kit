@@ -4,35 +4,23 @@ All notable changes to this project are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.4.0] - 2026-10-10
-
-### Added
-- **The v2 dialer primitives now have a live outbound path.** New Go package `engine/v2/pkg/tunnel` is a loopback-only SOCKS5 CONNECT forwarder: it sniffs the client's first record, and when it is a TLS ClientHello it writes that record upstream through `dialer.WriteHello` — fake-SNI rewriting plus randomized SNI-boundary segmentation with configured chunk/delay bounds — then relays everything else bidirectionally with byte counters. Plain non-TLS first bytes pass through unshaped. This is pure userspace TCP relaying: no raw packets, no forged TCP flags, no zero-window packets, and no FEC frames on the wire.
-- **blackout-core can start and stop the tunnel over IPC.** `start {"engine":"socks-tunnel","listen":"127.0.0.1:18080"}` opens the forwarder (non-loopback binds are refused at both the IPC and tunnel layers), `StartResult.Listen` carries the bound address, relayed bytes flow into `Telemetry.bytes_in`/`bytes_out`, `tune` takes effect without a restart, and `stop` force-closes live sessions (a TCP relay only ends when a peer hangs up, so graceful draining would stall). Honest scope: the tunnel is reachable through the v2 control channel only; the Python CLI does not yet launch or manage it.
-
-### Fixed
-- **IPC server race caught by `-race`:** `ipc.Server.Serve` assigned the listener handle while `Shutdown` read it without a shared lock; both sides are now guarded.
-- **Tunnel hardening from the pre-release review:** a session whose opening bytes are not a clean ClientHello kept a stale 10-second read deadline that later killed mid-stream relays (fixed — the deadline is cleared on every fallback path, and a record that promises bytes it never delivers now tears the session down instead of silently truncating it); a `Close` racing the accept loop could strand a live untracked session (fixed — sessions register synchronously in the accept loop and `Close` waits for `Serve` to exit before its force-close sweep); an unexpected accept-loop death no longer leaves `status=running` pointing at a dead tunnel; and `tune` now mirrors `ipc.MemController` semantics, treating zeroed fields as "keep current" so tuning only the fake SNI cannot reset chunking to the minimum.
-
-### Not in scope (unchanged from 1.3.0)
-- TCP-flag spoofing and zero-window manipulation remain unimplemented: they require raw packet injection (WinDivert/NFQUEUE), which the userspace v2 architecture deliberately does not perform.
-- HyperPulse FEC is still a standalone codec/policy; no peer wire protocol exists, so nothing transmits parity shards.
-
-## [1.3.0] - 2026-10-10
-
-### Security
-- ISP inspection now uses HTTPS-only `ipapi.co` with `ipinfo.io` fallback; redirects are rejected, TLS verification stays enabled, and failed lookups remain best-effort.
-- DoH bootstrap accepts only an allow-listed HTTPS resolver override, rejects query/fragment injection and redirects, and falls back through Cloudflare, Quad9, and Google.
-
-### Added
-- Go v2 dialer can segment ClientHello data so a parser-identified SNI hostname is split at a seeded, randomized offset within configured chunk bounds. The v2 daemon remains a policy/IPC scaffold; this primitive is not wired into a live outbound connection loop.
-- Standalone HyperPulse GF(256) parity encoding, recovery, and bounded adaptive parity policy. These primitives are not transmitted to proxy peers and do not claim compatible wire framing.
-- Early local HTTP/SOCKS proxy health probes run during the first five seconds after engine start at 100 ms cadence, with a 200 ms total request deadline; two consecutive local failures can trigger config rotation.
-
 ## [Unreleased]
+
+_Nothing yet._
+
+## [1.5.0] - 2026-10-11
+
+> This release ships the carried pre-release hardening batch that had been accumulating
+> under "Unreleased" (provenance, MCP auth, redaction, dependency floors, installer
+> checksums, boundary tests, the xray-core advisory bump), plus the new v2 socks-tunnel
+> CLI wiring below.
+
+### Added
+- **The Python CLI can now launch and manage the v2 socks-tunnel.** New engine `socks-tunnel` (registered in `ENGINE_REGISTRY`, `ALL_ENGINE_CHOICES`, and the daemon engine map) supervises the Go `blackout-core` daemon: it spawns the binary, connects over the v2 named-pipe/Unix-socket control channel (`blackoutkit/v2_ipc.py` client speaking the BKV2 framed protocol), performs the handshake, starts the loopback SOCKS5 tunnel on the new `v2_tunnel_port` setting (default 18080), applies `sni_fake_sni` as a best-effort `tune`, and maps the tunnel port into system-proxy setup. Stop goes through IPC `stop` (force-closing live sessions) before the process kill. The binary is discovered via `BLACKOUT_CORE_BIN`, `bins/`, or `dist/`; when absent, start fails with the exact build command. Verified live: real `blackout-core` handshake, running status with telemetry, and clean stop.
 
 ### Security
 - **`xray-core` bumped past GHSA-5wf9-h793-w73c:** `engine/go.mod` moves from `v1.260327.0` to the patched commit `64fada32b5b9` (`v1.260327.1-0.20260710210335-64fada32b5b9`). `go.sum` is regenerated for the patched commit.
+- **CI security scanning:** a `security-scan` job in `.github/workflows/build.yml` runs Bandit (`-lll`, fail on HIGH — the ~261 accepted LOW findings are documented as out of the gate) and pip-audit (`--skip-editable`) on every push and pull request. Both verified green locally before landing.
 - **Privilege model and egress documentation:** README gains a Security & Privilege Model section (userspace proxying needs no admin, drivers, or Defender exclusions), `NETWORK_PRIVACY.md` §12 records five remediation candidates and confirms the unwired `adblock_auto_update_interval_hours` setting, and the PowerShell SHA-256 check now parses the `<hash>  blackout.exe` format and compares case-insensitively.
 - **Signed build provenance for every release asset:** `build-windows`, `build-linux`, `package-smoke`, and the `release` job in `.github/workflows/build.yml` now request an OIDC token (`id-token: write`, `attestations: write`, `contents: write`) and run `actions/attest-build-provenance@v2` immediately after the artifacts are produced — `dist/blackout.exe`, the Linux runtimes, the wheel/sdist, `checksums.txt`, `blackout.exe.sha256`, and `blackout-source.zip`. Users and auditors verify with `gh attestation verify blackout.exe --repo kiacoder/blackout-kit`. Attestation steps are skipped on `pull_request` (a fork's token cannot mint a certificate) rather than weakened.
 - **Credential redaction now fails closed at log write time:** new `blackoutkit/log_redaction.py` is the single authority used by both daemon log handlers and by `blackoutkit/support_bundle.py`. Fixed three real leaks it exposed: an `Authorization: Bearer <jwt>` value leaked past the first word (assignment values now redact to end of line), URL userinfo credentials in `scheme://user:pass@host` (including passwords containing `@`) are replaced by the marker, and `recovery_audit.redact()` did not know `authorization`/`bearer`/`passphrase`/`api_key`/`cookie` keys at all.
@@ -47,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - **Changed:** the WinDivert driver now lives in `bins/windivert/`. Run `blackout bins download goodbyedpi` once after upgrading; it removes the old driver copies from `bins/`.
 
 ### Added
+
 - **Interactive carrier picker:** bare `blackout connect` in an interactive terminal now offers a keyboard-navigable ISP selection screen (Irancell / MCI / RighTel / TCI / Shatel / Auto-Detect via ASN — numbers jump, arrows move, Enter selects, Esc skips). A selection applies that carrier's transient profile and launches the recommended engine without any flags; auto-detect matches the current network's ASN against the profile registry and says so when nothing matches. Never triggered for background/GUI flows, presets, explicit engines, `--sni-spoof`, or `--profile`.
 - **Clean-IP → fragment tuning pairing (`blackout tune fragment`):** resolves a target clean IP (explicit `--ip` → cached best → quick scan), then measures TLS record fragmentation candidates against it by completing a real TLS handshake through a short-lived Xray per candidate (ClientHello actually fragmented, from this network, right now). Ranked report with `--json` support; `--apply` binds the winning `sni_connect_ip` + `xray_fragment` pair so the normal connect pipeline picks both up. Honest scope: a snapshot measurement, not a bypass guarantee. Certificate verification stays on — current Xray removed `allowInsecure` entirely.
 - **Connection bootstrap hardening:** any exception during engine/daemon bootstrap now surfaces as a transaction failure (`daemon_start_failed` / `engine_start_failed`) with `BLACKOUT_*` temporary overrides strictly restored by the surrounding context manager — never a raw crash mid-connection with a polluted environment (regression-tested).
@@ -104,6 +93,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - **XRay TLS compatibility:** Removed the deprecated `allowInsecure` field from XRay `tlsSettings` that the current XRay runtime rejects with a config parse error.
 - **Python TLS enum compatibility:** Added a fallback for `ssl.TLSVersion.TLS1_2` vs `TLSv1_2` in cert probing and SNI HTTP testing, which crashed on some Python builds.
 - **Empty `xray_fragment` validation:** The Russia preset clears `xray_fragment` to disable Iran-specific fragmentation, but the validator rejected empty strings. Now accepts empty or `range,range`.
+
+
+## [1.4.0] - 2026-10-10
+
+### Added
+- **The v2 dialer primitives now have a live outbound path.** New Go package `engine/v2/pkg/tunnel` is a loopback-only SOCKS5 CONNECT forwarder: it sniffs the client's first record, and when it is a TLS ClientHello it writes that record upstream through `dialer.WriteHello` — fake-SNI rewriting plus randomized SNI-boundary segmentation with configured chunk/delay bounds — then relays everything else bidirectionally with byte counters. Plain non-TLS first bytes pass through unshaped. This is pure userspace TCP relaying: no raw packets, no forged TCP flags, no zero-window packets, and no FEC frames on the wire.
+- **blackout-core can start and stop the tunnel over IPC.** `start {"engine":"socks-tunnel","listen":"127.0.0.1:18080"}` opens the forwarder (non-loopback binds are refused at both the IPC and tunnel layers), `StartResult.Listen` carries the bound address, relayed bytes flow into `Telemetry.bytes_in`/`bytes_out`, `tune` takes effect without a restart, and `stop` force-closes live sessions (a TCP relay only ends when a peer hangs up, so graceful draining would stall). Honest scope: the tunnel is reachable through the v2 control channel only; the Python CLI does not yet launch or manage it.
+
+### Fixed
+- **IPC server race caught by `-race`:** `ipc.Server.Serve` assigned the listener handle while `Shutdown` read it without a shared lock; both sides are now guarded.
+- **Tunnel hardening from the pre-release review:** a session whose opening bytes are not a clean ClientHello kept a stale 10-second read deadline that later killed mid-stream relays (fixed — the deadline is cleared on every fallback path, and a record that promises bytes it never delivers now tears the session down instead of silently truncating it); a `Close` racing the accept loop could strand a live untracked session (fixed — sessions register synchronously in the accept loop and `Close` waits for `Serve` to exit before its force-close sweep); an unexpected accept-loop death no longer leaves `status=running` pointing at a dead tunnel; and `tune` now mirrors `ipc.MemController` semantics, treating zeroed fields as "keep current" so tuning only the fake SNI cannot reset chunking to the minimum.
+
+### Not in scope (unchanged from 1.3.0)
+- TCP-flag spoofing and zero-window manipulation remain unimplemented: they require raw packet injection (WinDivert/NFQUEUE), which the userspace v2 architecture deliberately does not perform.
+- HyperPulse FEC is still a standalone codec/policy; no peer wire protocol exists, so nothing transmits parity shards.
+
+## [1.3.0] - 2026-10-10
+
+### Security
+- ISP inspection now uses HTTPS-only `ipapi.co` with `ipinfo.io` fallback; redirects are rejected, TLS verification stays enabled, and failed lookups remain best-effort.
+- DoH bootstrap accepts only an allow-listed HTTPS resolver override, rejects query/fragment injection and redirects, and falls back through Cloudflare, Quad9, and Google.
+
+### Added
+- Go v2 dialer can segment ClientHello data so a parser-identified SNI hostname is split at a seeded, randomized offset within configured chunk bounds. The v2 daemon remains a policy/IPC scaffold; this primitive is not wired into a live outbound connection loop.
+- Standalone HyperPulse GF(256) parity encoding, recovery, and bounded adaptive parity policy. These primitives are not transmitted to proxy peers and do not claim compatible wire framing.
+- Early local HTTP/SOCKS proxy health probes run during the first five seconds after engine start at 100 ms cadence, with a 200 ms total request deadline; two consecutive local failures can trigger config rotation.
 
 ## [1.1.1] - 2026-09-04
 
