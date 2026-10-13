@@ -140,10 +140,10 @@ def test_direct(*args, **kwargs):
 ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend", "socks-tunnel"]
 
 def _get_engine_classes(name: str) -> tuple:
-    if sys.platform.startswith("linux") and name == "tun":
-        from .engines.tun import TUNEngine
-        from .engines.xray import XRayEngine
-        return (XRayEngine, TUNEngine)
+    if name == "tun":
+        from .engine_stack import get_engine_classes
+
+        return get_engine_classes(name, sys.platform)
     if name == "sni":
         from .engines.sni import SNIEngine
         from .engines.xray import XRayEngine
@@ -448,10 +448,9 @@ def _start_engine_stack(name: str, *, emit: bool = True):
                     return []
 
     classes = _get_engine_classes(name)
-    running = []
 
     import logging
-
+    from .engine_stack import start_engines_in_order
 
     class EngineStatusHandler(logging.Handler):
         def __init__(self, status_obj, eng_name):
@@ -459,7 +458,6 @@ def _start_engine_stack(name: str, *, emit: bool = True):
             self.status_obj = status_obj
             self.eng_name = eng_name
             self.setLevel(logging.DEBUG)
-            # Use basic formatting so we just get the message
             self.setFormatter(logging.Formatter("%(message)s"))
 
         def emit(self, record):
@@ -469,35 +467,30 @@ def _start_engine_stack(name: str, *, emit: bool = True):
                     f"[bold cyan]Starting {self.eng_name}...[/bold cyan]\n  [dim]→ {msg}[/dim]"
                 )
 
-    status_context = console.status(f"[bold cyan]Starting stack: {name}...[/bold cyan]") if emit else nullcontext()
+    status_context = console.status(f"[bold cyan]Starting stack: {name}...") if emit else nullcontext()
+    failed_engine = None
     with status_context as status:
-        for cls in classes:
-            eng = cls()
-
+        def start_engine(eng):
+            nonlocal failed_engine
             handler = EngineStatusHandler(status, eng.name) if emit else None
             if handler is not None:
                 eng._log.addHandler(handler)
             old_level = eng._log.level
             eng._log.setLevel(logging.DEBUG)
-
             try:
                 success = eng.start()
             finally:
                 if handler is not None:
                     eng._log.removeHandler(handler)
                 eng._log.setLevel(old_level)
+            if not success:
+                failed_engine = eng.name
+            return success
 
-            if success:
-                running.append(eng)
-            else:
-                if emit:
-                    console.print(f"  [warning]⚠ {eng.name} failed to start (check logs for details)[/warning]")
-                for r in running:
-                    try:
-                        r.stop()
-                    except Exception:
-                        pass
-                return []
+        running = start_engines_in_order((cls() for cls in classes), start_engine)
+
+    if not running and failed_engine and emit:
+        console.print(f"  [warning]⚠ {failed_engine} failed to start (check logs for details)[/warning]")
 
     return running
 
@@ -907,8 +900,9 @@ def cmd_emergency(args):
             active = engines
             break
         else:
-            for eng in engines:
-                eng.stop()
+            from .engine_stack import stop_engines_in_reverse
+
+            stop_engines_in_reverse(engines)
             console.print(f"  [error]✗ {ename} crashed[/error]")
 
     if not active:
@@ -945,8 +939,9 @@ def cmd_emergency(args):
     except KeyboardInterrupt:
         pass
     finally:
-        for eng in active:
-            eng.stop()
+        from .engine_stack import stop_engines_in_reverse
+
+        stop_engines_in_reverse(active)
         if s.get("auto_set_proxy"):
             cleanup_owned_system_proxy()
         console.print("[success]Stopped.[/success]")

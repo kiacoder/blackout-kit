@@ -350,6 +350,42 @@ def test_early_probe_window_starts_when_engine_starts(monkeypatch, tmp_path):
     assert probes == []
 
 
+def test_periodic_probe_uses_socks_tester_for_socks_engine(monkeypatch, tmp_path):
+    from blackoutkit import settings
+    from blackoutkit.scanner import proxy_tester
+
+    _configure_daemon_loop(monkeypatch, tmp_path, [True, True], iter([True, False]), config_rotation=True)
+    monkeypatch.setattr(settings, "get_engine_proxy_details", lambda *_args: ("socks=127.0.0.1", 9050))
+    monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
+    http_probes = []
+    socks_probes = []
+    monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: http_probes.append(True) or None)
+    monkeypatch.setattr(proxy_tester, "test_socks5_proxy", lambda *_args, **_kwargs: socks_probes.append(True) or 1.0)
+    monkeypatch.delenv("BLACKOUT_CONFIG_OFFSET", raising=False)
+
+    daemon.run_daemon_loop("xray")
+
+    assert http_probes == []
+    assert socks_probes
+    assert "BLACKOUT_CONFIG_OFFSET" not in os.environ
+
+
+def test_periodic_probe_keeps_genuine_socks_failure_detection(monkeypatch, tmp_path):
+    from blackoutkit import settings
+    from blackoutkit.scanner import proxy_tester
+
+    _configure_daemon_loop(monkeypatch, tmp_path, [True, True, False], iter([True, True]), config_rotation=True)
+    monkeypatch.setattr(settings, "get_engine_proxy_details", lambda *_args: ("socks=127.0.0.1", 9050))
+    monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
+    monkeypatch.setattr(proxy_tester, "test_socks5_proxy", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(daemon, "_daemon_shutdown_requested", lambda *_args: os.environ.get("BLACKOUT_CONFIG_OFFSET") is not None)
+    monkeypatch.delenv("BLACKOUT_CONFIG_OFFSET", raising=False)
+
+    daemon.run_daemon_loop("xray")
+
+    assert os.environ.get("BLACKOUT_CONFIG_OFFSET") == "1"
+
+
 def test_early_probe_uses_socks_tester_for_socks_engine(monkeypatch, tmp_path):
     from blackoutkit import settings
     from blackoutkit.scanner import proxy_tester

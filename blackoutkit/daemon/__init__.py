@@ -17,6 +17,8 @@ from contextlib import nullcontext
 from pathlib import Path
 
 from ..progress import Spinner
+from ..engine_stack import get_engine_classes as _tun_engine_classes
+from ..engine_stack import start_engines_in_order
 from .ownership import (
     OwnershipBusy,
     acquire_start_lock,
@@ -78,6 +80,32 @@ _shutdown_lock = _threading.Lock()
 cfg_lock = None
 _monotonic = time.monotonic
 _sleep = time.sleep
+
+
+def get_engine_classes(name: str, platform: str | None = None) -> tuple[type, ...]:
+    if name == "tun":
+        return _tun_engine_classes(name, platform or sys.platform)
+    return ()
+
+
+def start_initial_engine(
+    engine_name: str,
+    *,
+    fallback_enabled: bool,
+    candidate_provider: Callable[[str, set[str]], str | None],
+    try_start: Callable[[str], list],
+) -> tuple[str | None, list]:
+    active = try_start(engine_name)
+    if active or not fallback_enabled:
+        return (engine_name, active) if active else (None, [])
+
+    failed_engines = {engine_name}
+    while candidate := candidate_provider(engine_name, failed_engines):
+        active = try_start(candidate)
+        if active:
+            return candidate, active
+        failed_engines.add(candidate)
+    return None, []
 
 
 def _ensure_dir():
@@ -766,7 +794,7 @@ def _run_daemon_loop(
         "gdpi":       lambda: (GoodbyeDPIEngine(),),
         "psiphon":    lambda: (PsiphonEngine(),),
         "warp":       lambda: (WARPEngine(),),
-        "tun":        lambda: (SNIEngine(), XRayEngine(), TUNEngine()) if sys.platform == "win32" else (XRayEngine(), TUNEngine()),
+        "tun":        lambda: tuple(engine() for engine in get_engine_classes("tun", sys.platform)),
         "tor":        lambda: (TorEngine(),),
         "mhrv":       lambda: (MhrvEngine(),),
         "ikev2":      lambda: (IKEv2Engine(),),
@@ -815,39 +843,69 @@ def _run_daemon_loop(
             log.error("Linux kill switch could not be enabled for %s; refusing to start the tunnel.", name)
             return []
 
-        import concurrent.futures
         engines = list(factory())
         started = []
         started_at = None
         failed = False
+        failure_reasons = []
 
         spinner = Spinner(f"Starting {name}...")
         spinner.start()
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=len(engines) if engines else 1) as executor:
-                future_to_eng = {executor.submit(eng.start): eng for eng in engines}
-                failure_reasons = []
-                for future in concurrent.futures.as_completed(future_to_eng):
-                    eng = future_to_eng[future]
+            if name == "tun":
+                failed_engine_name = None
+
+                def start_engine(eng):
+                    nonlocal failed_engine_name
                     try:
-                        success = future.result()
-                        if success:
-                            if started_at is None:
-                                started_at = _monotonic()
-                            log.info(f"{eng.name} started (PID {eng.pid})")
-                            started.append(eng)
-                        else:
-                            reason = f"{eng.name} initialization returned False (binary/config issue?)"
+                        success = eng.start()
+                    except Exception:
+                        failed_engine_name = eng.name
+                        raise
+                    if success:
+                        log.info("%s started (PID %s)", eng.name, eng.pid)
+                    else:
+                        failed_engine_name = eng.name
+                        log.error("%s initialization returned False (binary/config issue?)", eng.name)
+                    return success
+
+                try:
+                    started = start_engines_in_order(engines, start_engine=start_engine)
+                    if started:
+                        started_at = _monotonic()
+                except Exception as exc:
+                    failure_reasons.append(f"{failed_engine_name or name} start exception: {exc}")
+                if not started:
+                    failure_reasons.append(
+                        f"{failed_engine_name or name} initialization returned False (binary/config issue?)"
+                    )
+                    failed = True
+            else:
+                import concurrent.futures
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=len(engines) if engines else 1) as executor:
+                    future_to_eng = {executor.submit(eng.start): eng for eng in engines}
+                    for future in concurrent.futures.as_completed(future_to_eng):
+                        eng = future_to_eng[future]
+                        try:
+                            success = future.result()
+                            if success:
+                                if started_at is None:
+                                    started_at = _monotonic()
+                                log.info(f"{eng.name} started (PID {eng.pid})")
+                                started.append(eng)
+                            else:
+                                reason = f"{eng.name} initialization returned False (binary/config issue?)"
+                                log.error(reason)
+                                failure_reasons.append(reason)
+                                failed = True
+                        except Exception as exc:
+                            reason = f"{eng.name} start exception: {exc}"
                             log.error(reason)
                             failure_reasons.append(reason)
                             failed = True
-                    except Exception as exc:
-                        reason = f"{eng.name} start exception: {exc}"
-                        log.error(reason)
-                        failure_reasons.append(reason)
-                        failed = True
         finally:
-            spinner.stop(f"✓ {name} engine started" if started else f"✗ {name} engine failed")
+            spinner.stop(f"✓ {name} engine started" if started or (name == "tun" and not failed) else f"✗ {name} engine failed")
 
         if failed or len(started) != len(engines):
             reasons_str = "; ".join(failure_reasons) if failure_reasons else "Unknown error"
@@ -856,11 +914,12 @@ def _run_daemon_loop(
                 "(Try: blackout doctor --fix, or check 'blackout logs --follow' for details)",
                 reasons_str
             )
-            for already_started in started:
-                try:
-                    already_started.stop()
-                except Exception as e:
-                    log.error("Failed to stop engine %s during rollback: %s", already_started.name, e)
+            if name != "tun":
+                for already_started in started:
+                    try:
+                        already_started.stop()
+                    except Exception as e:
+                        log.error("Failed to stop engine %s during rollback: %s", already_started.name, e)
             if linux_kill_switch:
                 sec.disable_kill_switch()
                 sec.clear_linux_kill_switch_endpoint(name)
@@ -868,7 +927,7 @@ def _run_daemon_loop(
 
         if started_at is not None:
             engine_started_at = started_at
-        return engines
+        return started if name == "tun" else engines
 
     active_engine_name = engine_name
     if engine_name == "emergency":
@@ -888,10 +947,28 @@ def _run_daemon_loop(
             log.error("All engines failed. Exiting daemon.")
             return
     else:
-        active = try_start_engines(engine_name)
+        from .. import engines
+
+        def try_start_with_logging(candidate: str) -> list:
+            if candidate != engine_name:
+                log.warning("Engine '%s' failed, trying fallback: '%s'", engine_name, candidate)
+            return try_start_engines(candidate)
+
+        active_engine_name, active = start_initial_engine(
+            engine_name,
+            fallback_enabled=s.get("fallback_enabled", True),
+            candidate_provider=lambda current, failed: engines.next_engine_candidate(
+                current,
+                failed_engines=failed,
+                platform_filter=True,
+            ),
+            try_start=try_start_with_logging,
+        )
         if not active:
-            log.error(f"Engine '{engine_name}' failed. Exiting.")
+            log.error("Engine '%s' and all enabled fallback engines failed. Exiting daemon.", engine_name)
             return
+        if active_engine_name != engine_name:
+            log.info("Using fallback engine: %s", active_engine_name)
 
     if s.get("auto_set_proxy", True):
         proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
@@ -957,7 +1034,7 @@ def _run_daemon_loop(
 
     def _stop_active_engines() -> None:
         nonlocal active
-        for eng in active:
+        for eng in reversed(active):
             try:
                 eng.stop()
             except Exception as e:
@@ -1156,7 +1233,8 @@ def _run_daemon_loop(
                 proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
             if proxy_info:
                 proxy_host, proxy_port = proxy_info
-                if isinstance(proxy_host, str) and proxy_host.startswith("socks="):
+                is_socks_proxy = isinstance(proxy_host, str) and proxy_host.startswith("socks=")
+                if is_socks_proxy:
                     proxy_host = proxy_host.split("=", 1)[1]
                 from ..scanner.proxy_tester import test_tcp_port
                 latency = test_tcp_port(proxy_host, proxy_port)
@@ -1171,12 +1249,13 @@ def _run_daemon_loop(
                     continue
 
                 if s.get("config_rotation", True):
-                    from ..scanner.proxy_tester import test_http_proxy
-                    http_latency = test_http_proxy(proxy_host, proxy_port, timeout=5)
-                    if http_latency is None:
+                    from ..scanner.proxy_tester import test_http_proxy, test_socks5_proxy
+                    probe = test_socks5_proxy if is_socks_proxy else test_http_proxy
+                    proxy_latency = probe(proxy_host, proxy_port, timeout=5)
+                    if proxy_latency is None:
                         data_phase_failures += 1
                         log.warning(
-                            "TCP port open but HTTP proxy dead (%d consecutive failure(s)) "
+                            "TCP port open but proxy data probe failed (%d consecutive failure(s)) "
                             "— possible data-phase drop (endpoint may be blocked by TSPU).",
                             data_phase_failures,
                         )
@@ -1188,7 +1267,7 @@ def _run_daemon_loop(
                             continue
                     else:
                         if data_phase_failures:
-                            log.info("HTTP proxy recovered after %d data-phase failure(s).", data_phase_failures)
+                            log.info("Proxy recovered after %d data-phase failure(s).", data_phase_failures)
                         data_phase_failures = 0
 
                 log.info(f"Heartbeat OK — proxy latency: {latency:.0f}ms")

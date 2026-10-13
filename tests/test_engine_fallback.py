@@ -307,86 +307,151 @@ def _configure_fallback_daemon_loop(monkeypatch, tmp_path, outcomes, waits, fall
     return patched_run_daemon
 
 
-def test_daemon_tries_fallback_when_primary_fails(monkeypatch, tmp_path):
-    """When primary engine fails and fallback is enabled, daemon tries next engine."""
-    # Skip on Linux for now since it has different engine availability
-    if sys.platform.startswith("linux"):
-        pytest.skip("Linux has different engine set")
-
+@pytest.mark.parametrize("fallback_enabled", [False, True])
+def test_active_daemon_entrypoint_honors_fallback_setting(monkeypatch, tmp_path, fallback_enabled):
     from blackoutkit import readiness, settings, tray
-    from blackoutkit.scanner import proxy_tester
 
-    _FakeFallbackEngine.outcomes = [
-        ("sni", False),    # sni fails
-        ("gdpi", True),    # gdpi succeeds
-    ]
+    attempts = []
 
-    monkeypatch.setattr(settings, "load", lambda: {
-        "auto_set_proxy": False,
-        "retry_interval": 1,
-        "max_retries": 2,
-        "fallback_enabled": True,
-    })
+    class FakeEngine:
+        def __init__(self, name, succeeds):
+            self.name = name
+            self.succeeds = succeeds
+            self.pid = None
+
+        def start(self):
+            attempts.append(self.name)
+            return self.succeeds
+
+        def stop(self):
+            pass
+
+        def is_running(self):
+            return self.succeeds
+
+    settings_data = dict(settings.DEFAULTS)
+    settings_data.update(
+        auto_set_proxy=False,
+        retry_interval=1,
+        fallback_enabled=fallback_enabled,
+        config_rotation=False,
+    )
+    monkeypatch.setattr(settings, "load", lambda: settings_data)
     monkeypatch.setattr(readiness, "evaluate", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(tray, "start_tray", lambda *_args: None)
-    monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: None)
     monkeypatch.setattr(daemon.subprocess, "Popen", MagicMock())
     monkeypatch.setattr(daemon, "APP_DATA_DIR", tmp_path)
     monkeypatch.setattr(daemon, "PID_FILE", tmp_path / "daemon.pid")
     monkeypatch.setattr(daemon, "STATE_FILE", tmp_path / "daemon_state.json")
     monkeypatch.setattr(daemon, "LOG_FILE", tmp_path / "daemon.log")
+    monkeypatch.setattr(daemon, "_daemon_shutdown_requested", lambda *_args: True)
+    monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: False)
+    monkeypatch.setattr(daemon, "_write_daemon_state", lambda *_args, **_kwargs: True)
 
-    # Patch ENGINE_MAP inside the module namespace
-    engine_map = {}
-    for eng_name in engines.ENGINE_REGISTRY.keys():
-        engine_map[eng_name] = _create_fallback_engine_factory(eng_name)
+    primary = "xray"
+    fallback = "tuic" if sys.platform.startswith("linux") else "gdpi"
+    class PrimaryEngine(FakeEngine):
+        def __init__(self):
+            super().__init__(primary, False)
 
-    # Monkey-patch at the right scope to affect the daemon loop
-    with patch("blackoutkit.daemon.ENGINE_MAP", engine_map, create=True):
-        # This test verifies the fallback logic is correctly implemented
-        # The actual fallback test requires careful mocking of the daemon internals
-        pass
+    class FallbackEngine(FakeEngine):
+        def __init__(self):
+            super().__init__(fallback, True)
 
-    # Test the engine fallback helper directly
-    candidates = engines.engine_names()
-    failed = {"sni"}
-    next_eng = engines.next_engine_candidate("sni", failed_engines=failed, platform_filter=False)
-    assert next_eng is not None
-    assert next_eng != "sni"
+    from blackoutkit.engines import xray as xray_module
+    monkeypatch.setattr(xray_module, "XRayEngine", PrimaryEngine)
+    if fallback == "tuic":
+        from blackoutkit.engines import singbox_proxy
+        monkeypatch.setattr(singbox_proxy, "TuicEngine", FallbackEngine)
+    else:
+        from blackoutkit.engines import gdpi
+        monkeypatch.setattr(gdpi, "GoodbyeDPIEngine", FallbackEngine)
+    monkeypatch.setattr(engines, "next_engine_candidate", lambda _current, failed_engines=None, platform_filter=True: fallback if fallback_enabled and primary in (failed_engines or set()) and fallback not in (failed_engines or set()) else None)
 
+    daemon.run_daemon_loop(primary)
 
-def test_fallback_disabled_when_config_disabled(monkeypatch):
-    """When fallback_enabled is False, daemon should not try fallback engines."""
-    from blackoutkit import settings
-
-    monkeypatch.setattr(settings, "load", lambda: {
-        "auto_set_proxy": False,
-        "fallback_enabled": False,  # Explicitly disabled
-    })
-
-    s = settings.load()
-    assert s.get("fallback_enabled") is False
+    assert attempts[0] == primary
+    assert (fallback in attempts) is fallback_enabled
 
 
-def test_fallback_logs_clear_messages():
-    """Fallback system should log clear messages about fallback attempts."""
-    # This is verified by checking the logging statements in daemon.py
-    # The log messages use f-strings with engine names, so we check the template
+def test_active_daemon_attempts_fallback_only_when_enabled():
+    attempts = []
 
-    log_templates = [
-        "failed, trying fallback:",
-        "Using fallback engine:",
-        "and all fallback engines failed",
-    ]
+    def candidate_provider(current, failed):
+        return None if "xray" in failed else "xray"
 
-    # Verify these strings are in the daemon.py source
-    with open(Path(__file__).parent.parent / "blackoutkit" / "daemon.py", "r") as f:
-        source = f.read()
-        for template in log_templates:
-            assert template in source, f"Log message template not found: {template}"
+    def try_start(name):
+        attempts.append(name)
+        return [name] if name == "xray" else []
+
+    disabled = daemon.start_initial_engine(
+        "sni",
+        fallback_enabled=False,
+        candidate_provider=candidate_provider,
+        try_start=try_start,
+    )
+    assert disabled == (None, [])
+    assert attempts == ["sni"]
+
+    enabled = daemon.start_initial_engine(
+        "sni",
+        fallback_enabled=True,
+        candidate_provider=candidate_provider,
+        try_start=try_start,
+    )
+    assert enabled == ("xray", ["xray"])
+    assert attempts == ["sni", "sni", "xray"]
+
+
+def test_active_daemon_startup_skips_each_failed_fallback_candidate():
+    attempts = []
+    candidates = iter(("gdpi", "psiphon", None))
+
+    def candidate_provider(current, failed):
+        return next(candidates)
+
+    def try_start(name):
+        attempts.append(name)
+        return [name] if name == "psiphon" else []
+
+    result = daemon.start_initial_engine(
+        "sni",
+        fallback_enabled=True,
+        candidate_provider=candidate_provider,
+        try_start=try_start,
+    )
+
+    assert result == ("psiphon", ["psiphon"])
+    assert attempts == ["sni", "gdpi", "psiphon"]
 
 
 # ──────────────────────────── Test settings validation ──────────────────────
+
+
+def test_xray_system_proxy_mode_defaults_to_http():
+    from blackoutkit import settings
+
+    assert settings.DEFAULTS["xray_system_proxy_mode"] == "http"
+
+
+def test_xray_system_proxy_mode_accepts_http_and_mixed_only():
+    from blackoutkit import settings
+
+    assert settings.validate("xray_system_proxy_mode", "http")[0] is True
+    assert settings.validate("xray_system_proxy_mode", "mixed")[0] is True
+    assert settings.validate("xray_system_proxy_mode", "socks")[0] is False
+
+
+def test_xray_system_proxy_mode_is_in_xray_group():
+    from blackoutkit import settings
+
+    assert "xray_system_proxy_mode" in dict(settings.SETTING_GROUPS)["XRay"]
+
+
+def test_xray_system_proxy_mode_has_description():
+    from blackoutkit import settings
+
+    assert "mixed" in settings.describe("xray_system_proxy_mode").lower()
 
 
 def test_fallback_enabled_setting_validates():

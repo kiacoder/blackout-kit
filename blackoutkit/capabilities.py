@@ -57,6 +57,7 @@ class EngineCapability:
     notes: str = ""
     static_blockers: tuple[str, ...] = ()
     runtime_variants: tuple[tuple[str, str, str, tuple[str, ...]], ...] = ()
+    platform_local_ports: tuple[tuple[str, tuple[str | int, ...]], ...] = ()
 
     def runtime_for(self, platform: str, settings: dict[str, Any] | None = None) -> tuple[str, ...]:
         for setting, value, variant_platform, requirements in self.runtime_variants:
@@ -79,6 +80,12 @@ class EngineCapability:
                 return protocols
         return self.compatible_protocols
 
+    def local_ports_for(self, platform: str) -> tuple[str | int, ...]:
+        for key, ports in self.platform_local_ports:
+            if key == platform:
+                return ports
+        return self.local_ports
+
 
 # Runtime keys intentionally use the downloader/readiness vocabulary rather than
 # filesystem paths. This keeps capability output portable and secret-free.
@@ -87,7 +94,7 @@ _CAPABILITIES: dict[str, EngineCapability] = {
         "sni", "SNI spoofing", "DPI bypass", "Native SNI plus XRay local proxy stack",
         ("win32",), runtime_requirements=(("win32", ("sni-spoofing",)),),
         upstream_requirement="local_fallback", local_proxy=True,
-        listeners=("HTTP proxy (xray_http_port)", "SOCKS5 proxy (xray_socks_port)"),
+        listeners=("HTTP proxy (xray_http_port)", "SOCKS5 or mixed HTTP/SOCKS5 proxy (xray_socks_port)"),
         local_ports=("sni_listen_port", "xray_socks_port", "xray_http_port"),
         system_effects=("process", "system_proxy"),
         remote_actions=("optional Cloudflare IP scan",),
@@ -100,7 +107,7 @@ _CAPABILITIES: dict[str, EngineCapability] = {
         upstream_requirement="local_fallback", compatible_protocols=("vless", "trojan", "vmess"),
         platform_upstream_requirements=(("linux", "saved_config"),),
         platform_protocols=(("linux", ("vless", "trojan")),),
-        local_proxy=True, listeners=("HTTP proxy (xray_http_port)", "SOCKS5 proxy (xray_socks_port)"),
+        local_proxy=True, listeners=("HTTP proxy (xray_http_port)", "SOCKS5 or mixed HTTP/SOCKS5 proxy (xray_socks_port)"),
         local_ports=("xray_socks_port", "xray_http_port"),
         system_effects=("process", "system_proxy"), remote_actions=("upstream connection",),
         notes="Windows supports VLESS, Trojan, and VMess; Linux currently accepts direct VLESS or Trojan upstreams.",
@@ -140,10 +147,10 @@ _CAPABILITIES: dict[str, EngineCapability] = {
         platform_upstream_requirements=(("win32", "local_fallback"), ("linux", "saved_config")),
         platform_protocols=(("win32", ()), ("linux", ("vless", "trojan"))),
         privilege="windows_admin_or_linux_root", local_surface="network_tunnel",
-        local_ports=("sni_listen_port", "xray_socks_port", "xray_http_port"),
-
-        system_effects=("process", "routes", "virtual_adapter", "system_proxy"),
-        remote_actions=("upstream connection",), notes="System-wide behavior requires platform privileges and networking prerequisites.",
+        platform_local_ports=(),
+        system_effects=("process", "routes", "virtual_adapter"),
+        remote_actions=("upstream connection",),
+        notes="System-wide behavior requires Administrator privileges and WinTUN on Windows; WinTUN driver availability is not independently verified. Linux requires root and /dev/net/tun.",
     ),
     "tor": EngineCapability(
         "tor", "Tor", "Proxy client", "Tor onion-network local SOCKS proxy",
@@ -232,7 +239,7 @@ _CAPABILITIES: dict[str, EngineCapability] = {
         "legend", "Legend stack", "Composite stack", "Tor, SNI, and XRay composite connection target",
         ("win32",), runtime_requirements=(("win32", ("sni-spoofing", "tor")),),
         upstream_requirement="local_fallback", compatible_protocols=("vless", "trojan", "vmess"),
-        local_proxy=True, listeners=("HTTP proxy (xray_http_port)", "SOCKS5 proxy (xray_socks_port)", "SOCKS5 proxy (9050)"),
+        local_proxy=True, listeners=("HTTP proxy (xray_http_port)", "SOCKS5 or mixed HTTP/SOCKS5 proxy (xray_socks_port)", "SOCKS5 proxy (9050)"),
         local_ports=("xray_socks_port", "xray_http_port", 9050),
         system_effects=("process", "system_proxy", "local_runtime_files"),
         remote_actions=("Tor bootstrap", "upstream connection",), composite=True,
@@ -454,7 +461,7 @@ def build_capability_matrix(
             "local_surface": capability.local_surface,
             "local_proxy": capability.local_proxy,
             "listeners": list(capability.listeners),
-            "local_ports": list(capability.local_ports),
+            "local_ports": list(capability.local_ports_for(current)),
             "system_effects": list(capability.system_effects),
             "remote_actions": list(capability.remote_actions),
             "experimental": capability.experimental,
@@ -482,6 +489,9 @@ def serialize_capability(capability: EngineCapability) -> dict[str, Any]:
     payload["required_settings"] = list(capability.required_settings)
     payload["listeners"] = list(capability.listeners)
     payload["local_ports"] = list(capability.local_ports)
+    payload["platform_local_ports"] = {
+        platform: list(ports) for platform, ports in capability.platform_local_ports
+    }
     payload["system_effects"] = list(capability.system_effects)
     payload["remote_actions"] = list(capability.remote_actions)
     return payload

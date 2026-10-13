@@ -61,6 +61,7 @@ DEFAULTS = {
     "xray_log_level":       "warning",   # debug / info / warning / error / none
     "xray_mux_enabled":     False,
     "xray_fingerprint":     "chrome",    # chrome / firefox / safari / random
+    "xray_system_proxy_mode": "http",
 
     # GoodbyeDPI
     "gdpi_backend":        "legacy",   # legacy = stable goodbyedpi.exe path, native = experimental Go/WinDivert path
@@ -209,7 +210,7 @@ SETTING_GROUPS = {
         "sni_connect_ip", "sni_custom_fakes", "sni_fake_sni", "sni_always_test_all_ips",
         "sni_custom_ips", "sni_arvancloud_sni",
     ),
-    "XRay": ("xray_log_level", "xray_mux_enabled", "xray_fingerprint", "xray_fragment"),
+    "XRay": ("xray_log_level", "xray_mux_enabled", "xray_fingerprint", "xray_fragment", "xray_system_proxy_mode"),
     "GoodbyeDPI": ("gdpi_backend", "gdpi_flags", "gdpi_always_test_all"),
     "Psiphon": ("psiphon_country",),
     "MHRV": ("mhrv_direct",),
@@ -240,6 +241,7 @@ SETTING_CHOICES = {
     "gdpi_backend": ("legacy", "native"),
     "xray_log_level": ("debug", "info", "warning", "error", "none"),
     "xray_fingerprint": ("chrome", "firefox", "safari", "random"),
+    "xray_system_proxy_mode": ("http", "mixed"),
     "security_mode": ("speed", "private", "legend"),
     "ikev2_tunnel_type": ("IKEv2", "L2tp", "Sstp", "Pptp"),
     "color_theme": ("red", "blue", "green", "purple"),
@@ -324,6 +326,7 @@ _VALIDATORS: dict[str, tuple] = {
                            "must be: debug / info / warning / error / none"),
     "xray_fingerprint":   (str,   lambda v: v in ("chrome","firefox","safari","random"),
                            "must be: chrome / firefox / safari / random"),
+    "xray_system_proxy_mode": (str, lambda v: v in ("http", "mixed"), "must be: http / mixed"),
     "security_mode":      (str,   lambda v: v in ("speed","private","legend"),
                            "must be: speed / private / legend"),
     "ikev2_tunnel_type":  (str,   lambda v: v in ("IKEv2","L2tp","Sstp","Pptp"),
@@ -635,6 +638,7 @@ def describe(key: str) -> str:
         "sni_fake_sni":       "Fake SNI domain shown to DPI (e.g. www.hcaptcha.com)",
         "xray_log_level":     "XRay log verbosity: debug/info/warning/error/none",
         "xray_fingerprint":   "TLS fingerprint to mimic: chrome/firefox/safari/random",
+        "xray_system_proxy_mode": "System proxy protocol for XRay: http or mixed (HTTP and SOCKS)",
         "gdpi_backend":      "GoodbyeDPI backend: legacy (stable goodbyedpi.exe) / native (experimental Go/WinDivert)",
         "gdpi_flags":         "GoodbyeDPI flags (legacy backend only: auto=tries all modesets, or specify e.g. -1 -2 -5)",
         "psiphon_country":    "Psiphon exit country code (DE/US/CA/NL…)",
@@ -705,6 +709,8 @@ def get_engine_proxy_details(engine_name: str, settings: dict | None = None) -> 
     s = settings or load()
     host = s.get("proxy_host", "127.0.0.1")
     if engine_name in ("sni", "xray", "legend"):
+        if s.get("xray_system_proxy_mode", "http") == "mixed":
+            return host, s.get("xray_socks_port", 10808)
         return host, s.get("xray_http_port", 10809)
     elif engine_name == "psiphon":
         return "socks=127.0.0.1", s.get("psiphon_socks_port", 1081)

@@ -15,14 +15,14 @@
 | SNI / XRay / REALITY | Done | VLESS, Trojan, VMess on Windows + Linux |
 | Hysteria2 / TUIC | Done | sing-box proxy via DLL or Linux runner |
 | AmneziaWG | Done | Obfuscated WireGuard via sing-box |
-| TUN mode | Done | Windows + Linux |
+| TUN mode | Done | Windows + Linux; ordered engine stacks (Windows SNI → XRay → TUN) with reverse-order rollback; WinTUN required on Windows and never auto-installed |
 | GoodbyeDPI | Done | `legacy` default, `native` experimental |
 | WARP / Psiphon | Done | Windows DLL-backed |
 | Country profiles | Done | IR, RU, CN, IQ, GB, US, EU |
 | `--iran` / `--russia` presets | Done | Temporary env-based overrides |
 | XHTTP transport | Done | `type=xhttp` + legacy `splithttp` |
 | Smart config rotation | Done | Auto-rotate on blocked IP |
-| Data-phase drop detection | Done | TCP open but HTTP dead → rotate |
+| Data-phase drop detection | Done | Protocol-aware probes: HTTP endpoints via an HTTP proxy request, SOCKS endpoints via a real SOCKS5 handshake |
 | Whitelist awareness | Done | Doctor checks Russian cellular whitelist |
 | Country-aware routing | Done | Yandex/VK/Ozon direct for RU |
 | Kill switch (Linux) | Done | Endpoint-scoped nftables/iptables |

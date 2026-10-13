@@ -80,6 +80,18 @@ def test_status_watch_options_are_registered():
     assert "--interval" in result.output
 
 
+def test_start_help_describes_windows_tun_requirements():
+    from blackoutkit.help_text import get_help
+
+    text = get_help("start")
+
+    assert "system-wide" in text
+    assert "Administrator privileges" in text
+    assert "WinTUN driver manually" in text
+    assert "does not install it" in text
+    assert "does not independently verify" in text
+
+
 def test_theme_forwards_palette():
     with patch("blackoutkit.cli.cmd_theme") as cmd_theme:
         typer_cli.theme("light")
@@ -102,6 +114,25 @@ def test_settings_display_value_masks_sensitive_values():
     assert settings.display_value("ikev2_password", "secret") == "[hidden]"
     assert settings.display_value("softether_password", "secret") == "[hidden]"
     assert settings.display_value("xray_fingerprint", "chrome") == "chrome"
+
+
+def test_render_settings_includes_xray_system_proxy_mode_description(monkeypatch):
+    from io import StringIO
+    from rich.console import Console
+    from blackoutkit.settings import DEFAULTS, describe
+    from blackoutkit.theme import build_theme
+
+    printed = []
+    monkeypatch.setattr(typer_cli.console, "print", printed.append)
+    typer_cli._render_settings(dict(DEFAULTS))
+
+    output = StringIO()
+    Console(file=output, width=180, theme=build_theme()).print(*printed)
+    rendered = " ".join(output.getvalue().split())
+    assert "xray_system_proxy_mode" in rendered
+    assert "http" in rendered
+    assert "mixed" in rendered
+    assert " ".join(describe("xray_system_proxy_mode").split()) in rendered
 
 
 def test_settings_set_masks_secret_in_confirmation(monkeypatch):

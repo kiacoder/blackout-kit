@@ -6,7 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+- **`xray_system_proxy_mode` setting (`http` / `mixed`):** the XRay-family engines (sni, xray, legend) can now serve the system proxy from a `mixed` HTTP+SOCKS inbound on `xray_socks_port` instead of the plain HTTP listener on `xray_http_port`. The engine config switches the `socks-in` inbound protocol to `mixed` in that mode, capability listener text describes both options, and readiness still checks both listener ports. Default remains `http`, so existing setups are unchanged.
+- **Canonical TUN engine-stack builder (`blackoutkit/engine_stack.py`):** one shared stack definition for the TUN target — Windows starts SNI → XRay → TUN sequentially, Linux starts XRay → TUN — consumed by both the foreground CLI path and the active daemon. A failed TUN start stops the already-started upstream engines in reverse order, and normal daemon shutdown now also stops the active engines in reverse. Linux's managed-runner, direct saved-config behavior is untouched.
+
+### Fixed
+- **The recurring daemon health probe no longer mis-protocols SOCKS endpoints.** The heartbeat kept only the host/port from `get_engine_proxy_details()` and always ran the HTTP-proxy tester, so healthy SOCKS-only engines (Psiphon, Tor, WARP, socks-tunnel, Hysteria2, TUIC — and the XRay family in `mixed` mode) accumulated false data-phase failures and could be restarted with config rotation even though the proxy worked. The probe now preserves the `socks=` marker and tests SOCKS endpoints with the SOCKS5 tester (mirroring the startup probe). A genuinely unusable endpoint still fails twice and rotates. Regression-tested end to end with local fake HTTP and SOCKS5 proxies — no live network in tests.
+- **The active daemon honors `fallback_enabled`.** Initial engine selection in `blackoutkit/daemon/__init__.py` now goes through `start_initial_engine`, which tries the selected engine and only walks platform-filtered fallback candidates when the setting allows it; the chosen engine (primary or fallback) is what receives the system proxy, tray, and health monitoring. The legacy flat `blackoutkit/daemon.py` is not on the shipped path and was left alone. The old "integration" test that never exercised the daemon was replaced with entrypoint behavior tests for the enabled, disabled, and skip-failed-candidate cases.
+
+### Changed
+- **TUN capability metadata is truthful about what TUN is.** TUN is documented as a network tunnel — `local_proxy` off, no HTTP/SOCKS listener claims, no system-proxy side effect — instead of reserving the XRay proxy ports as its own listeners; readiness no longer treats those upstream ports as TUN prerequisites. The capability notes state explicitly that WinTUN driver availability is not independently verified (a bundled `wintun.dll` is not proof the kernel driver is loaded) and that sing-box startup remains the final prerequisite check.
+
+### Tests
+- New `tests/test_tun_stack.py` covers platform stack composition, sequential startup, foreground- and daemon-wrapper rollback ordering, and reverse-order shutdown with fake engines only.
+- Daemon probe tests drive the heartbeat with local fake HTTP and SOCKS5 proxy fixtures (protocol dispatch, healthy-SOCKS-no-rotation, genuine-failure-rotates); readiness/capability regressions pin the truthful TUN metadata and the mixed-mode listener checks; fallback entrypoint tests cover enabled/disabled/skipped candidates without starting real engines.
+
 
 ## [1.6.0] - 2026-10-11
 

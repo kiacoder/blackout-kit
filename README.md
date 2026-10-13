@@ -194,7 +194,7 @@ Linux currently supports:
 | `gdpi` | TCP handling | `goodbyedpi.exe` or experimental native DLL path | No | `legacy` is the stable default; `native` is experimental |
 | `psiphon` | VPN/proxy client | `blackout_warp.dll` | Yes | Current runtime is DLL-backed |
 | `warp` | VPN/proxy client | `blackout_warp.dll` | Yes | Current runtime is DLL-backed |
-| `tun` | System tunnel | `blackout_core.dll` | No | Windows TUN requires admin rights |
+| `tun` | System tunnel | `blackout_core.dll` | No | Windows TUN requires admin rights and the WinTUN driver; the driver is never downloaded or installed automatically, and readiness does not claim the driver is loaded — sing-box startup is the final check |
 | `tor` | Proxy client | `tor.exe` | Yes | Uses a user-supplied Tor runtime |
 | `mhrv` | HTTP relay | `blackout_core.dll` | Yes | Embedded HTTP relay; HTTPS CONNECT is intentionally unsupported |
 | `ikev2` | Windows native VPN | Windows RAS | No | Uses saved built-in VPN settings |

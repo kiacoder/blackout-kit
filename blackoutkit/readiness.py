@@ -58,7 +58,8 @@ def _local_ports(engine: str, settings: dict) -> tuple[int, ...]:
     capability = _capability(engine)
     if capability is None:
         return ()
-    return tuple(_port_value(settings, item) for item in capability.local_ports)
+    platform = _platform_key()
+    return tuple(_port_value(settings, item) for item in capability.local_ports_for(platform))
 
 
 def _setting_requirements(engine: str) -> tuple[str, ...]:

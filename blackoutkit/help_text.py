@@ -131,6 +131,12 @@ Examples:
   blackout start tun
   blackout start legend
 
+[bold]Windows TUN requirements[/bold]
+  • TUN routes traffic system-wide and requires Administrator privileges.
+  • Install the WinTUN driver manually before starting TUN; Blackout does not install it.
+  • Local readiness does not independently verify that the WinTUN driver is usable.
+  • TUN uses a local XRay SOCKS upstream started by the same engine stack.
+
 [dim]Use 'blackout connect' if you want a locally recommended engine instead of an
 explicit one.[/dim]
 """,

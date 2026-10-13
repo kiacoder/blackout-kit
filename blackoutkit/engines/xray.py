@@ -75,6 +75,7 @@ class XRayEngine(Engine):
     def generate_config(self) -> dict:
         s    = cfg.load()
         mode = _sec.get_current_mode()
+        proxy_mode = s.get("xray_system_proxy_mode", "http")
         config = {
             "log": {
                 "loglevel": "warning",
@@ -86,7 +87,7 @@ class XRayEngine(Engine):
                     "tag": "socks-in",
                     "port": self.socks_port,
                     "listen": "127.0.0.1",
-                    "protocol": "socks",
+                    "protocol": "mixed" if proxy_mode == "mixed" else "socks",
                     "settings": {"auth": "noauth", "udp": True},
                     "sniffing": {"enabled": True, "destOverride": ["http", "tls", "fakedns"] if s.get("xray_doh_dns") else ["http", "tls"]},
                 },

@@ -1,6 +1,120 @@
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from blackoutkit.scanner import proxy_tester
+
+
+class _LocalHttpProxyHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("http://"):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+        else:
+            self.send_error(400)
+
+    def log_message(self, *_args):
+        pass
+
+
+@pytest.fixture
+def local_http_proxy():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _LocalHttpProxyHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+
+@pytest.fixture
+def local_socks5_proxy():
+    requests = []
+    server_socket = socket.socket()
+    server_socket.bind(("127.0.0.1", 0))
+    server_socket.listen()
+    server_socket.settimeout(2)
+    stop = threading.Event()
+
+    def serve():
+        while not stop.is_set():
+            try:
+                connection, _address = server_socket.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            with connection:
+                connection.settimeout(2)
+                greeting = connection.recv(2)
+                if greeting != b"\x05\x01":
+                    continue
+                methods = connection.recv(1)
+                if not methods or methods[0] != 0:
+                    continue
+                connection.sendall(b"\x05\x00")
+                request = connection.recv(4)
+                if len(request) != 4 or request[:3] != b"\x05\x01\x00":
+                    continue
+                if request[3] == 3:
+                    size = connection.recv(1)[0]
+                    host = connection.recv(size).decode("ascii")
+                elif request[3] == 1:
+                    host = socket.inet_ntoa(connection.recv(4))
+                else:
+                    continue
+                port = int.from_bytes(connection.recv(2), "big")
+                requests.append((host, port))
+                connection.sendall(b"\x05\x00\x00\x01\x7f\x00\x00\x01\x00\x50")
+                data = bytearray()
+                while b"\r\n\r\n" not in data:
+                    chunk = connection.recv(4096)
+                    if not chunk:
+                        break
+                    data.extend(chunk)
+                if bytes(data).startswith(b"GET / HTTP/1.1"):
+                    connection.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok")
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    try:
+        yield server_socket.getsockname(), requests
+    finally:
+        stop.set()
+        server_socket.close()
+        thread.join(timeout=2)
+
+
+def test_http_proxy_uses_http_proxy_request(local_http_proxy):
+    host, port = local_http_proxy
+
+    latency = proxy_tester.test_http_proxy(host, port, test_url="http://example.test/", timeout=1)
+
+    assert latency is not None
+
+
+def test_socks5_proxy_performs_handshake_and_proxied_request(local_socks5_proxy):
+    (host, port), requests = local_socks5_proxy
+
+    latency = proxy_tester.test_socks5_proxy(host, port, test_url="http://example.test/", timeout=1)
+
+    assert latency is not None
+    assert requests == [("example.test", 80)]
+
+
+def test_socks5_proxy_rejects_unusable_proxy():
+    with socket.socket() as unavailable:
+        unavailable.bind(("127.0.0.1", 0))
+        host, port = unavailable.getsockname()
+
+    assert proxy_tester.test_socks5_proxy(host, port, test_url="http://example.test/", timeout=0.2) is None
 
 
 def test_http_proxy_client_cache_separates_probe_timeouts():

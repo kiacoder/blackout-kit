@@ -5,6 +5,36 @@ from unittest.mock import Mock
 import pytest
 
 from blackoutkit.connection_service import ConnectionRequest, ConnectionResult, ConnectionService
+from blackoutkit.settings import DEFAULTS, get_engine_proxy_details
+
+
+@pytest.mark.parametrize("engine", ["xray", "sni", "legend"])
+def test_xray_family_proxy_details_selects_http_endpoint_by_default(engine):
+    configured = dict(DEFAULTS)
+    configured.update(proxy_host="127.0.0.1", xray_http_port=10809, xray_socks_port=10808)
+    configured.pop("xray_system_proxy_mode", None)
+
+    assert get_engine_proxy_details(engine, configured) == ("127.0.0.1", 10809)
+
+
+@pytest.mark.parametrize("engine", ["xray", "sni", "legend"])
+def test_xray_family_proxy_details_selects_mixed_endpoint_without_scheme(engine):
+    configured = dict(DEFAULTS)
+    configured.update(
+        proxy_host="127.0.0.1",
+        xray_http_port=10809,
+        xray_socks_port=10808,
+        xray_system_proxy_mode="mixed",
+    )
+
+    assert get_engine_proxy_details(engine, configured) == ("127.0.0.1", 10808)
+
+
+def test_hysteria2_proxy_details_keeps_existing_socks_endpoint():
+    configured = dict(DEFAULTS)
+    configured.update(xray_socks_port=10808, xray_system_proxy_mode="mixed")
+
+    assert get_engine_proxy_details("hysteria2", configured) == ("socks=127.0.0.1", 10808)
 
 
 class FakeEngine:

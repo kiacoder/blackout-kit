@@ -89,6 +89,28 @@ def test_demo_is_simulation_only_and_accepts_local_fixtures():
     assert len(report["capabilities"]) == 19
 
 
+def test_tun_capability_describes_network_tunnel_without_proxy_side_effects():
+    capability = get_capability("tun")
+
+    assert capability is not None
+    assert capability.local_surface == "network_tunnel"
+    assert "system_proxy" not in capability.system_effects
+    assert capability.local_proxy is False
+    assert capability.listeners == ()
+    assert capability.local_ports_for("win32") == ()
+    assert capability.local_ports_for("linux") == ()
+    assert "WinTUN" in capability.notes
+    assert "not independently verified" in capability.notes
+
+
+def test_xray_family_capabilities_describe_mode_neutral_socks_listener():
+    for name in ("xray", "sni", "legend"):
+        capability = get_capability(name)
+
+        assert capability is not None
+        assert "SOCKS5 or mixed HTTP/SOCKS5 proxy (xray_socks_port)" in capability.listeners
+
+
 def test_capability_lookup_exposes_composite_legend():
     legend = get_capability("legend")
 
