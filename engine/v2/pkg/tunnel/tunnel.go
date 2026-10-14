@@ -176,12 +176,14 @@ func (s *Server) serveConn(conn net.Conn) {
 	}
 	target, ok := socksConnectRequest(conn)
 	if !ok {
+		drainClient(conn)
 		return
 	}
 
 	up, err := net.DialTimeout("tcp", target, helloReadTimeout)
 	if err != nil {
 		socksReply(conn, 0x05) // connection refused
+		drainClient(conn)
 		return
 	}
 	defer up.Close()
@@ -356,4 +358,15 @@ func socksConnectRequest(conn net.Conn) (string, bool) {
 func socksReply(conn net.Conn, code byte) bool {
 	_, err := conn.Write([]byte{0x05, code, 0x00, 0x01, 0, 0, 0, 0, 0, 0})
 	return err == nil
+}
+
+// drainClient absorbs request bytes the client already sent before an error
+// reply, so the caller's deferred Close sends FIN instead of RST. On Windows,
+// closing a TCP socket with unread receive data resets the connection, and
+// that reset can destroy the error reply still in flight — the client then
+// sees "connection forcibly closed" instead of the SOCKS failure code. The
+// read deadline keeps the drain bounded even if the client never closes.
+func drainClient(conn net.Conn) {
+	_ = conn.SetReadDeadline(time.Now().Add(helloReadTimeout))
+	_, _ = io.Copy(io.Discard, conn)
 }
