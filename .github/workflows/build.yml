@@ -118,6 +118,10 @@ jobs:
   security-scan:
     name: Security scanning (Bandit + pip-audit)
     runs-on: ubuntu-latest
+    # Read-only scanners: checkout, setup-python, bandit, pip-audit. This job
+    # writes nothing back to the repository, so contents stays read.
+    permissions:
+      contents: read
     steps:
     - name: Check out repository
       uses: actions/checkout@v5
@@ -396,6 +400,10 @@ jobs:
   linux-distro-smoke:
     name: Linux distro smoke (${{ matrix.name }})
     runs-on: ubuntu-latest
+    # Container smoke test: checkout plus a pip install and CLI smoke run.
+    # Nothing is published, so contents stays read.
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:

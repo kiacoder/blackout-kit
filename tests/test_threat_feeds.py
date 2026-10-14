@@ -216,8 +216,9 @@ class TestDomainFeedParsing:
         content = json.dumps([{"url": "http://evil.com/phish"}, {"url": "http://bad.net/x"}])
         count = manager._parse_domain_feed(content, "phishtank")
         assert count == 2
-        assert "evil.com" in manager.domain_set
-        assert "bad.net" in manager.domain_set
+        # Exact set equality: the manager starts empty, so this also proves no
+        # extra indicator leaked in from the parsing path.
+        assert manager.domain_set == {"evil.com", "bad.net"}
 
     def test_parses_json_list_of_strings(self, tmp_path):
         manager = ThreatFeedsManager(config_dir=tmp_path)

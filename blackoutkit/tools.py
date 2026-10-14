@@ -2161,8 +2161,12 @@ def run_doh_proxy_server(host: str = DOH_PROXY_DEFAULT_HOST, port: int = DOH_PRO
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.settimeout(1.0)
     try:
-        sock.bind((host, port))
-        _log.info("Started DoH DNS Proxy Server on %s:%d forwarding to %s", host, port, upstream_doh)
+        # `host` passed the loopback guard above and the socket is AF_INET, so
+        # the only bindable value is the IPv4 loopback literal — bind it
+        # directly rather than the validated parameter, keeping the listener
+        # provably local.
+        sock.bind(("127.0.0.1", port))
+        _log.info("Started DoH DNS Proxy Server on 127.0.0.1:%d forwarding to %s", port, upstream_doh)
     except Exception as exc:
         _log.error("Could not bind DNS Proxy to %s:%d: %s", host, port, exc)
         return
