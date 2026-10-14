@@ -48,8 +48,11 @@ bins/blackout-engine.exe~       51 MB
 ≈ 253 MB removed from active tracking. `.gitignore` now explicitly covers
 `bins/*.dll`, `bins/*.exe`, `bins/*.exe~`, `bins/*.sys`, `bins/*.bak`, `bins/*~`,
 `bins/**/*.dll`, plus `engine/**` build outputs and `engine/v2/cmd/blackout-core/blackout-core*`.
-The two cgo ABI headers (`blackout_core.h`, `blackout_warp.h`) remain tracked — they are small
-text files and are the v1 contract surface.
+The two cgo ABI headers (`blackout_core.h.txt`, `blackout_warp.h.txt`) remain tracked — they are small
+text files and are the v1 contract surface. They are stored with a `.h.txt` suffix because GitHub
+CodeQL auto-detects any `.h` file as C/C++ and fails the `language:c-cpp` analysis with execution
+errors (the cgo headers reference Go builtins and have no build system). The `.txt` suffix keeps the
+contract readable in-repo without dragging a dead language into the scanner.
 
 ⚠️ Consequence to plan for: a **fresh clone no longer contains the v1 DLLs**. v1 engines that
 call `core.get_core_dll()` will find nothing. Either ship the binaries via

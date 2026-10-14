@@ -14,9 +14,13 @@ bins/*~
 bins/**/*.exe
 bins/**/*.dll
 !bins/.gitkeep
-# cgo-generated ABI headers ARE tracked: they are the v1 contract surface
-!bins/blackout_core.h
-!bins/blackout_warp.h
+# cgo-generated ABI headers ARE tracked under a .h.txt suffix: they are the v1
+# contract surface, and the suffix keeps GitHub CodeQL from auto-detecting a
+# dead C/C++ language (see docs/V2_PHASE1_REPORT.md). A plain .h regenerated
+# by a local Go build stays ignored.
+bins/*.h
+!bins/blackout_core.h.txt
+!bins/blackout_warp.h.txt
 
 # Generated XRay/Psiphon configs (contain sensitive data)
 bins/active_xray_config.json
