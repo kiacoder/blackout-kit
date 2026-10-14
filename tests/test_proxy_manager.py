@@ -270,6 +270,7 @@ def _set_win_proxy(enabled: int, server: str, monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "winreg", fake)
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 def test_force_clear_ignores_disabled_proxy(monkeypatch):
     from blackoutkit import proxy_manager as pm
     _set_win_proxy(0, "127.0.0.1:10809", monkeypatch)
@@ -279,6 +280,7 @@ def test_force_clear_ignores_disabled_proxy(monkeypatch):
     assert called["clear"] == 0
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 def test_force_clear_ignores_external_proxy_host(monkeypatch):
     from blackoutkit import proxy_manager as pm
     _set_win_proxy(1, "192.168.1.10:8080", monkeypatch)
@@ -288,6 +290,7 @@ def test_force_clear_ignores_external_proxy_host(monkeypatch):
     assert called["clear"] == 0
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 def test_force_clear_ignores_live_listener(monkeypatch):
     """If something IS listening on the target port, never touch the proxy."""
     import socket
@@ -306,6 +309,7 @@ def test_force_clear_ignores_live_listener(monkeypatch):
         blocker.close()
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 def test_force_clear_fires_on_dead_blackout_port(monkeypatch):
     """The broken state from the 2026-10-11 incident: proxy enabled, pointing
     at a Blackout port with no listener — must be cleared."""

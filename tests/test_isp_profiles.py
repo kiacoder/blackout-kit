@@ -125,7 +125,9 @@ def test_start_with_sni_spoof_applies_transient_override_and_leaves_settings():
     assert result.ok
     assert result.preset["name"] == "sni-spoof"
     assert result.preset["overrides"]["BLACKOUT_SNI_FAKE_SNI"] == "camera.example.com"
-    assert "camera.example.com" in result.preset["changes"][0]
+    # Exact change-log entry: the sanitizer lowercased the domain and dropped
+    # the trailing dot. Equality (not substring) pins the whole message.
+    assert result.preset["changes"][0] == "Fake SNI (spoof) → camera.example.com (transient)"
     assert set_calls == []  # transient: saved settings untouched
 
 

@@ -429,9 +429,18 @@ def _start_engine_stack(name: str, *, emit: bool = True):
                 for k, info in auto_downloadable:
                     if emit:
                         console.print(f"  • {info.display_name}")
+                # No terminal to ask in (scripts, CI, piped stdin): fail with an
+                # actionable message instead of raising OSError from the prompt.
+                if not is_interactive():
+                    if emit:
+                        console.print(
+                            "[warning]Non-interactive terminal: cannot ask about downloads. "
+                            "Install the missing binaries with `blackout bins download`, then retry.[/warning]"
+                        )
+                    return []
                 try:
                     ans = console.input("\n[bold cyan]Would you like to download and install them now? (y/n):[/bold cyan] ").strip().lower()
-                except (KeyboardInterrupt, EOFError):
+                except (KeyboardInterrupt, EOFError, OSError):
                     return []
                 if ans in ("y", "yes"):
                     console.print()

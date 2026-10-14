@@ -111,6 +111,12 @@ def test_foreground_tun_start_wrapper_rolls_back_in_reverse_order(monkeypatch):
 
     monkeypatch.setattr(cli, "_get_engine_classes", lambda _name: (First, Second, Third))
     monkeypatch.setattr(cli, "_linux_missing_dependencies", lambda _name: [])
+    # The stack-start wrapper also probes downloader.check_installed() for the
+    # engine's binary dependencies and prompts interactively when any are
+    # missing. On a fresh CI checkout nothing is installed, so pin the
+    # dependency list empty — this test covers stack rollback order, not the
+    # download flow (and must not touch stdin under pytest capture).
+    monkeypatch.setattr(cli, "_linux_dependencies", lambda _name: [])
 
     assert cli._start_engine_stack("tun", emit=False) == []
     assert events == [

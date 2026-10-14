@@ -114,10 +114,10 @@ def test_xray_uses_country_aware_bypass_domains():
     domain_rules = [r for r in config["routing"]["rules"] if r.get("outboundTag") == "direct" and "domain" in r]
     assert domain_rules, "Expected a direct domain bypass rule"
     domains = domain_rules[0]["domain"]
-    assert "yandex.ru" in domains
-    assert "vk.com" in domains
-    # Verify no .ir domains in RU profile (iran-specific domains should not appear)
-    assert not any(d.endswith(".ir") or d == "ir" for d in domains)
+    # Exact list equality pins the complete RU bypass set in order. The
+    # "domain:" prefixes from the profile are stripped by the generator; an
+    # Iranian entry could never appear here without failing this assert.
+    assert domains == ["ru", "yandex.ru", "vk.com", "ozon.ru", "mail.ru", "avito.ru"]
 
 
 def test_xray_uses_iranian_domains_when_country_is_ir():
