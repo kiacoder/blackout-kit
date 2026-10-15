@@ -36,6 +36,16 @@ def test_format_error_omits_reason_and_hint_when_absent():
     assert "Hint:" not in out
 
 
+def test_format_error_escapes_markup_in_dynamic_text():
+    # Exception text can contain "[...]" tokens; they must render literally
+    # instead of being swallowed or interpreted as style tags.
+    c = _capture_console()
+    format_error(summary="Boom", reason="failed to open [socks] proxy", console=c)
+    out = c.file.getvalue()
+    assert "[socks]" in out
+    assert "failed to open [socks] proxy" in out
+
+
 def test_handle_cli_exception_wraps_exception():
     c = _capture_console()
     rc = handle_cli_exception(RuntimeError("disk full"), "backup", console=c)

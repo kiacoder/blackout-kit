@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from rich.markup import escape
+
 DAEMON_RSS_BUDGET_MB = 80.0
 IPC_P99_BUDGET_MS = 10.0
 
@@ -61,30 +63,36 @@ def summarize(timings_ms: list[float]) -> dict[str, Optional[float]]:
 # ──────────────────────────────── measurements ───────────────────────────────
 
 def measure_daemon_rss() -> dict[str, Any]:
-    """Sum RSS (bytes) of running Blackout processes, best-effort."""
+    """RSS (bytes) of the running daemon, identified via its PID lease.
+
+    The daemon is located through ``blackoutkit.daemon.get_pid()`` (PID file +
+    lease identity), **not** by matching process names: in a frozen build the
+    CLI itself is ``blackout.exe`` (a name match would self-report the CLI as
+    the daemon), and in a dev run the daemon is ``pythonw.exe`` (a name match
+    would miss it entirely).
+    """
+    empty = {"rss_bytes": None, "rss_mb": None, "pids": []}
     try:
         import psutil
     except Exception as exc:  # pragma: no cover - psutil is a hard dependency
-        return {"available": False, "reason": f"psutil unavailable: {exc}"}
+        return {"available": False, "reason": f"psutil unavailable: {exc}", **empty}
 
-    total = 0
-    pids: list[int] = []
-    for proc in psutil.process_iter(["pid", "name", "memory_info"]):
-        try:
-            if "blackout" not in (proc.info.get("name") or "").lower():
-                continue
-            mem = proc.info.get("memory_info")
-            if mem is not None:
-                total += int(mem.rss)
-                pids.append(proc.info.get("pid"))
-        except Exception:
-            continue
-    return {
-        "available": bool(pids),
-        "rss_bytes": total if pids else None,
-        "rss_mb": (total / (1024 * 1024)) if pids else None,
-        "pids": pids,
-    }
+    try:
+        from . import daemon as daemon_mod
+
+        pid = daemon_mod.get_pid()
+    except Exception as exc:
+        return {"available": False, "reason": f"daemon lookup failed: {exc}", **empty}
+
+    if not pid:
+        return {"available": False, "reason": "daemon not running", **empty}
+
+    try:
+        rss = int(psutil.Process(pid).memory_info().rss)
+    except Exception as exc:
+        return {"available": False, "reason": f"daemon pid {pid} unreadable: {exc}",
+                "rss_bytes": None, "rss_mb": None, "pids": [pid]}
+    return {"available": True, "rss_bytes": rss, "rss_mb": rss / (1024 * 1024), "pids": [pid]}
 
 
 def measure_ipc_latency(
@@ -134,7 +142,12 @@ def run_benchmarks(
 
     vm = psutil.virtual_memory()
     daemon = measure_daemon_rss()
-    ipc = measure_ipc_latency(samples, connect_timeout=ipc_timeout)
+    # Only probe IPC when a daemon is actually running: otherwise the connect
+    # loop retries for the whole timeout and reports a confusing reason.
+    if daemon.get("available"):
+        ipc = measure_ipc_latency(samples, connect_timeout=ipc_timeout)
+    else:
+        ipc = {"available": False, "reason": "daemon not running"}
 
     rss_ok: Optional[bool] = None
     if daemon.get("available") and daemon.get("rss_mb") is not None:
@@ -179,7 +192,10 @@ def render_benchmarks(result: dict[str, Any], console) -> None:
         ipc_ok = result["within_budget"].get("ipc_latency")
         ipc_state = "[success]yes[/success]" if ipc_ok else "[error]no[/error]"
     else:
-        ipc_val, ipc_state = f"[dim]{ipc.get('reason', 'unavailable')}[/dim]", "[dim]—[/dim]"
+        # Reason comes from exception text — escape it so a stray "[...]" token
+        # is not swallowed as markup.
+        ipc_val = f"[dim]{escape(ipc.get('reason', 'unavailable'))}[/dim]"
+        ipc_state = "[dim]—[/dim]"
     table.add_row("IPC latency", ipc_val, f"p99 < {result['budgets']['ipc_p99_ms']:.0f} ms", ipc_state)
 
     console.print(table)

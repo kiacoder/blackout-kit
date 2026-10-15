@@ -4,6 +4,7 @@ from __future__ import annotations
 import sys
 from typing import Any, Optional
 from rich.console import Console
+from rich.markup import escape
 
 _console = Console(stderr=True)
 
@@ -36,11 +37,15 @@ def format_error(
             msg += f" ({hint})"
         return emit_error("cli_error", msg, console=target_console, exit_code=exit_code, json_output=True)
 
-    target_console.print(f"[bold red]Error:[/bold red] {summary}")
+    # summary/reason/hint are frequently built from exception text, which can
+    # contain '[...]' tokens. Rich would interpret those as markup (e.g. a
+    # "[socks]" in a message would be silently swallowed, or "[red]" would
+    # inject colour), so escape them before interpolation.
+    target_console.print(f"[bold red]Error:[/bold red] {escape(summary)}")
     if reason:
-        target_console.print(f"[yellow]Reason:[/yellow] {reason}")
+        target_console.print(f"[yellow]Reason:[/yellow] {escape(reason)}")
     if hint:
-        target_console.print(f"[cyan]Hint:[/cyan] {hint}")
+        target_console.print(f"[cyan]Hint:[/cyan] {escape(hint)}")
 
     return exit_code
 

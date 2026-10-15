@@ -1,8 +1,12 @@
 """Phase 5 — performance benchmarks (blackoutkit.benchmarks)."""
 from __future__ import annotations
 
+import os
+
+import blackoutkit.daemon as daemon
 import blackoutkit.v2_ipc as v2_ipc
 from blackoutkit.benchmarks import (
+    measure_daemon_rss,
     measure_ipc_latency,
     percentile,
     run_benchmarks,
@@ -62,9 +66,32 @@ def test_ipc_latency_success(monkeypatch):
     assert r["p99_ms"] is not None
 
 
+# ── daemon RSS: identified via PID lease, NOT process name ───────────────────
+
+def test_daemon_rss_unavailable_without_daemon(monkeypatch):
+    monkeypatch.setattr(daemon, "get_pid", lambda: None)
+    r = measure_daemon_rss()
+    assert r["available"] is False
+    assert r["rss_mb"] is None
+    assert r["pids"] == []
+
+
+def test_daemon_rss_reads_pid_lease_not_process_name(monkeypatch):
+    # The current process name is "python"/"pytest", which does NOT contain
+    # "blackout" — a name-based matcher would wrongly report "no daemon". The
+    # PID-lease path must still find it.
+    monkeypatch.setattr(daemon, "get_pid", lambda: os.getpid())
+    r = measure_daemon_rss()
+    assert r["available"] is True
+    assert r["pids"] == [os.getpid()]
+    assert r["rss_mb"] > 0
+
+
 # ── aggregate run ────────────────────────────────────────────────────────────
 
 def test_run_benchmarks_structure(monkeypatch):
+    # A running daemon (PID lease) is required for the IPC probe to run at all.
+    monkeypatch.setattr(daemon, "get_pid", lambda: os.getpid())
     monkeypatch.setattr(v2_ipc.CoreClient, "connect", lambda self: None)
     monkeypatch.setattr(v2_ipc.CoreClient, "ping", lambda self: True)
     monkeypatch.setattr(v2_ipc.CoreClient, "close", lambda self: None)
@@ -74,6 +101,35 @@ def test_run_benchmarks_structure(monkeypatch):
     assert result["budgets"]["daemon_rss_mb"] == 80.0
     assert result["budgets"]["ipc_p99_ms"] == 10.0
     assert result["ipc"]["available"] is True
+
+
+def test_run_benchmarks_skips_ipc_without_daemon(monkeypatch):
+    monkeypatch.setattr(daemon, "get_pid", lambda: None)
+    result = run_benchmarks(samples=5, ipc_timeout=0.1)
+    assert result["daemon"]["available"] is False
+    assert result["ipc"]["available"] is False
+    assert result["ipc"]["reason"] == "daemon not running"
+    assert result["within_budget"]["ipc_latency"] is None
+
+
+def test_render_benchmarks_escapes_reason_markup():
+    import io
+
+    from rich.console import Console
+
+    from blackoutkit.benchmarks import render_benchmarks
+    from blackoutkit.theme import build_theme
+
+    buf = Console(width=100, theme=build_theme(), file=io.StringIO(), force_terminal=False)
+    result = {
+        "system": {},
+        "daemon": {"available": False},
+        "ipc": {"available": False, "reason": "IPC not reachable: [socks] missing"},
+        "budgets": {"daemon_rss_mb": 80.0, "ipc_p99_ms": 10.0},
+        "within_budget": {"daemon_rss": None, "ipc_latency": None},
+    }
+    render_benchmarks(result, buf)
+    assert "[socks]" in buf.file.getvalue()
 
 
 def test_bench_command_is_registered():

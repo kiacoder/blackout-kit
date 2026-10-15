@@ -19,6 +19,20 @@ def test_collect_metrics_shape():
     assert "running" in m["daemon"]
 
 
+def test_metrics_daemon_uses_pid_lease_not_process_name(monkeypatch):
+    import os
+
+    import blackoutkit.daemon as daemon
+
+    monkeypatch.setattr(daemon, "get_pid", lambda: None)
+    assert collect_metrics()["daemon"]["running"] is False
+
+    monkeypatch.setattr(daemon, "get_pid", lambda: os.getpid())
+    d = collect_metrics()["daemon"]
+    assert d["running"] is True
+    assert d["pid"] == os.getpid()
+
+
 def test_collect_bandwidth_shape():
     b = collect_bandwidth()
     assert b["available"] is True
@@ -105,3 +119,15 @@ def test_bandwidth_endpoint(client):
     r = client.get("/api/bandwidth")
     assert r.status_code == 200
     assert "totals" in r.json()
+
+
+def test_remote_client_is_denied_by_default():
+    c = TestClient(create_app(), client=("203.0.113.9", 44444))
+    r = c.get("/api/health")
+    assert r.status_code == 403
+
+
+def test_remote_client_allowed_with_env_optout(monkeypatch):
+    monkeypatch.setenv("BLACKOUT_API_ALLOW_REMOTE", "1")
+    c = TestClient(create_app(), client=("203.0.113.9", 44444))
+    assert c.get("/api/health").status_code == 200
