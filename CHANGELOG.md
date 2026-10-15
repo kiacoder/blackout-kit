@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Added
+- **Python SDK (`blackoutkit.sdk`, Roadmap Phase 8):** a stable, thin facade for embedding Blackout Kit — `from blackoutkit.sdk import Blackout`. Covers settings, engine capabilities, readiness, doctor diagnostics, daemon control (`connect`/`disconnect`/`status`), and observability (metrics, connections, bandwidth, anomalies, threat-feed stats, recommendations, benchmarks, reports). It delegates to the same internals the CLI uses, so the SDK and CLI can never disagree; typed exceptions (`BlackoutError` + `NotConnectedError`/`EngineError`/`SettingsError`/`DependencyError`). No optional dependencies required.
+
 ### Fixed
 - **CodeQL `py/stack-trace-exposure` in the REST API (3 alerts, medium):** the `/api/metrics`, `/api/connections`, and `/api/bandwidth` collectors embedded the raw exception text (`f"...: {exc}"`) in the JSON response, exposing internal detail to clients. They now log the detail server-side and return a stable, generic `reason`; no exception text reaches the response.
 
