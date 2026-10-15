@@ -16,6 +16,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 - **Canonical TUN engine-stack builder (`blackoutkit/engine_stack.py`):** one shared stack definition for the TUN target — Windows starts SNI → XRay → TUN sequentially, Linux starts XRay → TUN — consumed by both the foreground CLI path and the active daemon. A failed TUN start stops the already-started upstream engines in reverse order, and normal daemon shutdown now also stops the active engines in reverse. Linux's managed-runner, direct saved-config behavior is untouched.
 
 ### Fixed
+- **Second self-audit pass — Phase 5 + 6 (2026-10-15):**
+  - **Live threat hits were computed and thrown away.** `SecurityObserver` returned blocklist hits but the daemon discards `observe()`'s return value, so a live match produced no output. Hits are now logged (`WARNING`).
+  - `security_observer.split_endpoint("host:")` returned `"host:"` (with the colon) as the host instead of `"host"`.
+  - The observer fed the anomaly detector an empty destination for peer-less (listening) samples, seeding the detector's per-destination stats with an empty key — now skipped.
+  - The REST API loopback guard denied IPv4-mapped IPv6 loopback (`::ffff:127.0.0.1`) — now allowed.
+  - `blackout bench` now attempts a best-effort IPC handshake before pinging (some core builds reject requests until handshaken).
+  - `blackout tools predict --apply` output is now markup-escaped (a failing apply's exception text could contain a `[...]` token).
+  - A broken `SecurityObserver` no longer disables the daemon's monitor — it degrades to "no observer", preserving audit logging.
 - **Phase 5 self-audit fixes (2026-10-15):**
   - **Daemon RSS/state was identified by process name**, which is wrong in both directions: a frozen CLI is `blackout.exe` (a "blackout" name match made `blackout bench` / `/api/metrics` report the CLI itself as the daemon), and a dev daemon is `pythonw.exe` (the match missed it). Both now resolve the daemon via its PID lease (`daemon.get_pid()`).
   - **Dynamic text was interpolated into Rich markup unescaped**, so an exception message containing a `[...]` token (e.g. `failed to open [socks] proxy`) was silently swallowed or injected colour. `cli_error_handler.format_error` and the benchmark renderer now `escape()` summary/reason/hint text.

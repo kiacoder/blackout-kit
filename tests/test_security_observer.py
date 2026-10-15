@@ -58,6 +58,11 @@ def test_split_endpoint_variants():
     assert split_endpoint("2001:db8::1") == ("2001:db8::1", None)
 
 
+def test_split_endpoint_drops_bad_port_but_keeps_host():
+    assert split_endpoint("host:") == ("host", None)
+    assert split_endpoint("host:notaport") == ("host", None)
+
+
 # ── observer ─────────────────────────────────────────────────────────────────
 
 def test_observe_returns_anomaly_hit():
@@ -136,6 +141,22 @@ def test_observe_ignores_non_dict():
     obs = SecurityObserver(detector=_FakeDetector(None), threat_feeds=_FakeFeeds())
     assert obs.observe(None) == []
     assert obs.observe("nope") == []
+
+
+def test_anomaly_skipped_without_remote_host():
+    det = _FakeDetector(_FakeAnomaly())
+    obs = SecurityObserver(detector=det, threat_feeds=_FakeFeeds())
+    assert obs.observe(dict(ENTRY, remote="")) == []
+    assert det.calls == []  # detector must not see an empty destination
+
+
+def test_threat_hit_is_logged(caplog):
+    import logging
+
+    obs = SecurityObserver(detector=_FakeDetector(None), threat_feeds=_FakeFeeds(ip=True))
+    with caplog.at_level(logging.WARNING, logger="blackoutkit.security_observer"):
+        obs.observe(ENTRY)
+    assert any("Blocklisted" in r.getMessage() for r in caplog.records)
 
 
 # ── TrafficMonitor integration ───────────────────────────────────────────────

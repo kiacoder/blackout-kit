@@ -3210,10 +3210,18 @@ def tools_predict(
         )
     console.print(table)
     if apply_changes:
+        from rich.markup import escape
+
         for entry in payload.get("applied", []):
-            console.print(f"[success]✓ Applied[/success] {entry['setting']} = {entry['value']}")
+            console.print(
+                f"[success]✓ Applied[/success] "
+                f"{escape(str(entry['setting']))} = {escape(str(entry['value']))}"
+            )
         for entry in payload.get("manual", []):
-            console.print(f"[muted]Manual: {entry['type']} — {entry['reason']}[/muted]")
+            console.print(
+                f"[muted]Manual: {escape(str(entry['type']))} — "
+                f"{escape(str(entry['reason']))}[/muted]"
+            )
 
 
 threat_feeds_app = typer.Typer(help="Manage malicious IP and domain feeds", no_args_is_help=False)

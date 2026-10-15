@@ -675,9 +675,17 @@ def _build_traffic_monitor(settings: dict):
         "sample_interval_sec": int(settings.get("traffic_log_sample_interval_sec", 10)),
     }
     if security_monitor:
-        from ..security_observer import SecurityObserver
+        try:
+            from ..security_observer import SecurityObserver
 
-        kwargs["observer"] = SecurityObserver()
+            kwargs["observer"] = SecurityObserver()
+        except Exception as exc:
+            # A broken observer must not disable the monitor, which may also be
+            # serving the audit log.
+            logging.getLogger("blackout-daemon").warning(
+                "Security observer unavailable: %s", exc
+            )
+            kwargs["observer"] = None
     if not traffic_logging:
         kwargs["log_writer"] = lambda entry: None
     return TrafficMonitor(**kwargs)

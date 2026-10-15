@@ -46,6 +46,19 @@ def test_build_traffic_monitor_logging_only(monkeypatch):
     assert monitor._log_writer is None  # default audit-log writer
 
 
+def test_build_traffic_monitor_survives_observer_failure(monkeypatch):
+    def _boom():
+        raise RuntimeError("no home dir")
+
+    monkeypatch.setattr("blackoutkit.security_observer.SecurityObserver", _boom)
+    monitor = _build_traffic_monitor(
+        {"traffic_logging_enabled": True, "security_monitor_enabled": True}
+    )
+    # The monitor still starts (audit log preserved); only the observer is absent.
+    assert monitor is not None
+    assert monitor._observer is None
+
+
 def test_build_traffic_monitor_both(monkeypatch):
     monkeypatch.setattr("blackoutkit.security_observer.SecurityObserver", lambda: "OBS")
     monitor = _build_traffic_monitor(

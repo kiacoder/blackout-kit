@@ -191,7 +191,10 @@ def _install_loopback_guard(api: "FastAPI") -> None:
         is_loopback = (
             host == "testclient"  # Starlette TestClient synthetic host
             or host in ("::1", "localhost")
-            or (isinstance(host, str) and host.startswith("127."))
+            or (
+                isinstance(host, str)
+                and (host.startswith("127.") or host.startswith("::ffff:127."))
+            )
         )
         if not is_loopback:
             return JSONResponse(

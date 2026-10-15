@@ -114,7 +114,12 @@ def measure_ipc_latency(
     timings: list[float] = []
     try:
         client.connect()
-        # A ping loop is enough; handshake is not required for ping on the core.
+        # Best-effort handshake first: some core builds reject requests until
+        # the session is handshaken. A failure here is not fatal — still try ping.
+        try:
+            client.handshake()
+        except Exception:
+            pass
         for _ in range(max(1, samples)):
             started = time.perf_counter()
             client.ping()

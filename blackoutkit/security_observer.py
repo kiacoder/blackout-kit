@@ -43,7 +43,8 @@ def split_endpoint(endpoint: object) -> tuple[str, Optional[int]]:
         try:
             return host, int(port)
         except (TypeError, ValueError):
-            return text, None
+            # "host:" or "host:notaport" — keep the host, drop the bad port.
+            return host, None
     # Bare host, or a bare IPv6 literal with no port.
     return text, None
 
@@ -92,10 +93,14 @@ class SecurityObserver:
     # ── internals ───────────────────────────────────────────────────────────
 
     def _check_anomaly(self, entry: dict[str, Any]) -> list[dict[str, Any]]:
+        remote_host, remote_port = split_endpoint(entry.get("remote"))
+        if not remote_host:
+            # No peer to attribute (e.g. a listening socket) — skip, so we do
+            # not seed the detector's per-destination stats with an empty key.
+            return []
         try:
             from .anomaly_detector import ConnectionEvent
 
-            remote_host, remote_port = split_endpoint(entry.get("remote"))
             local_host, _ = split_endpoint(entry.get("local"))
             ts_value = entry.get("ts")
             event = ConnectionEvent(
@@ -139,11 +144,18 @@ class SecurityObserver:
             return []
         if not (blocked_ip or blocked_domain):
             return []
+        kind = "IP" if blocked_ip else "domain"
+        # The monitor discards observe()'s return value, so log the hit here:
+        # otherwise a live blocklist match would be computed and thrown away.
+        _log.warning(
+            "Blocklisted %s contact: %s -> %s",
+            kind, entry.get("process", "?"), remote_host,
+        )
         return [{
             "kind": "threat",
             "severity": "high",
             "type": "blocked_ip" if blocked_ip else "blocked_domain",
-            "detail": f"Connection to blocklisted {'IP' if blocked_ip else 'domain'} {remote_host}",
+            "detail": f"Connection to blocklisted {kind} {remote_host}",
             "remote": entry.get("remote", ""),
             "process": entry.get("process", ""),
         }]

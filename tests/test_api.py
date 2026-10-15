@@ -131,3 +131,8 @@ def test_remote_client_allowed_with_env_optout(monkeypatch):
     monkeypatch.setenv("BLACKOUT_API_ALLOW_REMOTE", "1")
     c = TestClient(create_app(), client=("203.0.113.9", 44444))
     assert c.get("/api/health").status_code == 200
+
+
+def test_ipv4_mapped_ipv6_loopback_is_allowed():
+    c = TestClient(create_app(), client=("::ffff:127.0.0.1", 1234))
+    assert c.get("/api/health").status_code == 200
