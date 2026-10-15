@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-15
+
 ### Added
 - **Phase 6 — Advanced Automation & Insights, completed (2026-10-15):** the four Phase 6 engines (anomaly detection, predictive optimization, threat-intel feeds, advanced reporting) already existed as libraries with CLI commands and tests; this closes the **live-integration** gap that made them query-only:
   - **Live security monitoring** — new `blackoutkit/security_observer.py` (`SecurityObserver`) feeds each sampled connection to the `AnomalyDetector` and checks the remote endpoint against the `ThreatFeedsManager` IP/domain blocklists, returning anomaly/threat hits. The daemon's `TrafficMonitor` gained an injectable `observer` hook (failure-isolated) and runs the observer when the new `security_monitor_enabled` setting is on — with or without the audit log (detection without persisting the per-connection trail).

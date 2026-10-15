@@ -296,5 +296,5 @@ def test_release_version_metadata_consistent():
     with pyproject.open("rb") as fh:
         data = tomllib.load(fh)
 
-    assert data["project"]["version"] == "1.6.0"
-    assert blackoutkit.__version__ == "1.6.0"
+    assert data["project"]["version"] == "1.7.0"
+    assert blackoutkit.__version__ == "1.7.0"
