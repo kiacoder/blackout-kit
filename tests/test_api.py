@@ -68,7 +68,12 @@ def test_collect_connections_degrades_when_listing_fails(monkeypatch):
     monkeypatch.setattr(tools, "get_active_connections", _boom)
     result = collect_connections()
     assert result["available"] is False
-    assert "reason" in result
+    assert result["reason"] == "connection listing failed"
+    # The raw exception text must never reach the client (CodeQL
+    # py/stack-trace-exposure); it is logged server-side instead.
+    import json
+
+    assert "access denied" not in json.dumps(result)
 
 
 # ── HTTP surface (needs fastapi) ─────────────────────────────────────────────

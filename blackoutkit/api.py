@@ -79,8 +79,10 @@ def collect_metrics() -> dict[str, Any]:
     """System + daemon metrics. Always returns a JSON-serialisable dict."""
     try:
         import psutil
-    except Exception as exc:  # pragma: no cover - psutil is a hard dependency
-        return {"available": False, "reason": f"psutil unavailable: {exc}"}
+    except Exception:  # pragma: no cover - psutil is a hard dependency
+        # Log the detail server-side; never echo exception text to the client.
+        _log.warning("metrics: psutil unavailable", exc_info=True)
+        return {"available": False, "reason": "psutil unavailable"}
 
     try:
         vm = psutil.virtual_memory()
@@ -95,8 +97,9 @@ def collect_metrics() -> dict[str, Any]:
             },
             "daemon": _daemon_info(),
         }
-    except Exception as exc:
-        return {"available": False, "reason": f"metrics collection failed: {exc}"}
+    except Exception:
+        _log.warning("metrics collection failed", exc_info=True)
+        return {"available": False, "reason": "metrics collection failed"}
 
 
 def collect_connections(
@@ -109,8 +112,9 @@ def collect_connections(
         from . import tools as net_tools
 
         conns = net_tools.get_active_connections(established_only=established_only)
-    except Exception as exc:
-        return {"available": False, "reason": f"connection listing failed: {exc}"}
+    except Exception:
+        _log.warning("connection listing failed", exc_info=True)
+        return {"available": False, "reason": "connection listing failed"}
 
     if process:
         needle = process.lower()
@@ -130,8 +134,9 @@ def collect_bandwidth() -> dict[str, Any]:
 
         totals = psutil.net_io_counters(pernic=False)
         per_nic = psutil.net_io_counters(pernic=True)
-    except Exception as exc:
-        return {"available": False, "reason": f"bandwidth collection failed: {exc}"}
+    except Exception:
+        _log.warning("bandwidth collection failed", exc_info=True)
+        return {"available": False, "reason": "bandwidth collection failed"}
 
     return {
         "available": True,
