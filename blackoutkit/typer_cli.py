@@ -2674,6 +2674,33 @@ def _predict_payload(
     }
 
 
+def _apply_recommendations(recommendations: list[dict]) -> dict:
+    """Apply the recommendations that map to a global setting.
+
+    Only ``config_rotation`` maps to a persisted setting; ``transport`` and
+    ``dns`` are per-config/transport choices with no global setting, so they are
+    reported as manual rather than silently applied.
+    """
+    from . import settings as cfg
+
+    applied: list[dict] = []
+    manual: list[dict] = []
+    for rec in recommendations:
+        rtype = rec.get("recommendation_type")
+        if rtype == "config_rotation":
+            try:
+                cfg.set_value("config_rotation", True)
+                applied.append({"setting": "config_rotation", "value": True})
+            except Exception as exc:
+                manual.append({"type": rtype, "reason": f"could not apply: {exc}"})
+        else:
+            manual.append({
+                "type": rtype,
+                "reason": "per-config choice; apply to your config/transport manually",
+            })
+    return {"applied": applied, "manual": manual}
+
+
 def _render_anomalies(payload: dict, title: str) -> None:
     if not payload["anomalies"]:
         console.print("[success]No anomalies found in the selected period.[/success]")
@@ -3138,12 +3165,14 @@ def tools_predict(
     hours: int = typer.Option(168, "--hours", help="Analyze traffic from the last N hours"),
     limit: int = typer.Option(10000, "--limit", help="Maximum traffic records to analyze"),
     transport: str = typer.Option("https", "--transport", help="Current transport"),
-    dns: str = typer.Option("8.8.8.8", "--dns", help="Current primary DNS")
+    dns: str = typer.Option("8.8.8.8", "--dns", help="Current primary DNS"),
+    apply: bool = typer.Option(False, "--apply", help="Apply recommendations that map to a global setting")
 ):
     """Predict peak periods and suggest local network optimizations."""
     options = _output_options(ctx)
     hours = int(_option_value(hours, 168))
     limit = int(_option_value(limit, 10000))
+    apply_changes = bool(_option_value(apply, False))
     if hours <= 0 or limit <= 0:
         _fail_parameter("--hours and --limit must be greater than zero", options=options)
     payload = _predict_payload(
@@ -3152,6 +3181,8 @@ def tools_predict(
         str(_option_value(transport, "https")),
         str(_option_value(dns, "8.8.8.8")),
     )
+    if apply_changes and payload["recommendations"]:
+        payload.update(_apply_recommendations(payload["recommendations"]))
     if options.json_output:
         _print_json_enveloped(payload)
         return
@@ -3178,6 +3209,11 @@ def tools_predict(
             item["reason"],
         )
     console.print(table)
+    if apply_changes:
+        for entry in payload.get("applied", []):
+            console.print(f"[success]✓ Applied[/success] {entry['setting']} = {entry['value']}")
+        for entry in payload.get("manual", []):
+            console.print(f"[muted]Manual: {entry['type']} — {entry['reason']}[/muted]")
 
 
 threat_feeds_app = typer.Typer(help="Manage malicious IP and domain feeds", no_args_is_help=False)

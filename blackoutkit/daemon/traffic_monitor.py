@@ -35,6 +35,7 @@ class TrafficMonitor:
         connection_loader: Callable[..., list[dict[str, Any]]] | None = None,
         log_writer: Callable[[dict[str, Any]], None] | None = None,
         clock: Callable[[], float] | None = None,
+        observer: object | None = None,
     ):
         if sample_interval_sec <= 0:
             raise ValueError("sample_interval_sec must be greater than zero")
@@ -42,6 +43,9 @@ class TrafficMonitor:
         self._connection_loader = connection_loader
         self._log_writer = log_writer
         self._clock = clock or time.time
+        # Optional live security observer (SecurityObserver). Called for every
+        # record that is written; a failure here must never stop monitoring.
+        self._observer = observer
         self.running = False
         self.thread: threading.Thread | None = None
         self._stop_event = threading.Event()
@@ -171,6 +175,7 @@ class TrafficMonitor:
 
             if should_write:
                 self._write_log(entry)
+                self._observe(entry)
             self._known_connections[key] = {
                 "ts": now_ts,
                 "status": entry["status"],
@@ -181,3 +186,12 @@ class TrafficMonitor:
 
         for key in set(self._known_connections) - current_keys:
             del self._known_connections[key]
+
+    def _observe(self, entry: dict[str, Any]) -> None:
+        """Hand a written record to the live security observer, if configured."""
+        if self._observer is None:
+            return
+        try:
+            self._observer.observe(entry)
+        except Exception as exc:  # observer failure must not kill monitoring
+            _log.debug("Security observer error: %s", exc, exc_info=False)

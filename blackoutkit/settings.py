@@ -179,6 +179,11 @@ DEFAULTS = {
     "traffic_log_retention_days": 30,   # Auto-prune entries older than this
     "traffic_log_sample_interval_sec": 10,  # Snapshot connections every N seconds
 
+    # Live security monitoring (Phase 6): run the anomaly detector + threat-feed
+    # checks against sampled connections. Independent of the audit log — when on
+    # without traffic logging, connections are analysed but not persisted.
+    "security_monitor_enabled": False,
+
     # Ad blocking
     "adblock_enabled": False,           # Enable network-level ad/tracker blocking
     "adblock_block_mode": "null",       # null (0.0.0.0) or sinkhole (custom IP)
@@ -232,6 +237,7 @@ SETTING_GROUPS = {
     "Downloads": ("download_speed_limit_kbps", "download_max_parallel", "download_auto_resume"),
     "Bandwidth Caps": ("bandwidth_caps_enabled", "bandwidth_alert_threshold"),
     "Traffic Logging": ("traffic_logging_enabled", "traffic_log_max_entries", "traffic_log_retention_days", "traffic_log_sample_interval_sec"),
+    "Security Monitoring": ("security_monitor_enabled",),
     "Ad Blocking": ("adblock_enabled", "adblock_block_mode", "adblock_sinkhole_ip", "adblock_auto_update_interval_hours", "adblock_query_log_enabled"),
     "QoS": ("qos_enabled", "qos_enforcement_mode", "qos_default_priority", "qos_alert_threshold_pct", "qos_rate_limit_precision_ms"),
     "Wi-Fi MAC Privacy": ("mac_preferred_adapter", "mac_randomization_prefix", "mac_custom_private_address"),
@@ -314,6 +320,7 @@ _VALIDATORS: dict[str, tuple] = {
     "xray_fragment":      (str,   lambda v: v == "" or v.count(",") == 1, "must be empty or 'range,range' (e.g. 10-50,10-50)"),
     "xray_split_tunnel":  (bool,  lambda v: True,            "must be true or false"),
     "xray_doh_dns":       (bool,  lambda v: True,            "must be true or false"),
+    "security_monitor_enabled": (bool, lambda v: True,       "must be true or false"),
     "scan_concurrency":   (int,   lambda v: 1 <= v <= 500,   "must be 1–500"),
     "scan_timeout":       (float, lambda v: 0.1 <= v <= 30,  "must be 0.1–30.0"),
     "scan_ip_count":      (int,   lambda v: 1 <= v <= 5000,  "must be 1–5000"),
@@ -690,6 +697,7 @@ def describe(key: str) -> str:
         "sni_arvancloud_sni": "Fake SNI using Iran domestic CDN (arvancloud.ir) — unblockable inside Iran",
         "xray_split_tunnel":  "Bypass proxy for local LAN and domestic (.ir) traffic",
         "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",
+        "security_monitor_enabled": "Run live anomaly detection and threat-feed checks on sampled connections (works with or without the audit log)",
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
         "config_rotation":    "When enabled, the daemon rotates to the next saved config on reconnect failure (blocked IP)",
         "fallback_enabled":   "When enabled, automatically try the next engine if the primary engine fails",

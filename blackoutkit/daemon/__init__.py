@@ -656,6 +656,33 @@ def _write_daemon_state(
         return False
 
 
+def _build_traffic_monitor(settings: dict):
+    """Build the traffic monitor from settings, or return None.
+
+    Runs when either the audit log or live security monitoring is enabled.
+    Security monitoring attaches a :class:`SecurityObserver`; when the audit
+    log is off, a no-op log writer keeps connections out of the persisted trail
+    (detection without logging). Does not start the monitor.
+    """
+    traffic_logging = settings.get("traffic_logging_enabled", False)
+    security_monitor = settings.get("security_monitor_enabled", False)
+    if not (traffic_logging or security_monitor):
+        return None
+
+    from .traffic_monitor import TrafficMonitor
+
+    kwargs: dict = {
+        "sample_interval_sec": int(settings.get("traffic_log_sample_interval_sec", 10)),
+    }
+    if security_monitor:
+        from ..security_observer import SecurityObserver
+
+        kwargs["observer"] = SecurityObserver()
+    if not traffic_logging:
+        kwargs["log_writer"] = lambda entry: None
+    return TrafficMonitor(**kwargs)
+
+
 def run_daemon_loop(
     engine_name: str,
     env_overrides_json: str | None = None,
@@ -1022,18 +1049,19 @@ def _run_daemon_loop(
         generation=state_generation,
     )
 
-    if s.get("traffic_logging_enabled", False):
-        try:
-            from .traffic_monitor import TrafficMonitor
-
-            traffic_monitor = TrafficMonitor(
-                sample_interval_sec=int(s.get("traffic_log_sample_interval_sec", 10))
+    try:
+        candidate = _build_traffic_monitor(s)
+        if candidate is not None:
+            candidate.start()
+            traffic_monitor = candidate
+            log.info(
+                "Traffic monitor initialized (audit_log=%s, security=%s).",
+                s.get("traffic_logging_enabled", False),
+                s.get("security_monitor_enabled", False),
             )
-            traffic_monitor.start()
-            log.info("Traffic monitor initialized.")
-        except Exception as exc:
-            traffic_monitor = None
-            log.warning("Traffic monitor could not start: %s", exc)
+    except Exception as exc:
+        traffic_monitor = None
+        log.warning("Traffic monitor could not start: %s", exc)
 
     def _stop_active_engines() -> None:
         nonlocal active
