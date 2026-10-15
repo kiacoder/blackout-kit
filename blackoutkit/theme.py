@@ -159,17 +159,38 @@ def latency_color(ms: float) -> str:
     return f"[error]{ms:.0f}ms[/error]"
 
 
-def make_table(title: str, columns: list[tuple[str, str]], rows: list[list[str]]) -> Table:
-    """Create a styled table."""
+def make_table(
+    title: str,
+    columns: list[tuple[str, str]],
+    rows: list[list[str]],
+    *,
+    wrap: bool = True,
+    max_width: int | None = None,
+) -> Table:
+    """Create a styled table.
+
+    When ``wrap`` is True (default) text columns use ``overflow="fold"`` so long
+    values — remote addresses, process paths, media titles — wrap onto the next
+    line instead of pushing the table past the terminal width. Set
+    ``wrap=False`` for tables of fixed-width tokens (hashes, ports) that should
+    stay on one line.
+    """
     table = Table(
         title=f"[heading]{title}[/heading]",
         box=box.ROUNDED,
         border_style="muted",
         header_style="table.header",
         show_lines=False,
+        padding=(0, 1),
     )
     for col_name, col_style in columns:
-        table.add_column(col_name, style=col_style)
+        col_kwargs: dict = {"style": col_style}
+        if wrap:
+            col_kwargs["overflow"] = "fold"
+            col_kwargs["no_wrap"] = False
+        if max_width is not None:
+            col_kwargs["max_width"] = max_width
+        table.add_column(col_name, **col_kwargs)
     for row in rows:
         table.add_row(*row)
     return table

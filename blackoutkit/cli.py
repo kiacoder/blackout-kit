@@ -32,6 +32,7 @@ from rich.prompt import Prompt
 from . import __version__, daemon
 from . import settings as cfg
 from .terminal_menu import MenuItem, run_menu
+from .cli_error_handler import format_error
 from .theme import (
     ask_choice,
     confirm,
@@ -40,6 +41,7 @@ from .theme import (
     latency_color,
     make_table,
     refresh_console_theme,
+    spinner,
 )
 
 
@@ -3445,9 +3447,15 @@ def cmd_media(args):
 
     if subcmd == "start":
         try:
-            media_downloader.ensure_media_available()
+            with spinner("Checking media components…"):
+                media_downloader.ensure_media_available()
         except RuntimeError as exc:
-            console.print(f"[error]{exc}[/error]")
+            format_error(
+                summary="Media downloader unavailable",
+                reason=str(exc),
+                hint="Run 'blackout bins download' to install the required component, then retry",
+                console=console,
+            )
             return
         media_downloader.get_media_manager().start_downloads()
         console.print("[success]✓ Media downloads started.[/success]")
@@ -3602,9 +3610,15 @@ def cmd_torrent(args):
     if subcmd == "start":
         manager = torrent_manager.get_torrent_manager()
         try:
-            manager._init_session()
+            with spinner("Starting torrent session…"):
+                manager._init_session()
         except RuntimeError as exc:
-            console.print(f"[error]{exc}[/error]")
+            format_error(
+                summary="Torrent engine unavailable",
+                reason=str(exc),
+                hint="Run 'blackout bins download' to install libtorrent, then retry",
+                console=console,
+            )
             return
         manager.start_downloads()
         console.print("[success]✓ Torrent downloads started.[/success]")
@@ -4161,7 +4175,12 @@ def cmd_bins(args):
             info = dl.BIN_REGISTRY.get(target_key)
             if not info:
                 valid = ", ".join(dl.BIN_REGISTRY.keys())
-                console.print(f"[error]Unknown binary: '{target_key}'[/error]  Valid: {valid}")
+                format_error(
+                    summary="Unknown binary",
+                    reason=f"'{target_key}' is not a known downloadable binary",
+                    hint=f"Valid binaries: {valid}",
+                    console=console,
+                )
                 return
 
             if not info.github_repo and target_key not in ("tor", "openvpn"):

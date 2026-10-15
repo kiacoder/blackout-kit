@@ -893,6 +893,25 @@ def version(ctx: typer.Context):
     if not _is_quiet(options):
         console.print(f"blackout-kit [bold green]{__version__}[/bold green]")
 
+
+@app.command()
+def bench(
+    ctx: typer.Context,
+    samples: int = typer.Option(20, "--samples", min=5, max=500, help="IPC ping samples to time"),
+):
+    """Run local performance benchmarks (daemon RSS, IPC latency)."""
+    from .benchmarks import render_benchmarks, run_benchmarks
+
+    options = _output_options(ctx)
+    samples = int(_option_value(samples, 20))
+    result = run_benchmarks(samples=samples)
+    if options.json_output:
+        _print_json_enveloped(result)
+        return
+    if not _is_quiet(options):
+        render_benchmarks(result, console)
+
+
 def _recovery_flags(
     full_route_reset: bool,
     full_stack_reset: bool,
@@ -1737,7 +1756,7 @@ def gui(ctx: typer.Context):
 
 _JSON_NATIVE_COMMANDS = frozenset({
     "version", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
-    "country", "countries", "bins", "capabilities", "demo", "setup", "report",
+    "country", "countries", "bins", "capabilities", "demo", "setup", "report", "bench",
 })
 _CONFIG_JSON_COMMANDS = frozenset({
     "list", "validate", "check-duplicates", "compatibility", "diff",

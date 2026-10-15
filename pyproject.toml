@@ -64,6 +64,12 @@ media = [
 torrent = [
     "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
 ]
+# Read-only REST API (blackoutkit.api). Optional: importing the module without
+# these still works — only `uvicorn blackoutkit.api:app` needs them.
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+]
 all = [
     "customtkinter>=5.2.2",
     "Pillow>=12.3.0",
@@ -71,6 +77,8 @@ all = [
     "scapy>=2.5.0",
     "yt-dlp>=2026.7.4",
     "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
 ]
 test = [
     "pytest>=8.0.0",
