@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import pytest
-from fastapi.testclient import TestClient
 
-from blackoutkit.api import create_app
+# fastapi is the optional [api] extra — skip cleanly where it is not installed.
+pytest.importorskip("fastapi")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from blackoutkit.api import create_app  # noqa: E402
 
 
 @pytest.fixture()
