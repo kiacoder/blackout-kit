@@ -509,12 +509,52 @@ def get_dns_query_log(blocked_only: bool = False, hours: int = 24, limit: int = 
     return entries[:limit]
 
 
+def get_stale_sources(interval_hours: float) -> list[dict]:
+    """Return enabled sources whose last download is older than ``interval_hours``.
+
+    A source that has never been downloaded is always stale. The interval
+    comes from the ``adblock_auto_update_interval_hours`` setting; it is an
+    *advisory* threshold only — Blackout never downloads blocklists in the
+    background, because the project only contacts the network for features
+    the user explicitly invokes. Staleness is surfaced through
+    ``blackout doctor`` and ``blackout tools adblock status`` so the user can
+    run ``blackout tools adblock update`` when they choose.
+    """
+    if interval_hours <= 0:
+        return []
+
+    config = _load_adblock_config()
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=interval_hours)
+    stale = []
+    for source in config.get('sources', []):
+        if not source.get('enabled', True):
+            continue
+        last = source.get('last_update')
+        if not last:
+            stale.append({'name': source.get('name', '?'), 'age_hours': None})
+            continue
+        try:
+            updated = datetime.fromisoformat(last)
+        except ValueError:
+            stale.append({'name': source.get('name', '?'), 'age_hours': None})
+            continue
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        if updated < cutoff:
+            stale.append({
+                'name': source.get('name', '?'),
+                'age_hours': round((datetime.now(timezone.utc) - updated).total_seconds() / 3600, 1),
+            })
+    return stale
+
+
 def get_adblock_status() -> dict:
     """Get comprehensive adblock status."""
     from .. import settings as cfg
 
     config = _load_adblock_config()
     enabled = cfg.load().get('adblock_enabled', False)
+    interval = cfg.load().get('adblock_auto_update_interval_hours', 24)
     return {
         'enabled': enabled,
         'total_sources': len(config.get('sources', [])),
@@ -523,4 +563,6 @@ def get_adblock_status() -> dict:
         'custom_blocks': len(config.get('custom_blocks', [])),
         'whitelisted': len(config.get('whitelist', [])),
         'queries_blocked_today': config.get('stats', {}).get('queries_blocked_today', 0),
+        'auto_update_interval_hours': interval,
+        'stale_sources': get_stale_sources(interval),
     }

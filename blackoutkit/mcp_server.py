@@ -545,7 +545,13 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                     }
                     for i, config in enumerate(cfgs)
                 ]
-                return json.dumps({"count": len(cfgs), "configs": items}, indent=2)
+                payload = {"count": len(cfgs), "configs": items}
+                load_error = getattr(cfgs, "error", None)
+                if load_error:
+                    # Never let a failed read look like "no configs saved" —
+                    # the saved configs may be intact behind an unreadable file.
+                    payload["load_error"] = load_error
+                return json.dumps(payload, indent=2)
             elif action == "add":
                 uri = args.get("uri")
                 if not uri:

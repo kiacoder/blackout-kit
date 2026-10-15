@@ -792,6 +792,11 @@ def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
 
 def cmd_test(args):
     configs = load_configs()
+    if getattr(configs, "error", None):
+        console.print(f"[error]⚠ Could not read your saved configs: {configs.error}[/error]")
+        console.print("[dim]Your configs were not lost — fix the file above, then run 'blackout config validate'.[/dim]")
+        console.print("Details are in the logs ([bold]blackout doctor[/bold] shows the log path).")
+        return
     if not configs:
         console.print("[warning]No configs in data/configs.txt[/warning]")
         console.print("Add one: [bold]blackout config add <uri>[/bold]")
@@ -1169,8 +1174,17 @@ def _status_panel(snapshot: dict) -> Panel:
         if status == "failed":
             status_info = "[error]● Reconnect attempts exhausted[/error]"
         retry = ""
+        # Edge-Case Audit #7: the state file has always carried last_failure,
+        # but the panel showed only "Next retry: Ns" — the user watching a
+        # reconnect loop had no way to see *why* the engine kept failing.
+        failure = state.get("last_failure") if state else None
+        if isinstance(failure, dict):
+            failure = failure.get("reason") or failure.get("engine") or str(failure)
+        if failure:
+            retry += f"\n  [muted]Last failure:[/muted] [warning]{str(failure)[:120]}[/warning]"
         if status == "reconnecting":
-            retry = f"\n  [muted]Next retry:[/muted] {state.get('next_retry_delay', '?')}s"
+            retry += f"\n  [muted]Next retry:[/muted] {state.get('next_retry_delay', '?')}s"
+            retry += "\n  [muted]Diagnose:[/muted] blackout doctor"
         daemon_info = (
             f"{status_info}  (PID {pid})\n"
             f"  [muted]Engine:[/muted]  [bold]{snapshot['active_engine']}[/bold]\n"
@@ -1248,6 +1262,9 @@ def _routing_candidates():
     settings = cfg.load()
     profile = _local_country_profile(settings)
     configs = load_configs()
+    if getattr(configs, "error", None):
+        console.print(f"[error]⚠ Could not read your saved configs: {configs.error}[/error]")
+        console.print("[dim]Recommendations below ignore your saved configs — fix the file above for config-aware routing.[/dim]")
     return recommend_routes(
         settings,
         country_profile=profile,
@@ -1320,6 +1337,10 @@ def cmd_config(args):
 
     if args.config_command == "list":
         configs = load_configs()
+        if getattr(configs, "error", None):
+            console.print(f"[error]⚠ Could not read your saved configs: {configs.error}[/error]")
+            console.print("[dim]Your configs were not lost — fix the file above, then run 'blackout config validate'.[/dim]")
+            return
         if not configs:
             console.print("[warning]No configs saved. Use 'blackout config add' or 'blackout config import'.[/warning]")
             return
@@ -1438,6 +1459,12 @@ def cmd_config(args):
                     return
 
             old_configs = load_configs()
+            if getattr(old_configs, "error", None):
+                # Rolling back from an unreadable file would write an empty
+                # list over configs that may well be intact — refuse instead.
+                console.print(f"[error]⚠ Cannot import: saved configs are unreadable ({old_configs.error})[/error]")
+                console.print("[dim]Fix the config file first — importing now could destroy it if the import fails.[/dim]")
+                return
             old_settings = cfg.load()
             try:
                 save_configs(configs)
@@ -2303,6 +2330,17 @@ def cmd_tools(args):
             console.print(f"  Custom blocks: {status['custom_blocks']}")
             console.print(f"  Whitelisted: {status['whitelisted']}")
             console.print(f"  Blocked today: {status['queries_blocked_today']}")
+            stale = status.get("stale_sources") or []
+            if stale:
+                names = ", ".join(item["name"] for item in stale[:3])
+                if len(stale) > 3:
+                    names += f", +{len(stale) - 3} more"
+                console.print(
+                    f"  [warning]Stale sources (interval {status['auto_update_interval_hours']}h):[/warning]"
+                    f" {names} — run [bold]blackout tools adblock update[/bold]"
+                )
+            elif status["total_sources"]:
+                console.print(f"  [dim]All sources fresh (interval {status['auto_update_interval_hours']}h)[/dim]")
 
         elif subcmd == "stats":
             stats = get_adblock_stats()

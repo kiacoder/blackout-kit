@@ -907,6 +907,39 @@ def check_admin_privileges() -> CheckResult:
     )
 
 
+def check_adblock_staleness() -> CheckResult:
+    """Warn when enabled DNS blocklists are older than the configured interval.
+
+    Reads the ``adblock_auto_update_interval_hours`` setting (previously
+    unwired) and the per-source ``last_update`` timestamps written by
+    ``download_blocklist()``. The check never downloads anything — Blackout
+    only contacts the network for features the user invokes — it just tells
+    the user the lists went stale and which command refreshes them.
+    """
+    try:
+        from .tools import adblock
+
+        s = cfg.load()
+        if not s.get("adblock_enabled", False):
+            return CheckResult("Ad Blocklists", True, "N/A (ad blocking disabled)")
+
+        interval = s.get("adblock_auto_update_interval_hours", 24)
+        stale = adblock.get_stale_sources(interval)
+        if not stale:
+            return CheckResult("Ad Blocklists", True, f"Fresh (interval {interval}h)")
+
+        names = ", ".join(item["name"] for item in stale[:3])
+        if len(stale) > 3:
+            names += f", +{len(stale) - 3} more"
+        return CheckResult(
+            "Ad Blocklists", False,
+            f"{len(stale)} source(s) stale (interval {interval}h): {names}"
+            " — refresh with: blackout tools adblock update",
+        )
+    except Exception as e:
+        return CheckResult("Ad Blocklists", True, f"Skipped: {e}")
+
+
 def check_stale_proxy() -> CheckResult:
     """Detects if a system proxy is active pointing to our SOCKS/HTTP port while the daemon is offline."""
     if sys.platform != "win32":
@@ -1137,6 +1170,7 @@ def run_local_checks(include_optional: bool = False) -> list[CheckResult]:
         check_ports_in_use(),
         check_admin_privileges(),
         check_stale_proxy(),
+        check_adblock_staleness(),
     ]
     if include_optional:
         checks.extend((check_scapy(), check_npcap()))
@@ -1177,6 +1211,7 @@ def run_all_checks(auto_fix: bool = False, include_optional: bool = False, show_
         check_ports_in_use(),
         check_admin_privileges(),
         check_stale_proxy(),
+        check_adblock_staleness(),
     ]
     if include_optional:
         checks.extend((check_scapy(), check_npcap()))

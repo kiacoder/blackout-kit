@@ -208,17 +208,18 @@ be checked.
 | R4 | Diagnostic HTTP probes | `blackoutkit/doctor.py` — `check_internet()` | `http://cp.cloudflare.com/` and `http://www.google.com/generate_204` over plain HTTP | Captive-portal detection depends on unencrypted HTTP, so an HTTPS probe answers a different question. A probe also reveals that a diagnostic ran | Keep plain HTTP only for the portal check and label it as such, or add an HTTPS reachability check as the primary result |
 | R5 | Third-party CDN script in the local web dashboard | `blackoutkit/tools.py` — `run_web_api_dashboard()`, the `/` page | `<script src="https://cdn.jsdelivr.net/npm/chart.js">` with no `integrity=` attribute. The dashboard binds `127.0.0.1` by default | Opening the page makes the browser fetch and run code from jsDelivr. A compromised CDN release would execute in the dashboard's origin | Vendor `chart.js` into the package, or pin the version with an SRI `integrity` hash |
 
-### 12.2 Unwired background setting: `adblock_auto_update_interval_hours`
+### 12.2 Advisory blocklist staleness setting: `adblock_auto_update_interval_hours`
 
-`blackoutkit/settings.py` defines `adblock_auto_update_interval_hours` (default `24`) and lists it in
-the "Ad Blocking" settings category. **No code reads it.** No daemon loop, thread, timer, or
-scheduler is wired to it. The only caller of a blocklist refresh is `update_all_blocklists()`, which
-runs only when you invoke `blackout tools adblock update`.
+`blackoutkit/settings.py` defines `adblock_auto_update_interval_hours` (default `24`) in the
+"Ad Blocking" settings category. Since 2026-10-15 the setting is **wired as an advisory
+threshold**: `blackoutkit/tools/adblock.py::get_stale_sources()` compares each enabled
+source's `last_update` timestamp against the interval, and `blackout doctor` reports stale
+sources with the refresh command (`blackout tools adblock update`).
 
-You can confirm this with `grep -rn adblock_auto_update_interval_hours blackoutkit/`. The matches
-should be the definition and the category entry, and nothing else. Setting the value therefore
-creates no background egress. If a scheduler is ever added, this section and §6 must be updated in
-the same change.
+**No background egress is created.** No daemon loop, thread, timer, or scheduler downloads
+blocklists. The interval only decides when the *local* staleness warning appears; the
+download still happens exclusively when you invoke `blackout tools adblock update`. If a
+scheduler is ever added, this section and §6 must be updated in the same change.
 
 ---
 

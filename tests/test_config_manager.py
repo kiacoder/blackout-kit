@@ -86,3 +86,79 @@ def test_is_sni_compatible_false_wrong_both():
     # Wrong address, wrong port
     config1 = ProxyConfig(protocol="vmess", address="10.0.0.1", port=443)
     assert config1.is_sni_compatible() is False
+
+
+# ── Corrupted-config load surfacing (Edge-Case Audit #1) ─────────────────────
+
+def test_load_configs_success_has_no_error(tmp_path):
+    from blackoutkit.config import manager
+
+    path = tmp_path / "configs.txt"
+    path.write_text("vless://uuid@example.com:443#ok\n", encoding="utf-8")
+
+    result = manager.load_configs(path)
+
+    assert result.error is None
+    assert len(result) == 1
+    assert result[0].address == "example.com"
+
+
+def test_load_configs_missing_file_is_not_an_error(tmp_path):
+    """A file that does not exist yet is the legitimate empty state."""
+    from blackoutkit.config import manager
+
+    result = manager.load_configs(tmp_path / "absent.txt")
+
+    assert result.error is None
+    assert result == []
+
+
+def test_load_configs_unreadable_file_reports_error(tmp_path):
+    """Permission-denied reads must be distinguishable from 'no configs'."""
+    from unittest.mock import patch
+    from blackoutkit.config import manager
+
+    path = tmp_path / "configs.txt"
+    path.write_text("vless://uuid@example.com:443#ok\n", encoding="utf-8")
+
+    real_read_text = type(path).read_text
+
+    def deny(self, *args, **kwargs):
+        if self == path:
+            raise PermissionError(13, "Permission denied")
+        return real_read_text(self, *args, **kwargs)
+
+    with patch.object(type(path), "read_text", deny):
+        result = manager.load_configs(path)
+
+    assert result.error is not None
+    assert "permission denied" in result.error.lower()
+    assert result == []
+
+
+def test_load_configs_empty_file_is_not_an_error(tmp_path):
+    from blackoutkit.config import manager
+
+    path = tmp_path / "configs.txt"
+    path.write_text("   \n", encoding="utf-8")
+
+    result = manager.load_configs(path)
+
+    assert result.error is None
+    assert result == []
+
+
+def test_load_configs_result_behaves_like_a_plain_list(tmp_path):
+    """Callers that ignore .error keep working unchanged."""
+    from blackoutkit.config import manager
+
+    path = tmp_path / "configs.txt"
+    path.write_text(
+        "vless://uuid@example.com:443#a\ntrojan://pass@example.org:443\n",
+        encoding="utf-8",
+    )
+
+    result = manager.load_configs(path)
+
+    assert isinstance(result, list)
+    assert sorted(c.protocol for c in result) == ["trojan", "vless"]

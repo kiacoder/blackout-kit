@@ -42,6 +42,9 @@ STATE_FILE   = APP_DATA_DIR / "daemon_state.json"
 LOCK_FILE    = APP_DATA_DIR / "daemon.lock"
 LEASE_FILE   = APP_DATA_DIR / "daemon.lease.json"
 LIFECYCLE_LOCK_FILE = APP_DATA_DIR / "daemon.lifecycle.lock"
+# Consecutive engine failures after which the daemon escalates the log from
+# warning to ERROR with an actionable diagnosis (Edge-Case Audit #7).
+ENGINE_FAILURE_ESCALATE_AFTER = 3
 
 
 def _lease_path() -> Path:
@@ -1080,6 +1083,24 @@ def _run_daemon_loop(
                 )
                 log.info("Engine restarted successfully (attempt %d/%d).", restart_count, max_restarts)
                 return True
+
+            # Escalation: repeated failures are not transient. Before this, every
+            # failed attempt logged at warning level and the user watching
+            # 'blackout status' saw "reconnecting" forever with no reason — the
+            # audit finding was that the daemon "looks hung". From the third
+            # consecutive failure the log escalates to ERROR with the actionable
+            # diagnosis, and the reason is already carried in the daemon state
+            # for `blackout status` / the operator layer to display.
+            if restart_count >= ENGINE_FAILURE_ESCALATE_AFTER:
+                log.error(
+                    "Engine '%s' has failed %d consecutive time(s): %s "
+                    "Common causes: a missing runtime ('blackout bins download'), "
+                    "a blocked or dead upstream config ('blackout config validate'), "
+                    "or a platform prerequisite ('blackout doctor').",
+                    active_engine_name,
+                    restart_count,
+                    failure_reason,
+                )
 
             if restart_count >= max_restarts:
                 log.error(

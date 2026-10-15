@@ -22,6 +22,32 @@ SETUP_SCHEMA_VERSION = 1
 SUBSCRIPTION_MAX_BYTES = 2 * 1024 * 1024
 SUBSCRIPTION_MAX_LINES = 10_000
 SUBSCRIPTION_MAX_REDIRECTS = 3
+
+
+class ConfigLoadResult(list):
+    """A ``list[ProxyConfig]`` that also carries a load-error message.
+
+    ``load_configs()`` returns this instead of a bare list so a failed read of
+    a non-empty file can be surfaced to the user. Before this type existed,
+    every failure path returned a plain ``[]`` — indistinguishable from "no
+    configs saved" — so a corrupt or unreadable config file silently emptied
+    the library and users assumed their configs had been deleted.
+
+    Usage after loading::
+
+        configs = load_configs()
+        if configs.error:
+            console.print(f"[error]Could not read saved configs: {configs.error}[/error]")
+
+    ``error`` is ``None`` on success, including the legitimate "file does not
+    exist yet" case.
+    """
+
+    def __init__(self, iterable=(), *, error: str | None = None):
+        super().__init__(iterable)
+        self.error = error
+
+
 @contextlib.contextmanager
 def _config_mutation_lock():
     lock_path = CONFIGS_FILE.with_suffix(".lock")
@@ -259,44 +285,49 @@ def _parse_config_text(text: str) -> list[ProxyConfig]:
     return configs
 
 
-def load_configs(path: Path | None = None) -> list[ProxyConfig]:
+def load_configs(path: Path | None = None) -> ConfigLoadResult:
     import logging
     log = logging.getLogger(__name__)
 
     p = path or CONFIGS_FILE
     if path is None and CONFIGS_FILE == vault.CONFIGS_FILE and vault.config_vault_active():
         try:
-            return _parse_config_text(vault.read_config_bytes().decode("utf-8", errors="strict"))
+            return ConfigLoadResult(_parse_config_text(vault.read_config_bytes().decode("utf-8", errors="strict")))
         except UnicodeDecodeError as e:
-            log.error(f"Config vault has invalid UTF-8 encoding: {e}")
-            return []
+            message = f"config vault has invalid UTF-8 encoding: {e}"
+            log.error(message)
+            return ConfigLoadResult(error=message)
         except vault.VaultError as e:
-            log.error(f"Could not read config vault: {e}")
-            return []
+            message = f"could not read config vault: {e}"
+            log.error(message)
+            return ConfigLoadResult(error=message)
 
     if not p.exists():
-        return []
+        return ConfigLoadResult()
 
     try:
         text = p.read_text(encoding="utf-8", errors="replace")
         if not text.strip():
             log.warning(f"Config file is empty: {p}")
-            return []
-        return _parse_config_text(text)
+            return ConfigLoadResult()
+        return ConfigLoadResult(_parse_config_text(text))
     except OSError as e:
         if e.errno == 13:  # Permission denied
-            log.error(f"Permission denied reading config file {p}: {e}")
+            message = f"permission denied reading config file {p}: {e}"
         elif e.errno == 28:  # No space left on device
-            log.error(f"No space left on device reading {p}: {e}")
+            message = f"no space left on device reading {p}: {e}"
         else:
-            log.error(f"Failed to read config file {p}: {e}")
-        return []
+            message = f"failed to read config file {p}: {e}"
+        log.error(message)
+        return ConfigLoadResult(error=message)
     except ValueError as e:
-        log.error(f"Config file contains invalid URI format at {p}: {e}")
-        return []
+        message = f"config file contains invalid URI format at {p}: {e}"
+        log.error(message)
+        return ConfigLoadResult(error=message)
     except Exception as e:
-        log.error(f"Unexpected error loading configs from {p}: {type(e).__name__}: {e}")
-        return []
+        message = f"unexpected error loading configs from {p}: {type(e).__name__}: {e}"
+        log.error(message)
+        return ConfigLoadResult(error=message)
 
 
 def save_configs(configs: list[ProxyConfig], path: Path | None = None):
