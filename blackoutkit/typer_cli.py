@@ -3367,6 +3367,217 @@ def threat_feeds_update(ctx: typer.Context):
         raise typer.Exit(code=1)
 
 
+plugins_app = typer.Typer(help="Load and run plugins (rules, analyzers, exporters)", no_args_is_help=False)
+tools_app.add_typer(plugins_app, name="plugins")
+
+
+@plugins_app.callback(invoke_without_command=True)
+def plugins_status(ctx: typer.Context):
+    if ctx.invoked_subcommand is not None:
+        return
+    options = _output_options(ctx)
+    from .plugins import PluginManager
+
+    manager = PluginManager()
+    payload = {"enabled": manager.enabled, "count": len(manager.list())}
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        if not manager.enabled:
+            console.print("[muted]Plugins are disabled. Enable with `blackout settings set plugins_enabled true`.[/muted]")
+        else:
+            console.print(f"{payload['count']} plugin(s) discovered in {manager.plugin_dir}")
+
+
+@plugins_app.command("list")
+def plugins_list(ctx: typer.Context):
+    """List discovered plugins."""
+    from dataclasses import asdict
+
+    from rich.markup import escape
+
+    from .plugins import PluginManager
+
+    options = _output_options(ctx)
+    manager = PluginManager()
+    metas = manager.list()
+    if options.json_output:
+        _print_json_enveloped({
+            "enabled": manager.enabled,
+            "plugins": [asdict(m) for m in metas],
+            "errors": manager.errors,
+        })
+        return
+    if _is_quiet(options):
+        return
+    if not manager.enabled:
+        console.print("[muted]Plugins are disabled. Enable with `blackout settings set plugins_enabled true`.[/muted]")
+        return
+    if not metas:
+        console.print(f"[muted]No plugins found in {manager.plugin_dir}.[/muted]")
+    else:
+        table = make_table("Plugins", [("Name", "cyan"), ("Kind", ""), ("Version", ""), ("Description", "")], [])
+        for m in metas:
+            table.add_row(m.name, m.kind, m.version, m.description)
+        console.print(table)
+    for filename, err in manager.errors.items():
+        console.print(f"[error]Failed to load {escape(filename)}: {escape(err)}[/error]")
+
+
+@plugins_app.command("run")
+def plugins_run(
+    ctx: typer.Context,
+    name: str = typer.Argument(..., help="Rule plugin name"),
+    context: str = typer.Option("{}", "--context", help="JSON object passed to the rule"),
+):
+    """Run a rule plugin against a JSON context and print its findings."""
+    import json as _json
+
+    from rich.markup import escape
+
+    from .plugins import PluginError, PluginManager
+
+    options = _output_options(ctx)
+    try:
+        parsed = _json.loads(context)
+    except ValueError as exc:
+        _fail_parameter(f"--context is not valid JSON: {exc}", options=options)
+        return
+    if not isinstance(parsed, dict):
+        _fail_parameter("--context must be a JSON object", options=options)
+        return
+    try:
+        findings = PluginManager().run_rule(name, parsed)
+    except PluginError as exc:
+        _print_cli_error("plugin_error", str(exc), options=options)
+        return
+    if options.json_output:
+        _print_json_enveloped({"plugin": name, "findings": findings})
+        return
+    if _is_quiet(options):
+        return
+    if not findings:
+        console.print("[muted]No findings.[/muted]")
+        return
+    for finding in findings:
+        console.print(
+            f"[warning]{escape(str(finding.get('severity', 'info')))}[/warning]: "
+            f"{escape(str(finding.get('message', '')))}"
+        )
+
+
+marketplace_app = typer.Typer(help="Community plugin marketplace", no_args_is_help=False)
+tools_app.add_typer(marketplace_app, name="marketplace")
+
+
+@marketplace_app.callback(invoke_without_command=True)
+def marketplace_status(ctx: typer.Context):
+    if ctx.invoked_subcommand is not None:
+        return
+    options = _output_options(ctx)
+    from .marketplace import Marketplace
+
+    mp = Marketplace()
+    payload = {"installed": mp.installed()}
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        console.print(f"{len(payload['installed'])} plugin(s) installed in {mp.plugin_dir}")
+
+
+@marketplace_app.command("list")
+def marketplace_list(ctx: typer.Context):
+    """List plugins available in the local catalog."""
+    from dataclasses import asdict
+
+    from .marketplace import Marketplace
+
+    options = _output_options(ctx)
+    entries = Marketplace().entries()
+    if options.json_output:
+        _print_json_enveloped({"entries": [asdict(e) for e in entries]})
+        return
+    if _is_quiet(options):
+        return
+    if not entries:
+        console.print("[muted]No catalog loaded. Run `blackout tools marketplace refresh` first.[/muted]")
+        return
+    table = make_table("Marketplace", [("Name", "cyan"), ("Kind", ""), ("Version", ""), ("Description", "")], [])
+    for e in entries:
+        table.add_row(e.name, e.kind, e.version, e.description)
+    console.print(table)
+
+
+@marketplace_app.command("search")
+def marketplace_search(ctx: typer.Context, query: str = typer.Argument(..., help="Search text")):
+    """Search the local catalog."""
+    from dataclasses import asdict
+
+    from .marketplace import Marketplace
+
+    options = _output_options(ctx)
+    entries = Marketplace().search(query)
+    if options.json_output:
+        _print_json_enveloped({"results": [asdict(e) for e in entries]})
+        return
+    if _is_quiet(options):
+        return
+    if not entries:
+        console.print(f"[muted]No plugins match {query!r}.[/muted]")
+        return
+    table = make_table("Search results", [("Name", "cyan"), ("Kind", ""), ("Description", "")], [])
+    for e in entries:
+        table.add_row(e.name, e.kind, e.description)
+    console.print(table)
+
+
+@marketplace_app.command("refresh")
+def marketplace_refresh(ctx: typer.Context, url: str = typer.Option(None, "--url", help="Catalog URL override")):
+    """Fetch the catalog from the network (explicit, user-invoked egress)."""
+    from .marketplace import Marketplace, MarketplaceError
+
+    options = _output_options(ctx)
+    try:
+        added = Marketplace().refresh(url)
+    except MarketplaceError as exc:
+        _print_cli_error("marketplace_error", str(exc), options=options)
+        return
+    if options.json_output:
+        _print_json_enveloped({"added": added})
+    elif not _is_quiet(options):
+        console.print(f"[success]✓ Catalog refreshed (+{added} entries).[/success]")
+
+
+@marketplace_app.command("install")
+def marketplace_install(ctx: typer.Context, name: str = typer.Argument(..., help="Plugin name")):
+    """Download, SHA-256-verify, and install a plugin."""
+    from .marketplace import Marketplace, MarketplaceError
+
+    options = _output_options(ctx)
+    try:
+        path = Marketplace().install(name)
+    except MarketplaceError as exc:
+        _print_cli_error("marketplace_error", str(exc), options=options)
+        return
+    if options.json_output:
+        _print_json_enveloped({"installed": name, "path": str(path)})
+    elif not _is_quiet(options):
+        console.print(f"[success]✓ Installed {name} → {path}[/success]")
+
+
+@marketplace_app.command("remove")
+def marketplace_remove(ctx: typer.Context, name: str = typer.Argument(..., help="Plugin name")):
+    """Remove an installed plugin."""
+    from .marketplace import Marketplace
+
+    options = _output_options(ctx)
+    removed = Marketplace().remove(name)
+    if options.json_output:
+        _print_json_enveloped({"removed": removed})
+    elif not _is_quiet(options):
+        console.print(f"[success]Removed {name}[/success]" if removed else f"[muted]{name} is not installed.[/muted]")
+
+
 @tools_app.command("adblock")
 def tools_adblock(
     subcmd: str = typer.Argument("status", help="sources|sources-add|sources-remove|custom-add|custom-remove|whitelist-add|whitelist-remove|status|stats|log|update"),

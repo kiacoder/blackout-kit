@@ -39,12 +39,19 @@ from typing import Any, Optional
 _log = logging.getLogger(__name__)
 
 try:  # optional dependency — the collectors below work without it
-    from fastapi import FastAPI, Query
+    # NOTE: imported at module level (not inside create_app) because this file
+    # uses `from __future__ import annotations`: FastAPI resolves the endpoint
+    # parameter annotations (e.g. `websocket: WebSocket`) against module
+    # globals, so a function-local import would make WebSocket resolve as a
+    # query parameter instead.
+    from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 
     _FASTAPI_AVAILABLE = True
 except Exception:  # pragma: no cover - exercised only when fastapi is absent
     FastAPI = None  # type: ignore
     Query = None  # type: ignore
+    WebSocket = None  # type: ignore
+    WebSocketDisconnect = None  # type: ignore
     _FASTAPI_AVAILABLE = False
 
 
@@ -174,16 +181,33 @@ def _warn_if_public_host() -> None:
         )
 
 
+def _remote_access_allowed() -> bool:
+    import os
+
+    return os.environ.get("BLACKOUT_API_ALLOW_REMOTE") == "1"
+
+
+def _is_loopback_host(host: object) -> bool:
+    """Whether a client host is loopback (or the TestClient synthetic host)."""
+    return (
+        host == "testclient"  # Starlette TestClient synthetic host
+        or host in ("::1", "localhost")
+        or (
+            isinstance(host, str)
+            and (host.startswith("127.") or host.startswith("::ffff:127."))
+        )
+    )
+
+
 def _install_loopback_guard(api: "FastAPI") -> None:
     """Deny non-loopback clients unless ``BLACKOUT_API_ALLOW_REMOTE=1``.
 
     The API has no authentication and exposes local process/connection data, so
     it is loopback-only by default. Operators who deliberately want remote
-    access (behind their own proxy/auth) can opt in via the env var.
+    access (behind their own proxy/auth) can opt in via the env var. This
+    middleware covers HTTP; the WebSocket endpoint re-checks explicitly.
     """
-    import os
-
-    if os.environ.get("BLACKOUT_API_ALLOW_REMOTE") == "1":
+    if _remote_access_allowed():
         return
 
     from fastapi import Request
@@ -192,16 +216,7 @@ def _install_loopback_guard(api: "FastAPI") -> None:
     @api.middleware("http")
     async def _loopback_only(request: Request, call_next):
         client = getattr(request, "client", None)
-        host = getattr(client, "host", None)
-        is_loopback = (
-            host == "testclient"  # Starlette TestClient synthetic host
-            or host in ("::1", "localhost")
-            or (
-                isinstance(host, str)
-                and (host.startswith("127.") or host.startswith("::ffff:127."))
-            )
-        )
-        if not is_loopback:
+        if not _is_loopback_host(getattr(client, "host", None)):
             return JSONResponse(
                 {"detail": "remote access disabled; set BLACKOUT_API_ALLOW_REMOTE=1 to override"},
                 status_code=403,
@@ -249,6 +264,87 @@ def create_app() -> "FastAPI":
     @api.get("/api/bandwidth")
     def bandwidth() -> dict[str, Any]:
         return collect_bandwidth()
+
+    # ── v2: events, webhooks, plugins, live streaming ───────────────────────
+
+    @api.get("/api/v2/events")
+    def events_v2(
+        limit: int = Query(default=50, ge=1, le=500),
+        type: Optional[str] = Query(default=None, description="event type prefix filter"),
+    ) -> dict[str, Any]:
+        from . import events as events_mod
+
+        return {"events": events_mod.merged_recent_events(limit=limit, type_prefix=type)}
+
+    @api.get("/api/v2/webhooks")
+    def webhooks_list() -> dict[str, Any]:
+        from .webhooks import WebhookRegistry
+
+        return {"webhooks": [h.to_dict() for h in WebhookRegistry().list()]}
+
+    @api.post("/api/v2/webhooks")
+    def webhooks_add(payload: dict[str, Any]) -> dict[str, Any]:
+        from fastapi import HTTPException
+
+        from .webhooks import Webhook, WebhookRegistry
+
+        url = str(payload.get("url") or "").strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="url is required")
+        prefixes = payload.get("event_prefixes") or []
+        if not isinstance(prefixes, list):
+            raise HTTPException(status_code=400, detail="event_prefixes must be a list")
+        hook = Webhook(
+            url=url,
+            event_prefixes=tuple(str(p) for p in prefixes),
+            enabled=bool(payload.get("enabled", True)),
+            secret=(str(payload["secret"]) if payload.get("secret") else None),
+        )
+        WebhookRegistry().add(hook)
+        return {"added": url}
+
+    @api.delete("/api/v2/webhooks")
+    def webhooks_remove(url: str = Query(..., description="webhook URL to remove")) -> dict[str, Any]:
+        from .webhooks import WebhookRegistry
+
+        return {"removed": WebhookRegistry().remove(url)}
+
+    @api.get("/api/v2/plugins")
+    def plugins_v2() -> dict[str, Any]:
+        from dataclasses import asdict
+
+        from .plugins import PluginManager
+
+        manager = PluginManager()
+        return {"enabled": manager.enabled, "plugins": [asdict(m) for m in manager.list()]}
+
+    @api.websocket("/api/v2/ws/events")
+    async def ws_events(websocket: WebSocket) -> None:
+        import asyncio
+
+        from . import events as events_mod
+
+        # HTTP middleware does not cover WebSockets — enforce loopback here too.
+        if not _remote_access_allowed() and not _is_loopback_host(
+            getattr(websocket.client, "host", None)
+        ):
+            await websocket.close(code=1008)
+            return
+        await websocket.accept()
+        seen: set[str] = set()
+        try:
+            await websocket.send_json({"type": "stream.connected"})
+            while True:
+                for event in events_mod.merged_recent_events(limit=200):
+                    event_id = event.get("event_id")
+                    if event_id and event_id not in seen:
+                        seen.add(event_id)
+                        await websocket.send_json(event)
+                await asyncio.sleep(1.0)
+        except WebSocketDisconnect:
+            return
+        except Exception:  # pragma: no cover - client vanished mid-send
+            return
 
     return api
 

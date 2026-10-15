@@ -202,6 +202,10 @@ DEFAULTS = {
     "mac_preferred_adapter": "",       # Optional active physical Wi-Fi adapter name
     "mac_randomization_prefix": "02",  # Locally administered + unicast first octet
     "mac_custom_private_address": "",  # Optional locally administered + unicast MAC
+
+    # Plugins (Phase 8). Loading a plugin executes arbitrary Python, so this is
+    # off by default; only enable it with plugins you trust.
+    "plugins_enabled": False,
 }
 
 
@@ -238,6 +242,7 @@ SETTING_GROUPS = {
     "Bandwidth Caps": ("bandwidth_caps_enabled", "bandwidth_alert_threshold"),
     "Traffic Logging": ("traffic_logging_enabled", "traffic_log_max_entries", "traffic_log_retention_days", "traffic_log_sample_interval_sec"),
     "Security Monitoring": ("security_monitor_enabled",),
+    "Plugins": ("plugins_enabled",),
     "Ad Blocking": ("adblock_enabled", "adblock_block_mode", "adblock_sinkhole_ip", "adblock_auto_update_interval_hours", "adblock_query_log_enabled"),
     "QoS": ("qos_enabled", "qos_enforcement_mode", "qos_default_priority", "qos_alert_threshold_pct", "qos_rate_limit_precision_ms"),
     "Wi-Fi MAC Privacy": ("mac_preferred_adapter", "mac_randomization_prefix", "mac_custom_private_address"),
@@ -321,6 +326,7 @@ _VALIDATORS: dict[str, tuple] = {
     "xray_split_tunnel":  (bool,  lambda v: True,            "must be true or false"),
     "xray_doh_dns":       (bool,  lambda v: True,            "must be true or false"),
     "security_monitor_enabled": (bool, lambda v: True,       "must be true or false"),
+    "plugins_enabled":    (bool,  lambda v: True,            "must be true or false"),
     "scan_concurrency":   (int,   lambda v: 1 <= v <= 500,   "must be 1–500"),
     "scan_timeout":       (float, lambda v: 0.1 <= v <= 30,  "must be 0.1–30.0"),
     "scan_ip_count":      (int,   lambda v: 1 <= v <= 5000,  "must be 1–5000"),
@@ -698,6 +704,7 @@ def describe(key: str) -> str:
         "xray_split_tunnel":  "Bypass proxy for local LAN and domestic (.ir) traffic",
         "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",
         "security_monitor_enabled": "Run live anomaly detection and threat-feed checks on sampled connections (works with or without the audit log)",
+        "plugins_enabled":    "Load user plugins from the plugin directory (plugins are arbitrary code — only enable with plugins you trust)",
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
         "config_rotation":    "When enabled, the daemon rotates to the next saved config on reconnect failure (blocked IP)",
         "fallback_enabled":   "When enabled, automatically try the next engine if the primary engine fails",

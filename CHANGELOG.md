@@ -7,6 +7,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ## [Unreleased]
 
 ### Added
+- **Plugin system (`blackoutkit/plugins.py`, Roadmap Phase 8):** load user plugins that add custom **rules**, **analyzers**, and **exporters** from `~/.blackout-kit/plugins` (or `$BLACKOUT_PLUGIN_DIR`). Gated behind the new `plugins_enabled` setting (default **off**) because importing a plugin executes arbitrary Python; a broken plugin is isolated (reported, never fatal). CLI: `blackout tools plugins [list|run]`.
+- **Community marketplace (`blackoutkit/marketplace.py`, Roadmap Phase 8):** search/list a plugin catalog and install plugins with mandatory **SHA-256 verification** (a mismatch aborts before anything is written). Network egress only on explicit `refresh`/`install`. CLI: `blackout tools marketplace [list|search|refresh|install|remove]`.
+- **REST API v2 (`blackoutkit/webhooks.py` + `blackoutkit/api.py`, Roadmap Phase 8):** `/api/v2/events`, `/api/v2/webhooks` (GET/POST/DELETE), `/api/v2/plugins`, and a `/api/v2/ws/events` **WebSocket** live event stream. Webhooks POST JSON with an optional HMAC-SHA256 signature (`X-Blackout-Signature`); the loopback-only guard now covers the WebSocket endpoint too.
 - **Python SDK (`blackoutkit.sdk`, Roadmap Phase 8):** a stable, thin facade for embedding Blackout Kit — `from blackoutkit.sdk import Blackout`. Covers settings, engine capabilities, readiness, doctor diagnostics, daemon control (`connect`/`disconnect`/`status`), and observability (metrics, connections, bandwidth, anomalies, threat-feed stats, recommendations, benchmarks, reports). It delegates to the same internals the CLI uses, so the SDK and CLI can never disagree; typed exceptions (`BlackoutError` + `NotConnectedError`/`EngineError`/`SettingsError`/`DependencyError`). No optional dependencies required.
 
 ### Fixed
