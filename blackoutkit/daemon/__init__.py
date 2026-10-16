@@ -808,6 +808,20 @@ def _run_daemon_loop(
     stderr_handler.setFormatter(RedactingFormatter("%(levelname)s: %(message)s"))
     log.addHandler(stderr_handler)
 
+    # Heal anything a previous run left behind after a crash or hard kill —
+    # a dead system proxy, owned firewall rules, or a leftover TUN. Only owned
+    # state is cleared here (the broader route/DNS recovery stays a user action
+    # via `blackout netfix`), so this is safe to run unconditionally; without it
+    # a restarted daemon inherits a blackholed network stack.
+    try:
+        from ..self_heal import self_heal_steps as _self_heal_steps
+
+        for _step in _self_heal_steps():
+            if _step["detail"] != "nothing to clean":
+                log.info("Self-heal %s: %s", _step["name"], _step["detail"])
+    except Exception as exc:
+        log.warning("Self-heal skipped: %s", exc)
+
     # Restore an owned proxy if this daemon is Ctrl+C'd, its console window is
     # closed, or it exits for any reason. The `finally` below covers the
     # graceful path; these cover the exits it cannot see.

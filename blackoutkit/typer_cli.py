@@ -1045,18 +1045,22 @@ def _run_recovery_flow(
             options=options,
         )
 
+    from . import self_heal
+
     if preview:
+        heal_plan = self_heal.plan_self_heal_steps()
         payload = {
             "operation": "preview",
             "flags": flags,
             "warnings": warnings,
-            "steps": _recovery_steps_payload(plan),
+            "steps": _recovery_steps_payload(plan) + _recovery_steps_payload(heal_plan),
             "success": True,
         }
         if options.json_output:
             _print_json_enveloped(payload)
         elif not _is_quiet(options):
             _render_recovery_steps(plan, preview=True)
+            _render_recovery_steps(heal_plan, preview=True)
             console.print("[muted]Preview only: no system state or audit log was changed.[/muted]")
         return
 
@@ -1071,6 +1075,10 @@ def _run_recovery_flow(
             "Blackout Kit could not complete local network recovery",
             options=options,
         )
+
+    # Clear owned leftovers a hard kill can strand (dead proxy, owned firewall
+    # rules, leftover TUN). "Nothing to clean" still reports ok.
+    results = [*results, *self_heal.self_heal_steps()]
 
     success = _recovery_success(results)
     payload = {
@@ -2909,6 +2917,38 @@ def tools_netfix(
         warnings=warnings,
         command_label="tools netfix",
     )
+
+
+@tools_app.command("vmcheck")
+def tools_vmcheck(ctx: typer.Context):
+    """Report VM detection, leftover Blackout state, and recovery steps."""
+    from .self_heal import safety_report
+
+    options = _output_options(ctx)
+    report = safety_report()
+    if options.json_output:
+        _print_json_enveloped(report)
+        return
+    if _is_quiet(options):
+        return
+    vm = report["vm"]
+    leftover = report["leftover"]
+    identity = f"{vm['manufacturer']} {vm['model']}".strip() or "unknown hardware"
+    if vm["is_virtual"]:
+        console.print(f"[warning]Virtual machine detected[/warning]: {vm['hypervisor']} — {identity}")
+    else:
+        console.print(f"No VM detected — {identity}")
+    if leftover["any_leftover"]:
+        console.print("[error]Leftover Blackout state found[/error] — run [bold]blackout tools netfix[/bold] to clear it")
+        console.print(
+            f"  proxy owned: {leftover['proxy'].get('owned')} · "
+            f"firewall active: {leftover['firewall_active']} · "
+            f"TUN present: {leftover['tun_present']}"
+        )
+    else:
+        console.print("[success]No leftover Blackout state[/success]")
+    for step in report["steps"]:
+        console.print(f"  • {step}")
 
 
 @tools_app.command("arp-flush")
