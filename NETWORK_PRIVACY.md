@@ -114,6 +114,16 @@ from `dist.torproject.org` and `build.openvpn.net` respectively.
 | Media download | whatever URL you pass to `blackout media …` (yt-dlp) | Only when you run it |
 | Torrents | trackers/DHT peers of the torrent you added | Only while `blackout torrent …` is used |
 | Apps Script relay | `https://script.google.com/macros/s/<id>/exec` | Only while the `appsscript` engine runs, and only against **your** own deployment ID; validated as HTTPS on `script.google.com` (`_validated_relay_url`). Its local listener is `127.0.0.1:<gas_proxy_port>` |
+| Plugin marketplace catalog | `https://raw.githubusercontent.com/kiacoder/blackout-kit-plugins/main/catalog.json` by default, or the `--url` you pass to `blackout tools marketplace refresh` | **Only** when you run `refresh`. There is no background fetch and no default polling |
+| Plugin install | the `url` of the catalog entry you install | **Only** when you run `blackout tools marketplace install <name>`. The download is SHA-256-verified against the catalog entry's digest **before anything is written**; a mismatch aborts and leaves the plugin directory untouched |
+
+### Webhook delivery (outbound, opt-in — added in 1.8.0)
+
+| Destination | Transport | When |
+|---|---|---|
+| The URLs you registered through API v2 `POST /api/v2/webhooks` | HTTPS POST, `follow_redirects=False`, 10 s timeout | Only while the REST API is running (`blackout api start`) **and** a published event matches a registered webhook's prefixes |
+
+Each delivery carries the event as JSON. When the webhook has a secret, the exact request body is signed with HMAC-SHA256 in `X-Blackout-Signature`, so a receiver can verify the payload came from this process. Webhooks are stored locally in `~/.blackout-kit/webhooks.json`; secrets are persisted (they are needed to re-sign deliveries) but masked in every API response. Delivery runs on a daemon thread so a slow or unreachable endpoint cannot stall the event bus. **No URL is contacted that you did not register**, and nothing is delivered when no webhook matches.
 
 ## 7. Engine traffic — user-supplied destinations
 

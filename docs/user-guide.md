@@ -1013,6 +1013,76 @@ GoodbyeDPI is a TCP-oriented path, so browser-side QUIC can bypass it and hit th
 
 ---
 
+## Enterprise, developer, and recovery surfaces (1.8.0)
+
+### Enterprise and team
+
+```text
+blackout enterprise                          # organization, principals, device summary
+blackout enterprise roles                    # viewer / operator / admin and their permissions
+blackout enterprise policy                   # show the active policy document
+blackout enterprise assign alice admin       # grant a role (writes ~/.blackout-kit/policy.json)
+blackout enterprise devices                  # online/offline dashboard
+blackout enterprise device-add laptop --platform windows --status connected
+blackout enterprise compliance --framework gdpr|hipaa|soc2|all
+```
+
+Everything here is local-first. The policy is a JSON document you can distribute, and it can be
+HMAC-signed so a device can detect a policy that was edited in transit. The device registry is a shared
+JSON file. The compliance checks read your effective settings and are **technical evidence, not a
+certification** — and they deliberately surface the tension between GDPR data-minimization (logging off)
+and HIPAA audit controls (logging on) instead of pretending one setting satisfies both.
+
+### Plugins and the marketplace
+
+```text
+blackout tools plugins                          # list discovered plugins
+blackout tools plugins run my-rule --context '{"bytes_sent": 500}'
+blackout tools marketplace list                 # catalog entries
+blackout tools marketplace search dpi
+blackout tools marketplace refresh              # fetch the catalog (explicit egress)
+blackout tools marketplace install my-rule      # SHA-256 verified before writing
+blackout tools marketplace remove my-rule
+```
+
+A plugin is an ordinary Python file in `~/.blackout-kit/plugins/` that subclasses `RulePlugin`,
+`AnalyzerPlugin`, or `ExporterPlugin`. **Plugins are arbitrary code and run with this process's full
+privileges** — which is exactly why loading is gated behind the `plugins_enabled` setting (off by default,
+and while it is off the plugin directory is never read at all). A plugin that fails to import is reported
+and skipped; it can never break the command or stop the others from loading. Marketplace installs verify
+the download's SHA-256 against the catalog entry *before* writing anything, and a mismatch aborts.
+
+### VM safety and crash recovery
+
+```text
+blackout tools vmcheck      # VM detection, leftover state, and recovery steps
+blackout tools netfix       # clear leftover Blackout-owned network state
+```
+
+`vmcheck` reports whether you are inside a VM (and which hypervisor), whether Blackout left any owned
+system state behind, and what to do about it — including the reminder to snapshot a VM before testing.
+After a crash or a hard kill, the next `blackout` run heals its own leftovers automatically, and `netfix`
+does it on demand.
+
+### Embedding Blackout Kit from Python
+
+```python
+from blackoutkit.sdk import Blackout
+
+bk = Blackout()
+bk.version
+bk.engines()
+bk.readiness("xray")
+bk.metrics()
+bk.roles() / bk.policy() / bk.can("alice", "connect")
+bk.connect() / bk.status() / bk.disconnect()
+```
+
+The SDK is a thin facade over the same internals the CLI uses, so the two can never disagree. Its
+exceptions all derive from `BlackoutError`.
+
+---
+
 ## Best habits
 
 - Run `doctor` after first install

@@ -5,6 +5,9 @@ import hashlib
 import hmac
 import json
 
+import pytest
+
+from blackoutkit import webhooks as wb
 from blackoutkit.webhooks import Webhook, WebhookRegistry, deliver, sign_payload
 
 
@@ -103,3 +106,75 @@ def test_deliver_reports_failures():
 def test_deliver_marks_non_2xx_as_not_ok():
     results = deliver({"type": "x"}, [Webhook(url="u")], poster=lambda *a: 500)
     assert results[0] == {"url": "u", "ok": False, "status": 500}
+
+
+# ── event-bus observer ───────────────────────────────────────────────────────
+
+def _wait(predicate, timeout: float = 2.0):
+    """Poll until predicate() is truthy (delivery runs on a daemon thread)."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_observer_delivers_matching_events(monkeypatch, tmp_path):
+    from blackoutkit.events import Event
+    from blackoutkit.webhooks import Webhook, WebhookRegistry, make_webhook_observer
+
+    calls = []
+    monkeypatch.setattr(wb, "deliver", lambda payload, hooks: calls.append((payload, hooks)) or [])
+
+    registry = WebhookRegistry(tmp_path / "wh.json")
+    registry.add(Webhook(url="https://a.test", event_prefixes=("engine",)))
+    observer = make_webhook_observer(registry)
+
+    observer(Event(type="engine.started", summary="go"))
+    assert _wait(lambda: calls), "expected a delivery"
+    assert calls[0][0]["type"] == "engine.started"
+    assert calls[0][1][0].url == "https://a.test"
+
+
+def test_observer_skips_non_matching_events(monkeypatch, tmp_path):
+    from blackoutkit.events import Event
+    from blackoutkit.webhooks import Webhook, WebhookRegistry, make_webhook_observer
+
+    calls = []
+    monkeypatch.setattr(wb, "deliver", lambda payload, hooks: calls.append(payload) or [])
+
+    registry = WebhookRegistry(tmp_path / "wh.json")
+    registry.add(Webhook(url="https://a.test", event_prefixes=("engine",)))
+    observer = make_webhook_observer(registry)
+
+    observer(Event(type="config.saved"))
+    assert not _wait(lambda: calls, timeout=0.2)
+    assert calls == []
+
+
+def test_observer_tolerates_a_broken_event(monkeypatch, tmp_path):
+    from blackoutkit.webhooks import WebhookRegistry, make_webhook_observer
+
+    monkeypatch.setattr(wb, "deliver", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    observer = make_webhook_observer(WebhookRegistry(tmp_path / "wh.json"))
+
+    for bad in (None, 42, object()):
+        observer(bad)  # must not raise
+
+
+def test_observer_accepts_a_dict_event(monkeypatch, tmp_path):
+    from blackoutkit.webhooks import Webhook, WebhookRegistry, make_webhook_observer
+
+    calls = []
+    monkeypatch.setattr(wb, "deliver", lambda payload, hooks: calls.append(payload) or [])
+
+    registry = WebhookRegistry(tmp_path / "wh.json")
+    registry.add(Webhook(url="https://a.test"))  # no prefixes -> all events
+    observer = make_webhook_observer(registry)
+
+    observer({"type": "engine.stopped", "summary": "bye"})
+    assert _wait(lambda: calls)
+    assert calls[0]["type"] == "engine.stopped"

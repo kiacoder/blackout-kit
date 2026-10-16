@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,7 +26,13 @@ _log = logging.getLogger(__name__)
 DEFAULT_WEBHOOK_FILE = Path.home() / ".blackout-kit" / "webhooks.json"
 _MASKED_SECRET = "***"
 
-__all__ = ["Webhook", "WebhookRegistry", "deliver", "sign_payload"]
+__all__ = [
+    "Webhook",
+    "WebhookRegistry",
+    "deliver",
+    "sign_payload",
+    "make_webhook_observer",
+]
 
 
 def _now() -> str:
@@ -176,3 +183,33 @@ def _post(url: str, body: bytes, headers: dict[str, str]) -> int:
         raise RuntimeError(f"httpx unavailable: {exc}") from exc
     response = httpx.post(url, content=body, headers=headers, timeout=10.0, follow_redirects=False)
     return int(response.status_code)
+
+
+def make_webhook_observer(registry: "WebhookRegistry") -> Callable[[Any], None]:
+    """Return an event-bus observer that POSTs matching events to the webhooks.
+
+    The bus dispatches observers synchronously on the publisher's thread, so
+    delivery is handed to a daemon thread: a slow or unreachable webhook must
+    never stall engine or recovery code. A webhook that raises is swallowed by
+    the bus's own observer isolation.
+    """
+
+    def observer(event: Any) -> None:
+        try:
+            event_type = getattr(event, "type", None) or (event.get("type") if isinstance(event, dict) else None)
+            if not event_type:
+                return
+            hooks = registry.matching(str(event_type))
+            if not hooks:
+                return
+            payload = event.to_dict() if hasattr(event, "to_dict") else dict(event)
+        except Exception:  # never let observer bookkeeping break publishing
+            return
+        threading.Thread(
+            target=deliver,
+            args=(payload, hooks),
+            daemon=True,
+            name="blackout-webhook",
+        ).start()
+
+    return observer

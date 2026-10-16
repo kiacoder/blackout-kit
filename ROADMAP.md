@@ -8,6 +8,8 @@
 
 ## Where we are now
 
+**Current release: 1.8.0 (2026-10-16).** Roadmap **Phases 5, 6, 7 and 8 have all shipped** (5 and 6 in 1.7.0, 7 and 8 in 1.8.0). The remaining roadmap work is **Phase 9 (Cloud & Mobile, 2.0.x)** plus the ongoing Prototype Hardening Initiative. See `CHANGELOG.md` for what each release contained.
+
 ### Shipped: VPN/bypass engine (1.1.x — 1.2.x)
 
 | Feature | Status | Notes |
@@ -124,46 +126,46 @@ The tools NetworkChuck uses every day, built into one CLI/GUI:
 | Local REST API & Web Dashboard 🌐 | Browser-based network monitoring UI & local REST API | Interoperability & remote control | **Done** — `blackout api start` |
 | Scriptable Automation ⚡ | Event-triggered automation rules for network events | "When X happens, do Y automatically" | **Done** — `blackout automation list/add/remove/trigger` |
 
-### Phase 5: Foundation & UX Improvements (1.6.x)
+### Phase 5: Foundation & UX Improvements (1.7.x) — shipped
 
-| Feature | What it does | Why it matters | Status |
-|---|---|---|---|
-| CLI Progress Spinners | Rich spinners for `download`, `media`, `torrent`, `capture` | Visual feedback on long operations | **Planned** |
-| Table Formatting | Auto-wrapped, responsive tables for `connections`, `tools discover` | Better readability on small terminals | **Planned** |
-| Context-Rich Errors | Standardized error format with reason & hints | Users know how to fix problems | **Planned** |
-| Performance Benchmarks | Daemon <80MB under 50 connections, IPC p99 <10ms | Reliability metrics tracked | **Planned** |
-| REST API Expansion | `/api/metrics`, `/api/connections?process=X&port=Y`, `/api/bandwidth` | Third-party monitoring integration | **Planned** |
-| Regional Presets | `configs/presets/{ru,ir,cn}.yaml` with routing documentation | One-command region-specific setup | **Planned** |
-| Security Scanning | Bandit + pip-audit in CI (fail on HIGH/CRITICAL) | Automated vulnerability detection | **Planned** |
+| Feature | What it does | Status |
+|---|---|---|
+| CLI Progress Spinners | Rich spinners/progress for `download`, `media`, `torrent`, `capture` | **Done** |
+| Table Formatting | Auto-wrapped, responsive tables for `connections`, `tools discover` | **Done** |
+| Context-Rich Errors | Standardized error format with reason & hints | **Done** |
+| Performance Benchmarks | Daemon RSS and IPC p99 latency | **Done** — `blackout bench` |
+| REST API Expansion | `/api/metrics`, `/api/connections?process=X&port=Y`, `/api/bandwidth` | **Done** |
+| Regional Presets | `configs/presets/{ru,ir,cn}.yaml` with routing documentation | **Done** |
+| Security Scanning | Bandit + pip-audit in CI (fail on HIGH/CRITICAL) | **Done** |
 
-### Phase 6: Advanced Automation & Insights (1.7.x)
+### Phase 6: Advanced Automation & Insights (1.7.x) — shipped
 
-| Feature | What it does | Why it matters | Status |
-|---|---|---|---|
-| Anomaly Detection 🔍 | Detect unusual connection patterns, data exfiltration attempts | "Is someone stealing my data?" | **Planned** |
-| Predictive Optimization 📈 | Auto-tune performance based on historical usage patterns | Faster speeds over time | **Planned** |
-| Threat Intelligence Feeds 🛡️ | Real-time block list of malicious IPs/domains | Automated threat protection | **Planned** |
-| Advanced Reporting 📊 | PDF/CSV exports, compliance audit logs, usage dashboards | Enterprise audit trail | **Planned** |
+| Feature | What it does | Status |
+|---|---|---|
+| Anomaly Detection 🔍 | Unusual connection patterns and data-exfiltration signals | **Done** — `blackout tools anomaly-check` / `anomaly-log` |
+| Predictive Optimization 📈 | Auto-tune from historical usage patterns | **Done** — `blackout tools predict [--apply]` |
+| Threat Intelligence Feeds 🛡️ | Live malicious IP/domain blocklists | **Done** — `blackout tools threat-feeds list/update` |
+| Advanced Reporting 📊 | PDF/CSV exports and compliance audit logs | **Done** — `blackout report export` |
 
-### Phase 7: Enterprise & Team Features (1.8.x)
+### Phase 7: Enterprise & Team (1.8.x) — shipped
 
-| Feature | What it does | Why it matters | Status |
-|---|---|---|---|
-| Multi-Device Dashboard 📱 | Centralized view of all connected Blackout instances | "What's running on all my devices?" | **Planned** |
-| Team/Org Accounts 👥 | Role-based access control, shared workspaces | Collaboration for teams | **Planned** |
-| Centralized Policy Management 🎯 | Distribute configs, rules, and settings to team members | Enforce security standards | **Planned** |
-| Compliance Reporting 📋 | Audit logs, SLA dashboards, regulatory exports (GDPR, HIPAA) | Meet enterprise requirements | **Planned** |
+| Feature | What it does | Status |
+|---|---|---|
+| Multi-Device Dashboard 📱 | Centralized view of all connected Blackout instances | **Done** — `blackout enterprise devices` / `device-add` |
+| Team/Org Accounts 👥 | Role-based access control (viewer/operator/admin) | **Done** — `blackout enterprise roles` / `assign` |
+| Centralized Policy Management 🎯 | A distributable, optionally HMAC-signed policy document | **Done** — `blackout enterprise policy` |
+| Compliance Reporting 📋 | GDPR / HIPAA / SOC 2 control checklists scored from live settings | **Done** — `blackout enterprise compliance` |
 
-### Phase 8: Developer Ecosystem (1.9.x)
+### Phase 8: Developer Ecosystem (1.8.x) — shipped
 
-| Feature | What it does | Why it matters | Status |
-|---|---|---|---|
-| Python SDK 🐍 | Embed Blackout networking into any Python app | "Use Blackout as a library" | **Planned** |
-| Plugin System 🔌 | Extend with custom rules, analyzers, exporters | Community contributions | **Planned** |
-| REST API v2 🌐 | Webhooks, event subscriptions, WebSocket streaming | Real-time integrations | **Planned** |
-| Community Marketplace 🏪 | Share & discover community-built plugins and presets | Ecosystem growth | **Planned** |
+| Feature | What it does | Status |
+|---|---|---|
+| Python SDK 🐍 | Embed Blackout networking into any Python app | **Done** — `from blackoutkit.sdk import Blackout` |
+| Plugin System 🔌 | Custom rules, analyzers, and exporters | **Done** — `blackout tools plugins [list|run]` |
+| REST API v2 🌐 | Webhooks, event subscriptions, WebSocket streaming | **Done** — `/api/v2/*`, `/api/v2/ws/events` |
+| Community Marketplace 🏪 | Discover and install plugins with SHA-256 verification | **Done** — `blackout tools marketplace [list|search|install]` |
 
-### Phase 9: Cloud & Mobile (2.0.x)
+### Phase 9: Cloud & Mobile (2.0.x) — not started
 
 | Feature | What it does | Why it matters | Status |
 |---|---|---|---|
@@ -207,8 +209,8 @@ For each feature before shipping Phase 6+:
 - [ ] User feedback loop (GitHub issues tracked & responded to)
 
 ### Execution Strategy
-- Phases 6-9 ship on a 6-month cadence (one per quarter)
-- **Prototype hardening runs in parallel** — each sprint (2 weeks) picks one feature to harden:
+- Phases ship as they are completed rather than on a fixed cadence — 5, 6, 7 and 8 all shipped inside 1.7.0/1.8.0
+- **Prototype hardening runs in parallel** — each sprint picks one feature to harden:
   - Week 1: Scenario simulations + bug hunting
   - Week 2: Fix critical issues, add edge-case tests
   - Repeat for next prototype

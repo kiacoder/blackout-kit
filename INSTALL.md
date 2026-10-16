@@ -8,7 +8,7 @@ Quick-start guides for Windows and Linux.
 
 ### Option 1: Direct Download (Recommended)
 
-1. Download `blackout.exe` from [GitHub Releases](https://github.com/kiacoder/blackout-kit/releases/tag/v1.1.1)
+1. Download `blackout.exe` from [GitHub Releases](https://github.com/kiacoder/blackout-kit/releases/tag/v1.8.0)
 2. Run it:
    ```bash
    .\blackout.exe
@@ -39,7 +39,7 @@ cd Downloads
 
 ```bash
 # Download the binary
-wget https://github.com/kiacoder/blackout-kit/releases/download/v1.1.1/blackout-engine-linux-amd64
+wget https://github.com/kiacoder/blackout-kit/releases/download/v1.8.0/blackout-engine-linux-amd64
 chmod +x blackout-engine-linux-amd64
 
 # Run daemon in background
@@ -53,7 +53,7 @@ blackout setup
 ### Fedora / RHEL / CentOS
 
 ```bash
-wget https://github.com/kiacoder/blackout-kit/releases/download/v1.1.1/blackout-engine-linux-amd64
+wget https://github.com/kiacoder/blackout-kit/releases/download/v1.8.0/blackout-engine-linux-amd64
 chmod +x blackout-engine-linux-amd64
 ./blackout-engine-linux-amd64 daemon &
 ```
@@ -72,7 +72,7 @@ blackout daemon &
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates curl
 RUN curl -Lo /usr/local/bin/blackout \
-  https://github.com/kiacoder/blackout-kit/releases/download/v1.1.1/blackout-engine-linux-amd64
+  https://github.com/kiacoder/blackout-kit/releases/download/v1.8.0/blackout-engine-linux-amd64
 RUN chmod +x /usr/local/bin/blackout
 CMD ["blackout", "daemon"]
 ```
@@ -164,7 +164,7 @@ choco upgrade blackout-kit
 ### Linux
 
 ```bash
-wget https://github.com/kiacoder/blackout-kit/releases/download/v1.1.1/blackout-engine-linux-amd64
+wget https://github.com/kiacoder/blackout-kit/releases/download/v1.8.0/blackout-engine-linux-amd64
 chmod +x blackout-engine-linux-amd64
 # Kill old process
 pkill -f "blackout-engine-linux-amd64"

@@ -38,6 +38,10 @@ from typing import Any, Optional
 
 _log = logging.getLogger(__name__)
 
+# Guards against subscribing a second webhook observer when create_app() runs
+# more than once in a process (e.g. tests).
+_WEBHOOK_OBSERVER_INSTALLED = False
+
 try:  # optional dependency — the collectors below work without it
     # NOTE: imported at module level (not inside create_app) because this file
     # uses `from __future__ import annotations`: FastAPI resolves the endpoint
@@ -244,6 +248,22 @@ def create_app() -> "FastAPI":
         description="Read-only local REST API for Blackout Kit.",
     )
     _install_loopback_guard(api)
+
+    # Deliver published events to any registered webhooks. Subscribed once per
+    # process; delivery happens on a daemon thread so a slow endpoint cannot
+    # stall the event bus.
+    global _WEBHOOK_OBSERVER_INSTALLED
+    if not _WEBHOOK_OBSERVER_INSTALLED:
+        try:
+            from . import events as events_mod
+            from .webhooks import WebhookRegistry, make_webhook_observer
+
+            events_mod.bus_or_default().subscribe(
+                make_webhook_observer(WebhookRegistry())
+            )
+            _WEBHOOK_OBSERVER_INSTALLED = True
+        except Exception as exc:  # pragma: no cover - fastapi/events missing
+            _log.warning("Webhook observer not installed: %s", exc)
 
     @api.get("/api/health")
     def health() -> dict[str, Any]:
