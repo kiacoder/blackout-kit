@@ -17,6 +17,8 @@
 
 **Blackout Kit (`blackout-kit`) — Network Security & Bypass Toolkit**
 
+> **Blackout Kit Desktop is a separate Windows WPF/C# product in early prototype.** Its current milestone is a read-only named-pipe snapshot view; it is not CLI parity and cannot connect/stop engines yet. See [`desktop/README.md`](desktop/README.md) and [`desktop/CAPABILITY_COVERAGE.md`](desktop/CAPABILITY_COVERAGE.md).
+
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=flat-square&logo=python)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
@@ -137,7 +139,7 @@ The README stays high-level. The two guides go deeper in separate directions on 
 
 ## Current feature map
 
-Blackout Kit 1.6.0 currently includes:
+Blackout Kit 1.8.0 currently includes:
 
 - **Typer-based public CLI** with backward-compatible delegation into the proven command dispatcher
 - **Zero-flag launcher flow** that always opens a keyboard-navigable terminal chooser (Terminal CLI / Windows App); the GUI opens only when explicitly selected
@@ -156,6 +158,9 @@ Blackout Kit 1.6.0 currently includes:
 - **In-app help system** for terminal users
 - **Local SHA-256 fingerprints** for one explicitly supplied file, with no upload or remote lookup
 - **Manual Windows Wi-Fi MAC privacy controls** with private-address validation and exact prior-override restoration
+- **Enterprise & Team (Roadmap Phase 7)** — role-based access control (viewer/operator/admin), a distributable and optionally HMAC-signed access policy document, a multi-device registry with an online/offline dashboard, and GDPR/HIPAA/SOC 2 control checklists scored from the effective settings
+- **Developer ecosystem (Roadmap Phase 8)** — a Python SDK (`from blackoutkit.sdk import Blackout`) that is a thin facade over the CLI internals, a plugin system for custom rules/analyzers/exporters, a community marketplace with SHA-256-verified installs, and a read-only REST API v2 with webhooks and a WebSocket event stream
+- **Self-heal and VM safety** — `blackout tools vmcheck` reports VM detection and leftover state, the daemon heals its own leftovers at startup, and the Go core recovers from panics instead of killing the host process
 
 ---
 
@@ -592,6 +597,7 @@ blackout fix --full-stack-reset
 blackout fix --flush-arp
 blackout tools netfix
 blackout tools netfix --preview
+blackout tools vmcheck                # VM detection + leftover state + recovery steps
 blackout tools arp-flush
 ```
 
@@ -645,6 +651,45 @@ blackout country reset
 blackout split-tunnel list
 blackout split-tunnel add <pattern>
 blackout split-tunnel remove <pattern>
+
+# Enterprise & Team (Roadmap Phase 7)
+blackout enterprise                          # org, principals, device summary
+blackout enterprise roles
+blackout enterprise policy
+blackout enterprise assign <name> <role>     # viewer | operator | admin
+blackout enterprise devices
+blackout enterprise device-add <id> [--name <n>] [--platform <p>] [--status <s>]
+blackout enterprise compliance [--framework gdpr|hipaa|soc2|all]
+
+# Developer ecosystem (Roadmap Phase 8)
+blackout tools plugins                       # list discovered plugins
+blackout tools plugins run <name> --context '<json>'
+blackout tools marketplace                   # installed plugins
+blackout tools marketplace list
+blackout tools marketplace search <query>
+blackout tools marketplace refresh           # fetch catalog (explicit egress)
+blackout tools marketplace install <name>    # SHA-256 verified
+blackout tools marketplace remove <name>
+```
+
+`blackout enterprise` is local-first: the policy document is a distributable JSON file (optionally HMAC-signed), the device registry is a shared JSON file, and the compliance checks read the effective settings. Nothing is uploaded.
+
+**Embedding Blackout Kit from Python** (the SDK):
+
+```python
+from blackoutkit.sdk import Blackout
+
+bk = Blackout()
+bk.version                 # "1.8.0"
+bk.engines()               # ['auto', 'xray', 'sni', ...]
+bk.readiness("xray")       # {"engine", "ready", "checks"}
+bk.metrics() / bk.connections(process="chrome", port=443) / bk.bandwidth()
+bk.roles() / bk.policy() / bk.can("alice", "connect")   # Phase 7
+bk.devices() / bk.compliance("gdpr")                    # Phase 7
+bk.connect() / bk.status() / bk.disconnect()
+```
+
+The SDK is a thin facade over the same internals the CLI uses, so the two can never disagree; typed exceptions derive from `BlackoutError`. A read-only **REST API v2** (`blackout api start`, then `/api/v2/events`, `/api/v2/webhooks`, `/api/v2/plugins`, `/api/v2/devices`, `/api/v2/compliance`, and a `/api/v2/ws/events` WebSocket stream) exposes the same data locally and is loopback-only by default.
 ```
 
 ---

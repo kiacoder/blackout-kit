@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10-16
+
+**Highlights:** Roadmap **Phase 7** (Enterprise & Team: RBAC, centralized policy, multi-device dashboard, GDPR/HIPAA/SOC 2 compliance) and **Phase 8** (Developer Ecosystem: Python SDK, plugin system, REST API v2, community marketplace) — plus a crash-safety pass that stops a Go panic or an unclean exit from blackholing the machine's network.
+
 ### Added
 - **Self-heal + VM safety (`blackoutkit/self_heal.py`):** the new `blackout tools vmcheck` reports VM detection (hypervisor fingerprinting), leftover Blackout-owned state, and the recovery steps to take — plus the recommendation to snapshot a VM before testing. `blackout tools netfix` now also heals the owned firewall rules and leftover TUN, and preview mode lists those steps.
 - **Enterprise & Team — RBAC + centralized policy (`blackoutkit/enterprise/`, Roadmap Phase 7):** a permission vocabulary with viewer/operator/admin roles, a distributable JSON **policy document** (roles + principals + default role), and an optional **HMAC signature** so a device can prove the policy it loaded was not tampered with in transit. CLI `blackout enterprise [roles|policy|assign]`.
