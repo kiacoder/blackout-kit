@@ -30,22 +30,22 @@ func scanIPsInternal(ips []string, port int, concurrency int, timeoutMs int) str
 	
 	for _, ip := range ips {
 		wg.Add(1)
-		go func(targetIP string) {
+		safeGo("scanner.probe", func() {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			
-			addr := net.JoinHostPort(targetIP, strconv.Itoa(port))
+
+			addr := net.JoinHostPort(ip, strconv.Itoa(port))
 			start := time.Now()
-			
+
 			dialer := net.Dialer{Timeout: to}
 			conn, err := dialer.Dial("tcp", addr)
 			if err == nil {
 				conn.Close()
 				latency := float64(time.Since(start).Milliseconds())
-				results <- scanResult{IP: targetIP, Latency: latency}
+				results <- scanResult{IP: ip, Latency: latency}
 			}
-		}(ip)
+		})
 	}
 	
 	wg.Wait()

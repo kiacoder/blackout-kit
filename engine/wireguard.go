@@ -166,9 +166,9 @@ func startWireGuardInternal(configPath string, socksPort int) error {
 	}
 	wgListener = listener
 
-	go func() {
+	safeGo("wireguard.serve", func() {
 		_ = server.Serve(wgListener)
-	}()
+	})
 
 	fmt.Printf("WireGuard started natively via userspace TUN. SOCKS5 on port %d\n", socksPort)
 	

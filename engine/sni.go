@@ -40,7 +40,7 @@ func startSNIInternal(configPath string) error {
 	}
 	sniListener = listener
 
-	go func() {
+	safeGo("sni.accept", func() {
 		for {
 			clientConn, err := sniListener.Accept()
 			if err != nil {
@@ -51,9 +51,13 @@ func startSNIInternal(configPath string) error {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-			go handleClient(clientConn, config.ConnectIP, config.ConnectPort)
+			// Capture per-connection: a panic here must not kill the listener.
+			conn := clientConn
+			safeGo("sni.handleClient", func() {
+				handleClient(conn, config.ConnectIP, config.ConnectPort)
+			})
 		}
-	}()
+	})
 	return nil
 }
 
@@ -74,6 +78,12 @@ func RunSNI(configPath string) error {
 
 func handleClient(client net.Conn, targetIP string, targetPort int) {
 	defer client.Close()
+	// A panic in a connection handler must never take down the host process.
+	defer func() {
+		if r := recover(); r != nil {
+			logPanic("sni.handleClient", r)
+		}
+	}()
 
 	// Connect to target with Dialer keepalive
 	targetAddr := net.JoinHostPort(targetIP, strconv.Itoa(targetPort))
@@ -104,7 +114,7 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 	done := make(chan struct{}, 2)
 
 	// Forward client -> server with TLS ClientHello fragmentation
-	go func() {
+	safeGo("sni.relayClientToServer", func() {
 		defer func() {
 			server.Close()
 			client.Close()
@@ -144,17 +154,17 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 				return
 			}
 		}
-	}()
+	})
 
 	// Forward server -> client directly
-	go func() {
+	safeGo("sni.relayServerToClient", func() {
 		defer func() {
 			client.Close()
 			server.Close()
 			done <- struct{}{}
 		}()
 		io.Copy(client, server)
-	}()
+	})
 
 	// Wait until both directions finish
 	<-done

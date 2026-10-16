@@ -24,7 +24,7 @@ func startNeighborInternal(listenPort int, targetPort int, bindLan bool) error {
 
 	// 1. TCP Forwarder (Reverse Proxy for SOCKS5/HTTP)
 	neighborWg.Add(1)
-	go func() {
+	safeGo("neighbor.forwarder", func() {
 		defer neighborWg.Done()
 		// Bind to loopback by default so the share proxy is only reachable
 		// from this machine. Only expose it on all interfaces when the user
@@ -44,10 +44,10 @@ func startNeighborInternal(listenPort int, targetPort int, bindLan bool) error {
 		defer l.Close()
 
 		// Close listener on context cancel
-		go func() {
+		safeGo("neighbor.closeListener", func() {
 			<-neighborCtx.Done()
 			l.Close()
-		}()
+		})
 
 		for {
 			client, err := l.Accept()
@@ -58,23 +58,25 @@ func startNeighborInternal(listenPort int, targetPort int, bindLan bool) error {
 				continue
 			}
 
-			go func(c net.Conn) {
-				defer c.Close()
+			// Capture per-connection so a panic cannot kill the forwarder.
+			conn := client
+			safeGo("neighbor.connection", func() {
+				defer conn.Close()
 				server, err := net.DialTimeout("tcp", targetAddr, 5*time.Second)
 				if err != nil {
 					return
 				}
 				defer server.Close()
 
-				go io.Copy(server, c)
-				io.Copy(c, server)
-			}(client)
+				safeGo("neighbor.relayToServer", func() { io.Copy(server, conn) })
+				io.Copy(conn, server)
+			})
 		}
-	}()
+	})
 
 	// 2. UDP Multicast Beacon
 	neighborWg.Add(1)
-	go func() {
+	safeGo("neighbor.beacon", func() {
 		defer neighborWg.Done()
 		addr, err := net.ResolveUDPAddr("udp", "239.255.42.99:51820")
 		if err != nil {
@@ -104,7 +106,7 @@ func startNeighborInternal(listenPort int, targetPort int, bindLan bool) error {
 				return
 			}
 		}
-	}()
+	})
 
 	return nil
 }

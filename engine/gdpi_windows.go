@@ -108,7 +108,7 @@ func startGDPIInternal() error {
 	gdpiHandle = handle
 	gdpiRunning.Store(true)
 
-	go func() {
+	safeGo("gdpi.recvLoop", func() {
 		buf := make([]byte, 65535)
 		addr := new(divert.Address)
 		defer gdpiRunning.Store(false)
@@ -122,7 +122,7 @@ func startGDPIInternal() error {
 				return
 			}
 		}
-	}()
+	})
 	return nil
 }
 

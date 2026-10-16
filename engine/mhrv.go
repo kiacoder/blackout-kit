@@ -228,11 +228,11 @@ func startMHRVInternal(port int, idsComma string) error {
 
 	fmt.Printf("MHRV (Google Apps Script HTTP Relay) running at %s\n", addr)
 	
-	go func() {
+	safeGo("mhrv.serve", func() {
 		if err := mhrvServer.Serve(listener); err != nil && err != http.ErrServerClosed {
 			fmt.Printf("MHRV Server error: %v\n", err)
 		}
-	}()
+	})
 	return nil
 }
 
