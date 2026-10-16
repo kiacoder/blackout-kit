@@ -64,6 +64,11 @@ def test_detect_virtualization_branches_on_platform(monkeypatch):
 # ── leftover inspection ──────────────────────────────────────────────────────
 
 def test_leftover_state_shape(monkeypatch):
+    # detect_virtualization is stubbed: CI runners are themselves VMs, so the
+    # "take a snapshot" advice would otherwise appear and mask what is tested.
+    monkeypatch.setattr(self_heal, "detect_virtualization", lambda: {
+        "is_virtual": False, "hypervisor": "none detected", "manufacturer": "", "model": "",
+    })
     monkeypatch.setattr(self_heal, "leftover_state", lambda: {
         "proxy": {"current": {}, "owned": False},
         "firewall_active": False,
@@ -73,6 +78,21 @@ def test_leftover_state_shape(monkeypatch):
     # safety_report should not suggest netfix when nothing is left over
     report = self_heal.safety_report()
     assert report["steps"] == []
+
+
+def test_vm_advice_appears_inside_a_virtual_machine(monkeypatch):
+    """CI runners are VMs — this asserts the snapshot advice fires there."""
+    monkeypatch.setattr(self_heal, "detect_virtualization", lambda: {
+        "is_virtual": True, "hypervisor": "Hyper-V", "manufacturer": "Microsoft Corporation",
+        "model": "Virtual Machine",
+    })
+    monkeypatch.setattr(self_heal, "leftover_state", lambda: {
+        "proxy": {"owned": False}, "firewall_active": False, "tun_present": False,
+        "any_leftover": False,
+    })
+    steps = self_heal.safety_report()["steps"]
+    assert any("snapshot" in step.lower() for step in steps)
+    assert not any("netfix" in step for step in steps)
 
 
 def test_safety_report_recommends_recovery_when_state_is_left(monkeypatch):
