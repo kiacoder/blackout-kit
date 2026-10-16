@@ -5,15 +5,30 @@ the identity probes are monkeypatched, so these can run on any machine.
 """
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from blackoutkit import self_heal
 
 
+def _patch_identity(monkeypatch, vendor: str, model: str):
+    """Patch whichever DMI/WMI probe the current platform actually uses.
+
+    `detect_virtualization` branches on `sys.platform`, so patching only the
+    Windows probe would make these tests pass locally on Windows and fail on
+    the Linux CI runner.
+    """
+    if sys.platform == "win32":
+        monkeypatch.setattr(self_heal, "_windows_vm_identity", lambda: (vendor, model))
+    else:
+        monkeypatch.setattr(self_heal, "_linux_vm_identity", lambda: (vendor, model))
+
+
 # ── VM detection ─────────────────────────────────────────────────────────────
 
 def test_detect_virtualization_shape(monkeypatch):
-    monkeypatch.setattr(self_heal, "_windows_vm_identity", lambda: ("LENOVO", "21N5"))
+    _patch_identity(monkeypatch, "LENOVO", "21N5")
     result = self_heal.detect_virtualization()
     assert result["is_virtual"] is False
     assert result["hypervisor"] == "none detected"
@@ -32,18 +47,18 @@ def test_detect_virtualization_shape(monkeypatch):
     ],
 )
 def test_detect_virtualization_recognises_hypervisors(monkeypatch, vendor, model, expected):
-    monkeypatch.setattr(self_heal, "_windows_vm_identity", lambda: (vendor, model))
+    _patch_identity(monkeypatch, vendor, model)
     result = self_heal.detect_virtualization()
     assert result["is_virtual"] is True
     assert result["hypervisor"] == expected
 
 
-def test_detect_virtualization_uses_the_linux_probe_off_windows(monkeypatch):
+def test_detect_virtualization_branches_on_platform(monkeypatch):
+    """Forcing a non-native platform exercises the other probe."""
+    monkeypatch.setattr(self_heal, "_windows_vm_identity", lambda: ("VMware, Inc.", "VMware Virtual Platform"))
     monkeypatch.setattr(self_heal, "_linux_vm_identity", lambda: ("QEMU", "Standard PC"))
     monkeypatch.setattr(self_heal, "sys", type("S", (), {"platform": "linux"}))
-    result = self_heal.detect_virtualization()
-    assert result["is_virtual"] is True
-    assert result["hypervisor"] == "QEMU/KVM"
+    assert self_heal.detect_virtualization()["hypervisor"] == "QEMU/KVM"
 
 
 # ── leftover inspection ──────────────────────────────────────────────────────
