@@ -11,6 +11,9 @@
     .card { background: #151515; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; margin: 16px 0; }
     .muted { color: #b0b0b0; }
     ul { line-height: 1.7; }
+    .pill { display: inline-block; background: #2a2a2a; color: #e8e8e8; font-size: 13px; font-weight: 600; padding: 3px 12px; border-radius: 999px; margin: 2px 4px 2px 0; }
+    .pill-teal { background: #134e48; color: #7ee7d8; }
+    .card-accent { border-color: #7ee7d8; border-left: 4px solid #7ee7d8; }
   </style>
 </head>
 <body>
@@ -24,9 +27,23 @@
     </nav>
     <h1>Security and Privacy Boundaries</h1>
     <p class="muted">Blackout Kit is careful about what it does claim and what it does not claim.</p>
+    <p><span class="pill">v1.8.0</span> <span class="pill pill-teal">Enterprise</span> <span class="pill pill-teal">Developer SDK</span> <span class="pill pill-teal">Crash-safe</span></p>
   </header>
 
   <main>
+    <section class="card card-accent">
+      <h2>Data and egress surfaces (v1.8.0)</h2>
+      <p>The 1.8.0 surfaces add new local and network behaviors. All of them are <strong>off by default</strong> or strictly local unless you opt in:</p>
+      <ul>
+        <li><strong>Plugin marketplace</strong> — catalog metadata is fetched from the configured catalog URL only when you run a marketplace command; plugin installs download an archive and verify its <code>SHA-256</code> against catalog metadata before extraction. Set <code>marketplace_verify=false</code> only for self-hosted testing.</li>
+        <li><strong>Webhooks</strong> — when configured, event payloads are delivered over HTTPS to operator-defined URLs with an HMAC-SHA256 signature (<code>X-Blackout-Signature</code>). Redirects are not followed. There is no built-in remote log sink.</li>
+        <li><strong>Access policy</strong> — a policy file can be HMAC-signed; verification is local and never contacts a server. Distribution of the signed policy is the operator's responsibility.</li>
+        <li><strong>REST API v2</strong> — loopback-only (<code>127.0.0.1</code>) and read-only; webhooks/plugins/devices/compliance are exposed locally. The <code>/ws/events</code> WebSocket is also loopback-only.</li>
+        <li><strong>Enterprise RBAC &amp; compliance</strong> — roles, the device registry, and the GDPR / HIPAA / SOC 2 score are computed entirely from local settings. Nothing is uploaded.</li>
+      </ul>
+      <p class="muted">Full egress inventory: see <a href="https://github.com/kiacoder/blackout-kit/blob/main/NETWORK_PRIVACY.md">NETWORK_PRIVACY.md</a>.</p>
+    </section>
+
     <section class="card">
       <h2>What Blackout Kit does provide</h2>
       <ul>
@@ -66,7 +83,7 @@
   </main>
 
   <footer>
-    <p class="muted">For the full threat model, read SECURITY.md in the repository root.</p>
+    <p class="muted">For the full threat model, read SECURITY.md in the repository root. • v1.8.0</p>
   </footer>
 </body>
 </html>

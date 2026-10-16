@@ -14,6 +14,9 @@
     .muted { color: #b0b0b0; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
     code { background: #1d1d1d; padding: 2px 6px; border-radius: 6px; }
+    .pill { display: inline-block; background: #2a2a2a; color: #e8e8e8; font-size: 13px; font-weight: 600; padding: 3px 12px; border-radius: 999px; margin: 2px 4px 2px 0; }
+    .pill-teal { background: #134e48; color: #7ee7d8; }
+    .card-accent { border-color: #7ee7d8; border-left: 4px solid #7ee7d8; }
   </style>
 </head>
 <body>
@@ -27,9 +30,40 @@
     </nav>
     <h1>Blackout Kit</h1>
     <p class="muted">A network security and bypass toolkit for Windows and Linux.</p>
+    <p><span class="pill">v1.8.0</span> <span class="pill pill-teal">Enterprise</span> <span class="pill pill-teal">Developer SDK</span> <span class="pill pill-teal">Crash-safe</span></p>
   </header>
 
   <main>
+    <section class="card card-accent">
+      <h2>What's new in v1.8.0</h2>
+      <p>This release completes the <strong>Enterprise &amp; Team</strong> and <strong>Developer Ecosystem</strong> roadmap phases, plus crash-safe recovery that no longer takes a VM offline when Blackout Kit dies:</p>
+      <ul>
+        <li><strong>Enterprise &amp; Team</strong> — role-based access control (viewer / operator / admin), a distributable and optionally HMAC-signed access policy, a multi-device registry with an online/offline dashboard, and GDPR / HIPAA / SOC 2 control checklists scored from your effective settings.</li>
+        <li><strong>Developer ecosystem</strong> — a Python SDK (<code>from blackoutkit.sdk import Blackout</code>), a plugin system for custom rules/analyzers/exporters, a community marketplace with SHA-256-verified installs, and a read-only REST API v2 with webhooks and a WebSocket event stream.</li>
+        <li><strong>Self-heal &amp; VM safety</strong> — <code>blackout tools vmcheck</code> reports VM detection and leftover state, the daemon heals its own leftovers at startup, and the Go core recovers from panics instead of killing the host process.</li>
+      </ul>
+      <p class="muted">See the <a href="https://github.com/kiacoder/blackout-kit/blob/main/CHANGELOG.md">changelog</a> for the full list.</p>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h3>Enterprise &amp; Team</h3>
+        <p>RBAC, signed access policy, multi-device dashboard, and compliance scoring from effective settings — all local-first, nothing uploaded.</p>
+      </div>
+      <div class="card">
+        <h3>Developer SDK</h3>
+        <p><code>from blackoutkit.sdk import Blackout</code> is a thin facade over the CLI internals, so the SDK and CLI can never disagree. Typed errors derive from <code>BlackoutError</code>.</p>
+      </div>
+      <div class="card">
+        <h3>Plugins &amp; marketplace</h3>
+        <p>Drop-in analyzers, exporters, and rules — gated behind <code>plugins_enabled</code> (default off) — installed from a SHA-256-verified community catalog.</p>
+      </div>
+      <div class="card">
+        <h3>REST API v2</h3>
+        <p>Read-only, loopback-only endpoints for events, webhooks, plugins, devices, and compliance, plus a <code>/ws/events</code> WebSocket stream.</p>
+      </div>
+    </section>
+
     <section class="card">
       <h2>What it is</h2>
       <p>Blackout Kit coordinates local bypass engines, saved proxy or VPN configurations, local readiness checks, targeted recovery, and user-facing CLI/GUI workflows.</p>
@@ -73,7 +107,7 @@
   </main>
 
   <footer>
-    <p class="muted">Open source • MIT licensed • Made by Kiacoder</p>
+    <p class="muted">Open source • MIT licensed • v1.8.0 • Made by Kiacoder</p>
   </footer>
 </body>
 </html>

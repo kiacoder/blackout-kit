@@ -11,6 +11,9 @@
     .card { background: #151515; border: 1px solid #2a2a2a; border-radius: 12px; padding: 20px; margin: 16px 0; }
     pre { background: #111; border: 1px solid #2a2a2a; padding: 16px; border-radius: 10px; overflow-x: auto; }
     .muted { color: #b0b0b0; }
+    .pill { display: inline-block; background: #2a2a2a; color: #e8e8e8; font-size: 13px; font-weight: 600; padding: 3px 12px; border-radius: 999px; margin: 2px 4px 2px 0; }
+    .pill-teal { background: #134e48; color: #7ee7d8; }
+    .card-accent { border-color: #7ee7d8; border-left: 4px solid #7ee7d8; }
   </style>
 </head>
 <body>
@@ -24,9 +27,19 @@
     </nav>
     <h1>Install Blackout Kit</h1>
     <p class="muted">Choose the install path that matches your platform and trust needs.</p>
+    <p><span class="pill">v1.8.0</span> <span class="pill pill-teal">Enterprise</span> <span class="pill pill-teal">Developer SDK</span> <span class="pill pill-teal">Crash-safe</span></p>
   </header>
 
   <main>
+    <section class="card card-accent">
+      <h2>New in v1.8.0</h2>
+      <ul>
+        <li><strong>Enterprise &amp; Team</strong> — RBAC, signed access policy, multi-device dashboard, and GDPR / HIPAA / SOC 2 compliance scoring (all local-first).</li>
+        <li><strong>Developer ecosystem</strong> — Python SDK (<code>pip install blackoutkit[sdk]</code>), plugin system, SHA-256-verified marketplace, and a read-only REST API v2 with webhooks and a WebSocket stream.</li>
+        <li><strong>Self-heal &amp; VM safety</strong> — <code>blackout tools vmcheck</code>, daemon startup self-heal, and a Go core that recovers from panics.</li>
+      </ul>
+    </section>
+
     <section class="card">
       <h2>Windows packaged app</h2>
       <p>Download the latest packaged executable from GitHub Releases:</p>
@@ -75,7 +88,7 @@ blackout connect</pre>
   </main>
 
   <footer>
-    <p class="muted">See the User Guide for the full first-run flow.</p>
+    <p class="muted">See the User Guide for the full first-run flow. • v1.8.0</p>
   </footer>
 </body>
 </html>
