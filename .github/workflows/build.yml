@@ -199,6 +199,19 @@ jobs:
         go -C engine/warp build -buildmode=c-shared -o $warpDll .
         if (-not (Test-Path $warpDll)) { throw "WARP DLL build output is missing" }
 
+    # The in-process cgo core (blackout_core.dll). Its panic-recovery wrappers
+    # and the exported entry points are what stop a Go panic from killing the
+    # host process, so they are tested here rather than only compiled.
+    - name: Verify and test engine (cgo core)
+      shell: pwsh
+      working-directory: engine
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        go mod verify
+        go vet ./...
+        go test ./...
+
     # engine/v2 is the supervised daemon that replaces the in-process
     # blackout_core.dll. It is verified and built here on every push so the
     # control channel, framing codec and daemon entrypoint cannot rot
