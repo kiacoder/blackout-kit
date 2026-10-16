@@ -808,6 +808,20 @@ def _run_daemon_loop(
     stderr_handler.setFormatter(RedactingFormatter("%(levelname)s: %(message)s"))
     log.addHandler(stderr_handler)
 
+    # Restore an owned proxy if this daemon is Ctrl+C'd, its console window is
+    # closed, or it exits for any reason. The `finally` below covers the
+    # graceful path; these cover the exits it cannot see.
+    try:
+        from ..proxy_manager import (
+            install_atexit_proxy_restore,
+            install_console_close_handler,
+        )
+
+        install_console_close_handler()
+        install_atexit_proxy_restore()
+    except Exception as exc:
+        log.warning("Could not install proxy exit handlers: %s", exc)
+
     # Spawn the watchdog process to handle forceful termination (End Task).
     try:
         watchdog_kwargs = {

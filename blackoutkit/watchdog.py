@@ -20,19 +20,45 @@ from blackoutkit.daemon.ownership import (
 )
 
 
+def _watchdog_log(message: str) -> None:
+    """Record why the watchdog bailed.
+
+    stdout/stderr are DEVNULL when the daemon spawns us, so a bare
+    ``return False`` used to vanish without a trace — leaving the machine
+    blackholed with no explanation. Append to the daemon log instead.
+    """
+    try:
+        from datetime import datetime, timezone
+
+        from blackoutkit.daemon import LOG_FILE
+
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        with LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} [WARNING] watchdog: {message}\n")
+    except Exception:
+        pass
+
+
 def monitor(daemon_pid: int, generation: str | None = None):
     if not generation:
+        _watchdog_log(f"no generation for daemon pid {daemon_pid} — exiting without protection")
         return False
 
     from blackoutkit.daemon import LEASE_FILE, LIFECYCLE_LOCK_FILE
 
     lease = read_lease(LEASE_FILE)
     if not lease or lease["pid"] != daemon_pid or lease["generation"] != generation:
+        _watchdog_log(
+            f"lease mismatch for pid {daemon_pid} (lease={lease}) — exiting without protection"
+        )
         return False
     identity = process_identity_state(daemon_pid, lease["create_time"])
     if identity is False and not process_is_gone(daemon_pid, lease["create_time"]):
+        _watchdog_log(f"daemon pid {daemon_pid} identity mismatch — exiting without protection")
         return False
     if identity is None:
+        _watchdog_log(f"cannot determine identity of pid {daemon_pid} — exiting without protection")
         return False
 
     try:

@@ -46,6 +46,10 @@ def _read_proxy_ownership() -> dict | None:
     return {
         "snapshot": _proxy_record(payload["snapshot"]),
         "target": _proxy_record(target) if isinstance(target, dict) else None,
+        # PID of the process that SET the proxy. Exit handlers use this so a
+        # short-lived CLI process never tears down a proxy the long-running
+        # daemon still owns.
+        "pid": payload.get("pid"),
     }
 
 
@@ -59,6 +63,7 @@ def _write_proxy_ownership(snapshot: dict, target: dict) -> None:
                     "schema_version": 1,
                     "snapshot": _proxy_record(snapshot),
                     "target": _proxy_record(target),
+                    "pid": os.getpid(),
                 },
                 separators=(",", ":"),
             ),
@@ -197,10 +202,23 @@ def force_clear_dead_proxy(ports: tuple[int, ...] | None = None) -> bool:
     return clear_system_proxy()
 
 
-def cleanup_owned_system_proxy() -> bool:
-    """Restore an owned proxy only when no other process changed it."""
+def cleanup_owned_system_proxy(owner_pid: int | None = None) -> bool:
+    """Restore an owned proxy only when no other process changed it.
+
+    Pass ``owner_pid`` to restrict the restore to the process that set the
+    proxy — an exit handler running in a short-lived CLI process must never
+    tear down a proxy the long-running daemon still owns. Omit it (or pass
+    ``None``) for the daemon/watchdog paths, which may restore on the owner's
+    behalf once it is gone.
+    """
     record = _read_proxy_ownership()
     if record is None:
+        return False
+    if (
+        owner_pid is not None
+        and record.get("pid") is not None
+        and record["pid"] != owner_pid
+    ):
         return False
     target = record.get("target")
     if target is not None and not _proxy_records_equal(get_proxy_status(), target):
@@ -371,8 +389,15 @@ def _notify_proxy_change():
         pass
 
 
+# Windows console control events we restore on. 0 = CTRL_C_EVENT and
+# 1 = CTRL_BREAK_EVENT also surface as KeyboardInterrupt in a process with a
+# Python-level handler, but a background daemon console has none — so cover
+# them here rather than relying on the CLI's try/except.
+_CTRL_EVENTS = (0, 1, 2, 5, 6)
+
+
 def install_console_close_handler():
-    """Restore an owned proxy when the Windows console is closed."""
+    """Restore an owned proxy when the Windows console is closed or interrupted."""
     if sys.platform != "win32":
         return
     try:
@@ -382,8 +407,8 @@ def install_console_close_handler():
         HandlerRoutine = ctypes.WINFUNCTYPE(ctypes.wintypes.BOOL, ctypes.wintypes.DWORD)
 
         def ctrl_handler(ctrl_type):
-            if ctrl_type in (2, 5, 6):
-                cleanup_owned_system_proxy()
+            if ctrl_type in _CTRL_EVENTS:
+                cleanup_owned_system_proxy(owner_pid=os.getpid())
             return False
 
         global _ctrl_handler_ref
@@ -391,6 +416,26 @@ def install_console_close_handler():
         ctypes.windll.kernel32.SetConsoleCtrlHandler(_ctrl_handler_ref, True)
     except Exception:
         pass
+
+
+def install_atexit_proxy_restore() -> None:
+    """Restore an owned proxy when this process exits for any reason.
+
+    Covers ``sys.exit()``, an unhandled exception, and normal termination —
+    the paths where no explicit stop/cleanup call runs. Scoped to this process
+    through the ownership PID, so it never tears down a proxy the daemon still
+    owns. It does **not** cover a hard kill (End Task / ``TerminateProcess``);
+    that is the watchdog's job.
+    """
+    import atexit
+
+    def _restore_on_exit() -> None:
+        try:
+            cleanup_owned_system_proxy(owner_pid=os.getpid())
+        except Exception:
+            pass
+
+    atexit.register(_restore_on_exit)
 
 
 def _legacy_restore_alias(status: dict) -> bool:
@@ -406,6 +451,7 @@ __all__ = [
     "clear_system_proxy",
     "get_last_error",
     "get_proxy_status",
+    "install_atexit_proxy_restore",
     "install_console_close_handler",
     "is_admin",
     "proxy_ownership_status",

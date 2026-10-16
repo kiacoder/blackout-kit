@@ -4592,15 +4592,31 @@ def app_callback(
 
 def main():
     """Global entry point for the Typer CLI."""
+    import os
+
     from . import proxy_manager
 
+    # A Ctrl+C, an unhandled exception, or a plain exit must never leave the
+    # system proxy pointing at a dead local port — that blackholes every app on
+    # the machine. Both handlers are scoped to this process's PID, so they can
+    # never tear down a proxy the daemon still owns.
     proxy_manager.install_console_close_handler()
+    proxy_manager.install_atexit_proxy_restore()
+
+    def _restore_owned_proxy() -> None:
+        try:
+            proxy_manager.cleanup_owned_system_proxy(owner_pid=os.getpid())
+        except Exception:
+            pass
+
     try:
         app()
     except KeyboardInterrupt:
+        _restore_owned_proxy()
         console.print("\n[muted]Operation cancelled by user.[/muted]")
         sys.exit(130)
     except Exception as exc:
+        _restore_owned_proxy()
         if _json_requested():
             emit_error(
                 "internal_error",
