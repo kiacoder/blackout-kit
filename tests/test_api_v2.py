@@ -77,3 +77,25 @@ def test_v2_ws_handshake(client):
     with client.websocket_connect("/api/v2/ws/events") as ws:
         first = ws.receive_json()
         assert first["type"] == "stream.connected"
+
+
+# ── enterprise (Phase 7) ─────────────────────────────────────────────────────
+
+def test_v2_devices(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKOUT_DEVICE_FILE", str(tmp_path / "d.json"))
+    r = client.get("/api/v2/devices")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 0 and isinstance(body["devices"], list)
+
+
+def test_v2_compliance(client):
+    r = client.get("/api/v2/compliance", params={"framework": "hipaa"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["framework"] == "hipaa"
+    assert body["total"] > 0
+
+
+def test_v2_compliance_rejects_unknown_framework(client):
+    assert client.get("/api/v2/compliance", params={"framework": "pci-dss"}).status_code == 400

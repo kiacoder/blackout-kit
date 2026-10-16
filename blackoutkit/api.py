@@ -318,6 +318,25 @@ def create_app() -> "FastAPI":
         manager = PluginManager()
         return {"enabled": manager.enabled, "plugins": [asdict(m) for m in manager.list()]}
 
+    @api.get("/api/v2/devices")
+    def devices_v2() -> dict[str, Any]:
+        from .enterprise import DeviceRegistry
+
+        return DeviceRegistry().dashboard()
+
+    @api.get("/api/v2/compliance")
+    def compliance_v2(
+        framework: str = Query(default="gdpr", description="gdpr|hipaa|soc2"),
+    ) -> dict[str, Any]:
+        from fastapi import HTTPException
+
+        from .enterprise import evaluate
+
+        try:
+            return evaluate(framework)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @api.websocket("/api/v2/ws/events")
     async def ws_events(websocket: WebSocket) -> None:
         import asyncio

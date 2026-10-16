@@ -268,3 +268,41 @@ def test_report_translates_value_error(bk, monkeypatch):
     monkeypatch.setattr(rep, "ReportGenerator", lambda *a, **kw: type("R", (), {"export": _boom})())
     with pytest.raises(BlackoutError):
         bk.report(Path("/tmp/x.xml"), format="xml")
+
+
+# ── enterprise (Phase 7) ─────────────────────────────────────────────────────
+
+def test_sdk_roles_and_policy(monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKOUT_POLICY_FILE", str(tmp_path / "p.json"))
+    from blackoutkit.enterprise import Policy, PolicyStore
+
+    PolicyStore(tmp_path / "p.json").save(
+        Policy(organization="Acme", principals={"alice": "admin", "bob": "viewer"})
+    )
+    bk = Blackout()
+    assert [r["name"] for r in bk.roles()] == ["viewer", "operator", "admin"]
+    assert bk.policy()["organization"] == "Acme"
+    assert bk.can("alice", "manage_policy")["allowed"] is True
+    assert bk.can("bob", "manage_policy")["allowed"] is False
+
+
+def test_sdk_can_with_unknown_permission(monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKOUT_POLICY_FILE", str(tmp_path / "p.json"))
+    out = Blackout().can("anyone", "fly_to_the_moon")
+    assert out["allowed"] is False
+    assert "does not include" in out["reason"]
+
+
+def test_sdk_devices(monkeypatch, tmp_path):
+    monkeypatch.setenv("BLACKOUT_DEVICE_FILE", str(tmp_path / "d.json"))
+    from blackoutkit.enterprise import Device, DeviceRegistry
+
+    DeviceRegistry(tmp_path / "d.json").register(Device(id="a", status="connected"))
+    board = Blackout().devices()
+    assert board["total"] == 1
+
+
+def test_sdk_compliance():
+    out = Blackout().compliance("gdpr")
+    assert out["framework"] == "gdpr"
+    assert out["total"] > 0

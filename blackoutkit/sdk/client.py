@@ -277,3 +277,39 @@ class Blackout:
             )
         except ValueError as exc:
             raise BlackoutError(str(exc)) from exc
+
+    # ── enterprise (Roadmap Phase 7) ────────────────────────────────────────
+
+    def _active_policy(self):
+        from ..enterprise import Policy, PolicyStore
+
+        store = PolicyStore()
+        return store.load() if store.exists() else Policy()
+
+    def roles(self) -> list[dict[str, Any]]:
+        """Roles and their permissions from the active access policy."""
+        return [
+            {"name": role.name, "permissions": sorted(role.permissions)}
+            for role in self._active_policy().engine().roles()
+        ]
+
+    def policy(self) -> dict[str, Any]:
+        """The active access policy document."""
+        return self._active_policy().to_dict()
+
+    def can(self, principal: str, permission: str) -> dict[str, Any]:
+        """Whether a principal holds a permission (explainable result)."""
+        policy = self._active_policy()
+        return policy.engine().check(policy.principal(principal), permission)
+
+    def devices(self) -> dict[str, Any]:
+        """Multi-device dashboard aggregation."""
+        from ..enterprise import DeviceRegistry
+
+        return DeviceRegistry().dashboard()
+
+    def compliance(self, framework: str = "gdpr") -> dict[str, Any]:
+        """Evaluate one compliance framework (``gdpr``/``hipaa``/``soc2``)."""
+        from ..enterprise import evaluate
+
+        return evaluate(framework)

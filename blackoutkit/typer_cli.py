@@ -3578,6 +3578,176 @@ def marketplace_remove(ctx: typer.Context, name: str = typer.Argument(..., help=
         console.print(f"[success]Removed {name}[/success]" if removed else f"[muted]{name} is not installed.[/muted]")
 
 
+enterprise_app = typer.Typer(help="Enterprise & Team: RBAC, policy, devices, compliance", no_args_is_help=False)
+app.add_typer(enterprise_app, name="enterprise")
+
+
+@enterprise_app.callback(invoke_without_command=True)
+def enterprise_status(ctx: typer.Context):
+    if ctx.invoked_subcommand is not None:
+        return
+    options = _output_options(ctx)
+    from .enterprise import DeviceRegistry, Policy, PolicyStore
+
+    store = PolicyStore()
+    policy = store.load() if store.exists() else Policy()
+    board = DeviceRegistry().dashboard()
+    payload = {
+        "organization": policy.organization,
+        "principals": len(policy.principals),
+        "devices": board["total"],
+        "devices_online": board["online"],
+    }
+    if options.json_output:
+        _print_json_enveloped(payload)
+    elif not _is_quiet(options):
+        console.print(
+            f"Org: {policy.organization or '(none)'} · {payload['principals']} principal(s) · "
+            f"{board['online']}/{board['total']} device(s) online"
+        )
+
+
+@enterprise_app.command("roles")
+def enterprise_roles(ctx: typer.Context):
+    """List roles and their permissions."""
+    from .enterprise import PolicyEngine
+
+    options = _output_options(ctx)
+    roles = PolicyEngine().roles()
+    if options.json_output:
+        _print_json_enveloped({"roles": [{"name": r.name, "permissions": sorted(r.permissions)} for r in roles]})
+        return
+    if _is_quiet(options):
+        return
+    table = make_table("Roles", [("Role", "cyan"), ("Permissions", "")], [])
+    for role in roles:
+        table.add_row(role.name, ", ".join(sorted(role.permissions)))
+    console.print(table)
+
+
+@enterprise_app.command("policy")
+def enterprise_policy(ctx: typer.Context):
+    """Show the active access policy."""
+    from .enterprise import Policy, PolicyStore
+
+    options = _output_options(ctx)
+    store = PolicyStore()
+    policy = store.load() if store.exists() else Policy()
+    if options.json_output:
+        _print_json_enveloped(policy.to_dict())
+        return
+    if _is_quiet(options):
+        return
+    console.print(f"Organization: {policy.organization or '(none)'} · default role: {policy.default_role}")
+    if not policy.principals:
+        console.print("[muted]No principals defined. Use `blackout enterprise assign <name> <role>`.[/muted]")
+        return
+    table = make_table("Principals", [("Principal", "cyan"), ("Role", "")], [])
+    for name, role in sorted(policy.principals.items()):
+        table.add_row(name, role)
+    console.print(table)
+
+
+@enterprise_app.command("assign")
+def enterprise_assign(
+    ctx: typer.Context,
+    principal: str = typer.Argument(..., help="Principal name"),
+    role: str = typer.Argument(..., help="Role: viewer|operator|admin"),
+):
+    """Assign a role to a principal (creates/updates the local policy)."""
+    from .enterprise import Policy, PolicyError, PolicyStore
+
+    options = _output_options(ctx)
+    store = PolicyStore()
+    policy = store.load() if store.exists() else Policy()
+    if role not in policy.roles:
+        _print_cli_error("invalid_role", f"unknown role: {role}", options=options)
+        return
+    policy.principals[principal] = role
+    try:
+        store.save(policy)
+    except PolicyError as exc:
+        _print_cli_error("policy_error", str(exc), options=options)
+        return
+    if options.json_output:
+        _print_json_enveloped({"principal": principal, "role": role})
+    elif not _is_quiet(options):
+        console.print(f"[success]✓ Assigned {role} to {principal}[/success]")
+
+
+@enterprise_app.command("devices")
+def enterprise_devices(ctx: typer.Context):
+    """Show the multi-device dashboard."""
+    from .enterprise import DeviceRegistry
+
+    options = _output_options(ctx)
+    board = DeviceRegistry().dashboard()
+    if options.json_output:
+        _print_json_enveloped(board)
+        return
+    if _is_quiet(options):
+        return
+    console.print(f"{board['online']}/{board['total']} device(s) online")
+    if not board["devices"]:
+        console.print("[muted]No devices registered. Use `blackout enterprise device-add <id>`.[/muted]")
+        return
+    table = make_table(
+        "Devices",
+        [("ID", "cyan"), ("Name", ""), ("Platform", ""), ("Status", ""), ("Engine", ""), ("Online", "")],
+        [],
+    )
+    for d in board["devices"]:
+        table.add_row(d["id"], d["name"], d["platform"], d["status"], d["engine"] or "-", "yes" if d["online"] else "no")
+    console.print(table)
+
+
+@enterprise_app.command("device-add")
+def enterprise_device_add(
+    ctx: typer.Context,
+    device_id: str = typer.Argument(..., help="Device id"),
+    name: str = typer.Option("", "--name", help="Friendly name"),
+    platform: str = typer.Option("", "--platform", help="Platform (windows/linux/...)"),
+    status: str = typer.Option("connected", "--status", help="connected|idle|offline|unknown"),
+):
+    """Register or update a device in the dashboard."""
+    from .enterprise import Device, DeviceRegistry
+
+    options = _output_options(ctx)
+    ok = DeviceRegistry().register(Device(id=device_id, name=name, platform=platform, status=status))
+    if options.json_output:
+        _print_json_enveloped({"registered": ok, "id": device_id})
+    elif not _is_quiet(options):
+        console.print(f"[success]✓ Registered {device_id}[/success]" if ok else "[error]Device id is required[/error]")
+
+
+@enterprise_app.command("compliance")
+def enterprise_compliance(
+    ctx: typer.Context,
+    framework: str = typer.Option("all", "--framework", "-f", help="gdpr|hipaa|soc2|all"),
+):
+    """Evaluate GDPR/HIPAA/SOC 2 compliance controls (technical evidence only)."""
+    from rich.markup import escape
+
+    from .enterprise import evaluate, evaluate_all
+
+    options = _output_options(ctx)
+    try:
+        payload = evaluate_all() if framework == "all" else {framework: evaluate(framework)}
+    except ValueError as exc:
+        _fail_parameter(str(exc), options=options)
+        return
+    if options.json_output:
+        _print_json_enveloped(payload)
+        return
+    if _is_quiet(options):
+        return
+    for name, report in payload.items():
+        console.print(f"[bold]{name.upper()}[/bold]: {report['passed']}/{report['total']} controls · score {report['score']}")
+        for check in report["checks"]:
+            mark = "[success]✓[/success]" if check["ok"] else "[error]✗[/error]"
+            console.print(f"  {mark} {escape(check['title'])} — {escape(check['detail'])}")
+
+
 @tools_app.command("adblock")
 def tools_adblock(
     subcmd: str = typer.Argument("status", help="sources|sources-add|sources-remove|custom-add|custom-remove|whitelist-add|whitelist-remove|status|stats|log|update"),
