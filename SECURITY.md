@@ -4,7 +4,9 @@
 
 | Version | Status | Support Until |
 |---------|--------|----------------|
-| 1.6.0   | ✅ Current | 2027-10-11 |
+| 1.8.0   | ✅ Current | 2027-10-16 |
+| 1.7.0   | ⚠️ Maintenance | 2027-10-15 |
+| 1.6.0   | ⚠️ Maintenance | 2027-10-11 |
 | 1.5.0   | ⚠️ Maintenance | 2027-10-11 |
 | 1.4.0   | ⚠️ Maintenance | 2027-10-10 |
 | 1.3.0   | ⚠️ Maintenance | 2027-10-10 |
@@ -88,7 +90,7 @@ Please include:
 
 ### 🟡 Accepted Static-Analysis Findings (reviewed 2026-10-02)
 
-A hardening pass fixed 34 of 39 static-scan findings (path validation, URL scheme/host validation, credential-shaped test literals, protocol-inappropriate randomness, vendored-code crypto annotations). The following 5 SSRF findings are **reviewed and accepted as by-design**, after multiple validation patterns were applied and the remaining flags resisted all of them:
+A hardening pass fixed 34 of 39 static-scan findings (path validation, URL scheme/host validation, credential-shaped test literals, protocol-inappropriate randomness, vendored-code crypto annotations). CodeQL runs on every push and both repositories currently report **0 open alerts** (verified 2026-10-16, after the REST API exception-exposure findings were fixed in 1.8.0). The following 5 SSRF findings are **reviewed and accepted as by-design**, after multiple validation patterns were applied and the remaining flags resisted all of them:
 
 | Site | Rationale |
 |---|---|
@@ -183,6 +185,8 @@ Blackout Kit has no analytics or telemetry backend and never phones home on its 
 - ✅ Streaming file I/O for large YARA scans (not loaded into memory)
 - ✅ Graceful daemon shutdown (no orphaned processes)
 - ✅ Memory bounds for cache and buffer operations
+- ✅ Every goroutine and cgo-exported function in `engine/` recovers from panics, so a Go fault cannot terminate the host process and skip cleanup (`engine/recover.go`, covered by `engine/recover_test.go`)
+- ✅ Daemon startup heals owned system state left by a previous run, so a hard kill is repaired on the next launch (`blackoutkit/self_heal.py`)
 
 ## Trust Boundaries and Hardening
 
@@ -267,6 +271,65 @@ can sit there, but it cannot verify the driver's contents beyond the install-tim
 does not cover other executables such as `goodbyedpi.exe`, which Defender may still flag. Blackout does not
 prove that a WinDivert detection is a false positive.
 
+### Plugins, marketplace, webhooks, and access policy (added in 1.8.0)
+
+**Plugins are arbitrary code.** `blackoutkit/plugins.py` imports a `.py` file from
+`~/.blackout-kit/plugins/` (or `$BLACKOUT_PLUGIN_DIR`), which executes its top-level code with this
+process's full privileges. Controls:
+
+- Loading is gated behind `plugins_enabled`, which defaults to **off**. While it is off,
+  `PluginManager` never touches the plugin directory — no import happens at all.
+- Discovery reads only that directory, and only `*.py` files whose names do not start with `_`.
+- A plugin that raises on import is isolated: the failure is recorded in `PluginManager().errors` and
+  reported, and the remaining plugins still load. It can never abort discovery or the command.
+- Nothing installs or updates a plugin on its own; that is the marketplace's explicit job.
+
+**Marketplace installs are checksum-verified before anything is written.**
+`blackoutkit/marketplace.py` downloads the plugin from the catalog entry's URL and computes its SHA-256
+first. A mismatch raises `MarketplaceError` and leaves the plugin directory untouched; skipping the check
+(`verify=False`) is opt-in only. Network contact happens only inside `refresh()` and `install()` — both
+explicit, user-invoked commands — so there is no background egress.
+
+**Webhooks post only to URLs the operator registered, and never follow redirects.**
+`blackoutkit/webhooks.py` delivers each matching event with `follow_redirects=False` and a 10-second
+timeout. When a webhook carries a secret, the exact request body is signed with HMAC-SHA256
+(`X-Blackout-Signature: sha256=<hex>`) so a receiver can verify the payload came from this process.
+Secrets are persisted in the registry file (they are needed to re-sign deliveries) but masked in every
+API response — `Webhook.to_dict()` returns `***` unless `reveal_secret=True` is passed explicitly.
+
+**The access policy can be signed.** `blackoutkit/enterprise/policy.py` writes a policy document and,
+when given a secret, an HMAC signature over its canonical JSON. `PolicyStore.load(secret=...)` verifies
+that signature and raises `PolicyError` on a mismatch, so a device can detect a policy edited in
+transit. An **unsigned** policy loaded with a secret is refused rather than trusted.
+
+**The REST API v2 is loopback-only, including WebSockets.** `/api/v2/*` sits behind the same guard as
+v1, and the `/api/v2/ws/events` endpoint re-checks the client host itself, because Starlette's HTTP
+middleware does not cover WebSocket upgrades. Like v1 it has **no authentication**, so it must never be
+bound to a non-loopback host.
+
+### Crash safety of system-state changes (added in 1.8.0)
+
+Changing the Windows system proxy is machine-wide: while `ProxyEnable=1` points at a local Blackout
+port, every application on the machine routes through it. If the process dies without restoring the
+previous value, the machine is blackholed. Three defects were found and fixed in 1.8.0:
+
+- **An unclean exit left the proxy set.** `main()` caught `KeyboardInterrupt`/`Exception` and exited
+  without cleanup, the console close handler missed Ctrl+C and Ctrl+Break, and there was no `atexit`
+  hook. Fixed with `install_atexit_proxy_restore()` plus handlers installed in **both** the CLI and the
+  daemon.
+- **A short-lived process could tear down a live proxy.** The ownership record now stores the **PID of
+  the process that set it**, and exit handlers pass `owner_pid=os.getpid()`, so a CLI process can never
+  restore a proxy the daemon still owns. Records with no PID stay unscoped for backward compatibility.
+- **A Go panic killed the host process.** `blackout_core.dll` is loaded into the Python process via
+  ctypes, and the Go code had no `recover()` anywhere, so a panic in any goroutine was fatal — the CLI
+  died instantly and every cleanup handler was skipped. `engine/recover.go` now wraps every cgo-exported
+  function and every goroutine (`safeGo`/`safeCall`), turning a panic into a logged error.
+
+Two layers cover what in-process code cannot: the watchdog (a separate detached process) restores owned
+state when the daemon dies, and the daemon heals its own leftovers at startup. A hard kill still cannot
+be intercepted — but the next `blackout` run repairs it, and `blackout tools netfix` /
+`blackout tools vmcheck` report and clear any leftover state.
+
 ### Audit remediation status
 
 | Finding | Status | Where |
@@ -280,6 +343,12 @@ prove that a WinDivert detection is a false positive.
 | Bearer tokens and URL userinfo credentials survived log scrubbing | Fixed: assignment values redact to end of line, URI credentials masked, redaction applied at log write time | `blackoutkit/log_redaction.py`, `blackoutkit/support_bundle.py`, `blackoutkit/recovery_audit.py`, `blackoutkit/daemon*/` |
 | No documented egress inventory | Added `NETWORK_PRIVACY.md`, verified row by row against the code | `NETWORK_PRIVACY.md` |
 | Dependency floors below advisory-patched versions | Raised (cryptography 50.0.0, Pillow 12.3.0, PyYAML 6.0.1, plus floor comments) | `pyproject.toml`, `requirements.txt`, `SBOM.json` |
+| System proxy stranded after a crash or exit (blackholes the machine) | Fixed: ownership record now stores the setting PID; `atexit` + console-close handlers installed in both the CLI and the daemon; Ctrl+C and Ctrl+Break covered | `blackoutkit/proxy_manager.py`, `blackoutkit/typer_cli.py`, `blackoutkit/daemon/__init__.py`, `tests/test_proxy_exit_safety.py` |
+| Daemon startup never healed leftover system state (dead proxy, owned firewall rules, leftover TUN) | Fixed: owned-only self-heal at daemon startup; `netfix` extended to firewall and TUN; new `vmcheck` reports VM detection and leftovers | `blackoutkit/self_heal.py`, `blackoutkit/tools.py`, `blackoutkit/typer_cli.py`, `tests/test_self_heal.py` |
+| A Go panic in `blackout_core.dll` killed the host process (no `recover()` anywhere) | Fixed: `safeGo`/`safeCall` applied to every cgo-exported function and every goroutine; a panic is now a logged error | `engine/recover.go`, `engine/exports.go`, `engine/sni.go` and siblings, `engine/recover_test.go` |
+| CodeQL `py/stack-trace-exposure` (3 alerts) — REST API returned raw exception text | Fixed: detail logged server-side, a stable generic reason returned to the client | `blackoutkit/api.py`, `tests/test_api.py` |
+| Root `engine/` cgo core had no CI coverage (only compiled) | Fixed: `go mod verify` / `go vet` / `go test` step added | `.github/workflows/build.yml` |
+| Missing workflow permissions (mobile repo) | Fixed: least-privilege `permissions: contents: read` | `blackout-kit-mobile/.github/workflows/test.yml` |
 
 ---
 
@@ -300,6 +369,11 @@ Everything Blackout Kit persists lives under `~/.blackout-kit/` (plus runtime bi
 | `stability.json` | Per-engine latency/loss history used for local ranking | Low |
 | `scan_cache.json`, `data/`, `neighbor_cache.json`, `split_tunnel.json` | Local caches: Cloudflare IPs, fake-SNI domains, LAN neighbors, bypass patterns | Low |
 | `adblock_rules.json`, `automation_rules.json`, `threat-feeds/` | Feature state for ad blocking, automation, threat feeds | Low |
+| `proxy_ownership.json` | The pre-change system-proxy snapshot plus the PID that set it | Low — no credentials; it is what makes an unclean exit recoverable |
+| `policy.json` | Access policy: roles, principals, default role, and an optional HMAC signature | Low — contains no secrets, but it is what authorizes principals, so treat a signed policy as sensitive to substitution |
+| `devices.json` | Device registry: ids, names, platforms, roles, status, heartbeat | Low |
+| `webhooks.json` | Webhook registry: URLs, event prefixes, enabled flag, and **webhook secrets** | High when secrets are set — they are stored so deliveries can be re-signed, and are masked in API responses |
+| `plugins/` | User-supplied plugin `.py` files | Executed as code with this process's privileges — treat the directory as code, not data |
 | `bins/` | Downloaded engine runtimes (Xray, sing-box, Tor, WARP DLL, …) | Binaries only |
 
 Uninstalling means deleting `~/.blackout-kit/`; no data is stored elsewhere and nothing syncs anywhere.
