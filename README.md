@@ -1,18 +1,18 @@
 <div align="center">
 
 ```
-██████╗ ██╗      █████╗  ██████╗██╗  ██╗ ██████╗ ██╗   ██╗████████╗
-██╔══██╗██║     ██╔══██╗██╔════╝██║ ██╔╝██╔═══██╗██║   ██║╚══██╔══╝
-██████╔╝██║     ███████║██║     █████╔╝ ██║   ██║██║   ██║   ██║
-██╔══██╗██║     ██╔══██║██║     ██╔═██╗ ██║   ██║██║   ██║   ██║
-██████╔╝███████╗██║  ██║╚██████╗██║  ██╗╚██████╔╝╚██████╔╝   ██║
-╚═════╝ ╚══════╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝ ╚═════╝  ╚═════╝    ╚═╝
-                  ██╗  ██╗██╗████████╗
-                  ██║ ██╔╝██║╚══██╔══╝
-                  █████╔╝ ██║   ██║
-                  ██╔═██╗ ██║   ██║
-                  ██║  ██╗██║   ██║
-                  ╚═╝  ╚═╝╚═╝   ╚═╝
+██████╗  ██╗       █████╗   ██████╗ ██╗  ██╗  ██████╗  ██╗   ██╗ ████████╗
+██╔══██╗ ██║      ██╔══██╗ ██╔════╝ ██║ ██╔╝ ██╔═══██╗ ██║   ██║ ╚══██╔══╝
+██████╔╝ ██║      ███████║ ██║      █████╔╝  ██║   ██║ ██║   ██╗    ██║   
+██╔══██╗ ██║      ██╔══██║ ██║      ██╔═██╗  ██║   ██║ ██║   ██╗    ██║   
+██████╔╝ ███████╗ ██║  ██║ ╚██████╗ ██║  ██╗ ╚██████╔╝ ╚██████╔╝    ██║   
+╚═════╝  ╚══════╝ ╚═╝  ╚═╝  ╚═════╝ ╚═╝  ╚═╝  ╚═════╝   ╚═════╝     ╚═╝   
+                        ██╗  ██╗  █████╗ ████████╗                        
+                        ██║ ██╔╝    ██║  ╚══██╔══╝                        
+                        █████╔╝     ██║     ██║                           
+                        ██╔═██╗     ██║     ██║                           
+                        ██║  ██╗  █████╗    ██║                           
+                        ╚═╝  ╚═╝  ╚════╝    ╚═╝                           
 ```
 
 **Blackout Kit (`blackout-kit`) — Network Security & Bypass Toolkit**
@@ -23,7 +23,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.6.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.8.0-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
