@@ -1061,6 +1061,14 @@ def _run_daemon_loop(
         if active_engine_name != engine_name:
             log.info("Using fallback engine: %s", active_engine_name)
 
+        # Start the health history fresh: samples from earlier sessions (and from
+        # the broken-probe era) describe engines that no longer run, and a
+        # 20-sample window would keep reporting their failures for minutes.
+        try:
+            sec.reset_stability(active_engine_name)
+        except Exception:
+            log.debug("Could not reset stability history for %s", active_engine_name)
+
     if s.get("auto_set_proxy", True):
         proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
         if proxy_info:
@@ -1394,12 +1402,9 @@ def _run_daemon_loop(
                 if is_socks_proxy:
                     proxy_host = proxy_host.split("=", 1)[1]
                 from ..scanner.proxy_tester import test_tcp_port
-                latency = test_tcp_port(proxy_host, proxy_port)
-                try:
-                    sec.record_latency(active_engine_name, latency)
-                except Exception as e:
-                    log.debug("Failed to record latency for %s: %s", active_engine_name, e)
-                if latency is None:
+                port_open_ok = test_tcp_port(proxy_host, proxy_port)
+                proxy_latency: float | None = None
+                if port_open_ok is None:
                     log.warning("Proxy port closed — engine may have crashed.")
                     if not _reconnect("Proxy port closed."):
                         break
@@ -1427,11 +1432,15 @@ def _run_daemon_loop(
                             log.info("Proxy recovered after %d data-phase failure(s).", data_phase_failures)
                         data_phase_failures = 0
 
-                # Report the DATA probe's latency: a localhost TCP connect is
-                # always ~0ms and told the user nothing about the tunnel.
-                log.info(
-                    f"Heartbeat OK — proxy latency: {(proxy_latency if proxy_latency is not None else latency):.0f}ms"
-                )
+                # Record and report the DATA probe's latency. A localhost TCP
+                # connect is always ~0ms, so the history used to say "avg 0ms"
+                # and told the user nothing about the tunnel.
+                sample = proxy_latency if proxy_latency is not None else port_open_ok
+                try:
+                    sec.record_latency(active_engine_name, sample)
+                except Exception as e:
+                    log.debug("Failed to record latency for %s: %s", active_engine_name, e)
+                log.info(f"Heartbeat OK — proxy latency: {sample:.0f}ms")
             else:
                 log.debug("Network-level engine has no proxy port; skipping proxy health probe.")
 
