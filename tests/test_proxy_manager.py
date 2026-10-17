@@ -354,7 +354,10 @@ def test_set_system_proxy_reports_when_another_app_swallows_the_write(
     True blindly put "System proxy set to 127.0.0.1:10809" in the log while
     the registry read back as Off and every browser bypassed the tunnel.
     """
+    # First call is the "previous" snapshot; the second is the check after the
+    # broadcast wipe; the third after the silent re-write (still wiped).
     with patch("blackoutkit.proxy_manager.get_proxy_status", side_effect=[
+        {"enabled": False, "server": "", "override": ""},
         {"enabled": False, "server": "", "override": ""},
         {"enabled": False, "server": "", "override": ""},
     ]):
@@ -362,3 +365,58 @@ def test_set_system_proxy_reports_when_another_app_swallows_the_write(
 
     assert res is False
     assert "did not stick" in get_last_error()
+
+
+class _FakeKey:
+    """A registry key that behaves like winreg's for the two values we use."""
+
+    def __init__(self):
+        self.values = {"ProxyEnable": 0, "ProxyServer": ""}
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
+def test_set_system_proxy_recovers_when_the_notify_wipes_the_write(monkeypatch):
+    """The broadcast can wake a VPN manager that erases our values.
+
+    Measured on the user's machine: a bare registry write persisted for 2s, but
+    the WinINET "settings changed" broadcast (Hotspot Shield + PlanetVPN +
+    master_vpn) wiped it within 0.5s. set_system_proxy must notice and restore.
+    """
+    from blackoutkit import proxy_manager as pm
+
+    import winreg as real_winreg
+
+    key = _FakeKey()
+    monkeypatch.setattr(real_winreg, "OpenKey", lambda *_args: key)
+    monkeypatch.setattr(
+        real_winreg, "SetValueEx",
+        lambda _k, name, _r, _t, value: key.values.__setitem__(name, value),
+    )
+    monkeypatch.setattr(real_winreg, "QueryValueEx", lambda _k, name: key.values[name])
+    monkeypatch.setattr(real_winreg, "CloseKey", lambda *_args: None)
+    monkeypatch.setattr(pm, "_notify_proxy_change", lambda: None)
+
+    def fake_status():
+        return {"enabled": bool(key.values["ProxyEnable"]), "server": key.values["ProxyServer"]}
+
+    monkeypatch.setattr(pm, "get_proxy_status", fake_status)
+    monkeypatch.setattr(pm, "_mark_proxy_owned", lambda *_args: None)
+
+    # The first status check happens after the broadcast has wiped the values,
+    # exactly like the real machine; the second (after the silent re-write) sees
+    # them present.
+    states = [
+        {"enabled": False, "server": ""},   # wiped by the notify
+        {"enabled": True, "server": "127.0.0.1:10809"},  # after the silent restore
+    ]
+    calls = {"n": 0}
+
+    def sequenced_status():
+        snapshot = states[min(calls["n"], len(states) - 1)]
+        calls["n"] += 1
+        return snapshot
+
+    monkeypatch.setattr(pm, "get_proxy_status", sequenced_status)
+
+    assert pm.set_system_proxy("127.0.0.1", 10809) is True
+    assert calls["n"] >= 2, "expected a re-write after the wipe"

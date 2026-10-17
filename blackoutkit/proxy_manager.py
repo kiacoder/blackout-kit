@@ -277,25 +277,48 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
     try:
         import winreg
+        from . import split_tunnel
 
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
-        try:
-            winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
-            winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, target["server"])
-            from . import split_tunnel
+        def _write_registry() -> None:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
+            try:
+                winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 1)
+                winreg.SetValueEx(key, "ProxyServer", 0, winreg.REG_SZ, target["server"])
+                winreg.SetValueEx(
+                    key, "ProxyOverride", 0, winreg.REG_SZ,
+                    split_tunnel.get_proxy_override_string(),
+                )
+            finally:
+                winreg.CloseKey(key)
 
-            winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, split_tunnel.get_proxy_override_string())
-        finally:
-            winreg.CloseKey(key)
+        _write_registry()
         _notify_proxy_change()
-        # Verify the write instead of assuming it landed. A policy, another VPN
-        # client (Hotspot Shield keeps its own WinINET settings), or a registry
-        # redirector can swallow it — and returning True regardless is how
-        # "System proxy set to 127.0.0.1:10809" ended up in the log while
-        # `blackout status` read the registry back as Off and browsers used
-        # nothing at all.
+
+        def _matches(snapshot: dict | None) -> bool:
+            return bool(
+                snapshot
+                and snapshot.get("enabled")
+                and str(snapshot.get("server") or "") == target["server"]
+            )
+
         actual = get_proxy_status()
-        if not actual.get("enabled") or str(actual.get("server") or "") != target["server"]:
+        if not _matches(actual):
+            # Observed on a machine running Hotspot Shield + PlanetVPN +
+            # master_vpn: the registry write alone persisted (verified for 2s),
+            # but the WinINET "settings changed" broadcast woke those managers
+            # and they restored their own proxy state, erasing ours within
+            # 0.5s. Re-apply the values without announcing them — the tunnel is
+            # already running, and every app that starts after this reads the
+            # registry anyway.
+            _write_registry()
+            actual = get_proxy_status()
+
+        # Verify the write instead of assuming it landed. A policy, another VPN
+        # client, or a registry redirector can swallow it — and returning True
+        # regardless is how "System proxy set to 127.0.0.1:10809" ended up in
+        # the log while `blackout status` read the registry back as Off and
+        # browsers used nothing at all.
+        if not _matches(actual):
             _last_error = (
                 "the system proxy did not stick — another VPN/proxy manager or a "
                 f"policy is overriding it (registry reads {actual.get('server')!r}, "
