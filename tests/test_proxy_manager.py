@@ -54,7 +54,14 @@ def test_is_admin_linux(mock_geteuid):
 @patch("winreg.CloseKey")
 @patch("blackoutkit.proxy_manager._notify_proxy_change")
 def test_set_system_proxy_winreg_success(mock_notify, mock_close, mock_set, mock_open):
-    res = set_system_proxy("127.0.0.1", 10809, "http")
+    # set_system_proxy now verifies the write by reading the proxy back, so the
+    # mocked registry has to reflect it: first call is the "previous" snapshot,
+    # second is the verification.
+    with patch("blackoutkit.proxy_manager.get_proxy_status", side_effect=[
+        {"enabled": False, "server": "", "override": ""},
+        {"enabled": True, "server": "127.0.0.1:10809", "override": ""},
+    ]):
+        res = set_system_proxy("127.0.0.1", 10809, "http")
     assert res is True
     assert get_last_error() == ""
     mock_notify.assert_called_once()
@@ -66,7 +73,12 @@ def test_set_system_proxy_winreg_success(mock_notify, mock_close, mock_set, mock
 @patch("winreg.CloseKey")
 @patch("blackoutkit.proxy_manager._notify_proxy_change")
 def test_set_system_proxy_winreg_socks(mock_notify, mock_close, mock_set, mock_open):
-    res = set_system_proxy("socks=127.0.0.1", 10809, "socks")
+    # The write is verified by reading the proxy back (see the http test).
+    with patch("blackoutkit.proxy_manager.get_proxy_status", side_effect=[
+        {"enabled": False, "server": "", "override": ""},
+        {"enabled": True, "server": "socks=127.0.0.1:10809", "override": ""},
+    ]):
+        res = set_system_proxy("socks=127.0.0.1", 10809, "socks")
     assert res is True
     assert get_last_error() == ""
 
@@ -325,3 +337,28 @@ def test_force_clear_fires_on_dead_blackout_port(monkeypatch):
     monkeypatch.setattr(pm, "clear_system_proxy", lambda: called.__setitem__("clear", 1) or True)
     assert pm.force_clear_dead_proxy(ports=(dead_port,)) is True
     assert called["clear"] == 1
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
+@patch("sys.platform", "win32")
+@patch("winreg.OpenKey")
+@patch("winreg.SetValueEx")
+@patch("winreg.CloseKey")
+@patch("blackoutkit.proxy_manager._notify_proxy_change")
+def test_set_system_proxy_reports_when_another_app_swallows_the_write(
+    mock_notify, mock_close, mock_set, mock_open
+):
+    """A write that does not stick must not be reported as success.
+
+    Hotspot Shield and other VPN clients own the same WinINET keys. Returning
+    True blindly put "System proxy set to 127.0.0.1:10809" in the log while
+    the registry read back as Off and every browser bypassed the tunnel.
+    """
+    with patch("blackoutkit.proxy_manager.get_proxy_status", side_effect=[
+        {"enabled": False, "server": "", "override": ""},
+        {"enabled": False, "server": "", "override": ""},
+    ]):
+        res = set_system_proxy("127.0.0.1", 10809, "http")
+
+    assert res is False
+    assert "did not stick" in get_last_error()

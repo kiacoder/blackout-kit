@@ -6,26 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Added
+- **Batch config checker (`python -m blackoutkit.config_check`)** — the same idea the mobile
+  client uses: every saved config is started in its own short-lived core on a private port and
+  asked to **fetch a real website** (`generate_204`), not just ping a port. Checks run in
+  parallel, so all 8 configs take ~5s instead of 8× the wall time of a serial loop, and the
+  output ranks them by latency with a "fastest" pick. `--json` for scripting, `--workers` to
+  tune parallelism.
+
 ### Fixed
-- **The daemon rotated away from healthy engines until it gave up
-  ("Reconnect attempts exhausted").** Its startup data-phase probe fetched a
-  real URL through the tunnel with a **0.2s timeout** while the same request
-  needs ~1s, so it failed every single time; two failures in a row triggered a
-  config rotation, three rotations exhausted the restart budget. Measured on a
-  verified-healthy tunnel: `timeout=0.2s → FAILED`, `timeout=5.0s → 965ms`.
-  The probe budget is now 15s window / 2s interval / 5s timeout, and the
-  constants are module-level (`EARLY_PROBE_WINDOW`, …) so tests assert against
-  them instead of hardcoding values that drift.
-- **A listener that had not opened yet was treated as a broken tunnel.** The
-  probe now requires the local port to accept a connection first; a closed
-  port means "still booting" (or failover in progress), not "rotate".
-- **Double verification.** XRay proves the tunnel carries traffic before
-  reporting success, so the daemon no longer re-probes it (`Engine.verified`).
-- **"● Connected" over dead ports.** `blackout status` reported a live daemon
-  as Connected even with both local listeners closed; it now says
-  "Starting (listeners not open yet)" until a listener is actually open.
-- **"Proxy port stopped responding" had no cause attached.** The warning now
-  names the engine that exited and its exit code (`Engine.last_exit_code`).
+- **`set_system_proxy` reported success without checking the write.** It wrote the WinINET keys,
+  called `_notify_proxy_change()` and returned True — even when another VPN client (Hotspot
+  Shield keeps its own WinINET settings) or a policy swallowed the write. That is how
+  "System proxy set to 127.0.0.1:10809" landed in the log while `blackout status` read the
+  registry back as Off and every browser bypassed the tunnel. The write is now verified by
+  reading it back, and a swallowed write returns False with the exact reason.
+- **The daemon now keeps the system proxy pointing at the tunnel.** Its heartbeat re-applies the
+  proxy when it is not ours, and says plainly which manager is overriding it instead of leaving
+  the tunnel up and unused.
+- **The heartbeat reported a meaningless latency.** `Heartbeat OK — proxy latency: 0ms` used a
+  localhost TCP connect; it now reports the data probe's real latency.
+- **The daemon rotated away from healthy engines until it gave up.** The startup data-phase probe
+  fetched a real URL with a 0.2s timeout (needs ~1s), so it failed every time; two failures
+  rotated, three exhausted the budget. Budget is now 15s/2s/5s, a listener that has not opened
+  yet counts as "still booting" rather than "rotate", and XRay — which already proves the tunnel
+  carries traffic — is not re-probed (`Engine.verified`).
+- **`blackout status` claimed "● Connected" over two closed listeners.** It now says
+  "● Starting (listeners not open yet)" until one is actually open, and a dead engine is
+  reported with its exit code instead of a bare "proxy port stopped responding".
 
 ### Fixed
 - **XRay treated "port opened" as "connected", so one dead config meant total failure.** The engine selected a single config (by rotation offset), waited for its listening port, and called that success. A config that opens its ports and then rejects every request — a REALITY server that closes the handshake with `EOF` is the common case — therefore looked perfectly healthy, and the other configs in the vault were never tried. The engine now verifies the tunnel with a **real request through its own proxy** (`http://www.gstatic.com/generate_204`, then Cloudflare's) and, when it picked the config itself, **fails over to the next stored config** (up to 6, in rotation order) instead of giving up. An explicitly supplied `proxy_config` is still honoured as-is, with a single attempt.

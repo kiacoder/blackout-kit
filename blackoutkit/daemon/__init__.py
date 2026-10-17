@@ -1360,6 +1360,34 @@ def _run_daemon_loop(
 
             with cfg_lock:
                 proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
+            # Keep the system proxy pointing at us. Another VPN client (Hotspot
+            # Shield) rewrites the same WinINET keys, which silently leaves the
+            # tunnel up and every browser bypassing it — the user sees
+            # "connected" and nothing loads.
+            if proxy_info and s.get("auto_set_proxy", True):
+                from ..proxy_manager import get_proxy_status, set_system_proxy
+
+                want_host, want_port = proxy_info
+                want = (
+                    f"{want_host}:{want_port}"
+                    if not str(want_host).startswith("socks=")
+                    else f"{want_host}:{want_port}"
+                )
+                current = get_proxy_status()
+                if not current.get("enabled") or str(current.get("server") or "") != want:
+                    log.warning(
+                        "System proxy is not pointing at the tunnel (found %r, wanted %r) — re-applying.",
+                        current.get("server"), want,
+                    )
+                    if set_system_proxy(want_host, want_port):
+                        log.info("System proxy re-applied to %s.", want)
+                    else:
+                        from ..proxy_manager import get_last_error
+                        log.error(
+                            "Could not re-apply the system proxy: %s. Another VPN/proxy "
+                            "manager is overriding it; traffic will bypass the tunnel.",
+                            get_last_error() or "unknown reason",
+                        )
             if proxy_info:
                 proxy_host, proxy_port = proxy_info
                 is_socks_proxy = isinstance(proxy_host, str) and proxy_host.startswith("socks=")
@@ -1399,7 +1427,11 @@ def _run_daemon_loop(
                             log.info("Proxy recovered after %d data-phase failure(s).", data_phase_failures)
                         data_phase_failures = 0
 
-                log.info(f"Heartbeat OK — proxy latency: {latency:.0f}ms")
+                # Report the DATA probe's latency: a localhost TCP connect is
+                # always ~0ms and told the user nothing about the tunnel.
+                log.info(
+                    f"Heartbeat OK — proxy latency: {(proxy_latency if proxy_latency is not None else latency):.0f}ms"
+                )
             else:
                 log.debug("Network-level engine has no proxy port; skipping proxy health probe.")
 

@@ -288,8 +288,22 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
         finally:
             winreg.CloseKey(key)
         _notify_proxy_change()
+        # Verify the write instead of assuming it landed. A policy, another VPN
+        # client (Hotspot Shield keeps its own WinINET settings), or a registry
+        # redirector can swallow it — and returning True regardless is how
+        # "System proxy set to 127.0.0.1:10809" ended up in the log while
+        # `blackout status` read the registry back as Off and browsers used
+        # nothing at all.
+        actual = get_proxy_status()
+        if not actual.get("enabled") or str(actual.get("server") or "") != target["server"]:
+            _last_error = (
+                "the system proxy did not stick — another VPN/proxy manager or a "
+                f"policy is overriding it (registry reads {actual.get('server')!r}, "
+                f"enabled={actual.get('enabled')})"
+            )
+            return False
         _last_error = ""
-        _mark_proxy_owned(previous, get_proxy_status() or target)
+        _mark_proxy_owned(previous, actual or target)
         return True
     except PermissionError:
         _last_error = f"Registry write denied — run Blackout Kit as Administrator."
