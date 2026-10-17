@@ -13,13 +13,22 @@ Legendary upgrade:
     and records them in the cert store even in "none" log level mode
 """
 import json
+import os
 import sys
 import threading
+import time
+import urllib.request
 
 from .. import cert_bypass as _cb
 from .. import security as _sec
 from .. import settings as cfg
 from .base import BINS_DIR, Engine
+
+# Per-config outcomes of the most recent start() — (label, reason) pairs for
+# configs that were tried and could not carry traffic. Read by the connection
+# service so a failure can say WHY instead of "no engine could start", and so a
+# success can report which configs it skipped.
+LAST_CONFIG_FAILURES: list[tuple[str, str]] = []
 
 XRAY_BIN_NAMES = [
     "xray.exe",
@@ -44,10 +53,27 @@ class XRayEngine(Engine):
     name = "xray"
     description = "XRay proxy core — routes traffic through SNI spoofer"
 
+    # ── Traffic verification ──────────────────────────────────────────
+    # An open port proves the core is listening, not that the config can
+    # carry a single byte. A REALITY server that rejects the handshake
+    # accepts TCP, opens no error, and closes with EOF on every request —
+    # the old "port opened = ready" check called that a success.
+    _VERIFY_URLS = (
+        "http://www.gstatic.com/generate_204",
+        "http://cp.cloudflare.com/generate_204",
+    )
+    _VERIFY_TIMEOUT = 4.0
+    # Every stored config is tried at most once, in rotation order.
+    _MAX_CONFIG_ATTEMPTS = 6
+
     def __init__(self, proxy_config=None, socks_port: int | None = None, http_port: int | None = None):
         super().__init__()
         s = cfg.load()
         self.proxy_config = proxy_config
+        # An explicitly supplied config is the caller's decision — no failover.
+        self._auto_config = proxy_config is None
+        self._auto_selected = None
+        self.config_failures: list[tuple[str, str]] = []
         if not self.proxy_config:
             try:
                 from ..config.manager import select_proxy_config
@@ -55,6 +81,8 @@ class XRayEngine(Engine):
                 if sys.platform.startswith("linux"):
                     compatible = ("vless", "trojan")
                 self.proxy_config = select_proxy_config(compatible)
+                self._auto_selected = self.proxy_config
+                self._auto_config = self.proxy_config is not None
             except Exception:
                 pass
         if sys.platform.startswith("linux") and self.proxy_config and self.proxy_config.protocol == "vmess":
@@ -80,7 +108,10 @@ class XRayEngine(Engine):
             "log": {
                 "loglevel": "warning",
                 "access": "none",
-                "error": "none"
+                # Keep the core's error stream on disk. With "error": "none" a
+                # rejected handshake left no trace at all — the core just
+                # closed the connection, and the CLI had nothing to report.
+                "error": str(self._config_dir / "xray_error.log")
             },
             "inbounds": [
                 {
@@ -374,7 +405,134 @@ class XRayEngine(Engine):
             "valid bins/xray_config.json outbound instead of relying on built-in creds."
         )
 
+    # ── Config selection helpers ──────────────────────────────────────
+
+    def _candidate_configs(self) -> list:
+        """Every compatible stored config, in rotation order.
+
+        Rotation (BLACKOUT_CONFIG_OFFSET) picks where to *start*, not the
+        only config worth trying: a rotation that lands on a server that
+        cannot carry traffic used to mean a total failure while seven
+        working configs sat unused in the same vault.
+        """
+        from ..config.manager import load_configs
+
+        compatible = ("vless", "trojan", "vmess")
+        if sys.platform.startswith("linux"):
+            compatible = ("vless", "trojan")
+        try:
+            offset = int(os.environ.get("BLACKOUT_CONFIG_OFFSET", "0"))
+        except ValueError:
+            offset = 0
+        configs = [
+            c for c in load_configs()
+            if c.protocol in compatible
+            and isinstance(c.address, str)
+            and c.address.strip()
+            and isinstance(c.port, int)
+            and not isinstance(c.port, bool)
+            and 1 <= c.port <= 65535
+            and c.reality_validation_error() is None
+        ]
+        if not configs:
+            return []
+        start = offset % len(configs)
+        return configs[start:] + configs[:start]
+
+    @staticmethod
+    def _config_label(config) -> str:
+        name = getattr(config, "name", "") or ""
+        if name:
+            return name
+        return f"{config.protocol} {config.address}:{config.port}"
+
+    def _verify_proxy(self) -> tuple[bool, str]:
+        """Fetch a real URL through the proxy. Port-open is not proof."""
+        proxy = f"http://127.0.0.1:{self.http_port}"
+        opener = urllib.request.build_opener(
+            urllib.request.ProxyHandler({"http": proxy, "https": proxy})
+        )
+        last = "no response"
+        for url in self._VERIFY_URLS:
+            try:
+                with opener.open(url, timeout=self._VERIFY_TIMEOUT) as response:
+                    status = getattr(response, "status", 0)
+                    if 200 <= status < 400:
+                        return True, ""
+                    last = f"HTTP {status}"
+            except Exception as exc:
+                last = f"{type(exc).__name__}: {exc}"[:200]
+        return False, last
+
     def start(self) -> bool:
+        """Start the core and prove it carries traffic.
+
+        When the engine picked the config itself, a config that opens its
+        ports but cannot complete a single request is not a success: the
+        next candidate is tried instead. An explicitly supplied config is
+        honoured as-is (single attempt), so callers keep full control.
+        """
+        # Failover only when the engine chose the config itself and it has not
+        # been replaced since: an assignment to `proxy_config` is an explicit
+        # instruction, and silently rotating away from it would ignore the
+        # caller (tests and integrations do exactly that).
+        use_failover = self._auto_config and self.proxy_config is self._auto_selected
+        candidates = self._candidate_configs() if use_failover else []
+        if not candidates:
+            # Explicit config, or nothing stored: single attempt, as before.
+            return self._start_single()
+
+        self.config_failures = []
+        attempts = min(len(candidates), self._MAX_CONFIG_ATTEMPTS)
+        for index in range(attempts):
+            candidate = candidates[index]
+            label = self._config_label(candidate)
+            self.proxy_config = candidate
+
+            if not self._start_single():
+                self.config_failures.append((label, "engine did not start"))
+                self.stop()
+                time.sleep(0.3)
+                continue
+
+            ok, reason = self._verify_proxy()
+            if ok:
+                LAST_CONFIG_FAILURES[:] = list(self.config_failures)
+                if index > 0:
+                    self._log.info(
+                        "Config %s carries traffic (after %d failed candidate(s))",
+                        label, index,
+                    )
+                return True
+
+            self._log.warning(
+                "Config %s opened its ports but cannot carry traffic (%s) — "
+                "trying the next config", label, reason,
+            )
+            self.config_failures.append((label, reason))
+            self.stop()
+            time.sleep(0.3)
+
+        detail = "; ".join(f"{name}: {why}" for name, why in self.config_failures[:3])
+        LAST_CONFIG_FAILURES[:] = list(self.config_failures)
+        self._log.error(
+            "No stored config could carry traffic (tried %d/%d). %s",
+            attempts, len(candidates), detail,
+        )
+        return False
+
+    def _start_single(self) -> bool:
+
+        # stop() deletes the engine's temp config directory. Any restart on
+        # this instance — a daemon restart, or the failover loop trying the
+        # next candidate — then failed to write the config with
+        # FileNotFoundError. Recreate it before touching the filesystem.
+        try:
+            if not self._config_dir.exists():
+                self._config_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as exc:
+            self._log.error("Cannot prepare the engine config directory: %s", exc)
+            return False
 
         # Fail fast if either port is already occupied — avoids silent false-success
         if not self.check_port_free(self.socks_port) or not self.check_port_free(self.http_port):
@@ -511,23 +669,40 @@ class XRayEngine(Engine):
 
     def _start_cert_monitor(self, mode: str) -> None:
         """
-        Daemon thread that reads xray stderr and records any cert error phrases.
-        For PRIVATE mode, also logs a warning to the engine logger.
+        Daemon thread that reads the core's error log and records cert error
+        phrases. For PRIVATE mode, also logs a warning to the engine logger.
+
+        Reads the file the config points `log.error` at, not the process's
+        stderr: the engine is spawned with stderr=DEVNULL (so a chatty core
+        cannot fill a pipe and stall), which meant the old stderr-based
+        monitor never saw a single line.
         """
-        proc = self._process
+        log_path = self._config_dir / "xray_error.log"
 
         def _reader() -> None:
-            if proc is None or proc.stderr is None:
-                return
-            try:
-                for raw_line in proc.stderr:
+            """Tail the core's error log for as long as the core runs."""
+            import re
+            offset = 0
+            while self.is_running():
+                chunk = b""
+                try:
+                    if log_path.exists():
+                        with log_path.open("rb") as handle:
+                            handle.seek(offset)
+                            chunk = handle.read()
+                            offset = handle.tell()
+                except OSError:
+                    chunk = b""
+                if not chunk:
+                    time.sleep(0.5)
+                    continue
+                for raw_line in chunk.splitlines():
                     line = raw_line.decode("utf-8", errors="replace").strip()
                     if not line:
                         continue
                     snippet = _cb.scan_xray_line(line)
                     if snippet:
                         # Best-effort: try to extract host from the log line
-                        import re
                         m = re.search(r"(?:dial|connect)\s+(?:tcp\s+)?(\S+):(\d+)", line)
                         if m:
                             h, p = m.group(1), int(m.group(2))
@@ -535,14 +710,12 @@ class XRayEngine(Engine):
                             if rec is None:
                                 # Record without a full probe — just note the error
                                 _cb.save_record(_cb.HostCertRecord(
-                                    host=h, port=p, checked_at=__import__("time").time(),
+                                    host=h, port=p, checked_at=time.time(),
                                     cert_ok=False, subject="", issuer="", expires="",
                                     days_left=0, self_signed=False, error=snippet,
                                 ))
                         if mode == "private":
                             self._log.warning("Cert issue in xray output: %s", snippet)
-            except (ValueError, OSError):
-                pass  # Pipe closed — process exited
 
         threading.Thread(
             target=_reader, daemon=True, name="xray-cert-monitor",

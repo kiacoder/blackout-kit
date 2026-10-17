@@ -558,10 +558,25 @@ class ConnectionService:
                     warnings=warnings,
                 )
             if not engines:
+                # Carry the per-config reasons the engine collected: "no
+                # engine could start" is useless when the real answer is
+                # "every stored config was rejected with EOF".
+                details = []
+                try:
+                    from .engines.xray import LAST_CONFIG_FAILURES
+                    details = [f"{name}: {why}" for name, why in LAST_CONFIG_FAILURES]
+                except Exception:
+                    details = []
+                message = "No engines could start. Make sure binaries are in bins/."
+                if details:
+                    message = (
+                        "No stored config could carry traffic. "
+                        + " | ".join(details[:4])
+                    )
                 return self._failure(
                     request,
                     "engine_start_failed",
-                    "No engines could start. Make sure binaries are in bins/.",
+                    message,
                     engine=engine_name,
                     preset=preset,
                     profile=profile,
@@ -571,6 +586,22 @@ class ConnectionService:
 
             for engine in engines:
                 self._event("engine_started", name=getattr(engine, "name", engine_name), pid=getattr(engine, "pid", None))
+
+            # Honest reporting: if the engine had to skip configs that opened
+            # their ports but could not carry traffic, say so instead of
+            # presenting the connection as if every stored config were fine.
+            try:
+                from .engines.xray import LAST_CONFIG_FAILURES
+                if LAST_CONFIG_FAILURES:
+                    skipped = ", ".join(
+                        f"{name} ({why})" for name, why in LAST_CONFIG_FAILURES[:3]
+                    )
+                    self._event(
+                        "warning",
+                        message=f"Skipped {len(LAST_CONFIG_FAILURES)} config(s) that could not carry traffic: {skipped}",
+                    )
+            except Exception:
+                pass
 
             health_target = None
             if settings.get("auto_set_proxy"):

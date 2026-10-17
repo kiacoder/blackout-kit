@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Fixed
+- **XRay treated "port opened" as "connected", so one dead config meant total failure.** The engine selected a single config (by rotation offset), waited for its listening port, and called that success. A config that opens its ports and then rejects every request — a REALITY server that closes the handshake with `EOF` is the common case — therefore looked perfectly healthy, and the other configs in the vault were never tried. The engine now verifies the tunnel with a **real request through its own proxy** (`http://www.gstatic.com/generate_204`, then Cloudflare's) and, when it picked the config itself, **fails over to the next stored config** (up to 6, in rotation order) instead of giving up. An explicitly supplied `proxy_config` is still honoured as-is, with a single attempt.
+- **Restarting an engine instance crashed with `FileNotFoundError`.** `stop()` removes the engine's temporary config directory, but a restart on the same instance (the daemon's restart path, or a failover attempt) then failed to write `xray_config.json`. The directory is now recreated before use.
+- **The core's error log was disabled, hiding every failure.** Generated configs set `"error": "none"`, so a rejected handshake left no trace at all. The core now writes to `xray_error.log` in the engine's config directory.
+- **The cert monitor could never see a line.** It read the core's stderr, but the process is spawned with `stderr=DEVNULL` (so a chatty core cannot fill a pipe and stall). It now tails the core's error log file instead.
+- **Failures and skips are reported honestly.** "No engines could start" now carries the per-config reasons, and a successful connect says which configs it had to skip and why.
+
+### Added
+- `tests/test_xray_failover.py` — 5 tests covering failover order, first-success short-circuit, total-failure reporting, the explicit-config rule, and the attempt cap.
+
 ## [1.8.0] - 2026-10-16
 
 **Highlights:** Roadmap **Phase 7** (Enterprise & Team: RBAC, centralized policy, multi-device dashboard, GDPR/HIPAA/SOC 2 compliance) and **Phase 8** (Developer Ecosystem: Python SDK, plugin system, REST API v2, community marketplace) — plus a crash-safety pass that stops a Go panic or an unclean exit from blackholing the machine's network.
