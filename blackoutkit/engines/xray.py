@@ -498,6 +498,7 @@ class XRayEngine(Engine):
             ok, reason = self._verify_proxy()
             if ok:
                 LAST_CONFIG_FAILURES[:] = list(self.config_failures)
+                self.verified = True
                 if index > 0:
                     self._log.info(
                         "Config %s carries traffic (after %d failed candidate(s))",

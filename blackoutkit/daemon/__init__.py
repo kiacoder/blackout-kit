@@ -7,6 +7,7 @@ import json
 import logging
 import logging.handlers
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -119,6 +120,30 @@ def is_process_alive(pid: int) -> bool:
     """Check if a process with the given PID is running."""
     import psutil
     return psutil.pid_exists(pid)
+
+
+def _local_port_open(host: str, port: int, timeout: float = 0.4) -> bool:
+    """Return whether a local listener accepts a TCP connection.
+
+    Used to tell "the engine has not opened its listener yet" apart from "the
+    tunnel is up but carries no traffic" — only the second one is a reason to
+    rotate to another config.
+    """
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+# Startup data-phase probe budget. The probe fetches a real URL through the
+# tunnel, so the timeout must cover a real round trip (measured ~1s against a
+# healthy config); the window must outlast engine startup, which alone takes
+# seconds. Module constants so tests assert against them instead of hardcoding
+# values that drift away from the loop.
+EARLY_PROBE_WINDOW = 15.0
+EARLY_PROBE_INTERVAL = 2.0
+EARLY_PROBE_TIMEOUT = 5.0
 
 
 def get_pid() -> int | None:
@@ -1066,9 +1091,15 @@ def _run_daemon_loop(
 
     log.info("Daemon running. Monitoring engines...")
     retry_interval = s.get("retry_interval", 30)
-    early_probe_window = 5.0
-    early_probe_interval = 0.1
-    early_probe_timeout = 0.2
+    # The early probe asks the tunnel to carry a REAL request
+    # (test_http_proxy fetches cp.cloudflare.com through the proxy), so its
+    # budget has to cover a real round trip: a 0.2s timeout against a ~1.3s
+    # round trip failed every single time, twice, and the daemon then rotated
+    # away from a perfectly healthy engine until the restart budget ran out
+    # ("Reconnect attempts exhausted").
+    early_probe_window = EARLY_PROBE_WINDOW
+    early_probe_interval = EARLY_PROBE_INTERVAL
+    early_probe_timeout = EARLY_PROBE_TIMEOUT
     max_restarts = s.get("max_retries", 3)
     initial_reconnect_delay = s.get("reconnect_initial_delay", 2)
     maximum_reconnect_delay = s.get("reconnect_max_delay", 60)
@@ -1259,11 +1290,24 @@ def _run_daemon_loop(
 
             with cfg_lock:
                 early_proxy_info = cfg.get_engine_proxy_details(active_engine_name, s)
+            # An engine that already proved the tunnel carries traffic (XRay
+            # fetches a real URL before reporting success) needs no second
+            # probe: repeating it only adds a network round trip that can fail
+            # on a slow link and send the daemon rotating for no reason.
+            if any(getattr(engine, "verified", False) for engine in active):
+                early_proxy_info = None
             if early_proxy_info and s.get("config_rotation", True):
                 early_host, early_port = early_proxy_info
                 is_socks_proxy = isinstance(early_host, str) and early_host.startswith("socks=")
                 if is_socks_proxy:
                     early_host = early_host.split("=", 1)[1]
+                # A closed local port means the engine is still booting (or its
+                # own failover is trying the next config). That is not a
+                # data-phase failure — counting it as one made the daemon
+                # rotate away from an engine that had not finished starting.
+                if not _local_port_open(early_host, early_port):
+                    next_early_probe += early_probe_interval
+                    continue
                 from ..scanner.proxy_tester import test_http_proxy, test_socks5_proxy
                 probe = test_socks5_proxy if is_socks_proxy else test_http_proxy
                 if probe(early_host, early_port, timeout=early_probe_timeout) is None:

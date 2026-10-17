@@ -257,6 +257,9 @@ def _run_early_proxy_probes(monkeypatch, tmp_path, probe_results, *, proxy_url="
         lambda *_args: (proxy_url, 10809) if proxy_available else None,
     )
     monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
+    # The loop only probes once the local listener exists; a closed port is
+    # "still booting", not a data-phase failure (see the gate test below).
+    monkeypatch.setattr(daemon, "_local_port_open", lambda *_args, **_kwargs: True)
     monkeypatch.delenv("BLACKOUT_CONFIG_OFFSET", raising=False)
 
     now = [0.0]
@@ -312,9 +315,12 @@ def test_early_data_phase_failures_rotate_after_two_bounded_probes(monkeypatch, 
     )
 
     assert len(probe_times) == 2
-    assert probe_times[0] < 5.0
-    assert probe_times[1] - probe_times[0] == pytest.approx(0.1)
-    assert probe_timeouts == [0.2, 0.2]
+    # Timing comes from the loop's own constants: this test used to hardcode
+    # 0.1s/0.2s, which encoded a probe that could never complete a real
+    # request (~1.3s) and rotated away from healthy engines.
+    assert probe_times[0] < daemon.EARLY_PROBE_WINDOW
+    assert probe_times[1] - probe_times[0] == pytest.approx(daemon.EARLY_PROBE_INTERVAL)
+    assert probe_timeouts == [daemon.EARLY_PROBE_TIMEOUT, daemon.EARLY_PROBE_TIMEOUT]
     assert start_offsets == [None, "1"]
     assert len(probe_times) == 2
     recovery.assert_not_called()
@@ -340,8 +346,10 @@ def test_early_probe_window_starts_when_engine_starts(monkeypatch, tmp_path):
     monkeypatch.setattr(daemon, "_monotonic", lambda: 0.0)
     probes = []
     monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: probes.append(True) or 1.0)
-    monotonic_values = iter([10.0, 10.0, 16.0])
-    monkeypatch.setattr(daemon, "_monotonic", lambda: next(monotonic_values, 16.0))
+    # Jump straight past the window, whatever its current length.
+    past_window = 10.0 + daemon.EARLY_PROBE_WINDOW + 1.0
+    monotonic_values = iter([10.0, 10.0, past_window])
+    monkeypatch.setattr(daemon, "_monotonic", lambda: next(monotonic_values, past_window))
     monkeypatch.setattr(daemon, "_sleep", lambda *_args: None)
     monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: False)
 
@@ -357,6 +365,7 @@ def test_periodic_probe_uses_socks_tester_for_socks_engine(monkeypatch, tmp_path
     _configure_daemon_loop(monkeypatch, tmp_path, [True, True], iter([True, False]), config_rotation=True)
     monkeypatch.setattr(settings, "get_engine_proxy_details", lambda *_args: ("socks=127.0.0.1", 9050))
     monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
+    monkeypatch.setattr(daemon, "_local_port_open", lambda *_args, **_kwargs: True)
     http_probes = []
     socks_probes = []
     monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: http_probes.append(True) or None)
@@ -375,6 +384,12 @@ def test_periodic_probe_keeps_genuine_socks_failure_detection(monkeypatch, tmp_p
     from blackoutkit.scanner import proxy_tester
 
     _configure_daemon_loop(monkeypatch, tmp_path, [True, True, False], iter([True, True]), config_rotation=True)
+    # These tests drive a mocked clock tuned to fast probe timings; pin the
+    # production constants to them (production uses the real 15s/2s/5s budget).
+    monkeypatch.setattr(daemon, "EARLY_PROBE_WINDOW", 5.0)
+    monkeypatch.setattr(daemon, "EARLY_PROBE_INTERVAL", 0.1)
+    monkeypatch.setattr(daemon, "EARLY_PROBE_TIMEOUT", 0.2)
+    monkeypatch.setattr(daemon, "_local_port_open", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(settings, "get_engine_proxy_details", lambda *_args: ("socks=127.0.0.1", 9050))
     monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
     monkeypatch.setattr(proxy_tester, "test_socks5_proxy", lambda *_args, **_kwargs: None)
@@ -391,14 +406,21 @@ def test_early_probe_uses_socks_tester_for_socks_engine(monkeypatch, tmp_path):
     from blackoutkit.scanner import proxy_tester
 
     _configure_daemon_loop(monkeypatch, tmp_path, [True], iter(()), config_rotation=True)
+    # These tests drive a mocked clock tuned to fast probe timings; pin the
+    # production constants to them (production uses the real 15s/2s/5s budget).
+    monkeypatch.setattr(daemon, "EARLY_PROBE_WINDOW", 5.0)
+    monkeypatch.setattr(daemon, "EARLY_PROBE_INTERVAL", 0.1)
+    monkeypatch.setattr(daemon, "EARLY_PROBE_TIMEOUT", 0.2)
+    monkeypatch.setattr(daemon, "_local_port_open", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(settings, "get_engine_proxy_details", lambda *_args: ("socks=127.0.0.1", 9050))
     monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
     http_probes = []
     socks_probes = []
     monkeypatch.setattr(proxy_tester, "test_http_proxy", lambda *_args, **_kwargs: http_probes.append(True) or 1.0)
     monkeypatch.setattr(proxy_tester, "test_socks5_proxy", lambda *_args, **_kwargs: socks_probes.append(True) or 1.0)
-    monotonic_values = iter([0.0, 0.0, 0.1, 5.1])
-    monkeypatch.setattr(daemon, "_monotonic", lambda: next(monotonic_values, 5.2))
+    past_window = daemon.EARLY_PROBE_WINDOW + 5.0
+    monotonic_values = iter([0.0, 0.0, 0.1, 5.1, past_window])
+    monkeypatch.setattr(daemon, "_monotonic", lambda: next(monotonic_values, past_window))
     monkeypatch.setattr(daemon, "_sleep", lambda *_args: None)
     monkeypatch.setattr(daemon, "_wait_for_daemon_delay", lambda *_args: False)
 
@@ -413,6 +435,12 @@ def test_early_probe_restarts_window_after_successful_rotation(monkeypatch, tmp_
     from blackoutkit.scanner import proxy_tester
 
     _configure_daemon_loop(monkeypatch, tmp_path, [True, True], iter(()), config_rotation=True)
+    # These tests drive a mocked clock tuned to fast probe timings; pin the
+    # production constants to them (production uses the real 15s/2s/5s budget).
+    monkeypatch.setattr(daemon, "EARLY_PROBE_WINDOW", 5.0)
+    monkeypatch.setattr(daemon, "EARLY_PROBE_INTERVAL", 0.1)
+    monkeypatch.setattr(daemon, "EARLY_PROBE_TIMEOUT", 0.2)
+    monkeypatch.setattr(daemon, "_local_port_open", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(settings, "get_engine_proxy_details", lambda *_args: ("127.0.0.1", 10809))
     monkeypatch.setattr(proxy_tester, "test_tcp_port", lambda *_args: 1.0)
     probes = []
@@ -651,3 +679,18 @@ def test_daemon_package_exposes_canonical_manager_api():
         "run_daemon_loop",
     ):
         assert callable(getattr(daemon, name))
+
+
+def test_local_port_open_distinguishes_booting_from_broken():
+    """The gate that stops the daemon probing (and rotating) during startup."""
+    import socket as _socket
+
+    server = _socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    open_port = server.getsockname()[1]
+    try:
+        assert daemon._local_port_open("127.0.0.1", open_port) is True
+        assert daemon._local_port_open("127.0.0.1", 65000) is False
+    finally:
+        server.close()

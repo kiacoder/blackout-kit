@@ -1172,7 +1172,18 @@ def _status_panel(snapshot: dict) -> Panel:
         daemon_info = "[muted]○ Not running[/muted]"
     else:
         status = state.get("status", "connected") if state else "unknown"
-        status_info = "[success]● Connected[/success]" if status == "connected" else f"[warning]● {status.title()}[/warning]"
+        if status == "connected":
+            # A live daemon process is not a working tunnel. If neither local
+            # listener is open, say "starting" instead of claiming "Connected"
+            # over dead ports (the engine may still be booting or failing over).
+            listening = bool(snapshot.get("http_open") or snapshot.get("socks_open"))
+            status_info = (
+                "[success]● Connected[/success]"
+                if listening
+                else "[warning]● Starting (listeners not open yet)[/warning]"
+            )
+        else:
+            status_info = f"[warning]● {status.title()}[/warning]"
         if status == "failed":
             status_info = "[error]● Reconnect attempts exhausted[/error]"
         retry = ""

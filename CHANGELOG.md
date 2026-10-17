@@ -7,6 +7,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ## [Unreleased]
 
 ### Fixed
+- **The daemon rotated away from healthy engines until it gave up
+  ("Reconnect attempts exhausted").** Its startup data-phase probe fetched a
+  real URL through the tunnel with a **0.2s timeout** while the same request
+  needs ~1s, so it failed every single time; two failures in a row triggered a
+  config rotation, three rotations exhausted the restart budget. Measured on a
+  verified-healthy tunnel: `timeout=0.2s → FAILED`, `timeout=5.0s → 965ms`.
+  The probe budget is now 15s window / 2s interval / 5s timeout, and the
+  constants are module-level (`EARLY_PROBE_WINDOW`, …) so tests assert against
+  them instead of hardcoding values that drift.
+- **A listener that had not opened yet was treated as a broken tunnel.** The
+  probe now requires the local port to accept a connection first; a closed
+  port means "still booting" (or failover in progress), not "rotate".
+- **Double verification.** XRay proves the tunnel carries traffic before
+  reporting success, so the daemon no longer re-probes it (`Engine.verified`).
+- **"● Connected" over dead ports.** `blackout status` reported a live daemon
+  as Connected even with both local listeners closed; it now says
+  "Starting (listeners not open yet)" until a listener is actually open.
+- **"Proxy port stopped responding" had no cause attached.** The warning now
+  names the engine that exited and its exit code (`Engine.last_exit_code`).
+
+### Fixed
 - **XRay treated "port opened" as "connected", so one dead config meant total failure.** The engine selected a single config (by rotation offset), waited for its listening port, and called that success. A config that opens its ports and then rejects every request — a REALITY server that closes the handshake with `EOF` is the common case — therefore looked perfectly healthy, and the other configs in the vault were never tried. The engine now verifies the tunnel with a **real request through its own proxy** (`http://www.gstatic.com/generate_204`, then Cloudflare's) and, when it picked the config itself, **fails over to the next stored config** (up to 6, in rotation order) instead of giving up. An explicitly supplied `proxy_config` is still honoured as-is, with a single attempt.
 - **Restarting an engine instance crashed with `FileNotFoundError`.** `stop()` removes the engine's temporary config directory, but a restart on the same instance (the daemon's restart path, or a failover attempt) then failed to write `xray_config.json`. The directory is now recreated before use.
 - **The core's error log was disabled, hiding every failure.** Generated configs set `"error": "none"`, so a rejected handshake left no trace at all. The core now writes to `xray_error.log` in the engine's config directory.

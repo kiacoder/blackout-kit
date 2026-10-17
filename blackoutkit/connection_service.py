@@ -738,7 +738,23 @@ class ConnectionService:
                 with socket.create_connection(health_target, timeout=2.0):
                     pass
             except Exception:
-                self._event("proxy_warning", message="Proxy port stopped responding. Check your internet connection.")
+                # Say which engine died and with what code — "proxy port
+                # stopped responding" alone gives the user nothing to act on.
+                detail = ""
+                for engine in engines:
+                    if not engine.is_running():
+                        code = getattr(engine, "last_exit_code", None)
+                        name = getattr(engine, "name", "engine")
+                        detail = (
+                            f" Engine '{name}' exited (code {code})."
+                            if code is not None
+                            else f" Engine '{name}' is no longer running."
+                        )
+                        break
+                self._event(
+                    "proxy_warning",
+                    message="Proxy port stopped responding." + detail,
+                )
 
     def _ready(self, engine_name: str) -> tuple[bool, list[dict[str, Any]]]:
         if self.readiness_gate is not None:

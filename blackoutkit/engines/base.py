@@ -35,6 +35,13 @@ class Engine(ABC):
         # Per-engine temp directory for config files — prevents races when two
         # Blackout instances share the same bins/ folder.
         self._config_dir = Path(tempfile.mkdtemp(prefix="bk_engine_"))
+        # Exit code of a subprocess engine once it has died, so a caller can
+        # say WHY the tunnel went away instead of only that it did.
+        self.last_exit_code: int | None = None
+        # True once the engine has proven the tunnel carries traffic (not just
+        # that its listener opened). Engines that verify themselves set this so
+        # the daemon does not repeat the same network probe.
+        self.verified = False
 
     @abstractmethod
     def start(self) -> bool:
@@ -97,7 +104,13 @@ class Engine(ABC):
         """Return True if the engine is alive (subprocess or DLL)."""
         # ── Subprocess check ──────────────────────────────────────────
         if self._process is not None:
-            return self._process.poll() is None
+            code = self._process.poll()
+            if code is not None:
+                # Remember how it died: "the tunnel stopped" without a code
+                # leaves the user with nothing to act on.
+                self.last_exit_code = code
+                return False
+            return True
 
         # ── DLL check (with port health probe) ────────────────────────
         if self._dll_stop_func is not None:
