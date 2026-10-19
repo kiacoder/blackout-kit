@@ -343,13 +343,15 @@ class XRayEngine(Engine):
             # Plain-TCP/WS transport (e.g. self-hosted test nodes): no TLS layer.
             stream["security"] = "none"
         else:
-            mode = _sec.get_current_mode()
-            allow_insecure, _warn = _cb.should_allow_insecure(c.address, c.port, mode)
             stream["security"] = "tls"
+            # Xray 25.x removed allowInsecure outright - the key's mere presence
+            # is a config error ("The feature allowInsecure has been removed"),
+            # so it must never be emitted, even as `false`. TLS relies on valid
+            # certificates and a matching serverName; self-signed endpoints
+            # need the migrated pinning fields (pinnedPeerCertSha256).
             stream["tlsSettings"] = {
                 "serverName": c.sni,
                 "fingerprint": c.fp or s["xray_fingerprint"],
-                "allowInsecure": allow_insecure,
             }
 
         if c.protocol == "trojan":

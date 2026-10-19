@@ -187,11 +187,12 @@ def test_normal_tls_vless_keeps_certificate_policy_and_websocket_stream():
     assert stream["tlsSettings"] == {
         "serverName": "cdn.example",
         "fingerprint": "chrome",
-        "allowInsecure": False,
     }
     assert stream["wsSettings"]["path"] == "/ws"
     assert "realitySettings" not in stream
-    policy.assert_called_once_with("server.example", 443, "speed")
+    # allowInsecure was removed from Xray 25+ entirely, so the cert-bypass
+    # policy hook is no longer consulted for tlsSettings at all.
+    policy.assert_not_called()
 
 
 def test_normal_tls_policy_allows_insecure_when_mode_policy_allows():
@@ -205,7 +206,7 @@ def test_normal_tls_policy_allows_insecure_when_mode_policy_allows():
          patch("blackoutkit.tools.resolve_doh", return_value=None):
         outbound = engine._build_outbound(config)
 
-    assert outbound["streamSettings"]["tlsSettings"]["allowInsecure"] is True
+    assert "allowInsecure" not in outbound["streamSettings"]["tlsSettings"]  # removed in Xray 25+
 
 
 def test_vmess_builds_a_native_xray_outbound():
@@ -237,7 +238,7 @@ def test_vmess_builds_a_native_xray_outbound():
             "security": "auto",
         }],
     }
-    assert outbound["streamSettings"]["tlsSettings"]["allowInsecure"] is True
+    assert "allowInsecure" not in outbound["streamSettings"]["tlsSettings"]  # removed in Xray 25+
     assert outbound["streamSettings"]["wsSettings"] == {
         "path": "/ws",
         "headers": {"Host": "cdn.example"},
