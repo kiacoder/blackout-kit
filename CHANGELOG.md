@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-19
+
+### Added
+- **HTTP CONNECT proxy for AmneziaWG.** Windows (WinINET) — and therefore Chrome/Edge — cannot
+  use a SOCKS system proxy, so the daemon's `socks=127.0.0.1:11080` was a dead end for browsers
+  even when the tunnel was healthy. The core now also serves **HTTP CONNECT** on
+  `awg_http_port` (default **11081**) over the same netstack; the daemon advertises that as the
+  system proxy while SOCKS5 stays available on `awg_socks_port`.
+- **Dedicated `awg_socks_port` (default 11080) / `awg_http_port` (default 11081).** AmneziaWG no
+  longer collides with an XRay/v2rayN instance holding `xray_socks_port` (10808); readiness
+  checks and proxy details follow the new settings.
+
 ### Added
 - **Native AmneziaWG engine (`blackout start awg`)** — replaces the sing-box stub with a real
   userspace core (`core/amneziawg-go`, built as `bins/awg-go.exe` / `bins/awg-go`). It parses
@@ -14,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
   parameter to the device, terminates the tunnel in wireguard-go's in-process netstack and
   exposes a **local SOCKS5 proxy** — no TUN device, no admin rights, no sing-box outbound
   patchset. Accepts `awg_config_file` or an `awg://` URI (base64 payload or query parameters).
+  **Verified end to end (2026-10-19):** handshake on the production server (1.5 MB transferred,
+  784 packets on `awg0`), `curl` egress returning the server IP, and YouTube 200 through both the
+  SOCKS5 and HTTP proxies.
   Registered in `blackout bins` as "AmneziaWG Core (awg-go)". Mobile bindings
   (`cmd/awg-mobile`: StartTunnel(configText, tunFd) / StopTunnel / GetTunnelStats) compile for
   linux/arm64 (Android) and darwin (iOS) via `gomobile bind`.

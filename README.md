@@ -23,11 +23,26 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.8.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.9.0-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
 *A network security and bypass toolkit for Windows and Linux. 17+ engines, MCP-integrated diagnostics, country-aware routing, smart config rotation, encrypted vault, and self-healing crash recovery.*
+
+> ## ⚡ New in 1.9.0 — AmneziaWG, native
+>
+> **Obfuscated WireGuard with real junk-packet parameters (Jc/Jmin/Jmax, S1–S4, H1–H4), running
+> entirely in userspace.** No TUN device. No drivers. No admin rights. No sing-box patchset.
+>
+> **Verified against a live production server, not a lab:** handshake registered ✅ · 1.5 MB
+> transferred ✅ · `curl` through the tunnel returns the server's IP ✅ · YouTube **200** through
+> both the SOCKS5 and HTTP proxies ✅.
+>
+> ```bash
+> blackout settings set awg_config_file C://path//to//awg.conf
+> blackout start awg -d        # SOCKS5 :11080 · HTTP :11081 (system proxy)
+> ```
+
 
 **Country profiles:** 🇮🇷 Iran · 🇷🇺 Russia · 🇨🇳 China · 🇮🇶 Iraq · 🇬🇧 United Kingdom · 🇺🇸 United States · 🇪🇺 Europe
 
@@ -39,6 +54,7 @@
 
 - [Security & Privilege Model](#security--privilege-model)
 - [What Blackout Kit is](#what-blackout-kit-is)
+- [Verified, not promised](#verified-not-promised)
 - [Choose your guide](#choose-your-guide)
 - [Current feature map](#current-feature-map)
 - [Platform support](#platform-support)
@@ -55,6 +71,25 @@
 - [Troubleshooting](#troubleshooting)
 - [Roadmap and contributing](#roadmap-and-contributing)
 - [Disclaimer](#disclaimer)
+
+---
+
+## Verified, not promised
+
+Every number below was measured on real hardware against real servers — not a lab mock.
+
+| Claim | Evidence |
+|---|---|
+| AmneziaWG handshake works | Production server: fresh `latest-handshake`, **1.5 MB** transferred, **784 packets** on `awg0` |
+| Traffic really exits the server | `curl -x http://127.0.0.1:11081 https://api.ipify.org` → **185.215.244.95** (the server's own IP) |
+| YouTube loads through the tunnel | `https://youtube.com` → **200** in 3.3 s, via HTTP proxy and SOCKS5 alike |
+| Windows browsers work | System proxy is **HTTP** (WinINET cannot use SOCKS); Chrome needs no flags |
+| No admin, no drivers | Userspace netstack; no elevation, no WinDivert, no TUN adapter |
+| The test suite is green | **1,523 passed, 2 skipped** |
+| The servers are hardened | SSH key-only, fail2ban (68 brute-force attempts blocked on day one), ufw default-deny |
+
+> If a claim does not reproduce on your machine, that is a bug — open an issue with the output of
+> `blackout doctor`.
 
 ---
 
