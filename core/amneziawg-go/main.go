@@ -8,7 +8,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"runtime"
@@ -123,13 +125,19 @@ func main() {
 		if err != nil {
 			return nil, err
 		}
+		// A tun fd is always positive and well below int32 range; proving it
+		// here makes the int/uintptr conversions below safe on every platform.
+		if fd == 0 || fd > math.MaxInt32 {
+			return nil, errors.New("tun fd must be a positive integer below 2^31")
+		}
 
-		err = unix.SetNonblock(int(fd), true)
+		fdInt := int(fd)
+		err = unix.SetNonblock(fdInt, true)
 		if err != nil {
 			return nil, err
 		}
 
-		file := os.NewFile(uintptr(fd), "")
+		file := os.NewFile(uintptr(fdInt), "")
 		return tun.CreateTUNFromFile(file, device.DefaultMTU)
 	}()
 

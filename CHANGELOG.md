@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-10-19
+
+### Added
+- **`blackout update` — self-updater command.** Checks GitHub Releases for a
+  newer build, shows the release notes, and installs in place with
+  `--apply` (digest-verified download, backup/rollback, frozen-exe aware —
+  the machinery existed since 1.8; it is now reachable from the modern CLI).
+
+### Fixed
+- **CodeQL High alerts cleared in the AmneziaWG core** — provable bounds
+  validation at every flagged integer conversion (tun fd, fwmark, MTU, port)
+  in `main.go`, `conn/mark_unix.go`, `tun/netstack/tun.go`.
+- **`allowInsecure` is never emitted for Xray 25+** on desktop either — the
+  bundled Xray 26.3.27 rejects the key outright, which broke every
+  security=tls outbound (same fix the mobile builder received).
+
 ## [1.9.0] - 2026-10-19
 
 ### Added

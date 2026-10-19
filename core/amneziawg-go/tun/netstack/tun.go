@@ -53,6 +53,10 @@ type netTun struct {
 type Net netTun
 
 func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device, *Net, error) {
+	// uint32(mtu) below must not wrap: a non-positive MTU is caller error.
+	if mtu <= 0 {
+		return nil, nil, errors.New("mtu must be positive")
+	}
 	opts := stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol6, icmp.NewProtocol4},
@@ -988,6 +992,11 @@ func (tnet *Net) DialContext(ctx context.Context, network, address string) (net.
 	allAddr, err := tnet.LookupContextHost(ctx, host)
 	if err != nil {
 		return nil, &net.OpError{Op: "dial", Err: err}
+	}
+	// Explicitly re-prove the port bound at the conversion: in the ping
+	// branch port is the zero value, in the dial branch it was validated.
+	if port < 0 || port > 65535 {
+		return nil, &net.OpError{Op: "dial", Err: errNumericPort}
 	}
 	var addrs []netip.AddrPort
 	for _, addr := range allAddr {

@@ -8,6 +8,8 @@
 package conn
 
 import (
+	"fmt"
+	"math"
 	"runtime"
 
 	"golang.org/x/sys/unix"
@@ -30,6 +32,11 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 	var operr error
 	if fwmarkIoctl == 0 {
 		return nil
+	}
+	// int(mark) below must not wrap on 32-bit platforms: SO_MARK and friends
+	// only ever carry values well below 2^31.
+	if mark > math.MaxInt32 {
+		return fmt.Errorf("fwmark %d exceeds the maximum supported value", mark)
 	}
 	if s.ipv4 != nil {
 		fd, err := s.ipv4.SyscallConn()

@@ -658,6 +658,11 @@ def _register_cli_commands() -> None:
         examples=["blackout version"],
     )
     nav.register_command(
+        "update", "Check GitHub for a newer Blackout Kit and update",
+        "System",
+        examples=["blackout update", "blackout update --apply"],
+    )
+    nav.register_command(
         "theme", "Configure terminal theme and colors",
         "System",
         examples=["blackout theme", "blackout theme --color"],
@@ -892,6 +897,47 @@ def version(ctx: typer.Context):
         return
     if not _is_quiet(options):
         console.print(f"blackout-kit [bold green]{__version__}[/bold green]")
+
+
+@app.command()
+def update(
+    ctx: typer.Context,
+    apply: bool = typer.Option(False, "--apply", help="Download and install the update"),
+    force: bool = typer.Option(False, "--force", help="Apply even if the version looks unchanged"),
+):
+    """Check GitHub for a newer Blackout Kit and optionally update in place."""
+    options = _output_from_context(ctx)
+    from .updater import check_for_update, download_and_apply
+
+    if options.json_output:
+        release = check_for_update()
+        _print_json_enveloped({"current": __version__, "update_available": release})
+        return
+
+    console.print(f"\n[info]Current version: {__version__}[/info]")
+    console.print("[muted]Checking GitHub for updates...[/muted]")
+
+    with console.status("[bold]Checking...[/bold]", spinner="dots"):
+        release = check_for_update()
+
+    if not release or (not apply and not force):
+        if not release:
+            console.print(f"\n[success]\u2713 You are up to date! ({__version__})[/success]\n")
+        else:
+            console.print(
+                f"\n[bold yellow]Update available: {release['version']}[/bold yellow]\n"
+                f"Run [bold]blackout update --apply[/bold] to install it.\n"
+            )
+        return
+
+    console.print("[info]Downloading and applying update...[/info]")
+    with console.status("[bold]Updating...[/bold]", spinner="dots"):
+        ok = download_and_apply(release)
+
+    if ok:
+        console.print(f"\n[success]\u2713 Updated to {release['version']}! Restart blackout to use it.[/success]\n")
+    else:
+        console.print("[error]Update failed - see the message above.[/error]\n")
 
 
 @app.command()
@@ -1763,7 +1809,7 @@ def gui(ctx: typer.Context):
 
 
 _JSON_NATIVE_COMMANDS = frozenset({
-    "version", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
+    "version", "update", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
     "country", "countries", "bins", "capabilities", "demo", "setup", "report", "bench",
 })
 _CONFIG_JSON_COMMANDS = frozenset({
