@@ -7,14 +7,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 ## [Unreleased]
 
 ### Added
+- **Native AmneziaWG engine (`blackout start awg`)** — replaces the sing-box stub with a real
+  userspace core (`core/amneziawg-go`, built as `bins/awg-go.exe` / `bins/awg-go`). It parses
+  standard AmneziaWG `.conf` files (Jc/Jmin/Jmax, S1–S4, H1–H4, I1–I5 and the AWG 2.0 extras),
+  converts keys from base64 to the hex form the UAPI requires, forwards every obfuscation
+  parameter to the device, terminates the tunnel in wireguard-go's in-process netstack and
+  exposes a **local SOCKS5 proxy** — no TUN device, no admin rights, no sing-box outbound
+  patchset. Accepts `awg_config_file` or an `awg://` URI (base64 payload or query parameters).
+  Registered in `blackout bins` as "AmneziaWG Core (awg-go)". Mobile bindings
+  (`cmd/awg-mobile`: StartTunnel(configText, tunFd) / StopTunnel / GetTunnelStats) compile for
+  linux/arm64 (Android) and darwin (iOS) via `gomobile bind`.
+- **Roadmap Phase 10: Extreme Low-Spec, Potato Hardware & Embedded Architecture** — Documented sub-25MB memory architecture (`docs/POTATO_HARDWARE_SPEC.md`), C99/Lean-Go `blackout-microd`, non-AES-NI ChaCha20-Poly1305 hardware auto-negotiation, and static zero-allocation network rings.
+- **Roadmap Phase 11: Black Series Hardware & High-Performance Interop** — Documented `Black-Surge` 0.5ms kernel timer integration (`docs/BLACK_TITAN_INTEGRATION.md`), Iris-style 32-byte packed bitstream IPC v2, Epic UE5.8-style async MCP handlers (`FResultCallback`), and proactive neural DPI detection.
 - **Batch config checker (`python -m blackoutkit.config_check`)** — the same idea the mobile
+
   client uses: every saved config is started in its own short-lived core on a private port and
   asked to **fetch a real website** (`generate_204`), not just ping a port. Checks run in
   parallel, so all 8 configs take ~5s instead of 8× the wall time of a serial loop, and the
   output ranks them by latency with a "fastest" pick. `--json` for scripting, `--workers` to
   tune parallelism.
+- **`tray_enabled` setting (default `false`)** — opt back into the daemon's system tray icon
+  (with its Quit / Disconnect menu). The tray is off by default so the daemon runs silently in
+  the background with no taskbar presence.
 
 ### Fixed
+- **The DoH chain could never start on a filtered network.** The XRay DNS servers used
+  `https+local://cloudflare-dns.com/dns-query` and `https+local://dns.google/dns-query` —
+  `https+local` requires resolving the DoH hostname through the **local resolver first**,
+  which on filtered networks returns poisoned or empty answers for exactly those names.
+  Both DoH entries were therefore dead on arrival and every lookup fell through to the
+  poisoned local resolver. The chain now starts with IP-literal endpoints
+  (`https://1.1.1.1/dns-query`, `https://8.8.8.8/dns-query`) that need no name resolution.
+  Regression-tested (`tests/test_xray_dns_bootstrap.py`).
+- **Engine processes no longer flash a console window on every start.** The daemon runs
+  console-free (`pythonw.exe`), but the shared `Engine.start_process` spawned engine binaries
+  without `CREATE_NO_WINDOW` — so on Windows every engine start, restart and config rotation
+  made Windows allocate a brand-new console window (reported live as empty windows repeatedly
+  opening and closing while working). The spawn now passes the flag on Windows like the
+  engines that already did; regression-tested.
 - **`set_system_proxy` reported success without checking the write.** It wrote the WinINET keys,
   called `_notify_proxy_change()` and returned True — even when another VPN client (Hotspot
   Shield keeps its own WinINET settings) or a policy swallowed the write. That is how

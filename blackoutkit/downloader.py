@@ -84,6 +84,28 @@ BIN_REGISTRY: dict[str, BinInfo] = {
         manual_note   = "Build from source: go -C engine/v2 build -o bins/blackout-core.exe ./cmd/blackout-core",
     ),
 
+    "awg-core": BinInfo(
+        key           = "awg-core",
+        display_name  = "AmneziaWG Core (awg-go)",
+        description   = "Native userspace AmneziaWG client exposing a local SOCKS5 proxy",
+        # Upstream publishes source only; the binary is built from the vendored
+        # module in core/amneziawg-go (cmd/awg-socks), so there is no release asset.
+        github_repo   = None,
+        asset_pattern = None,
+        asset_exclude = None,
+        extract_map   = {},
+        output_bins   = ["awg-go.exe" if sys.platform == "win32" else "awg-go"],
+        required      = False,
+        manual_url    = "https://github.com/amnezia-vpn/amneziawg-go",
+        manual_note   = (
+            "Build from the vendored source: "
+            "go -C core/amneziawg-go build -o ../bins/awg-go.exe ./cmd/awg-socks"
+            if sys.platform == "win32" else
+            "Build from the vendored source: "
+            "go -C core/amneziawg-go build -o ../bins/awg-go ./cmd/awg-socks"
+        ),
+    ),
+
     "linux_engine": BinInfo(
         key           = "linux_engine",
         display_name  = "Blackout Engine (Linux x86_64)",

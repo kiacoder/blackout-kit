@@ -223,17 +223,16 @@ _CAPABILITIES: dict[str, EngineCapability] = {
         remote_actions=("upstream QUIC connection",), notes="Requires a compatible TUIC upstream configuration.",
     ),
     "awg": EngineCapability(
-        "awg", "AmneziaWG", "Obfuscated VPN", "AmneziaWG configuration through sing-box",
+        "awg", "AmneziaWG", "Obfuscated VPN",
+        "Native AmneziaWG core — junk-packet obfuscation over a local SOCKS5 proxy",
         ("win32", "linux"),
-        runtime_requirements=(("win32", ("sni-spoofing",)), ("linux", ("linux_engine",))),
+        runtime_requirements=(("win32", ("awg-core",)), ("linux", ("awg-core",))),
         upstream_requirement="vpn_profile", compatible_protocols=("awg",), required_settings=("awg_config_file",),
         privilege="none", local_proxy=True,
-        listeners=("SOCKS5 proxy (xray_socks_port)",), local_ports=("xray_socks_port",),
+        listeners=("SOCKS5 proxy (awg_socks_port)",), local_ports=("awg_socks_port",),
         system_effects=("process", "local_runtime_files"),
-
-        remote_actions=("upstream VPN connection",), experimental=True,
-        static_blockers=("AmneziaWG outbound is unavailable in the bundled sing-box runtime",),
-        notes="Cataloged experimental path; the bundled sing-box runtime currently exposes standard WireGuard, not the AmneziaWG outbound type.",
+        remote_actions=("upstream VPN connection",),
+        notes="Ships its own userspace core (core/amneziawg-go, awg-go); no TUN device or admin rights required.",
     ),
     "legend": EngineCapability(
         "legend", "Legend stack", "Composite stack", "Tor, SNI, and XRay composite connection target",

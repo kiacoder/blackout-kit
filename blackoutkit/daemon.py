@@ -672,22 +672,27 @@ def run_daemon_loop(engine_name: str, env_overrides_json: str | None = None):
         else:
             log.info("Network-level engine active — no system proxy needed.")
 
-    try:
-        import threading
+    if s.get("tray_enabled", False):
+        try:
+            import threading
 
-        from .tray import start_tray
+            from .tray import start_tray
 
-        def _on_tray_stop():
-            log.info("Tray requested shutdown.")
-            global _shutdown_requested
-            with _shutdown_lock:
-                _shutdown_requested = True
+            def _on_tray_stop():
+                log.info("Tray requested shutdown.")
+                global _shutdown_requested
+                with _shutdown_lock:
+                    _shutdown_requested = True
 
-        tray_thread = threading.Thread(target=start_tray, args=(active_engine_name, _on_tray_stop), daemon=True)
-        tray_thread.start()
-        log.info("System tray initialized.")
-    except Exception as e:
-        log.warning(f"Failed to start system tray: {e}")
+            tray_thread = threading.Thread(target=start_tray, args=(active_engine_name, _on_tray_stop), daemon=True)
+            tray_thread.start()
+            log.info("System tray initialized.")
+        except Exception as e:
+            log.warning(f"Failed to start system tray: {e}")
+    else:
+        # Default: the daemon runs silently in the background with no taskbar
+        # presence. Opt in via the tray_enabled setting if the icon is wanted.
+        log.info("System tray disabled (tray_enabled=false) — daemon running silently.")
 
     log.info("Daemon running. Monitoring engines...")
     retry_interval = s.get("retry_interval", 30)

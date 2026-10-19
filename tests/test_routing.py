@@ -69,7 +69,13 @@ def test_linux_filters_to_supported_engines_and_requires_runner():
     )
 
     assert {candidate.engine for candidate in candidates}.issubset({"xray", "tun", "hysteria2", "tuic", "awg"})
-    assert all("Linux runner missing" in candidate.blockers for candidate in candidates)
+    # awg ships its own userspace core (awg-core) and no longer depends on the Linux
+    # runner, so it reports its own missing component instead of "Linux runner missing".
+    assert all("Linux runner missing" in candidate.blockers
+               for candidate in candidates if candidate.engine != "awg")
+    for candidate in candidates:
+        if candidate.engine == "awg":
+            assert any("awg-core" in blocker for blocker in candidate.blockers)
 
 
 def test_linux_order_never_adds_windows_engines():

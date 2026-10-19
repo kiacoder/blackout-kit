@@ -694,3 +694,57 @@ def test_local_port_open_distinguishes_booting_from_broken():
         assert daemon._local_port_open("127.0.0.1", 65000) is False
     finally:
         server.close()
+
+
+def test_tray_icon_stays_off_by_default(monkeypatch, tmp_path):
+    """The daemon must run silently: no taskbar presence unless opted in."""
+    import time
+    from unittest.mock import MagicMock
+
+    from blackoutkit import settings, tray
+
+    start_tray = MagicMock()
+    _configure_daemon_loop(monkeypatch, tmp_path, outcomes=[True], waits=iter([False]))
+    # Patch AFTER the helper — it installs its own no-op and would win otherwise.
+    monkeypatch.setattr(tray, "start_tray", start_tray)
+
+    daemon.run_daemon_loop("xray")
+
+    # The tray runs in a daemon thread; give a would-be call a chance to land
+    # before asserting silence, so an accidental start cannot slip through.
+    time.sleep(0.3)
+    start_tray.assert_not_called()
+    assert settings.DEFAULTS["tray_enabled"] is False
+
+
+def test_tray_icon_starts_when_enabled(monkeypatch, tmp_path):
+    """tray_enabled=true opts back into the Quit / Disconnect tray icon."""
+    import threading
+
+    from blackoutkit import settings, tray
+
+    started = threading.Event()
+    seen_args = []
+
+    def fake_start_tray(engine_name, _callback):
+        seen_args.append(engine_name)
+        started.set()
+
+    _configure_daemon_loop(monkeypatch, tmp_path, outcomes=[True], waits=iter([False]))
+    # Patch AFTER the helper — it installs its own no-op and would win otherwise.
+    monkeypatch.setattr(tray, "start_tray", fake_start_tray)
+    monkeypatch.setattr(settings, "load", lambda: {
+        "auto_set_proxy": False,
+        "retry_interval": 1,
+        "max_retries": 2,
+        "reconnect_initial_delay": 2,
+        "reconnect_max_delay": 60,
+        "gdpi_backend": "legacy",
+        "config_rotation": True,
+        "tray_enabled": True,
+    })
+
+    daemon.run_daemon_loop("xray")
+
+    assert started.wait(2.0), "tray thread never started"
+    assert seen_args == ["xray"]

@@ -98,3 +98,6 @@ Microsoft/
 /capability-output.json
 /demo-output.json
 /test_hss_comprehensive.py
+
+# AmneziaWG client configs (contain private keys)
+awg-srv*.conf

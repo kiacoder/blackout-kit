@@ -4449,7 +4449,7 @@ def cmd_menu_select_engine():
         ("warp",       "Cloudflare WARP (clean residential IP)"),
         ("hysteria2",  "Hysteria2 QUIC proxy via sing-box"),
         ("tuic",       "TUIC QUIC proxy via sing-box"),
-        ("awg",        "AmneziaWG — obfuscated WireGuard via sing-box (experimental)"),
+        ("awg",        "AmneziaWG — native obfuscated WireGuard with local SOCKS5"),
         ("legend",     "Legend Mode (Tor + SNI + XRay chained)"),
         ("appsscript", "Google Apps Script HTTP Relay (ultimate fallback)"),
         ("mhrv",       "Embedded HTTP Google Apps Script relay"),

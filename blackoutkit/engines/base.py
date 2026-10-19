@@ -173,11 +173,19 @@ class Engine(ABC):
     def start_process(self, command: list[str]) -> bool:
         """Start a managed engine process without inheriting terminal output pipes."""
         try:
+            # The daemon runs console-free (pythonw.exe). A console-subsystem
+            # engine binary spawned without CREATE_NO_WINDOW makes Windows
+            # allocate a brand-new console window for every engine start,
+            # restart and config rotation — one flashing window per launch.
+            creationflags = (
+                getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+            )
             self._process = subprocess.Popen(
                 command,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=sys.platform != "win32",
+                creationflags=creationflags,
             )
             return True
         except OSError as exc:

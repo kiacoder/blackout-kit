@@ -133,6 +133,13 @@ class XRayEngine(Engine):
             ],
             "outbounds": [],
             "routing": {
+                # Xray default. NOTE (2026-10-17): tested on a filtered network
+                # where the local resolver is dead for filtered domains — the
+                # AsIs alternative did NOT change the outcome (Google/YouTube/
+                # Wikipedia TLS was still killed at the exit, on any client
+                # config: blackout, v2raN-parity, or either core version).
+                # Keep the xray default for parity with v2raN; the DoH chain
+                # below is what makes local resolution viable here.
                 "domainStrategy": "IPIfNonMatch",
                 "rules": []
             }
@@ -140,12 +147,14 @@ class XRayEngine(Engine):
 
         # ── DNS Leak Protection (DoH) ─────────────────────────────
         if s.get("xray_doh_dns"):
+            # IP-literal DoH endpoints: https+local:// requires resolving the
+            # DoH hostname through the (on filtered networks, poisoned or dead)
+            # local resolver first, which silently defeats the whole chain —
+            # 1.1.1.1/8.8.8.8 answer DoH directly with no name to resolve.
             config["dns"] = {
                 "servers": [
-                    "https+local://cloudflare-dns.com/dns-query",
-                    "https+local://dns.google/dns-query",
-                    "1.1.1.1",
-                    "8.8.8.8",
+                    "https://1.1.1.1/dns-query",
+                    "https://8.8.8.8/dns-query",
                     "localhost"
                 ],
                 "queryStrategy": "UseIP"

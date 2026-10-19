@@ -45,6 +45,7 @@ DEFAULTS = {
     "sni_listen_port":      40443,
     "xray_socks_port":      10808,
     "xray_http_port":       10809,
+    "awg_socks_port":       11080,
     "psiphon_http_port":    8081,
     "psiphon_socks_port":   1081,
     "v2_tunnel_port":       18080,
@@ -179,6 +180,9 @@ DEFAULTS = {
     "traffic_log_retention_days": 30,   # Auto-prune entries older than this
     "traffic_log_sample_interval_sec": 10,  # Snapshot connections every N seconds
 
+    # System tray
+    "tray_enabled": False,             # Tray icon while the daemon runs (off = silent background)
+
     # Live security monitoring (Phase 6): run the anomaly detector + threat-feed
     # checks against sampled connections. Independent of the audit log — when on
     # without traffic logging, connections are analysed but not persisted.
@@ -212,6 +216,7 @@ DEFAULTS = {
 SETTING_GROUPS = {
     "Network Ports": (
         "sni_listen_port", "sni_connect_port", "xray_socks_port", "xray_http_port",
+        "awg_socks_port",
         "psiphon_http_port", "psiphon_socks_port", "proxy_port", "neighbor_proxy_port",
         "gas_proxy_port", "softether_port", "v2_tunnel_port",
     ),
@@ -242,6 +247,7 @@ SETTING_GROUPS = {
     "Bandwidth Caps": ("bandwidth_caps_enabled", "bandwidth_alert_threshold"),
     "Traffic Logging": ("traffic_logging_enabled", "traffic_log_max_entries", "traffic_log_retention_days", "traffic_log_sample_interval_sec"),
     "Security Monitoring": ("security_monitor_enabled",),
+    "System Tray": ("tray_enabled",),
     "Plugins": ("plugins_enabled",),
     "Ad Blocking": ("adblock_enabled", "adblock_block_mode", "adblock_sinkhole_ip", "adblock_auto_update_interval_hours", "adblock_query_log_enabled"),
     "QoS": ("qos_enabled", "qos_enforcement_mode", "qos_default_priority", "qos_alert_threshold_pct", "qos_rate_limit_precision_ms"),
@@ -313,6 +319,7 @@ _VALIDATORS: dict[str, tuple] = {
     "sni_custom_ips":     (list,  lambda v: True,              "must be a list of strings"),
     "sni_listen_port":    (int,   *_PORT_RANGE),
     "xray_socks_port":    (int,   *_PORT_RANGE),
+    "awg_socks_port":     (int,   *_PORT_RANGE),
     "xray_http_port":     (int,   *_PORT_RANGE),
     "psiphon_http_port":  (int,   *_PORT_RANGE),
     "psiphon_socks_port": (int,   *_PORT_RANGE),
@@ -326,6 +333,7 @@ _VALIDATORS: dict[str, tuple] = {
     "xray_split_tunnel":  (bool,  lambda v: True,            "must be true or false"),
     "xray_doh_dns":       (bool,  lambda v: True,            "must be true or false"),
     "security_monitor_enabled": (bool, lambda v: True,       "must be true or false"),
+    "tray_enabled":          (bool, lambda v: True,           "must be true or false"),
     "plugins_enabled":    (bool,  lambda v: True,            "must be true or false"),
     "scan_concurrency":   (int,   lambda v: 1 <= v <= 500,   "must be 1–500"),
     "scan_timeout":       (float, lambda v: 0.1 <= v <= 30,  "must be 0.1–30.0"),
@@ -644,6 +652,7 @@ def describe(key: str) -> str:
     descriptions = {
         "sni_listen_port":    "Local port the SNI spoofer listens on",
         "xray_socks_port":    "XRay SOCKS5 proxy port",
+        "awg_socks_port":     "AmneziaWG SOCKS5 proxy port (separate from XRay so both can run)",
         "v2_tunnel_port":     "v2 socks-tunnel loopback port (blackout-core)",
         "xray_http_port":     "XRay HTTP proxy port (auto-set as system proxy)",
         "sni_connect_ip":     "Cloudflare IP the SNI spoofer connects to",
@@ -704,6 +713,7 @@ def describe(key: str) -> str:
         "xray_split_tunnel":  "Bypass proxy for local LAN and domestic (.ir) traffic",
         "xray_doh_dns":       "Encrypt DNS queries via Cloudflare/Google DoH over XRay",
         "security_monitor_enabled": "Run live anomaly detection and threat-feed checks on sampled connections (works with or without the audit log)",
+        "tray_enabled":          "Show a system tray icon (with Quit / Disconnect) while the daemon runs — off by default, so the daemon runs silently in the background with no taskbar presence",
         "plugins_enabled":    "Load user plugins from the plugin directory (plugins are arbitrary code — only enable with plugins you trust)",
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
         "config_rotation":    "When enabled, the daemon rotates to the next saved config on reconnect failure (blocked IP)",
@@ -741,5 +751,9 @@ def get_engine_proxy_details(engine_name: str, settings: dict | None = None) -> 
         return "socks=127.0.0.1", s.get("v2_tunnel_port", 18080)
     elif engine_name in ("hysteria2", "tuic"):
         return "socks=127.0.0.1", s.get("xray_socks_port", 10808)
+    elif engine_name == "awg":
+        # Dedicated port: AmneziaWG must not collide with an XRay/v2rayN instance
+        # already holding xray_socks_port (10808).
+        return "socks=127.0.0.1", s.get("awg_socks_port", 11080)
     return None
 

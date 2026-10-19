@@ -1,7 +1,7 @@
 """Tests for the AmneziaWG engine conf parser."""
 from pathlib import Path
 
-from blackoutkit.engines.amneziawg import _parse_awg_conf, _build_singbox_outbound
+from blackoutkit.engines.amneziawg import _parse_awg_conf
 
 
 SAMPLE_CONF = """[Interface]
@@ -43,44 +43,6 @@ def test_parse_awg_conf_extracts_all_fields(tmp_path):
     assert fields["peer.publickey"] == "xyz789publickey"
     assert fields["peer.endpoint"] == "vpn.example.com:51820"
     assert fields["peer.presharedkey"] == "shared123"
-
-
-def test_build_singbox_outbound_generates_amnezia_wireguard(tmp_path):
-    conf = tmp_path / "awg.conf"
-    conf.write_text(SAMPLE_CONF, encoding="utf-8")
-    fields = _parse_awg_conf(conf)
-
-    outbound = _build_singbox_outbound(fields)
-
-    assert outbound["type"] == "amnezia-wireguard"
-    assert outbound["tag"] == "proxy"
-    assert outbound["server"] == "vpn.example.com"
-    assert outbound["server_port"] == 51820
-    assert outbound["local_address"] == ["10.8.0.2/32"]
-    assert outbound["private_key"] == "abc123privatekey"
-    assert outbound["peer_public_key"] == "xyz789publickey"
-    assert outbound["pre_shared_key"] == "shared123"
-    assert outbound["mtu"] == 1400
-
-    assert outbound["junk_count"] == 3
-    assert outbound["junk_packet_min"] == 10
-    assert outbound["junk_packet_max"] == 20
-    assert outbound["init_packet_junk_size"] == 100
-    assert outbound["response_packet_junk_size"] == 200
-
-
-def test_build_singbox_outbound_defaults_port_when_missing(tmp_path):
-    conf = tmp_path / "awg.conf"
-    conf.write_text(
-        "[Interface]\nPrivateKey = key\nAddress = 10.0.0.2/32\n\n"
-        "[Peer]\nPublicKey = pub\nEndpoint = vpn.example.com\n",
-        encoding="utf-8",
-    )
-    fields = _parse_awg_conf(conf)
-    outbound = _build_singbox_outbound(fields)
-
-    assert outbound["server"] == "vpn.example.com"
-    assert outbound["server_port"] == 51820
 
 
 def test_awg_engine_initializes_base_engine_state(tmp_path, monkeypatch):
