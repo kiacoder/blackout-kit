@@ -135,9 +135,10 @@ class AmneziaWGEngine(Engine):
         super().__init__()
         s = cfg.load()
         self.config_file = config_file or s.get("awg_config_file", "")
-        # Dedicated port (awg_socks_port, default 11080): the awg core must not
+        # Dedicated ports (awg_socks_port / awg_http_port): the awg core must not
         # fight an XRay/v2rayN instance already bound to xray_socks_port (10808).
         self.socks_port = socks_port or s.get("awg_socks_port", 11080)
+        self.http_port = s.get("awg_http_port", 11081)
         self._health_check_addr = ("127.0.0.1", self.socks_port)
         self._log_path = self._config_dir / "awg-core.log"
         self._ready_path = self._config_dir / "awg-ready.txt"
@@ -193,11 +194,14 @@ class AmneziaWGEngine(Engine):
 
         if not self.check_port_free(self.socks_port):
             return False
+        if self.http_port and not self.check_port_free(self.http_port):
+            return False
 
         command = self.binary_command(
             binary,
             "--config", str(conf),
             "--socks", f"127.0.0.1:{self.socks_port}",
+            "--http", f"127.0.0.1:{self.http_port}",
             "--ready-file", str(self._ready_path),
         )
 
@@ -225,6 +229,14 @@ class AmneziaWGEngine(Engine):
             self.stop()
             return False
 
+        if self.http_port and not self.wait_for_port(self.http_port, timeout=5.0):
+            self._log.error(
+                "AmneziaWG core did not open HTTP port %d. Core output:\n%s",
+                self.http_port, self._log_tail(),
+            )
+            self.stop()
+            return False
+
         if self._process.poll() is not None:
             self._log.error(
                 "AmneziaWG core exited immediately (code=%s). Core output:\n%s",
@@ -234,6 +246,7 @@ class AmneziaWGEngine(Engine):
             return False
 
         self._log.info(
-            "AmneziaWG core up — SOCKS5 on 127.0.0.1:%d (%s)", self.socks_port, summary
+            "AmneziaWG core up — SOCKS5 127.0.0.1:%d, HTTP 127.0.0.1:%d (%s)",
+            self.socks_port, self.http_port, summary,
         )
         return True

@@ -46,6 +46,7 @@ DEFAULTS = {
     "xray_socks_port":      10808,
     "xray_http_port":       10809,
     "awg_socks_port":       11080,
+    "awg_http_port":        11081,
     "psiphon_http_port":    8081,
     "psiphon_socks_port":   1081,
     "v2_tunnel_port":       18080,
@@ -216,7 +217,7 @@ DEFAULTS = {
 SETTING_GROUPS = {
     "Network Ports": (
         "sni_listen_port", "sni_connect_port", "xray_socks_port", "xray_http_port",
-        "awg_socks_port",
+        "awg_socks_port", "awg_http_port",
         "psiphon_http_port", "psiphon_socks_port", "proxy_port", "neighbor_proxy_port",
         "gas_proxy_port", "softether_port", "v2_tunnel_port",
     ),
@@ -320,6 +321,7 @@ _VALIDATORS: dict[str, tuple] = {
     "sni_listen_port":    (int,   *_PORT_RANGE),
     "xray_socks_port":    (int,   *_PORT_RANGE),
     "awg_socks_port":     (int,   *_PORT_RANGE),
+    "awg_http_port":      (int,   *_PORT_RANGE),
     "xray_http_port":     (int,   *_PORT_RANGE),
     "psiphon_http_port":  (int,   *_PORT_RANGE),
     "psiphon_socks_port": (int,   *_PORT_RANGE),
@@ -653,6 +655,7 @@ def describe(key: str) -> str:
         "sni_listen_port":    "Local port the SNI spoofer listens on",
         "xray_socks_port":    "XRay SOCKS5 proxy port",
         "awg_socks_port":     "AmneziaWG SOCKS5 proxy port (separate from XRay so both can run)",
+        "awg_http_port":      "AmneziaWG HTTP proxy port (Windows system proxy; Chrome needs HTTP, not SOCKS)",
         "v2_tunnel_port":     "v2 socks-tunnel loopback port (blackout-core)",
         "xray_http_port":     "XRay HTTP proxy port (auto-set as system proxy)",
         "sni_connect_ip":     "Cloudflare IP the SNI spoofer connects to",
@@ -752,8 +755,8 @@ def get_engine_proxy_details(engine_name: str, settings: dict | None = None) -> 
     elif engine_name in ("hysteria2", "tuic"):
         return "socks=127.0.0.1", s.get("xray_socks_port", 10808)
     elif engine_name == "awg":
-        # Dedicated port: AmneziaWG must not collide with an XRay/v2rayN instance
-        # already holding xray_socks_port (10808).
-        return "socks=127.0.0.1", s.get("awg_socks_port", 11080)
+        # Dedicated HTTP port: Windows/WinINET (and Chrome) cannot use a SOCKS
+        # system proxy. SOCKS5 stays on awg_socks_port for tools that speak it.
+        return host, s.get("awg_http_port", 11081)
     return None
 

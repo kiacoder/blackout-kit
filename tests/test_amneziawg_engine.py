@@ -123,6 +123,12 @@ def test_live_start_and_stop(conf_file, monkeypatch):
             s.sendall(b"\x05\x01\x00")
             assert s.recv(2) == b"\x05\x00"
         assert engine.is_running() is True
+        # HTTP CONNECT listener (system proxy path for Windows/Chrome)
+        with socket.create_connection(("127.0.0.1", engine.http_port), timeout=3):
+            pass
+        # HTTP CONNECT listener (system proxy path for Windows/Chrome)
+        with socket.create_connection(("127.0.0.1", engine.http_port), timeout=3):
+            pass
     finally:
         engine.stop()
     time.sleep(0.5)
@@ -130,23 +136,27 @@ def test_live_start_and_stop(conf_file, monkeypatch):
         socket.create_connection(("127.0.0.1", port), timeout=1).close()
 
 
-def test_awg_uses_dedicated_socks_port():
-    """awg must not share xray_socks_port (v2rayN/XRay usually holds 10808)."""
+def test_awg_uses_dedicated_ports():
+    """awg must not share xray_socks_port (v2rayN/XRay usually holds 10808), and
+    the system proxy must be HTTP because Windows/Chrome cannot use SOCKS."""
     from blackoutkit import settings
 
     details = settings.get_engine_proxy_details(
-        "awg", {"awg_socks_port": 11080, "xray_socks_port": 10808}
+        "awg", {"awg_socks_port": 11080, "awg_http_port": 11081, "xray_socks_port": 10808}
     )
-    assert details == ("socks=127.0.0.1", 11080)
+    assert details == ("127.0.0.1", 11081)
     assert settings.DEFAULTS["awg_socks_port"] == 11080
+    assert settings.DEFAULTS["awg_http_port"] == 11081
 
 
-def test_awg_uses_dedicated_socks_port():
-    """awg must not share xray_socks_port (v2rayN/XRay usually holds 10808)."""
+def test_awg_uses_dedicated_ports():
+    """awg must not share xray_socks_port (v2rayN/XRay usually holds 10808), and
+    the system proxy must be HTTP because Windows/Chrome cannot use SOCKS."""
     from blackoutkit import settings
 
     details = settings.get_engine_proxy_details(
-        "awg", {"awg_socks_port": 11080, "xray_socks_port": 10808}
+        "awg", {"awg_socks_port": 11080, "awg_http_port": 11081, "xray_socks_port": 10808}
     )
-    assert details == ("socks=127.0.0.1", 11080)
+    assert details == ("127.0.0.1", 11081)
     assert settings.DEFAULTS["awg_socks_port"] == 11080
+    assert settings.DEFAULTS["awg_http_port"] == 11081

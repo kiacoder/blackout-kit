@@ -33,6 +33,7 @@ func main() {
 	var (
 		confPath  = flag.String("config", "", "path to AmneziaWG .conf file")
 		socksAddr = flag.String("socks", "127.0.0.1:10808", "SOCKS5 listen address")
+		httpAddr  = flag.String("http", "", "HTTP CONNECT listen address (e.g. 127.0.0.1:11081; Windows system proxy)")
 		mtu       = flag.Int("mtu", 0, "MTU override (0 = conf value or default)")
 		verbose   = flag.Bool("verbose", false, "verbose device logging")
 		checkOnly = flag.Bool("check-config", false, "parse config and print a summary, then exit")
@@ -93,8 +94,21 @@ func main() {
 	defer cancel()
 	go srv.Serve(ctx, ln)
 
+	// Optional HTTP CONNECT listener: Windows/WinINET (and therefore Chrome)
+	// cannot use a SOCKS system proxy, so the daemon advertises this one.
+	httpListen := ""
+	if *httpAddr != "" {
+		httpLn, herr := net.Listen("tcp", *httpAddr)
+		if herr != nil {
+			fatal("http listen: %v", herr)
+		}
+		ServeHTTPProxy(ctx, httpLn, tnet, logger.Printf)
+		httpListen = httpLn.Addr().String()
+	}
+
 	// Machine-readable readiness line for the Python engine's health check.
-	fmt.Printf("READY socks=%s mtu=%d endpoint=%s\n", ln.Addr().String(), conf.MTU, conf.Endpoint)
+	fmt.Printf("READY socks=%s http=%s mtu=%d endpoint=%s\n",
+		ln.Addr().String(), httpListen, conf.MTU, conf.Endpoint)
 	if *readyFile != "" {
 		_ = os.WriteFile(*readyFile, []byte(ln.Addr().String()+"\n"), 0o644)
 	}
