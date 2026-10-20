@@ -206,6 +206,11 @@ func (p *GASProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 var mhrvServer *http.Server
 
 func startMHRVInternal(port int, idsComma string) error {
+	engineMu.Lock()
+	defer engineMu.Unlock()
+	if mhrvServer != nil {
+		return fmt.Errorf("MHRV is already running")
+	}
 	ids := strings.Split(idsComma, ",")
 	if len(ids) == 0 || (len(ids) == 1 && ids[0] == "") {
 		return fmt.Errorf("no GAS IDs provided")
@@ -237,6 +242,8 @@ func startMHRVInternal(port int, idsComma string) error {
 }
 
 func stopMHRVInternal() {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	if mhrvServer != nil {
 		mhrvServer.Close()
 		mhrvServer = nil

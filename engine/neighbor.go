@@ -16,6 +16,8 @@ var (
 )
 
 func startNeighborInternal(listenPort int, targetPort int, bindLan bool) error {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	if neighborCancel != nil {
 		return fmt.Errorf("neighbor is already running")
 	}
@@ -112,8 +114,13 @@ func startNeighborInternal(listenPort int, targetPort int, bindLan bool) error {
 }
 
 func stopNeighborInternal() {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	if neighborCancel != nil {
 		neighborCancel()
+		// Wait OUTSIDE the critical section? No: the goroutines only touch
+		// their own listeners/conns, never engineMu, so waiting here cannot
+		// deadlock and guarantees a following Start starts from a clean slate.
 		neighborWg.Wait()
 		neighborCancel = nil
 	}

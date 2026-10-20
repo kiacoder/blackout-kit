@@ -4,7 +4,14 @@ import (
 	"fmt"
 	"os"
 	"runtime/debug"
+	"sync"
 )
+
+// engineMu serialises every engine start/stop path. These are cgo exports:
+// the Python host can call Start* and Stop* from different threads (ctypes
+// releases the GIL), and unsynchronised access to the engine globals made
+// double-start leak instances and concurrent start/stop race on Close.
+var engineMu sync.Mutex
 
 // logPanic records a recovered panic.
 //

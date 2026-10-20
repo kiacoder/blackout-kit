@@ -113,6 +113,11 @@ func parseWGConfig(configPath string) (*wireGuardConfig, error) {
 }
 
 func startWireGuardInternal(configPath string, socksPort int) error {
+	engineMu.Lock()
+	defer engineMu.Unlock()
+	if wgDevice != nil {
+		return fmt.Errorf("wireguard is already running")
+	}
 	// Create userspace TUN device via netstack
 	// Fallback addresses if config has no Address or DNS
 	localIPs := []netip.Addr{netip.MustParseAddr("10.0.0.2")}
@@ -187,6 +192,8 @@ func StartWireGuardC(configPath *C.char, socksPort C.int) C.int {
 
 //export StopWireGuardC
 func StopWireGuardC() {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	if wgCancel != nil {
 		wgCancel()
 		wgCancel = nil

@@ -13,6 +13,11 @@ import (
 var xrayServer *core.Instance
 
 func startXrayInternal(configPath string) error {
+	engineMu.Lock()
+	defer engineMu.Unlock()
+	if xrayServer != nil {
+		return fmt.Errorf("xray is already running")
+	}
 	configFile, err := os.Open(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to open config file: %w", err)
@@ -39,6 +44,8 @@ func startXrayInternal(configPath string) error {
 }
 
 func stopXrayInternal() {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	if xrayServer != nil {
 		xrayServer.Close()
 		xrayServer = nil

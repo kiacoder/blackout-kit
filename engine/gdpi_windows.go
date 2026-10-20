@@ -94,6 +94,8 @@ func processGDPIPacket(handle *divert.Handle, packetBytes []byte, addr *divert.A
 }
 
 func startGDPIInternal() error {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	if gdpiHandle != nil {
 		gdpiRunning.Store(true)
 		return nil
@@ -127,6 +129,8 @@ func startGDPIInternal() error {
 }
 
 func stopGDPIInternal() {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	gdpiRunning.Store(false)
 	if gdpiHandle != nil {
 		gdpiHandle.Close()

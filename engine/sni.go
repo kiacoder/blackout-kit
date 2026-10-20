@@ -22,6 +22,11 @@ type SNIConfig struct {
 var sniListener net.Listener
 
 func startSNIInternal(configPath string) error {
+	engineMu.Lock()
+	defer engineMu.Unlock()
+	if sniListener != nil {
+		return fmt.Errorf("SNI spoofer is already running")
+	}
 	configFile, err := os.Open(configPath)
 	if err != nil {
 		return fmt.Errorf("failed to open SNI config: %w", err)
@@ -40,9 +45,13 @@ func startSNIInternal(configPath string) error {
 	}
 	sniListener = listener
 
+	// The loop must Accept on the CAPTURED listener, not the global: Stop
+	// nils the global, and an Accept on a nil interface is a panic that
+	// would kill this accept loop (recovered, but the listener dies with it).
+	l := listener
 	safeGo("sni.accept", func() {
 		for {
-			clientConn, err := sniListener.Accept()
+			clientConn, err := l.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
 					break
@@ -62,6 +71,8 @@ func startSNIInternal(configPath string) error {
 }
 
 func stopSNIInternal() {
+	engineMu.Lock()
+	defer engineMu.Unlock()
 	if sniListener != nil {
 		sniListener.Close()
 		sniListener = nil
