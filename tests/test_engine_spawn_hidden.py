@@ -7,6 +7,9 @@ reported live as "empty powershell windows keep opening and closing".
 """
 import os
 import subprocess
+import sys
+
+import pytest
 
 from blackoutkit.engines.base import Engine
 
@@ -36,6 +39,7 @@ def _capture_popen(monkeypatch):
     return captured
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="CREATE_NO_WINDOW exists only on Windows")
 def test_start_process_hides_console_on_windows(monkeypatch):
     captured = _capture_popen(monkeypatch)
     monkeypatch.setattr(os, "name", "nt")
