@@ -21,7 +21,13 @@ from .mhrv import MhrvEngine
 from .neighbor import NeighborConnectEngine, NeighborShareEngine
 from .openvpn import OpenVPNEngine
 from .psiphon import PsiphonEngine
-from .singbox_proxy import Hysteria2Engine, SingBoxProxyEngine, TuicEngine
+from .singbox_proxy import (
+    AnyTlsEngine,
+    Hysteria2Engine,
+    ShadowTLSEngine,
+    SingBoxProxyEngine,
+    TuicEngine,
+)
 from .sni import SNIEngine
 from .softether import SoftEtherEngine
 from .socks_tunnel import SocksTunnelEngine
@@ -52,6 +58,8 @@ ENGINE_REGISTRY: dict[str, type[Engine]] = {
     "appsscript": AppsScriptEngine,
     "hysteria2":  Hysteria2Engine,
     "tuic":       TuicEngine,
+    "anytls":     AnyTlsEngine,
+    "shadowtls":  ShadowTLSEngine,
     "awg":        AmneziaWGEngine,
     "hotspot-shield": HotspotShieldEngine,
     "socks-tunnel": SocksTunnelEngine,
@@ -151,6 +159,8 @@ __all__ = [
     "Engine",
     "GoodbyeDPIEngine",
     "Hysteria2Engine",
+    "AnyTlsEngine",
+    "ShadowTLSEngine",
     "IKEv2Engine",
     "MhrvEngine",
     "NeighborConnectEngine",

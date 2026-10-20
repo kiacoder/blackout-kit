@@ -27,7 +27,7 @@ def test_capability_catalog_preserves_all_public_engine_targets():
     )
 
     assert [row["name"] for row in rows] == list(PUBLIC_ENGINE_NAMES)
-    assert len(rows) == 19
+    assert len(rows) == 21
     assert rows[-1]["name"] == "socks-tunnel"
 
 
@@ -39,7 +39,7 @@ def test_capability_matrix_keeps_unsupported_targets_visible():
         configs=[],
     )
 
-    assert len(rows) == 19
+    assert len(rows) == 21
     assert all(row["state"] == "unsupported" for row in rows)
     assert all("unsupported on darwin" in row["blockers"] for row in rows)
 
@@ -86,7 +86,7 @@ def test_demo_is_simulation_only_and_accepts_local_fixtures():
     assert report["network_actions"] == []
     assert report["system_mutations"] == []
     assert report["process_actions"] == []
-    assert len(report["capabilities"]) == 19
+    assert len(report["capabilities"]) == 21
 
 
 def test_tun_capability_describes_network_tunnel_without_proxy_side_effects():

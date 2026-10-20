@@ -144,7 +144,10 @@ def parse_v2ray_uri(uri: str) -> "ProxyConfig | None":
         return None
 
     try:
-        if uri.startswith(("vless://", "trojan://", "hysteria2://", "tuic://")):
+        if uri.startswith((
+            "vless://", "trojan://", "hysteria2://", "hysteria://", "hy2://",
+            "tuic://", "anytls://", "shadowtls://",
+        )):
             return _parse_vless_trojan(uri)
         if uri.startswith("vmess://"):
             return _parse_vmess(uri)
@@ -207,7 +210,7 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
 
     password = ""
     uuid = ""
-    if proto in ("trojan", "hysteria2"):
+    if proto in ("trojan", "hysteria2", "hysteria", "hy2", "anytls", "shadowtls"):
         password = credential
     elif proto == "vless":
         uuid = credential
@@ -220,6 +223,11 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
     transport = q("type", "ws").lower()
     if transport == "splithttp":
         transport = "xhttp"
+    if proto in ("anytls", "shadowtls"):
+        # Both are TLS-only sing-box outbounds with no transport layer, so any
+        # `type` parameter is misleading: pin tcp so no transportSettings block
+        # is generated downstream.
+        transport = "tcp"
 
     return ProxyConfig(
         protocol  = proto,

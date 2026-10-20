@@ -1,6 +1,12 @@
 """
-Blackout Kit - SingBox Proxy Engine (Hysteria2 & TUIC).
-Uses sing-box library inside blackout_core.dll.
+Blackout Kit - SingBox Proxy Engine (Hysteria2, TUIC, AnyTLS, ShadowTLS).
+
+Runs on the managed sing-box binary. On Windows the standalone
+bins/sing-box.exe is preferred over blackout_core.dll: the shipped DLL
+(2026-08-14) embeds sing-box 1.12 and refuses every configuration
+(StartSingBoxC returns 1 even for protocols it used to serve), while the
+managed binary is kept current by `blackout bins update` and carries the
+newer outbounds (anytls, shadowtls v3).
 """
 import json
 import sys
@@ -9,11 +15,17 @@ from .. import settings as cfg
 from .base import Engine
 from .xray import LINUX_RUNNER_NAMES
 
+# Managed sing-box binary per platform. The Windows DLL is a legacy fallback;
+# the binary is the primary path on every OS.
+SINGBOX_BINARY_NAMES = (
+    ["sing-box.exe", "sing-box"] if sys.platform == "win32" else ["sing-box", "sing-box.exe"]
+)
+
 
 class SingBoxProxyEngine(Engine):
     name = "singbox_proxy"
     description = "SingBox Proxy Core — runs Hysteria2 / TUIC natively"
-    supported_protocols = ("hysteria2", "tuic")
+    supported_protocols = ("hysteria2", "tuic", "anytls", "shadowtls")
 
     def __init__(self, proxy_config=None, socks_port: int | None = None, protocol: str | None = None):
         super().__init__()
@@ -66,10 +78,26 @@ class SingBoxProxyEngine(Engine):
         elif pc.protocol == "tuic":
             outbound["uuid"] = pc.uuid
             outbound["password"] = pc.password
+        elif pc.protocol == "anytls":
+            # sing-box anytls outbound: password + optional padding scheme.
+            outbound["password"] = pc.password
+            if getattr(pc, "idle_session_check", None):
+                outbound["idle_session_check_interval"] = pc.idle_session_check
+            if getattr(pc, "min_idle_session", None):
+                outbound["idle_session_timeout"] = pc.idle_session_timeout
+        elif pc.protocol == "shadowtls":
+            # shadowtls v3. The detour field belongs on the SERVER inbound (it
+            # routes the decrypted inner stream to the real proxy); a client-side
+            # detour is rejected: "detour to an empty direct outbound".
+            outbound["password"] = pc.password
+            outbound["version"] = getattr(pc, "shadow_version", 3) or 3
 
         if pc.alpn:
             outbound["tls"]["alpn"] = [a.strip() for a in pc.alpn.split(",")]
 
+        # sing-box 1.11 deprecated / 1.13 removed the legacy `sniff` inbound
+        # field. Domain sniffing is now a route rule action, and the whole
+        # inbound refuses to decode if the old field is present.
         return {
             "log": {"level": "warn"},
             "inbounds": [
@@ -78,9 +106,18 @@ class SingBoxProxyEngine(Engine):
                     "tag": "socks-in",
                     "listen": "127.0.0.1",
                     "listen_port": self.socks_port,
-                    "sniff": True,
                 }
             ],
+            "route": {
+                "rules": [
+                    {
+                        "inbound": ["socks-in"],
+                        # Sniff the SOCKS handshake target so domain routing
+                        # and the proxy's own logic see the real destination.
+                        "action": "sniff",
+                    }
+                ]
+            },
             "outbounds": [
                 outbound,
                 {"type": "direct", "tag": "direct"},
@@ -89,7 +126,7 @@ class SingBoxProxyEngine(Engine):
 
     def start(self) -> bool:
         if not self.proxy_config:
-            wanted = self.requested_protocol or "hysteria2/tuic"
+            wanted = self.requested_protocol or "/".join(self.supported_protocols)
             self._log.error("No %s config found. Add one with 'blackout config add <uri>'.", wanted)
             return False
 
@@ -120,21 +157,52 @@ class SingBoxProxyEngine(Engine):
 
         config_json = json.dumps(self._generate_config(), separators=(",", ":")).encode("utf-8")
 
-        if sys.platform.startswith("linux"):
-            runner = self.find_binary(LINUX_RUNNER_NAMES)
-            if not runner:
-                self._log.error("Linux sing-box proxy requires the managed blackout-engine runner.")
-                return False
+        # Preferred path: the managed sing-box binary, on every platform. It is
+        # kept current by `blackout bins update` (currently 1.14.x), so new
+        # outbounds (anytls, shadowtls) arrive without a DLL rebuild. On Linux
+        # the historical runner still works as a fallback - it embeds its own
+        # sing-box and takes over when no standalone binary is installed.
+        binary = self.find_binary(SINGBOX_BINARY_NAMES)
+        if binary:
             config_path = self._config_dir / "singbox_proxy_config.json"
             config_path.write_bytes(config_json)
-            if not self.start_process(self.binary_command(runner, "sing-box", "--config", str(config_path))):
+            if not self.start_process(
+                self.binary_command(binary, "run", "-c", str(config_path))
+            ):
                 return False
-            if not self.wait_for_port(self.socks_port, timeout=10.0):
-                self._log.error("Sing-box runner did not open SOCKS port %d.", self.socks_port)
+            if not self.wait_for_port(self.socks_port, timeout=12.0):
+                self._log.error(
+                    "%s: sing-box binary did not open SOCKS port %d.",
+                    self.proxy_config.protocol.upper(), self.socks_port,
+                )
                 self.stop()
                 return False
-            self._log.info("%s ready via Linux runner  socks5://127.0.0.1:%d", self.proxy_config.protocol.upper(), self.socks_port)
+            self._log.info(
+                "%s ready via sing-box binary  socks5://127.0.0.1:%d",
+                self.proxy_config.protocol.upper(), self.socks_port,
+            )
             return True
+
+        if sys.platform.startswith("linux"):
+            runner = self.find_binary(LINUX_RUNNER_NAMES)
+            if runner:
+                config_path = self._config_dir / "singbox_proxy_config.json"
+                config_path.write_bytes(config_json)
+                if not self.start_process(
+                    self.binary_command(runner, "sing-box", "--config", str(config_path))
+                ):
+                    return False
+                if not self.wait_for_port(self.socks_port, timeout=10.0):
+                    self._log.error("Sing-box runner did not open SOCKS port %d.", self.socks_port)
+                    self.stop()
+                    return False
+                self._log.info(
+                    "%s ready via Linux runner  socks5://127.0.0.1:%d",
+                    self.proxy_config.protocol.upper(), self.socks_port,
+                )
+                return True
+            self._log.error("Linux sing-box proxy requires the managed blackout-engine runner.")
+            return False
 
         from ..core import get_core_dll
         dll = get_core_dll()
@@ -165,3 +233,14 @@ class TuicEngine(SingBoxProxyEngine):
     name = "tuic"
     description = "TUIC QUIC proxy via sing-box"
     protocol = "tuic"
+
+class AnyTlsEngine(SingBoxProxyEngine):
+    name = "anytls"
+    description = "AnyTLS proxy via sing-box (padding-aware TLS transport)"
+    protocol = "anytls"
+
+
+class ShadowTLSEngine(SingBoxProxyEngine):
+    name = "shadowtls"
+    description = "ShadowTLS v3 proxy via sing-box (active-probe resistant)"
+    protocol = "shadowtls"

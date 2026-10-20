@@ -6,6 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-10-20
+
+### Added
+- **AnyTLS engine.** New `anytls` engine (sing-box outbound): a padding-aware
+  TLS proxy whose traffic shape is designed against ML traffic
+  classification. Deployed on both Frankfurt nodes: `:39007/tcp`,
+  password `BlackoutAnyTLS2026`, SNI `www.microsoft.com`. **Verified end to
+  end** — exit IP `185.215.244.95` / `185.208.172.212` through the engine.
+- **ShadowTLS v3 engine.** New `shadowtls` engine: shadows a real TLS site so
+  active probes see the genuine handshake of the shadowed domain instead of a
+  proxy. Config generation verified; needs the server-side detour-to-inbound
+  architecture before production use.
+- **`anytls://` and `shadowtls://` share links** parse in the config manager
+  (`type=` is pinned to `tcp` for both — they have no transport layer).
+
+### Fixed
+- **Hysteria2 / TUIC on Windows were dead.** The shipped `blackout_core.dll`
+  (2026-08-14, sing-box 1.12) rejects every configuration — `StartSingBoxC`
+  returns 1 even for protocols it used to serve. The sing-box family now runs
+  on the managed `sing-box.exe` binary (refreshed by `blackout bins update`,
+  currently **1.14.3**), with the DLL kept as a fallback. **Verified end to
+  end:** local hysteria2 + tuic servers carry real traffic (egress confirmed)
+  through the engine.
+- **sing-box 1.13 removed the legacy `sniff` inbound field.** The generated
+  config used it, so the 1.14.3 binary refused to start; the tunnel died
+  before the port opened. Domain sniffing is now a `route` rule action, the
+  modern form, and the generated document carries no legacy fields.
+- Routing model updated to the new contract: the sing-box family requires the
+  `sing-box` runtime on Windows (the `linux_engine` runner on Linux is still
+  a working fallback there).
+
+### Changed
+- **`blackout bins update` pulled sing-box 1.13.14 → 1.14.3** (SHA-256
+  verified); Xray stays current at 26.3.27. Both Frankfurt nodes already run
+  sing-box 1.14.3 with modern (legacy-field-free) configs.
+
 ## [1.10.0] - 2026-10-19
 
 ### Added

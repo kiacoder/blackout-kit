@@ -68,7 +68,9 @@ def test_linux_filters_to_supported_engines_and_requires_runner():
         platform="linux",
     )
 
-    assert {candidate.engine for candidate in candidates}.issubset({"xray", "tun", "hysteria2", "tuic", "awg"})
+    assert {candidate.engine for candidate in candidates}.issubset(
+        {"xray", "tun", "hysteria2", "tuic", "anytls", "shadowtls", "awg"}
+    )
     # awg ships its own userspace core (awg-core) and no longer depends on the Linux
     # runner, so it reports its own missing component instead of "Linux runner missing".
     assert all("Linux runner missing" in candidate.blockers
@@ -86,7 +88,9 @@ def test_linux_order_never_adds_windows_engines():
         platform="linux",
     )
 
-    assert {candidate.engine for candidate in candidates} == {"xray", "tun", "hysteria2", "tuic", "awg"}
+    assert {candidate.engine for candidate in candidates} == {
+        "xray", "tun", "hysteria2", "tuic", "anytls", "shadowtls", "awg"
+    }
 
 
 def test_reality_vless_is_compatible_with_linux_xray_and_tun():
@@ -104,7 +108,7 @@ def test_reality_vless_is_compatible_with_linux_xray_and_tun():
 def test_stability_evidence_prefers_stable_candidate():
     candidates = recommend_routes(
         {"selected_engine": "auto", "engine_order": ["xray", "hysteria2"]},
-        installed={"mhrv": True},
+        installed={"sing-box": True},
         protocols={"vless", "hysteria2"},
         stability_scores={
             "xray": {"stable": False, "avg_ms": 900, "loss_pct": 40, "trend": "degrading"},
@@ -121,7 +125,7 @@ def test_ru_profile_prefers_xray_then_quic_on_windows():
     candidates = recommend_routes(
         {"selected_engine": "auto", "engine_order": []},
         country_profile=_profile(["xray", "hysteria2", "tuic", "warp", "gdpi", "tun", "psiphon"]),
-        installed={"mhrv": True, "warp_dll": True, "goodbyedpi": True},
+        installed={"sing-box": True, "mhrv": True, "warp_dll": True, "goodbyedpi": True},
         protocols={"vless", "hysteria2", "tuic"},
         platform="win32",
     )

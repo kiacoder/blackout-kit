@@ -752,7 +752,7 @@ def get_engine_proxy_details(engine_name: str, settings: dict | None = None) -> 
         return "socks=127.0.0.1", 1080
     elif engine_name == "socks-tunnel":
         return "socks=127.0.0.1", s.get("v2_tunnel_port", 18080)
-    elif engine_name in ("hysteria2", "tuic"):
+    elif engine_name in ("hysteria2", "tuic", "anytls", "shadowtls"):
         return "socks=127.0.0.1", s.get("xray_socks_port", 10808)
     elif engine_name == "awg":
         # Dedicated HTTP port: Windows/WinINET (and Chrome) cannot use a SOCKS
