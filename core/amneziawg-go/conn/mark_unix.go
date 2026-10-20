@@ -34,10 +34,13 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 		return nil
 	}
 	// int(mark) below must not wrap on 32-bit platforms: SO_MARK and friends
-	// only ever carry values well below 2^31.
+	// only ever carry values well below 2^31. The conversion to int happens
+	// HERE, once, immediately after this check - not inside the Control
+	// closures - so the bound provably dominates every use.
 	if mark > math.MaxInt32 {
 		return fmt.Errorf("fwmark %d exceeds the maximum supported value", mark)
 	}
+	markInt := int(mark)
 	if s.ipv4 != nil {
 		fd, err := s.ipv4.SyscallConn()
 		if err != nil {
@@ -51,7 +54,7 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 				operr = fmt.Errorf("descriptor %d out of range", fd)
 				return
 			}
-			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, int(mark))
+			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, markInt)
 		})
 		if err == nil {
 			err = operr
@@ -73,7 +76,7 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 				operr = fmt.Errorf("descriptor %d out of range", fd)
 				return
 			}
-			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, int(mark))
+			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, markInt)
 		})
 		if err == nil {
 			err = operr
