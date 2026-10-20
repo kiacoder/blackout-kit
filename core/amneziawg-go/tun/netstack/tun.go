@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/netip"
 	"os"
@@ -53,9 +54,12 @@ type netTun struct {
 type Net netTun
 
 func CreateNetTUN(localAddresses, dnsServers []netip.Addr, mtu int) (tun.Device, *Net, error) {
-	// uint32(mtu) below must not wrap: a non-positive MTU is caller error.
-	if mtu <= 0 {
-		return nil, nil, errors.New("mtu must be positive")
+	// uint32(mtu) below must not wrap in either direction: a non-positive
+	// MTU is caller error, and an MTU above MaxInt32 would overflow the
+	// conversion on 32-bit platforms. MaxInt32 (not MaxUint32) so the
+	// comparison itself compiles there; real MTUs are ~1500.
+	if mtu <= 0 || mtu > math.MaxInt32 {
+		return nil, nil, errors.New("mtu must be positive and below 2^31")
 	}
 	opts := stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},

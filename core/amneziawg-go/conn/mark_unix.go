@@ -44,6 +44,13 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 			return err
 		}
 		err = fd.Control(func(fd uintptr) {
+			// fd is uintptr by API contract; on 32-bit platforms the
+			// narrowing conversion below would wrap for absurd values,
+			// so bound it first. Real descriptors are small integers.
+			if fd > math.MaxInt32 {
+				operr = fmt.Errorf("descriptor %d out of range", fd)
+				return
+			}
 			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, int(mark))
 		})
 		if err == nil {
@@ -59,6 +66,13 @@ func (s *StdNetBind) SetMark(mark uint32) error {
 			return err
 		}
 		err = fd.Control(func(fd uintptr) {
+			// fd is uintptr by API contract; on 32-bit platforms the
+			// narrowing conversion below would wrap for absurd values,
+			// so bound it first. Real descriptors are small integers.
+			if fd > math.MaxInt32 {
+				operr = fmt.Errorf("descriptor %d out of range", fd)
+				return
+			}
 			operr = unix.SetsockoptInt(int(fd), unix.SOL_SOCKET, fwmarkIoctl, int(mark))
 		})
 		if err == nil {
