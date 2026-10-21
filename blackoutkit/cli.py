@@ -805,14 +805,22 @@ def cmd_test(args):
         return
 
     alive = [r for r in results if r.alive]
-    dead = [r for r in results if not r.alive]
-    ranked = sorted(alive, key=lambda r: r.latency_ms) + dead
+    # UDP-first protocols (hysteria2/tuic/...) cannot be TCP-probed; reporting
+    # them as unreachable would be a lie, so they get their own honest bucket.
+    udp = [r for r in results if not r.alive and r.error == "udp"]
+    dead = [r for r in results if not r.alive and r.error != "udp"]
+    ranked = sorted(alive, key=lambda r: r.latency_ms) + dead + udp
 
-    console.print(
+    summary = (
         f"\n[info]Tested {len(results)} configs[/info]  "
-        f"([success]{len(alive)} reachable[/success]  "
-        f"[error]{len(dead)} unreachable[/error])\n"
+        f"([success]{len(alive)} reachable[/success]"
     )
+    if dead:
+        summary += f"  [error]{len(dead)} unreachable[/error]"
+    if udp:
+        summary += f"  [warning]{len(udp)} UDP (not TCP-testable)[/warning]"
+    summary += ")\n"
+    console.print(summary)
 
     table = make_table(
         "Config Test — best first",
@@ -823,6 +831,8 @@ def cmd_test(args):
     for r in ranked:
         if r.alive:
             lat = f"[success]{r.latency_ms:7.0f} ms[/success]"
+        elif r.error == "udp":
+            lat = "[warning]   udp[/warning]"
         else:
             lat = f"[error]{r.error[:18]:>10}[/error]"
         table.add_row(str(r.index + 1), r.protocol, f"{r.address}:{r.port}", lat, r.name or "-")

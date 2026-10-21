@@ -22,6 +22,11 @@ from .config.manager import load_configs
 DEFAULT_TIMEOUT_S = 3.0
 DEFAULT_CONCURRENCY = 32
 
+# Protocols whose servers listen on UDP first. A TCP connect probe cannot
+# see them at all - "timeout" there is a limitation of the probe, not a dead
+# server, and reporting it as unreachable is a lie the user pays for.
+_UDP_FIRST_PROTOCOLS = frozenset({"hysteria2", "hy2", "tuic", "anytls", "shadowtls"})
+
 
 @dataclass
 class ConfigTestResult:
@@ -65,6 +70,10 @@ def test_configs(
         port = getattr(c, "port", 0)
         name = getattr(c, "name", "") or ""
         if isinstance(address, str) and address.strip() and isinstance(port, int) and 1 <= port <= 65535:
+            if protocol.lower() in _UDP_FIRST_PROTOCOLS:
+                # Not TCP-testable: report honestly instead of faking a death.
+                results.append(ConfigTestResult(i, protocol, address.strip(), port, name, None, "udp"))
+                continue
             targets.append((i, protocol, address.strip(), port, name))
         else:
             results.append(ConfigTestResult(i, protocol, address, port, name, None, "no address"))

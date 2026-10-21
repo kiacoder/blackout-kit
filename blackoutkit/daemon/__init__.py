@@ -1123,6 +1123,12 @@ def _run_daemon_loop(
     early_probe_window = EARLY_PROBE_WINDOW
     early_probe_interval = EARLY_PROBE_INTERVAL
     early_probe_timeout = EARLY_PROBE_TIMEOUT
+    # QUIC-based engines (and AWG) pay a cold handshake before the first
+    # byte flows: on a 500ms+ link that plus a slow-start fetch blew the
+    # 5s probe twice in a row, and the daemon rotated away from tunnels
+    # that were merely slow to wake. Give them room to prove themselves.
+    if active_engine_name in ("hysteria2", "tuic", "anytls", "shadowtls", "awg"):
+        early_probe_timeout = max(early_probe_timeout, 15.0)
     max_restarts = s.get("max_retries", 3)
     initial_reconnect_delay = s.get("reconnect_initial_delay", 2)
     maximum_reconnect_delay = s.get("reconnect_max_delay", 60)

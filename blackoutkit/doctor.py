@@ -548,7 +548,13 @@ def check_internet() -> CheckResult:
             return CheckResult("Direct internet", True, "Connected")
         except Exception:
             continue
-    return CheckResult("Direct internet", False, "No connection detected")
+    # On a censored network this is the normal state, not a broken machine -
+    # the tunnel is the internet from here. Say so instead of implying the
+    # computer is offline.
+    return CheckResult(
+        "Direct internet", False,
+        "No direct internet (expected behind filtering - the tunnel provides access)",
+    )
 
 
 def _validated_probe_url(url: str) -> str:
