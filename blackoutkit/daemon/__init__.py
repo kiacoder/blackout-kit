@@ -519,11 +519,21 @@ def read_logs(lines: int = 50) -> str:
 
 
 def get_recent_events(lines: int = 5) -> list[str]:
-    """Parse the daemon log for connection lifecycle events."""
+    """Parse the CURRENT daemon session's log for connection lifecycle events.
+
+    The log spans every session ever run, so an unscoped tail used to show
+    warnings from previous days - e.g. a tuning-session rotation retry -
+    under a perfectly healthy daemon, which reads as "engines failing" when
+    nothing is. Scope the parse to everything after the last
+    "Daemon starting" line.
+    """
     if not LOG_FILE.exists():
         return []
     try:
         content = LOG_FILE.read_text(encoding="utf-8", errors="replace")
+        session_start = content.rfind("Daemon starting")
+        if session_start >= 0:
+            content = content[session_start:]
         events = []
         for line in reversed(content.splitlines()):
             if "Starting engine" in line or "Daemon shutting down" in line or "stopped unexpectedly" in line or "Proxy port closed" in line or "Reconnecting" in line:
