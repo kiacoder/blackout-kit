@@ -25,7 +25,9 @@ DEFAULT_CONCURRENCY = 32
 # Protocols whose servers listen on UDP first. A TCP connect probe cannot
 # see them at all - "timeout" there is a limitation of the probe, not a dead
 # server, and reporting it as unreachable is a lie the user pays for.
-_UDP_FIRST_PROTOCOLS = frozenset({"hysteria2", "hy2", "tuic", "anytls", "shadowtls"})
+# AnyTLS and ShadowTLS are NOT here: they are TCP+TLS obfuscators, so the
+# probe sees them normally. AWG (WireGuard family) is UDP.
+_UDP_FIRST_PROTOCOLS = frozenset({"hysteria2", "hy2", "tuic", "awg"})
 
 
 @dataclass

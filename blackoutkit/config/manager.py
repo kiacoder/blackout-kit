@@ -151,9 +151,74 @@ def parse_v2ray_uri(uri: str) -> "ProxyConfig | None":
             return _parse_vless_trojan(uri)
         if uri.startswith("vmess://"):
             return _parse_vmess(uri)
+        if uri.startswith("awg://"):
+            return _parse_awg(uri)
     except Exception:
         return None
     return None
+
+
+def _parse_awg(uri: str) -> "ProxyConfig | None":
+    """Parse an ``awg://`` share URI (base64 .conf or query params).
+
+    The payload is kept verbatim in raw_uri; the endpoint is decoded here so
+    the config can live in the shared library (test/rotation/fast treat it
+    like any other entry) and the awg engine can materialise it on start.
+    """
+    import base64 as _b64
+    import urllib.parse as _up
+
+    name = ""
+    rest = uri.strip()
+    if "#" in rest:
+        rest, _, name = rest.rpartition("#")
+        name = _up.unquote(name)
+
+    body = rest[len("awg://"):]
+    conf_text = ""
+    if body.startswith("?"):
+        conf_text = None  # query form: endpoint is a query param, decode below
+        q = _up.parse_qs(body[1:])
+        flat = {k.lower(): v[0] for v2 in [v] for k, v in q.items() if v}
+        endpoint = flat.get("endpoint", "")
+    else:
+        padded = body + "=" * (-len(body) % 4)
+        try:
+            raw = _b64.urlsafe_b64decode(padded.encode())
+        except Exception:
+            try:
+                raw = _b64.b64decode(padded.encode())
+            except Exception:
+                return None
+        conf_text = raw.decode("utf-8", errors="replace")
+        endpoint = ""
+        for line in conf_text.splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("endpoint"):
+                endpoint = stripped.split("=", 1)[1].strip() if "=" in stripped else ""
+                break
+
+    if not endpoint:
+        return None
+    if ":" not in endpoint:
+        return None
+    address, _, port_str = endpoint.rpartition(":")
+    try:
+        port = int(port_str)
+    except ValueError:
+        return None
+    if not address or not 1 <= port <= 65535:
+        return None
+
+    return ProxyConfig(
+        protocol="awg",
+        address=address,
+        port=port,
+        name=name,
+        raw_uri=uri.strip(),
+        transport="udp",
+        security="awg",
+    )
 
 
 def _parse_vless_trojan(uri: str) -> ProxyConfig:

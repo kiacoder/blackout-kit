@@ -151,6 +151,18 @@ class AmneziaWGEngine(Engine):
         super().__init__()
         s = cfg.load()
         self.config_file = config_file or s.get("awg_config_file", "")
+        if not self.config_file:
+            # Library fallback: an awg:// URI saved via `blackout config add`
+            # is a first-class config, same as on mobile. The explicit setting
+            # still wins when present.
+            try:
+                from ..config.manager import select_proxy_config
+
+                library_pick = select_proxy_config(("awg",))
+                if library_pick is not None and library_pick.raw_uri.startswith("awg://"):
+                    self.config_file = library_pick.raw_uri
+            except Exception:
+                pass
         # Dedicated ports (awg_socks_port / awg_http_port): the awg core must not
         # fight an XRay/v2rayN instance already bound to xray_socks_port (10808).
         self.socks_port = socks_port or s.get("awg_socks_port", 11080)
