@@ -721,7 +721,7 @@ def describe(key: str) -> str:
         "selected_engine":    "Preferred bypass engine: auto / sni / gdpi / psiphon / warp / legend / ...",
         "config_rotation":    "When enabled, the daemon rotates to the next saved config on reconnect failure (blocked IP)",
         "fallback_enabled":   "When enabled, automatically try the next engine if the primary engine fails",
-        "awg_config_file":    "Full path to your AmneziaWG .conf file",
+        "awg_config_file":    "AmneziaWG .conf path, or a bundled server name: srv1 / srv2",
         "mac_preferred_adapter": "Optional active physical Wi-Fi adapter for explicit MAC privacy commands",
         "mac_randomization_prefix": "Locally administered unicast first octet for fresh private Wi-Fi MACs (default: 02)",
         "mac_custom_private_address": "Optional locally administered unicast MAC used only by explicit tools mac randomize",

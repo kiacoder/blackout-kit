@@ -348,6 +348,10 @@ Examples:
   ws, tcp, grpc, xhttp (also accepts legacy type=splithttp)
 
 [bold]AmneziaWG (experimental):[/bold]
+  blackout settings set awg_config_file srv1
+                                          (bundled server 1 — 185.215.244.95:39006)
+  blackout settings set awg_config_file srv2
+                                          (bundled server 2 — 185.208.172.212:39006)
   blackout settings set awg_config_file /path/to/amneziawg.conf
   blackout start awg
   blackout start awg --russia

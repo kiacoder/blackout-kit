@@ -37,11 +37,28 @@ def _setting_value_present(settings: dict, key: str) -> bool:
     if not value:
         return False
     if key.endswith(("_config", "_config_file")):
+        # Bundled AWG server presets ("srv1" / "srv2") are valid values
+        # without being files on disk: the engine materialises them.
+        try:
+            if str(value).strip().lower() in _bundled_awg_names():
+                return True
+        except Exception:
+            pass
         try:
             return os.path.isfile(os.fspath(value))
         except TypeError:
             return False
     return True
+
+
+def _bundled_awg_names() -> frozenset[str]:
+    """Bundled server preset names, imported lazily to keep readiness light."""
+    try:
+        from .engines.amneziawg import _BUNDLED_SERVERS
+
+        return frozenset(_BUNDLED_SERVERS)
+    except Exception:
+        return frozenset()
 
 
 def _port_value(settings: dict, item: str | int) -> int:

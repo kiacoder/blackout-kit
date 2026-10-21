@@ -43,6 +43,22 @@ _AWG_OBF_KEYS = (
 
 _BINARY_NAMES = ["awg-go.exe", "awg-go"]
 
+# ------------------------------------------------------------------------
+# Both Blackout Kit servers, embedded as source so they ship inside the
+# PyInstaller binary without data-file packaging rules. _resolve_config
+# accepts these names (srv1 / srv2) anywhere a .conf path is expected.
+_BUNDLED_SERVERS = {
+    "srv1": {"endpoint": "185.215.244.95:39006", "conf": '[Interface]\nPrivateKey = UNBwpTq0F6stv42+0TF5cKzupK5r70C8wDT+AMJ/9Vg=\nAddress = 10.10.10.2/32\nDNS = 1.1.1.1\nJc = 4\nJmin = 50\nJmax = 1000\nS1 = 30\nS2 = 60\nH1 = 12345678\nH2 = 87654321\nH3 = 11223344\nH4 = 44332211\n\n[Peer]\nPublicKey = c8SsKn2DulCR/BrPszJrwB7w+nMVpk9QG9ZQicEunRM=\nEndpoint = 185.215.244.95:39006\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25'},
+    "srv2": {"endpoint": "185.208.172.212:39006", "conf": '[Interface]\nPrivateKey = YF/RzsWYLrqAOO7eBSKmDjcHHm+MtrZNeA9eUKmS8nM=\nAddress = 10.10.10.3/32, fd42:42:42::3/128\nDNS = 1.1.1.1, 2606:4700:4700::1111\nMTU = 1280\nJc = 4\nJmin = 50\nJmax = 1000\nS1 = 30\nS2 = 60\nH1 = 12345678\nH2 = 87654321\nH3 = 11223344\nH4 = 44332211\n\n[Peer]\nPublicKey = gbQ0+EbwPQFkgTMJEyq25RwnSh87HJKpIPz5A6gUzwE=\nEndpoint = 185.208.172.212:39006\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25'},
+}
+
+
+def _bundled_conf_path(config_dir: Path, name: str) -> Path:
+    """Writes the bundled preset ``name`` to disk and returns its path."""
+    out = config_dir / ("awg-%s.conf" % name)
+    out.write_text(_BUNDLED_SERVERS[name]["conf"] + "\n", encoding="utf-8")
+    return out
+
 
 def _parse_awg_conf(path: Path) -> dict:
     """Parse an AmneziaWG .conf file into a flat ``section.key`` dict."""
@@ -150,11 +166,20 @@ class AmneziaWGEngine(Engine):
         src = (self.config_file or "").strip()
         if not src:
             self._log.error(
-                "AmneziaWG needs a config: set 'awg_config_file' to a .conf path "
-                "(blackout settings set awg_config_file C:\\path\\to\\awg.conf) "
-                "or pass an awg:// URI."
+                "AmneziaWG needs a config. Both bundled servers are available:"
+                "  blackout settings set awg_config_file srv1   # 185.215.244.95:39006"
+                "  blackout settings set awg_config_file srv2   # 185.208.172.212:39006"
+                "or set a full .conf path or an awg:// URI."
             )
             return None
+        # Bundled presets: "srv1" / "srv2" (tolerate prefixes/suffixes such as
+        # "awg-srv1", "SRV2", "srv1.conf") resolve to the embedded configs.
+        probe = src.lower().removesuffix(".conf")
+        for name in _BUNDLED_SERVERS:
+            if probe == name or probe.endswith("-" + name) or probe.endswith("_" + name):
+                endpoint = _BUNDLED_SERVERS[name]["endpoint"]
+                self._log.info("Using bundled server %s (%s)", name, endpoint)
+                return _bundled_conf_path(self._config_dir, name)
         if src.startswith("awg://"):
             try:
                 text = _conf_from_uri(src)
