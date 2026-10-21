@@ -602,6 +602,17 @@ def _register_cli_commands() -> None:
         examples=["blackout status", "blackout status --watch"],
     )
     nav.register_command(
+        "fast", "Test all servers and connect to the fastest alive one",
+        "Connection Management",
+        aliases=["f"],
+        examples=["blackout fast", "blackout fast -d"],
+    )
+    nav.register_command(
+        "test", "Batch-test every saved config: reachability + latency",
+        "Connection Management",
+        examples=["blackout test", "blackout test -t 5"],
+    )
+    nav.register_command(
         "emergency", "Emergency disconnect (kill switch)",
         "Connection Management",
         examples=["blackout emergency"],
@@ -2048,6 +2059,15 @@ def cfg_list(ctx: typer.Context):
         return
     _render_config_list(configs, options)
 
+
+@config_app.command("test")
+def config_test(
+    timeout: float = typer.Option(3.0, "--timeout", "-t", help="Per-config probe timeout (seconds)"),
+    concurrency: int = typer.Option(32, "--concurrency", "-c", help="Parallel probes"),
+):
+    """Batch-test every saved config: reachability + latency, ranked."""
+    from .cli import cmd_test
+    cmd_test(_args(timeout=timeout, concurrency=concurrency))
 
 @config_app.command("validate")
 def cfg_validate(ctx: typer.Context):
@@ -3977,10 +3997,24 @@ def tools_cert_check(
     ))
 
 @app.command()
-def test():
-    """Analyze saved V2Ray configs"""
+def test(
+    timeout: float = typer.Option(3.0, "--timeout", "-t", help="Per-config probe timeout (seconds)"),
+    concurrency: int = typer.Option(32, "--concurrency", "-c", help="Parallel probes"),
+):
+    """Batch-test every saved config: reachability + latency, ranked"""
     from .cli import cmd_test
-    cmd_test(_args())
+    cmd_test(_args(timeout=timeout, concurrency=concurrency))
+
+
+@app.command()
+def fast(
+    background: bool = typer.Option(False, "--background", "-d", help="Run as background daemon"),
+    timeout: float = typer.Option(3.0, "--timeout", "-t", help="Per-config probe timeout (seconds)"),
+    concurrency: int = typer.Option(32, "--concurrency", "-c", help="Parallel probes"),
+):
+    """Test every server, connect to the fastest alive one, verify it loads"""
+    from .cli import cmd_fast
+    cmd_fast(_args(background=background, timeout=timeout, concurrency=concurrency))
 
 @app.command()
 def stop():

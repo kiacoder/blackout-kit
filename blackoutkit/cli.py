@@ -793,38 +793,243 @@ def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
 
 
 def cmd_test(args):
-    configs = load_configs()
-    if getattr(configs, "error", None):
-        console.print(f"[error]⚠ Could not read your saved configs: {configs.error}[/error]")
-        console.print("[dim]Your configs were not lost — fix the file above, then run 'blackout config validate'.[/dim]")
-        console.print("Details are in the logs ([bold]blackout doctor[/bold] shows the log path).")
-        return
-    if not configs:
-        console.print("[warning]No configs in data/configs.txt[/warning]")
-        console.print("Add one: [bold]blackout config add <uri>[/bold]")
-        console.print("Or import: [bold]blackout config import <url>[/bold]")
+    """Batch-test every saved config — reachability and latency, ranked."""
+    from .config_tester import test_configs, pick_best
+
+    results = test_configs(
+        timeout=float(getattr(args, "timeout", 3.0)),
+        concurrency=int(getattr(args, "concurrency", 32)),
+    )
+    if not results:
+        console.print("[warning]No configs saved. Use 'blackout config add' or 'blackout import'.[/warning]")
         return
 
-    sni_ok  = sum(1 for c in configs if c.is_sni_compatible())
-    direct  = len(configs) - sni_ok
+    alive = [r for r in results if r.alive]
+    dead = [r for r in results if not r.alive]
+    ranked = sorted(alive, key=lambda r: r.latency_ms) + dead
 
     console.print(
-        f"\n[info]Loaded {len(configs)} configs[/info]  "
-        f"([success]{sni_ok} SNI-compatible[/success]  "
-        f"[muted]{direct} direct[/muted])\n"
+        f"\n[info]Tested {len(results)} configs[/info]  "
+        f"([success]{len(alive)} reachable[/success]  "
+        f"[error]{len(dead)} unreachable[/error])\n"
     )
 
     table = make_table(
-        "Config List",
-        [("#", "dim"), ("Proto", "cyan"), ("Transport", "yellow"),
-         ("Type", ""), ("Name", "white")],
+        "Config Test — best first",
+        [("#", "dim"), ("Protocol", "cyan"), ("Address", "white"),
+         ("Latency", ""), ("Name", "white")],
         [],
     )
-    for i, c in enumerate(configs, 1):
-        ctype = "[success]SNI spoofer[/success]" if c.is_sni_compatible() else "[muted]direct[/muted]"
-        table.add_row(str(i), c.protocol, c.transport_label(), ctype, c.name or "-")
-
+    for r in ranked:
+        if r.alive:
+            lat = f"[success]{r.latency_ms:7.0f} ms[/success]"
+        else:
+            lat = f"[error]{r.error[:18]:>10}[/error]"
+        table.add_row(str(r.index + 1), r.protocol, f"{r.address}:{r.port}", lat, r.name or "-")
     console.print(table)
+
+    best = pick_best(results)
+    if best is not None:
+        console.print(
+            f"\n[success]Best:[/success] #{best.index + 1} "
+            f"{best.protocol} → {best.address}:{best.port} "
+            f"([bold]{best.latency_ms:.0f} ms[/bold])"
+        )
+        console.print("[muted]Connect to it: [bold]blackout fast[/bold][/muted]")
+    else:
+        console.print(
+            "\n[error]No server answered.[/error] Every endpoint timed out — "
+            "the network may block them all, or the subscription is stale "
+            "([bold]blackout config import <url>[/bold])."
+        )
+
+
+# Protocols each engine dials from the saved-config library. Used by
+# `blackout fast` to only rank configs the selected engine can actually use.
+_ENGINE_PROTOCOLS = {
+    "xray": ("vless", "trojan", "vmess"),
+    "legend": ("vless", "trojan", "vmess"),
+    "hysteria2": ("hysteria2",),
+    "tuic": ("tuic",),
+}
+
+
+def _wait_port(host: str, port: int, timeout: float) -> bool:
+    import socket as _socket
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with _socket.create_connection((host, port), timeout=1.0):
+                return True
+        except OSError:
+            time.sleep(0.5)
+    return False
+
+
+def _fetch_through_proxy(proxy_host: str, proxy_port: int, url: str, socks: bool, timeout: float = 25.0) -> str | None:
+    """GET url through the local proxy. Returns body text, or None on failure.
+
+    Uses httpx (the same client the repo's proxy_tester uses): urllib's
+    CONNECT support reads the body to an unexpected EOF through the local
+    proxy — tiny responses like api.ipify.org survive, real pages do not.
+    """
+    scheme = "socks5" if socks else "http"
+    proxy_url = f"{scheme}://{proxy_host}:{proxy_port}"
+    try:
+        import httpx
+
+        with httpx.Client(proxy=proxy_url, timeout=timeout, follow_redirects=True) as client:
+            resp = client.get(url)
+            if resp.status_code >= 400:
+                return None
+            return resp.text.strip()
+    except Exception:
+        return None
+
+
+def cmd_fast(args):
+    """Test every saved config, connect to the fastest alive one, verify it."""
+    import os as _os
+
+    from .config_tester import test_configs
+
+    engine = (
+        getattr(args, "pos_engine", None)
+        or getattr(args, "engine", None)
+        or cfg.load().get("selected_engine", "")
+        or "xray"
+    )
+    if engine in ("auto", "", "sni", "gdpi", "psiphon", "warp", "tor", "mhrv"):
+        # Engines outside the config-library family: XRay is the general default.
+        engine = "xray"
+    protocols = _ENGINE_PROTOCOLS.get(engine, _ENGINE_PROTOCOLS["xray"])
+    if sys.platform.startswith("linux"):
+        protocols = tuple(p for p in protocols if p != "vmess")
+
+    console.print(
+        Panel(
+            f"[bold]Testing every saved server[/bold]\n"
+            f"Engine: [cyan]{engine}[/cyan] · looking for [cyan]{', '.join(protocols)}[/cyan]",
+            border_style="cyan",
+        )
+    )
+
+    results = test_configs(
+        timeout=float(getattr(args, "timeout", 3.0)),
+        concurrency=int(getattr(args, "concurrency", 32)),
+    )
+    if not results:
+        console.print(
+            "[error]No configs saved.[/error] Add one: [bold]blackout config add <uri>[/bold]\n"
+            "Or import a subscription: [bold]blackout config import <url>[/bold]"
+        )
+        return
+
+    # Rank the way `select_proxy_config` sees them, so the offset below lands
+    # on exactly the config we picked.
+    compatible = [
+        r for r in sorted(results, key=lambda r: r.index)
+        if r.protocol in protocols and r.address and 1 <= r.port <= 65535
+    ]
+    alive_total = sum(1 for r in results if r.alive)
+    alive_compatible = [r for r in sorted((r for r in compatible if r.alive), key=lambda r: r.latency_ms)]
+
+    if not compatible:
+        console.print(
+            f"[error]No saved config matches the {engine} engine "
+            f"(needs {', '.join(protocols)}).[/error] {len(results)} saved, none compatible."
+        )
+        return
+    if not alive_compatible:
+        console.print(
+            f"[error]All {len(compatible)} compatible configs are unreachable "
+            f"({alive_total} of {len(results)} configs answered overall).[/error]"
+            "The network may block these endpoints — try a fresh subscription."
+        )
+        return
+
+    best = alive_compatible[0]
+    offset = compatible.index(best)
+    dead_but_compatible = len(compatible) - len(alive_compatible)
+    console.print(
+        f"[success]✓[/success] Tested {len(results)} configs — {alive_total} alive.\n"
+        f"[success]✓[/success] Best for {engine}: [bold]#{best.index + 1} {best.protocol} → "
+        f"{best.address}:{best.port}[/bold] at [bold]{best.latency_ms:.0f} ms[/bold]"
+        + (f" [muted]({dead_but_compatible} compatible but dead)[/muted]" if dead_but_compatible else "")
+    )
+
+    # Point the engine's config rotation at the winner, then connect through
+    # the normal connection path. Setting the process env is enough: the
+    # background daemon inherits it, and the in-process daemon reads it live.
+    _os.environ["BLACKOUT_CONFIG_OFFSET"] = str(offset)
+
+    class _FastArgs:
+        pass
+
+    fast_args = _FastArgs()
+    fast_args.pos_engine = engine
+    fast_args.engine = engine
+    # Always background: `fast` is a one-shot "connect and leave it
+    # connected", and the foreground connection path blocks until stop,
+    # which would never reach the verification step below.
+    fast_args.background = True
+    fast_args.iran = False
+    fast_args.russia = False
+
+    try:
+        _legacy_connection_result(fast_args, "connect")
+    except Exception as exc:
+        console.print(f"[error]Connect failed: {exc}[/error]")
+        return
+
+    # ── verify through the local proxy: exit IP + a video site ──
+    proxy_info = cfg.get_engine_proxy_details(engine)
+    if not proxy_info:
+        return
+    host, port = proxy_info
+    socks = str(host).startswith("socks=")
+    if socks:
+        host = str(host).split("=", 1)[1]
+    console.print(f"[muted]Verifying through {host}:{port} …[/muted]")
+    if not _wait_port(host, port, timeout=30.0):
+        console.print(
+            "[warning]Engine started but the local proxy port never opened — "
+            "check 'blackout logs'.[/warning]"
+        )
+        return
+
+    exit_ip = _fetch_through_proxy(host, port, "https://api.ipify.org", socks)
+    # Cloudflare/Github: hosts that answer from anywhere. Google and YouTube
+    # can be blocked by the exit server's own upstream DNS/filtering, which is
+    # a property of that server, not of the tunnel - reporting them as the
+    # general-web check would cry wolf on perfectly good servers.
+    web_ok = _fetch_through_proxy(host, port, "https://www.cloudflare.com/", socks)
+    yt = _fetch_through_proxy(host, port, "https://www.youtube.com/", socks)
+    lines = []
+    lines.append(
+        f"[success]✓ Exit IP:[/success] {exit_ip}" if exit_ip
+        else "[warning]Exit IP lookup failed[/warning]"
+    )
+    lines.append(
+        "[success]✓ General web reachable[/success]" if web_ok
+        else "[warning]General web check failed[/warning]"
+    )
+    if yt:
+        lines.append("[success]✓ YouTube reachable through the tunnel[/success]")
+    elif web_ok:
+        lines.append(
+            "[warning]YouTube is not loading from this server (general web is fine) — "
+            "run [bold]blackout fast[/bold] again to switch servers[/warning]"
+        )
+    else:
+        lines.append("[warning]YouTube check failed (the tunnel may still browse fine)[/warning]")
+    title = "Connected" if (exit_ip or web_ok) else "Connected — with warnings"
+    console.print(Panel("\n".join(lines), title=f"[bold green]{title}[/bold green]", border_style="green"))
+    if not (exit_ip or web_ok):
+        console.print(
+            "[muted]The tunnel is up but the verification fetches failed — check "
+            "[bold]blackout logs[/bold] or try the next server with [bold]blackout fast[/bold].[/muted]"
+        )
 
 
 def _resolve_engine_name(args, default: str = "sni") -> str:
@@ -1346,6 +1551,11 @@ def cmd_logs(args):
 def cmd_config(args):
     if not hasattr(args, "config_command") or not args.config_command:
         console.print("[warning]Usage: blackout config [list | add <uri> | import <url> | remove <n> | export | import-setup <string>][/warning]")
+        return
+
+    if args.config_command == "test":
+        # Alias of `blackout test` - reachable from the config namespace.
+        cmd_test(_args())
         return
 
     if args.config_command == "list":
