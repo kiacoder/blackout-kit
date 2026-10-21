@@ -71,7 +71,7 @@ class NeighborShareEngine(Engine):
             # collides with the target proxy port we offset it so the reverse proxy
             # is always used (whether bound to loopback or all interfaces).
             self.listen_port = self.target_port + 1
-        
+
         self._running   = False
 
     @property

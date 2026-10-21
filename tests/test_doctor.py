@@ -1,8 +1,5 @@
 import pytest
 import sys
-import os
-import subprocess
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 if sys.platform != "win32":
@@ -10,7 +7,7 @@ if sys.platform != "win32":
 
 
 import blackoutkit.doctor as doc
-from blackoutkit.doctor import CheckResult
+
 
 def test_check_result():
     r = doc.CheckResult("name", True, "msg", fixable=True, fix=lambda: "fixed")
@@ -19,6 +16,7 @@ def test_check_result():
     assert r.message == "msg"
     assert r.fixable is True
     assert r.fix() == "fixed"
+
 
 def test_check_data_files_does_not_repair_immutable_resources(tmp_path):
     mocked = tmp_path / "mocked"
@@ -61,7 +59,6 @@ def test_check_data_files_repairs_only_mutable_configs(tmp_path):
     assert configs.read_text(encoding="utf-8").startswith("# V2Ray configs")
 
 
-
 def test_check_data_files_reports_existing_immutable_resource(tmp_path):
     bundled = tmp_path / "bundled.txt"
     bundled.write_text("ok", encoding="utf-8")
@@ -79,7 +76,6 @@ def test_check_data_files_reports_existing_immutable_resource(tmp_path):
     assert results[2].fixable is True
 
 
-
 def test_check_data_files_uses_source_resource_path_for_immutable_files(monkeypatch, tmp_path):
     bundled = tmp_path / "fake_snis.txt"
     bundled.write_text("www.example.com\n", encoding="utf-8")
@@ -95,7 +91,6 @@ def test_check_data_files_uses_source_resource_path_for_immutable_files(monkeypa
     assert all(result.ok is True for result in results[:2])
     assert results[2].fixable is True
     assert not (tmp_path / "configs.txt").exists()
-
 
 
 def test_check_data_files_fixes_missing_mutable_configs_in_data_dir(monkeypatch, tmp_path):
@@ -119,12 +114,13 @@ def test_check_data_files_fixes_missing_mutable_configs_in_data_dir(monkeypatch,
 def test_check_settings(mock_load):
     mock_load.return_value = {"a": 1}
     assert doc.check_settings().ok is True
-    
+
     mock_load.return_value = {}
     assert doc.check_settings().ok is False
-    
+
     mock_load.side_effect = Exception("err")
     assert doc.check_settings().ok is False
+
 
 @patch("blackoutkit.doctor.BINS_DIR")
 def test_check_bins_dir(mock_bins, tmp_path):
@@ -135,6 +131,7 @@ def test_check_bins_dir(mock_bins, tmp_path):
     mock_bins.exists.return_value = True
     assert doc.check_bins_dir().ok is True
 
+
 @patch("blackoutkit.doctor.APP_DATA_DIR")
 def test_check_app_data_dir(mock_data, tmp_path):
     mock_data.exists.return_value = False
@@ -143,6 +140,7 @@ def test_check_app_data_dir(mock_data, tmp_path):
     res.fix()
     mock_data.exists.return_value = True
     assert doc.check_app_data_dir().ok is True
+
 
 def test_check_python_deps():
     res = doc.check_python_deps()
@@ -159,11 +157,13 @@ def test_check_python_deps():
     with patch("subprocess.run"):
         res2[0].fix()
 
+
 @patch("blackoutkit.doctor._gdpi_backend", return_value="native")
 def test_check_bins_present(mock_backend, tmp_path):
     with patch("blackoutkit.downloader.BINS_DIR", tmp_path):
         res = doc.check_bins_present()
         assert not res[0].ok
+
 
 @patch("blackoutkit.doctor.WINDIVERT_DIR")
 @patch("blackoutkit.doctor._gdpi_backend")
@@ -196,19 +196,21 @@ def test_defender_check_flags_broad_bins_exclusion_for_removal(mock_list, mock_a
     assert result.fixable is False
     assert "Remove-MpPreference" in result.message
 
+
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
 def test_check_network_driver(mock_run):
     mock_run.return_value = MagicMock(returncode=0)
     assert doc.check_network_driver().ok is True
-    
+
     mock_run.return_value = MagicMock(returncode=1)
     res = doc.check_network_driver()
     assert res.ok is False
     res.fix()
-    
+
     mock_run.side_effect = Exception("err")
     assert doc.check_network_driver().ok is False
+
 
 @patch("sys.platform", "win32")
 @patch("os.environ", {"PATH": "dummy"})
@@ -217,11 +219,13 @@ def test_check_system_path():
     res = doc.check_system_path()
     assert res.ok is False
 
+
 @patch("urllib.request.urlopen")
 def test_check_internet(mock_url):
     assert doc.check_internet().ok is True
     mock_url.side_effect = Exception("err")
     assert doc.check_internet().ok is False
+
 
 @patch("shutil.disk_usage")
 def test_check_disk_space(mock_disk):
@@ -229,6 +233,7 @@ def test_check_disk_space(mock_disk):
     assert doc.check_disk_space().ok is True
     mock_disk.return_value = MagicMock(free=100*1024*1024)
     assert doc.check_disk_space().ok is False
+
 
 @patch("subprocess.run")
 def test_check_binary_runnable(mock_run, tmp_path):
@@ -238,17 +243,18 @@ def test_check_binary_runnable(mock_run, tmp_path):
         engine.touch()
         gdpi = tmp_path / "goodbyedpi.exe"
         gdpi.touch()
-        
+
         mock_run.return_value = MagicMock(returncode=1)
         res = doc.check_binary_runnable()
         assert len(res) == 2
         assert res[0].ok is True
-        
+
         mock_run.side_effect = FileNotFoundError()
         assert doc.check_binary_runnable()[1].ok is False
-        
+
         mock_run.side_effect = PermissionError()
         assert doc.check_binary_runnable()[0].ok is False
+
 
 @patch("blackoutkit.vault.vault_status", return_value={"active": False, "healthy": True, "detail": ""})
 @patch("blackoutkit.security.configs_are_obfuscated")
@@ -280,21 +286,23 @@ def test_check_config_security_healthy_vault_passes():
         res = doc.check_config_security()
     assert res.ok is True
 
+
 @patch("psutil.process_iter")
 @patch("os.getpid", return_value=123)
 def test_check_process_conflicts(mock_pid, mock_iter):
     assert doc.check_process_conflicts().ok is True
-    
+
     mock_p = MagicMock()
     mock_p.info = {"pid": 456, "name": "xray.exe"}
     mock_p.exe.return_value = "c:\\blackout-kit\\xray.exe"
     mock_p.name.return_value = "xray.exe"
     mock_p.pid = 456
     mock_iter.return_value = [mock_p]
-    
+
     res = doc.check_process_conflicts()
     assert res.ok is False
     res.fix()
+
 
 @patch("sys.platform", "win32")
 @patch("blackoutkit.security.disable_kill_switch")
@@ -319,6 +327,7 @@ def test_check_firewall_rules_reports_windows_unavailability_when_disabled(mock_
     assert result.ok is True
     assert "unavailable" in result.message
 
+
 @patch("sys.platform", "win32")
 @patch("platform.machine", return_value="AMD64")
 @patch("platform.release", return_value="10")
@@ -326,9 +335,11 @@ def test_check_firewall_rules_reports_windows_unavailability_when_disabled(mock_
 def test_check_windows_compat(mock_ver, mock_rel, mock_mach):
     assert doc.check_windows_compat().ok is True
 
+
 @patch("blackoutkit.proxy_manager.is_admin", return_value=True)
 def test_check_admin_privileges(mock_admin):
     assert doc.check_admin_privileges().ok is True
+
 
 @patch("sys.platform", "win32")
 @patch("blackoutkit.tools.get_network_recovery_snapshot")
@@ -343,12 +354,14 @@ def test_check_tun_adapter(mock_snapshot):
     }
     assert doc.check_tun_adapter().ok is True
 
+
 @patch("sys.platform", "win32")
 @patch("blackoutkit.proxy_manager.is_admin", return_value=True)
 @patch("subprocess.run")
 def test_check_firewall_exclusion(mock_run, mock_admin):
     mock_run.return_value = MagicMock(stdout=str(doc.BINS_DIR).lower())
     assert doc.check_firewall_exclusion().ok is True
+
 
 @patch("blackoutkit.doctor.check_app_data_dir", return_value=doc.CheckResult("t", True, "m"))
 @patch("blackoutkit.doctor.check_settings", return_value=doc.CheckResult("t", True, "m"))
@@ -398,6 +411,7 @@ def test_run_all_checks_includes_optional_capture_checks_when_requested(monkeypa
     assert scapy in results
     assert npcap in results
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy test")
 @patch("sys.platform", "win32")
 @patch("blackoutkit.settings.load", return_value={})
@@ -407,25 +421,26 @@ def test_check_stale_proxy(mock_q, mock_ok, mock_load):
     # test disabled
     mock_q.side_effect = [(0, None), ("", None)]
     assert doc.check_stale_proxy().ok is True
-    
+
     # test active but ours
     mock_q.side_effect = [(1, None), ("127.0.0.1:10808", None)]
     with patch("blackoutkit.daemon.get_pid", return_value=None):
         res = doc.check_stale_proxy()
         assert res.ok is False
-        
+
     # test active but ours and daemon running
     mock_q.side_effect = [(1, None), ("127.0.0.1:10808", None)]
     with patch("blackoutkit.daemon.get_pid", return_value=123):
         assert doc.check_stale_proxy().ok is True
-        
+
     # test external
     mock_q.side_effect = [(1, None), ("8.8.8.8:8080", None)]
     assert doc.check_stale_proxy().ok is True
-    
+
     # test winreg exception
     mock_ok.side_effect = Exception("err")
     assert doc.check_stale_proxy().ok is True
+
 
 @patch("psutil.net_connections")
 @patch("blackoutkit.settings.load", return_value={})
@@ -433,28 +448,30 @@ def test_check_ports_in_use(mock_load, mock_net):
     # test ok
     mock_net.return_value = []
     assert doc.check_ports_in_use().ok is True
-    
+
     # test conflict
     conn = MagicMock()
     conn.status = "LISTEN"
     conn.laddr.port = 40443
     conn.pid = 123
     mock_net.return_value = [conn]
-    
+
     with patch("psutil.Process") as mock_proc:
         mock_proc.return_value.name.return_value = "other.exe"
         res = doc.check_ports_in_use()
         assert res.ok is False
         res.fix()
 
+
 def test_get_execution_context():
     with patch("sys.argv", ["blackout.py"]):
         ctx = doc.get_execution_context()
         assert ctx["prefix"] == "python blackout.py"
-    
+
     with patch("sys.argv", ["blackout"]):
         ctx = doc.get_execution_context()
         assert ctx["prefix"] == "blackout"
+
 
 @patch("blackoutkit.doctor._load_country_profile_quietly")
 def test_check_country_profile(mock_load):

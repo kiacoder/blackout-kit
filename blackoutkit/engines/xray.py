@@ -265,7 +265,7 @@ class XRayEngine(Engine):
                     fragment_settings = {"packets": "tlshello", "length": parts[0], "interval": parts[1]}
                 elif len(parts) >= 3:
                     fragment_settings = {"packets": parts[0], "length": parts[1], "interval": parts[2]}
-                
+
                 if fragment_settings:
                     frag_outbound = {
                         "tag": "fragment-out",
@@ -389,7 +389,6 @@ class XRayEngine(Engine):
             }
         self._log.warning("Protocol '%s' is unsupported; refusing to build an outbound", c.protocol)
         raise ValueError(f"Unsupported XRay protocol: {c.protocol}")
-
 
     def _is_reality_config(self) -> bool:
         return bool(self.proxy_config and self.proxy_config.is_reality())

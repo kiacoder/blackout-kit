@@ -186,8 +186,6 @@ def test_noninteractive_connect_preserves_missing_engine_for_smart_resolution(mo
     assert request.russia is False
 
 
-
-
 def test_noninteractive_config_add_does_not_prompt(monkeypatch):
     monkeypatch.setattr(typer_cli, "ask_text", lambda *_args, **_kwargs: None)
     with patch("blackoutkit.cli.cmd_config") as cmd_config:
@@ -513,7 +511,6 @@ def test_start_builds_typed_request_without_legacy_dispatch(monkeypatch):
     legacy_start.assert_not_called()
 
 
-
 def test_connect_and_start_json_are_rejected_before_service(monkeypatch):
     service = Mock()
     monkeypatch.setattr(typer_cli, "_connection_service", lambda _options: service)
@@ -525,7 +522,6 @@ def test_connect_and_start_json_are_rejected_before_service(monkeypatch):
 
     service.connect.assert_not_called()
     service.start.assert_not_called()
-
 
 
 def test_direct_connect_call_normalizes_omitted_typer_defaults():
@@ -548,7 +544,6 @@ def test_direct_connect_call_normalizes_omitted_typer_defaults():
     assert request.russia is False
 
 
-
 def test_direct_start_call_normalizes_omitted_typer_defaults(monkeypatch):
     from blackoutkit.connection_service import ConnectionResult
 
@@ -564,23 +559,6 @@ def test_direct_start_call_normalizes_omitted_typer_defaults(monkeypatch):
     assert request.background is False
     assert request.iran is False
     assert request.russia is False
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def test_bins_update_forwards_to_legacy_dispatcher():
@@ -689,7 +667,6 @@ def test_fix_linux_normalizes_windows_only_flags(monkeypatch):
     )
 
 
-
 def test_fix_returns_nonzero_when_a_recovery_step_fails(monkeypatch):
     monkeypatch.setattr(
         "blackoutkit.tools.plan_network_recovery",
@@ -706,7 +683,6 @@ def test_fix_returns_nonzero_when_a_recovery_step_fails(monkeypatch):
     payload = __import__("json").loads(result.output)
     assert payload["ok"] is True
     assert payload["data"]["success"] is False
-
 
 
 def test_tools_arp_flush_forwards_to_legacy_dispatcher():
@@ -1002,8 +978,6 @@ def test_panic_uses_public_panic_handler_once_without_duplicate_cleanup():
     flush_dns.assert_not_called()
 
 
-
-
 def test_launcher_menu_terminal_cli_returns_to_chooser_on_back(monkeypatch):
     from blackoutkit import cli
 
@@ -1252,7 +1226,6 @@ def test_config_replace_forwards_to_manager(monkeypatch):
     replace_config.assert_called_once_with(1, "vless://new@example.com:443")
 
 
-
 def test_bare_config_usage_shows_readable_options(monkeypatch):
     monkeypatch.setattr(typer_cli, "is_interactive", lambda: False)
 
@@ -1263,7 +1236,6 @@ def test_bare_config_usage_shows_readable_options(monkeypatch):
     assert "list" in output
     assert "replace" in output
     assert "<uri>" in output
-
 
 
 def test_bare_settings_usage_shows_readable_options(monkeypatch):
@@ -1289,14 +1261,12 @@ def test_bare_groups_in_noninteractive_mode_do_not_open_editor(monkeypatch):
     config_menu.assert_not_called()
 
 
-
 def test_main_menu_back_item_returns_to_launcher(monkeypatch):
     from blackoutkit import cli
 
     monkeypatch.setattr(cli, "run_menu", lambda *a, **k: "back")
 
     assert cli._interactive_menu() is False
-
 
 
 def test_settings_and_config_are_main_menu_items():

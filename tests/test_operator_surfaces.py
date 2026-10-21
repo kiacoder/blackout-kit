@@ -1,6 +1,5 @@
 """Tests for the Blackout Operator MCP tools and CLI surface."""
 import json
-import re
 
 from typer.testing import CliRunner
 

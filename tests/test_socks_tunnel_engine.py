@@ -182,7 +182,6 @@ def test_client_handshake_start_stop_round_trip():
         client._io = None
         client._write_lock = threading.Lock()
         client._id_counter = 0
-        import socket as _socket
         client._open_transport = lambda: _make_tcp(fake.url())
         client.connect()
 

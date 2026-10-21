@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import psutil
 
@@ -51,6 +51,7 @@ def test_monitor_matching_generation_and_gone_process_cleans_owned_state(monkeyp
     _patch_watchdog_paths(monkeypatch, tmp_path)
     _lease(tmp_path)
     original_process = psutil.Process
+
     def fake_process(pid=None):
         if pid == 1234:
             raise psutil.NoSuchProcess(1234)
@@ -68,6 +69,7 @@ def test_monitor_mismatched_generation_never_cleans_newer_lease(monkeypatch, tmp
     _patch_watchdog_paths(monkeypatch, tmp_path)
     _lease(tmp_path, generation="generation-new")
     original_process = psutil.Process
+
     def fake_process(pid=None):
         if pid == 1234:
             raise AssertionError("stale watchdog observed process")
@@ -84,6 +86,7 @@ def test_monitor_unknown_identity_does_not_cleanup(monkeypatch, tmp_path):
     _patch_watchdog_paths(monkeypatch, tmp_path)
     _lease(tmp_path)
     original_process = psutil.Process
+
     def fake_process(pid=None):
         if pid == 1234:
             raise psutil.AccessDenied(1234)
@@ -101,6 +104,7 @@ def test_monitor_pid_reuse_does_not_cleanup(monkeypatch, tmp_path):
     _patch_watchdog_paths(monkeypatch, tmp_path)
     _lease(tmp_path, create_time=10.0)
     original_process = psutil.Process
+
     def fake_process(pid=None):
         if pid == 1234:
             return MagicMock(create_time=lambda: 20.0)
@@ -119,6 +123,7 @@ def test_monitor_rejects_generation_change_after_process_wait(monkeypatch, tmp_p
     lease_path = _lease(tmp_path)
     proc = MagicMock()
     original_process = psutil.Process
+
     def fake_process(pid=None):
         if pid == 1234:
             return proc
@@ -145,6 +150,7 @@ def test_old_watchdog_cannot_clean_newer_lease(monkeypatch, tmp_path):
     _patch_watchdog_paths(monkeypatch, tmp_path)
     _lease(tmp_path, generation="generation-new")
     original_process = psutil.Process
+
     def fake_process(pid=None):
         if pid == 1234:
             raise AssertionError("stale watchdog observed process")
@@ -172,6 +178,7 @@ def test_monitor_cleans_matching_pid_and_state_files(monkeypatch, tmp_path):
     monkeypatch.setattr(daemon, "PID_FILE", pid_file)
     monkeypatch.setattr(daemon, "STATE_FILE", state_file)
     original_process = psutil.Process
+
     def fake_process(pid=None):
         if pid == 1234:
             raise psutil.NoSuchProcess(1234)
@@ -183,4 +190,3 @@ def test_monitor_cleans_matching_pid_and_state_files(monkeypatch, tmp_path):
     assert res is True
     assert not pid_file.exists()
     assert not state_file.exists()
-

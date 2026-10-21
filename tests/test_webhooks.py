@@ -5,7 +5,6 @@ import hashlib
 import hmac
 import json
 
-import pytest
 
 from blackoutkit import webhooks as wb
 from blackoutkit.webhooks import Webhook, WebhookRegistry, deliver, sign_payload

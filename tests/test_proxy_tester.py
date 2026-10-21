@@ -177,7 +177,6 @@ def test_http_proxy_enforces_total_probe_deadline(monkeypatch):
 
 def test_http_proxy_caps_outstanding_blocked_probe_workers(monkeypatch):
     import threading
-    import time
 
     release_workers = threading.Event()
     started = []

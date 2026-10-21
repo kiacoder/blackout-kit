@@ -7,7 +7,7 @@ import time
 import pytest
 import psutil
 
-from blackoutkit.daemon import get_state, get_pid
+from blackoutkit.daemon import get_state
 
 
 @pytest.mark.performance

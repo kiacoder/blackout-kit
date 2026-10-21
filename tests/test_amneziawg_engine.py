@@ -12,7 +12,6 @@ from pathlib import Path
 import pytest
 
 from blackoutkit import BINS_DIR, settings
-from blackoutkit.engines import amneziawg as awg_mod
 from blackoutkit.engines.amneziawg import AmneziaWGEngine, _conf_from_uri, _conf_summary, _parse_awg_conf
 
 SAMPLE_CONF = """[Interface]
@@ -134,19 +133,6 @@ def test_live_start_and_stop(conf_file, monkeypatch):
     time.sleep(0.5)
     with pytest.raises(OSError):
         socket.create_connection(("127.0.0.1", port), timeout=1).close()
-
-
-def test_awg_uses_dedicated_ports():
-    """awg must not share xray_socks_port (v2rayN/XRay usually holds 10808), and
-    the system proxy must be HTTP because Windows/Chrome cannot use SOCKS."""
-    from blackoutkit import settings
-
-    details = settings.get_engine_proxy_details(
-        "awg", {"awg_socks_port": 11080, "awg_http_port": 11081, "xray_socks_port": 10808}
-    )
-    assert details == ("127.0.0.1", 11081)
-    assert settings.DEFAULTS["awg_socks_port"] == 11080
-    assert settings.DEFAULTS["awg_http_port"] == 11081
 
 
 def test_awg_uses_dedicated_ports():

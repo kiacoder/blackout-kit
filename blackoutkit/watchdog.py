@@ -80,7 +80,6 @@ def monitor(daemon_pid: int, generation: str | None = None):
     if not current or current["pid"] != daemon_pid or current["generation"] != generation:
         return False
 
-
     def cleanup_owned_state():
         from blackoutkit.proxy_manager import cleanup_owned_system_proxy
         try:

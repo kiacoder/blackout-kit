@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from blackoutkit import get_version, check_version
 
+
 class TestInitVersions(unittest.TestCase):
 
     @patch('blackoutkit.__version__', '1.1.0')
@@ -35,6 +36,7 @@ class TestInitVersions(unittest.TestCase):
     def test_check_version_newer(self):
         self.assertFalse(check_version('1.3.0'))
         self.assertFalse(check_version('2.0.0'))
+
 
 if __name__ == '__main__':
     unittest.main()

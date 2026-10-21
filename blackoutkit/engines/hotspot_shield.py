@@ -64,6 +64,7 @@ FREE_TIER_SERVERS = {
     ],
 }
 
+
 class HotspotShieldConfigError(RuntimeError):
     """Raised when the engine is asked to connect without usable credentials.
 

@@ -1,6 +1,5 @@
 """Tests for the robust machine-identity chain behind vault and obfuscation keys."""
 import base64
-import subprocess
 import sys
 from unittest.mock import MagicMock, patch
 

@@ -38,7 +38,7 @@ _PROFILES: list[CountryProfile] = [
         ],
         test_urls        = ["twitter.com", "instagram.com", "youtube.com"],
         psiphon_country  = "DE",
-            notes            = "SNI spoofing effective; ISP-level DPI — use blackout connect --iran for ArvanCloud SNI + TLS fragment evasion",
+        notes            = "SNI spoofing effective; ISP-level DPI — use blackout connect --iran for ArvanCloud SNI + TLS fragment evasion",
     ),
     CountryProfile(
         code             = "RU",

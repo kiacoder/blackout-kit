@@ -73,14 +73,14 @@ def generate_cloudflare_ips(count: int = 100) -> list[str]:
     Always prioritizes custom user IPs, then known-good IPs, then samples from CF ranges.
     """
     custom_ips = []
-    
+
     # 1. From settings
     try:
         from .. import settings as cfg
         custom_ips.extend(cfg.get("sni_custom_ips") or [])
     except Exception:
         pass
-        
+
     # 2. From data/custom_ips.txt
     try:
         from pathlib import Path
@@ -104,7 +104,7 @@ def generate_cloudflare_ips(count: int = 100) -> list[str]:
 
     ips: set[str] = set(KNOWN_GOOD_IPS)
     ips.difference_update(seen)
-    
+
     remaining = max(0, count - len(unique_custom) - len(ips))
 
     if remaining > 0:
@@ -124,7 +124,7 @@ def generate_cloudflare_ips(count: int = 100) -> list[str]:
 
     result = list(ips)
     random.shuffle(result)
-    
+
     final_list = unique_custom + result
     return final_list[:count]
 

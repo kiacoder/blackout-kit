@@ -234,6 +234,7 @@ class TuicEngine(SingBoxProxyEngine):
     description = "TUIC QUIC proxy via sing-box"
     protocol = "tuic"
 
+
 class AnyTlsEngine(SingBoxProxyEngine):
     name = "anytls"
     description = "AnyTLS proxy via sing-box (padding-aware TLS transport)"

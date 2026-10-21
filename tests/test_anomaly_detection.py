@@ -2,14 +2,11 @@
 
 import json
 import time
-from pathlib import Path
-from datetime import datetime
 
 import pytest
 
 from blackoutkit.anomaly_detector import (
     AnomalyDetector,
-    Anomaly,
     ConnectionEvent,
     RollingStats,
 )
@@ -93,7 +90,7 @@ class TestConnectionSpike:
                 protocol="https",
                 state="established",
             )
-            anomaly = detector.detect(event)
+            detector.detect(event)
 
         # At least one spike should be detected
         spikes = [a for a in detector.anomalies if a.anomaly_type == "connection_spike"]
@@ -114,7 +111,7 @@ class TestFailedStorm:
                 protocol="ssh",
                 state="failed",
             )
-            anomaly = detector.detect(event)
+            detector.detect(event)
 
         storms = [a for a in detector.anomalies if a.anomaly_type == "failed_connection_storm"]
         assert len(storms) >= 1
@@ -227,7 +224,7 @@ class TestExfiltration:
             bytes_sent=500 * 1024 * 1024,  # 500MB
             state="established",
         )
-        anomaly = detector.detect(event)
+        detector.detect(event)
 
         exfils = [a for a in detector.anomalies if a.anomaly_type == "bulk_exfiltration"]
         assert len(exfils) > 0

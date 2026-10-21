@@ -16,8 +16,10 @@ from blackoutkit.proxy_manager import (
     _notify_proxy_change
 )
 
+
 def test_get_last_error():
     assert isinstance(get_last_error(), str)
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -26,6 +28,7 @@ def test_is_admin_win32_true(mock_is_admin):
     mock_is_admin.return_value = 1
     assert is_admin() is True
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("ctypes.windll.shell32.IsUserAnAdmin", create=True)
@@ -33,11 +36,13 @@ def test_is_admin_win32_false(mock_is_admin):
     mock_is_admin.return_value = 0
     assert is_admin() is False
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("ctypes.windll.shell32.IsUserAnAdmin", side_effect=Exception("mock err"))
 def test_is_admin_win32_exception(mock_is_admin):
     assert is_admin() is False
+
 
 @patch("sys.platform", "linux")
 @patch("os.geteuid", create=True)
@@ -46,6 +51,7 @@ def test_is_admin_linux(mock_geteuid):
     assert is_admin() is True
     mock_geteuid.return_value = 1000
     assert is_admin() is False
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -66,6 +72,7 @@ def test_set_system_proxy_winreg_success(mock_notify, mock_close, mock_set, mock
     assert get_last_error() == ""
     mock_notify.assert_called_once()
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("winreg.OpenKey")
@@ -82,6 +89,7 @@ def test_set_system_proxy_winreg_socks(mock_notify, mock_close, mock_set, mock_o
     assert res is True
     assert get_last_error() == ""
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("winreg.OpenKey", side_effect=PermissionError("denied"))
@@ -93,6 +101,7 @@ def test_set_system_proxy_winreg_permission_error_netsh_fallback(mock_run, mock_
     res = set_system_proxy("127.0.0.1", 10809, "http")
     assert res is False
     assert "Registry write denied" in get_last_error()
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -106,17 +115,20 @@ def test_set_system_proxy_netsh_fail(mock_run, mock_open):
     assert res is False
     assert "Registry error" in get_last_error()
 
+
 @patch("sys.platform", "linux")
 @patch("os.environ", {})
 def test_set_system_proxy_linux():
     res = set_system_proxy("127.0.0.1", 10809, "http")
     assert res is True
 
+
 @patch("sys.platform", "linux")
 @patch("os.environ", {})
 def test_set_system_proxy_linux_socks():
     res = set_system_proxy("127.0.0.1", 10809, "socks")
     assert res is True
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -127,6 +139,7 @@ def test_set_system_proxy_linux_socks():
 def test_clear_system_proxy_winreg_success(mock_notify, mock_close, mock_set, mock_open):
     res = clear_system_proxy()
     assert res is True
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -139,6 +152,7 @@ def test_clear_system_proxy_netsh_fallback(mock_run, mock_open):
     res = clear_system_proxy()
     assert res is False
 
+
 @patch("sys.platform", "linux")
 @patch("os.environ", {"http_proxy": "test", "https_proxy": "test"})
 def test_clear_system_proxy_linux():
@@ -146,6 +160,7 @@ def test_clear_system_proxy_linux():
     res = clear_system_proxy()
     assert res is True
     assert "http_proxy" not in os.environ
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -158,6 +173,7 @@ def test_get_proxy_status_win32(mock_close, mock_query, mock_open):
     assert status["enabled"] is True
     assert status["server"] == "127.0.0.1:10809"
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("winreg.OpenKey")
@@ -168,12 +184,14 @@ def test_get_proxy_status_win32_not_found(mock_close, mock_query, mock_open):
     assert status["enabled"] is False
     assert status["server"] == ""
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("ctypes.windll.Wininet.InternetSetOptionW", create=True)
 def test_notify_proxy_change(mock_internet_set_option):
     _notify_proxy_change()
     assert mock_internet_set_option.call_count == 2
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -183,6 +201,7 @@ def test_install_console_close_handler(mock_winfunctype, mock_set_console):
     install_console_close_handler()
     mock_winfunctype.assert_called_once()
     mock_set_console.assert_called_once()
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
@@ -195,6 +214,7 @@ def test_set_system_proxy_netsh_exception(mock_open, mock_run):
     assert res is False
     assert "Registry write denied" in get_last_error()
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("subprocess.run", side_effect=Exception("netsh fatal"))
@@ -206,6 +226,7 @@ def test_clear_system_proxy_exceptions(mock_open, mock_run):
     assert res is False
     assert "Registry error" in get_last_error()
 
+
 @patch("sys.platform", "linux")
 @patch("os.environ", {})
 def test_get_proxy_status_linux():
@@ -215,6 +236,7 @@ def test_get_proxy_status_linux():
     assert res["enabled"] is True
     assert res["server"] == "1.2.3.4:80"
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("winreg.OpenKey", side_effect=Exception("fatal"))
@@ -223,15 +245,18 @@ def test_get_proxy_status_win32_exception(mock_open):
     assert res["enabled"] is False
     assert res["server"] == ""
 
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")
 @patch("ctypes.windll.Wininet.InternetSetOptionW", side_effect=Exception("wininet err"))
 def test_notify_proxy_change_exception(mock_set):
     _notify_proxy_change()
 
+
 @patch("sys.platform", "linux")
 def test_install_console_close_handler_linux():
     install_console_close_handler()
+
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")
 @patch("sys.platform", "win32")

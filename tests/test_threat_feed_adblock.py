@@ -1,7 +1,6 @@
 """Threat-feed integration with the DNS sinkhole rule matcher."""
 
 import json
-from unittest.mock import MagicMock, patch
 
 from blackoutkit.tools import adblock
 

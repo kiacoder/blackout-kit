@@ -1,5 +1,4 @@
 """Tests for the AmneziaWG engine conf parser."""
-from pathlib import Path
 
 from blackoutkit.engines.amneziawg import _parse_awg_conf
 

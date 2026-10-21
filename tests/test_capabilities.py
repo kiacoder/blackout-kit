@@ -17,7 +17,6 @@ def _raise_boundary(*_args, **_kwargs):
     raise AssertionError("demo crossed a prohibited boundary")
 
 
-
 def test_capability_catalog_preserves_all_public_engine_targets():
     rows = build_capability_matrix(
         "win32",

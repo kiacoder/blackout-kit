@@ -723,7 +723,7 @@ def _dns_query(dns_ip: str, hostname: str, timeout: float = 3.0) -> str | None:
     # Build a minimal DNS query packet
     header  = struct.pack(">HHHHHH", query_id, 0x0100, 1, 0, 0, 0)
     qname   = b"".join(len(part).to_bytes(1, "big") + part.encode()
-                        for part in hostname.split(".")) + b"\x00"
+                       for part in hostname.split(".")) + b"\x00"
     question = qname + struct.pack(">HH", 1, 1)  # Type A, Class IN
     packet  = header + question
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -889,7 +889,7 @@ def detect_mtu(host: str = "8.8.8.8") -> int | None:
     while low <= high:
         mid = (low + high) // 2
         try:
-            # -l specifies the data payload size. 
+            # -l specifies the data payload size.
             # Actual packet size = payload + 28 bytes (20 byte IP header + 8 byte ICMP header).
             # We want to find the largest packet size that passes.
             r = subprocess.run(
@@ -980,7 +980,7 @@ def list_adapters() -> list[dict]:
         import psutil
         stats = psutil.net_if_stats()
         addrs = psutil.net_if_addrs()
-        
+
         for name, stat in stats.items():
             current = {
                 "name": name,
@@ -2134,6 +2134,7 @@ def _validate_doh_upstream(url: str) -> bool:
     except Exception:
         return False
 
+
 def run_doh_proxy_server(host: str = DOH_PROXY_DEFAULT_HOST, port: int = DOH_PROXY_DEFAULT_PORT, upstream_doh: str = DOH_PROXY_DEFAULT_UPSTREAM, duration: float = 0.0, stop_event=None) -> None:
     """
     🌐 Secure DoH DNS Proxy Engine:
@@ -2235,6 +2236,7 @@ def run_doh_proxy_server(host: str = DOH_PROXY_DEFAULT_HOST, port: int = DOH_PRO
 
 # ─────────────────────────── AI Network Explainer ───────────────────
 
+
 def explain_network_state() -> dict:
     """
     🤖 AI Network Explainer:
@@ -2272,7 +2274,6 @@ def explain_network_state() -> dict:
     }
 
 
-
 import shlex
 import tempfile
 import threading
@@ -2281,11 +2282,13 @@ import urllib.parse
 _file_locks = {}
 _file_locks_guard = threading.Lock()
 
+
 def _get_file_lock(path_str: str) -> threading.Lock:
     with _file_locks_guard:
         if path_str not in _file_locks:
             _file_locks[path_str] = threading.Lock()
         return _file_locks[path_str]
+
 
 def _atomic_json_write(path: Path, payload: dict | list) -> bool:
     path = Path(path)
@@ -2309,6 +2312,7 @@ def _atomic_json_write(path: Path, payload: dict | list) -> bool:
                     pass
             return False
 
+
 def _safe_json_read(path: Path, default=None):
     path = Path(path)
     if not path.exists():
@@ -2324,6 +2328,7 @@ def _safe_json_read(path: Path, default=None):
 # ─────────────────────────── SSH Vault & Manager ───────────────────
 
 SSH_VAULT_FILE = APP_DATA_DIR / "ssh_vault.json"
+
 
 def save_ssh_profile(name: str, host: str, user: str, port: int = 22, key_path: str = "") -> bool:
     """Save or update an SSH connection profile in local storage atomically."""
@@ -2346,6 +2351,7 @@ def save_ssh_profile(name: str, host: str, user: str, port: int = 22, key_path: 
     }
     return _atomic_json_write(SSH_VAULT_FILE, profiles)
 
+
 def list_ssh_profiles() -> list[dict]:
     """List all saved SSH connection profiles."""
     try:
@@ -2353,6 +2359,7 @@ def list_ssh_profiles() -> list[dict]:
         return sorted(profiles.values(), key=lambda p: p["name"])
     except Exception:
         return []
+
 
 def remove_ssh_profile(name: str) -> bool:
     """Remove a saved SSH profile by name atomically."""
@@ -2370,6 +2377,7 @@ def remove_ssh_profile(name: str) -> bool:
     return False
 
 # ─────────────────────────── Local REST API & Web Dashboard ───────────────────
+
 
 def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
     """
@@ -2540,6 +2548,7 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
 
 AUTOMATION_RULES_FILE = APP_DATA_DIR / "automation_rules.json"
 
+
 def save_automation_rule(name: str, event: str, action: str, enabled: bool = True) -> bool:
     """Save an event automation rule (event trigger -> action) atomically."""
     try:
@@ -2560,6 +2569,7 @@ def save_automation_rule(name: str, event: str, action: str, enabled: bool = Tru
     }
     return _atomic_json_write(AUTOMATION_RULES_FILE, rules)
 
+
 def list_automation_rules() -> list[dict]:
     """List all configured event automation rules."""
     try:
@@ -2567,6 +2577,7 @@ def list_automation_rules() -> list[dict]:
         return sorted(rules.values(), key=lambda r: r["name"])
     except Exception:
         return []
+
 
 def remove_automation_rule(name: str) -> bool:
     """Remove an automation rule by name atomically."""
@@ -2582,6 +2593,7 @@ def remove_automation_rule(name: str) -> bool:
         del rules[name]
         return _atomic_json_write(AUTOMATION_RULES_FILE, rules)
     return False
+
 
 def trigger_automation_event(event_name: str) -> list[dict]:
     """
@@ -2623,12 +2635,16 @@ def trigger_automation_event(event_name: str) -> list[dict]:
 
 # Byte signatures are split across adjacent literals so that malware-detection
 # patterns (which intentionally contain text like "ev" + "al(") are never
+
 # themselves lexed as code. Runtime values are identical to the plain spellings.
+
+
 BUILTIN_YARA_SIGNATURES = {
     "Webshell_Payload": [b"ev" b"al(base64_d" b"ecode(", b"sys" b"tem($_POST[", b"shell_exec("],
     "Suspicious_Executable": [b"MZ", b"PE\x00\x00"],
     "EICAR_Test_File": [b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"],
 }
+
 
 def load_custom_yara_rule_file(rule_filepath: str) -> dict:
     """Load user-supplied YARA-like custom byte patterns from disk."""
@@ -2644,6 +2660,7 @@ def load_custom_yara_rule_file(rule_filepath: str) -> dict:
         return {"ok": True, "patterns": patterns}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
 
 def scan_file_yara(filepath: str, rule_filepath: str | None = None) -> dict:
     """
@@ -2702,6 +2719,7 @@ def scan_file_yara(filepath: str, rule_filepath: str | None = None) -> dict:
 
 # ─────────────────────────── Network Simulation & Latency Injector ───────────────────
 
+
 def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float = 100.0, simulated_loss_pct: float = 10.0, samples: int = 5) -> dict:
     """
     ⚡ Network Simulation & Latency/Loss Injector:
@@ -2739,9 +2757,11 @@ def simulate_network_conditions(host: str = "8.8.8.8", added_latency_ms: float =
 
 # ─────────────────────────── Phishing & Malicious Domain Check ───────────────────
 
+
 KNOWN_PHISHING_KEYWORDS = ["login-verify", "paypal-secure", "apple-id-update", "bank-security-fix", "crypto-airdrop-claim"]
 
 SINKHOLE_IPS = {"0.0.0.0", "127.0.0.1", "127.0.0.2", "::1"}
+
 
 def check_phishing_domain(domain: str) -> dict:
     """
@@ -2775,6 +2795,7 @@ def check_phishing_domain(domain: str) -> dict:
     }
 
 # ─────────────────────────── Visual Traffic Bar Graph ───────────────────
+
 
 def generate_ascii_bandwidth_chart(rx_bps: float, tx_bps: float, max_bps: float = 10_000_000.0, bar_width: int = 30) -> str:
     """

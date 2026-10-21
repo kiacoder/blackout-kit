@@ -49,11 +49,14 @@ class _LazyModule:
     def __init__(self, name, package):
         self._name = name
         self._package = package
+
         self._mod = None
+
     def __getattr__(self, item):
         if self._mod is None:
             self._mod = importlib.import_module(self._name, self._package)
         return getattr(self._mod, item)
+
 
 net_tools = _LazyModule(".tools", "blackoutkit")
 doc = _LazyModule(".doctor", "blackoutkit")
@@ -61,9 +64,11 @@ updater = _LazyModule(".updater", "blackoutkit")
 sec = _LazyModule(".security", "blackoutkit")
 cp = _LazyModule(".country_profiles", "blackoutkit")
 
+
 def set_system_proxy(*args, **kwargs):
     from .proxy_manager import set_system_proxy as _func
     return _func(*args, **kwargs)
+
 
 def clear_system_proxy(*args, **kwargs):
     from .proxy_manager import clear_system_proxy as _func
@@ -73,6 +78,7 @@ def clear_system_proxy(*args, **kwargs):
 def cleanup_owned_system_proxy(*args, **kwargs):
     from .proxy_manager import cleanup_owned_system_proxy as _func
     return _func(*args, **kwargs)
+
 
 def get_proxy_status(*args, **kwargs):
     from .proxy_manager import get_proxy_status as _func
@@ -99,29 +105,36 @@ def generate_cloudflare_ips(*args, **kwargs):
     from .scanner.ip_scanner import generate_cloudflare_ips as _func
     return _func(*args, **kwargs)
 
+
 def scan_ips(*args, **kwargs):
     from .scanner.ip_scanner import scan_ips as _func
     return _func(*args, **kwargs)
+
 
 def save_cache(*args, **kwargs):
     from .scanner.ip_scanner import save_cache as _func
     return _func(*args, **kwargs)
 
+
 def load_configs(*args, **kwargs):
     from .config.manager import load_configs as _func
     return _func(*args, **kwargs)
+
 
 def add_config(*args, **kwargs):
     from .config.manager import add_config as _func
     return _func(*args, **kwargs)
 
+
 def remove_config(*args, **kwargs):
     from .config.manager import remove_config as _func
     return _func(*args, **kwargs)
 
+
 def import_and_merge(*args, **kwargs):
     from .config.manager import import_and_merge as _func
     return _func(*args, **kwargs)
+
 
 def get_help(*args, **kwargs):
     from .help_text import get_help as _func
@@ -139,7 +152,9 @@ def test_direct(*args, **kwargs):
 
 # ──────────────────────────── Engine map ─────────────────────────
 
+
 ALL_ENGINE_CHOICES = ["auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv", "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2", "tuic", "awg", "legend", "socks-tunnel"]
+
 
 def _get_engine_classes(name: str) -> tuple:
     if name == "tun":
@@ -203,6 +218,8 @@ def _get_engine_classes(name: str) -> tuple:
         from .engines.xray import XRayEngine
         return (TorEngine, SNIEngine, XRayEngine)
     return ()
+
+
 VALID_COUNTRY_CODES = tuple(sorted(cp._BY_CODE.keys()))
 EXTRA_ADMIN_ENGINES = {"gdpi", "warp", "tun"}
 AUTO_SCAN_ENGINES = {"sni"}
@@ -419,10 +436,10 @@ def _start_engine_stack(name: str, *, emit: bool = True):
                 for info in manual_only:
                     if emit:
                         console.print(
-                        f"\n  [bold yellow]{info.display_name}[/bold yellow]\n"
-                        f"  Please download from: [cyan]{info.manual_url}[/cyan]\n"
-                        f"  Note: {info.manual_note or 'Extract to bins/ folder'}\n"
-                    )
+                            f"\n  [bold yellow]{info.display_name}[/bold yellow]\n"
+                            f"  Please download from: [cyan]{info.manual_url}[/cyan]\n"
+                            f"  Note: {info.manual_note or 'Extract to bins/ folder'}\n"
+                        )
                 return []
 
             if auto_downloadable:
@@ -506,7 +523,6 @@ def _start_engine_stack(name: str, *, emit: bool = True):
     return running
 
 
-
 def _connection_service_for_legacy():
     from .connection_service import ConnectionService
 
@@ -564,7 +580,6 @@ def _render_connection_event(event: dict[str, object]) -> None:
         console.print(f"\n[warning]⚠ {event.get('message')}[/warning]")
     elif event_type == "stopping":
         console.print("\n[warning]Stopping...[/warning]")
-
 
 
 def _legacy_connection_result(args, operation: str):
@@ -725,11 +740,11 @@ def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
     from .scanner.ip_scanner import KNOWN_GOOD_IPS, generate_cloudflare_ips, scan_ips
     custom_ips = cfg.load().get("sni_custom_ips") or []
     pre_tested = list(set(custom_ips + KNOWN_GOOD_IPS))
-    
+
     results = asyncio.run(
         scan_ips(pre_tested, concurrency=concurrency, timeout=timeout)
     )
-    
+
     if results:
         # Found good IPs, no need to do a full scan
         ips = pre_tested
@@ -747,7 +762,9 @@ def _scan_cloudflare_ips(count: int, concurrency: int, timeout: float):
             console=console,
             transient=True,
         ) as progress:
+
             task = progress.add_task(f"Scanning {len(ips)} IPs on :443 ...", total=len(ips))
+
             def on_done():
                 scanned["done"] += 1
                 progress.advance(task)
@@ -1177,7 +1194,7 @@ def cmd_emergency(args):
         last_check = time.monotonic()
         while all(e.is_running() for e in active):
             time.sleep(1)
-            
+
             # Every 10 seconds, check if the proxy is actually routing traffic
             now = time.monotonic()
             if now - last_check > 10.0:
@@ -1451,10 +1468,12 @@ def _status_panel(snapshot: dict) -> Panel:
         )
     proxy = snapshot["proxy"]
     proxy_info = f"[success]● Active[/success]  {proxy['server']}" if proxy["enabled"] else "[muted]○ Off[/muted]"
-    
+
     io_info = ""
     if state and "io_bytes" in state and state["io_bytes"]:
+
         rx, tx = state["io_bytes"]
+
         def fmt_bytes(b):
             for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
                 if b < 1024.0:
@@ -1469,7 +1488,7 @@ def _status_panel(snapshot: dict) -> Panel:
     table.add_row("Daemon", daemon_info)
     if io_info:
         table.add_row("Data transferred", io_info)
-    
+
     events = snapshot.get("events", [])
     if events:
         table.add_row("Recent events", "\n".join(events))
@@ -1862,7 +1881,6 @@ def _settings_list(s: dict):
 
 
 def cmd_tools(args):
-
 
     if not hasattr(args, "tools_command") or not args.tools_command:
         console.print(Panel(
@@ -3198,7 +3216,6 @@ def cmd_tools(args):
         console.print("\n[success]Done. Restart may be needed for full effect.[/success]")
 
 
-
 def cmd_mode(args):
     """Set or display the security mode (speed / private / legend)."""
     mode_name = getattr(args, "mode_name", None)
@@ -3303,10 +3320,10 @@ def cmd_panic(args):
     restore = getattr(args, "restore", False)
     console.print("[bold red]🚨 GLOBAL PANIC BUTTON ACTIVATED 🚨[/bold red]")
     console.print("[muted]Executing emergency isolation, process kill, and network recovery...[/muted]\n")
-    
+
     from .tools import trigger_panic
     results = trigger_panic(restore=restore)
-    
+
     table = make_table(
         "Panic Protocol Results",
         [("Step", "bold white"), ("Status", ""), ("Details", "dim")],
@@ -3346,7 +3363,8 @@ def cmd_shield(args):
         console.print("[success]✓ Tracker & Ad Blocker enabled at network level.[/success]")
     else:
         console.print("[warning]⚠ Could not auto-set DNS. Try running as admin.[/warning]")
-    
+
+
 def cmd_neighbor(args):
     """Neighbor internet — share or connect via a nearby Blackout Kit device."""
     from .engines.neighbor import NeighborConnectEngine, NeighborShareEngine
@@ -4789,7 +4807,6 @@ def cmd_menu_select_engine():
     cfg.set_value("selected_engine", choice)
     console.print(f"\n[success]✓ Preferred engine set to [bold]{choice}[/bold]![/success]")
     console.print("[info]Engine selected. You can now use the 'Connect' option from the main menu.[/info]\n")
-
 
 
 def _run_settings_menu():

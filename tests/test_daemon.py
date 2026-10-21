@@ -38,7 +38,6 @@ def test_watchdog_command_omits_generation_only_for_legacy_direct_calls():
     assert "generation-a" not in command
 
 
-
 def test_native_gui_command_uses_module_entrypoint_when_installed():
     from blackoutkit import launcher
 
@@ -48,7 +47,6 @@ def test_native_gui_command_uses_module_entrypoint_when_installed():
     assert command == [launcher.sys.executable, "-m", "blackoutkit.typer_cli", "gui"]
 
 
-
 def test_native_gui_command_uses_hidden_entrypoint_when_frozen():
     from blackoutkit import launcher
 
@@ -56,8 +54,6 @@ def test_native_gui_command_uses_hidden_entrypoint_when_frozen():
         command = launcher._native_gui_command()
 
     assert command == [launcher.sys.executable, "gui"]
-
-
 
 
 class _FakeXRayEngine:
@@ -116,8 +112,6 @@ def _run_failed_proxy_reconnect(monkeypatch, tmp_path, outcomes, waits):
 
     daemon.run_daemon_loop("xray")
     return recovery, json.loads((tmp_path / "daemon_state.json").read_text(encoding="utf-8"))
-
-
 
 
 def test_reconnect_delay_uses_capped_exponential_backoff():
@@ -295,6 +289,7 @@ def _run_early_proxy_probes(monkeypatch, tmp_path, probe_results, *, proxy_url="
     monkeypatch.setattr(daemon, "_sleep", advance_time)
     monkeypatch.setattr(proxy_tester, "test_http_proxy", record_probe)
     monkeypatch.setattr(proxy_tester, "test_socks5_proxy", record_probe)
+
     def stop_after_first_rotation(instance):
         result = record_start_offset(instance)
         if os.environ.get("BLACKOUT_CONFIG_OFFSET") is not None:

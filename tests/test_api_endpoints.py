@@ -10,8 +10,6 @@ from blackoutkit import tools
 from blackoutkit.tools import run_web_api_dashboard
 
 
-
-
 @pytest.fixture(scope="module")
 def api_server():
     host = "127.0.0.1"

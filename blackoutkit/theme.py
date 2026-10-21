@@ -98,6 +98,7 @@ def refresh_console_theme() -> None:
     console.push_theme(build_theme())
     _theme_override_active = True
 
+
 # ─────────────────────────────────── Banner ───────────────────────────────────
 BANNER = f"""[bold red]
   ██████╗ ██╗      █████╗  ██████╗██╗  ██╗ ██████╗ ██╗   ██╗████████╗
@@ -310,6 +311,7 @@ I18N_STRINGS = {
         "disconnected": "Отключено"
     }
 }
+
 
 def get_i18n_string(key: str, lang: str = "en") -> str:
     """Return localized string for key and language."""

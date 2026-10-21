@@ -289,7 +289,6 @@ def test_filter_text_is_rendered_as_literal_markup(monkeypatch):
     assert "secret" in stream.getvalue()
 
 
-
 def test_menu_viewport_recalculates_height_on_each_render(monkeypatch):
     from types import SimpleNamespace
     from blackoutkit import terminal_menu

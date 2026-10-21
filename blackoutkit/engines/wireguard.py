@@ -23,6 +23,7 @@ from .base import Engine
 
 _STARTUP_TIMEOUT = 5.0
 
+
 class WireGuardEngine(Engine):
     name = "wireguard"
     description = "WireGuard — fast, modern, kernel-level UDP VPN (Native)"

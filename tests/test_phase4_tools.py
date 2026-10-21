@@ -1,12 +1,10 @@
-import pytest
-import os
 from blackoutkit.tools import (
     explain_network_state,
     save_ssh_profile,
     list_ssh_profiles,
     remove_ssh_profile,
-    run_web_api_dashboard,
 )
+
 
 def test_explain_network_state():
     res = explain_network_state()
@@ -14,6 +12,7 @@ def test_explain_network_state():
     assert "security_score" in res
     assert "anomalies" in res
     assert "active_processes_count" in res
+
 
 def test_ssh_vault():
     assert save_ssh_profile("test_p4", "10.0.0.1", "admin", port=2222)

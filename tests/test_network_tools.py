@@ -126,11 +126,14 @@ def test_scan_ports_reports_only_open_ports():
     class FakeSocket:
         def __init__(self, *_args, **_kwargs):
             pass
+
         def settimeout(self, _t):
             pass
+
         def connect_ex(self, addr):
             # Port 80 "open" (0), everything else "closed" (1)
             return 0 if addr[1] == 80 else 1
+
         def close(self):
             pass
 
@@ -148,10 +151,13 @@ def test_scan_ports_unknown_service_labeled_unknown():
     class FakeSocket:
         def __init__(self, *_args, **_kwargs):
             pass
+
         def settimeout(self, _t):
             pass
+
         def connect_ex(self, _addr):
             return 0
+
         def close(self):
             pass
 
@@ -173,10 +179,13 @@ def test_scan_ports_defaults_to_common_ports_list():
     class FakeSocket:
         def __init__(self, *_args, **_kwargs):
             pass
+
         def settimeout(self, _t):
             pass
+
         def connect_ex(self, _addr):
             return 1
+
         def close(self):
             pass
 
@@ -249,7 +258,6 @@ def test_inspect_dns_flags_only_when_trusted_succeeds_and_system_fails():
         (domain, tools.DNS_AUDIT_DOH_TIMEOUT)
         for domain in tools.DNS_POISON_CHECK_DOMAINS
     ]
-
 
     assert report["servers"] == ["1.1.1.1"]
     assert report["trusted_resolver_reachable"] is True

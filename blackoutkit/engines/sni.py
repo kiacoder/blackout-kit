@@ -81,7 +81,7 @@ class SNIEngine(Engine):
 
         self._log.info("Launching SNI spoofer via native DLL")
         c_path = str(config_path).encode("utf-8")
-        
+
         if dll.StartSNIC(c_path) == 0:
             self._dll_stop_func = dll.StopSNIC
             if not self.wait_for_port(self.listen_port, timeout=_STARTUP_TIMEOUT):
@@ -94,8 +94,6 @@ class SNIEngine(Engine):
             self._log.error("Native DLL StartSNIC failed")
             return False
 
-
-
     def _run_auto_scan(self, dll, c_path) -> str | None:
         import asyncio
         import time
@@ -104,13 +102,13 @@ class SNIEngine(Engine):
 
         from ..scanner import ip_scanner
         from ..theme import console
-        
+
         console.print("[cyan]Auto-detecting best Cloudflare IP for SNI spoofing...[/cyan]")
-        
+
         scan_ip_count = cfg.get("scan_ip_count", 100)
         scan_concurrency = cfg.get("scan_concurrency", 100)
         scan_timeout = cfg.get("scan_timeout", 2.0)
-        
+
         from ..scanner.ip_scanner import KNOWN_GOOD_IPS
         loop = asyncio.new_event_loop()
         cf_results = []
@@ -120,7 +118,7 @@ class SNIEngine(Engine):
             cf_results = loop.run_until_complete(ip_scanner.scan_ips(
                 KNOWN_GOOD_IPS, concurrency=len(KNOWN_GOOD_IPS), timeout=1.0
             ))
-            
+
             if cf_results and cf_results[0][1] < 150.0:
                 console.print(f"[green]Found fast known IP: {cf_results[0][0]} ({cf_results[0][1]:.1f}ms)[/green]")
             else:
@@ -134,11 +132,11 @@ class SNIEngine(Engine):
                 cf_results.sort(key=lambda x: x[1])
         finally:
             loop.close()
-            
+
         if not cf_results:
             self._log.error("No reachable Cloudflare IPs found. Check your internet connection.")
             return None
-            
+
         always_test_all = cfg.get("sni_always_test_all_ips")
         custom_ips = cfg.get("sni_custom_ips") or []
         if always_test_all:
@@ -150,14 +148,14 @@ class SNIEngine(Engine):
             # Test custom IPs plus top 5 reachable candidates
             reachable_top = [ip for ip, _ in cf_results[:5]]
             top_candidates = list(dict.fromkeys(custom_ips + reachable_top))
-            
+
             # Fast-path cache: if current connect IP is still good, prioritize it
             current_ip = cfg.get("sni_connect_ip")
             if current_ip and current_ip not in top_candidates:
                 top_candidates.insert(0, current_ip)
-                
+
             self._log.info("Top candidates to test (including custom/cached): %s", top_candidates)
-        
+
         # Combine default test hosts with any user‑provided custom fake SNI hostnames
         custom_fakes = cfg.get("sni_custom_fakes") or []
         test_hosts = [
@@ -167,24 +165,24 @@ class SNIEngine(Engine):
             "www.microsoft.com",
             "www.discord.com",
         ] + custom_fakes
-        
+
         scan_report = {}
-        
+
         for ip in top_candidates:
             self._log.info("Testing candidate IP: %s", ip)
             self.connect_ip = ip
             config_path = self._write_config()
-            
+
             # Start SNI Spoofer temporarily
             c_path_bytes = str(config_path).encode("utf-8")
             started = (dll.StartSNIC(c_path_bytes) == 0)
-                
+
             if not started:
                 self._log.warning("Could not start SNI Spoofer for candidate %s", ip)
                 continue
-                
+
             time.sleep(0.5)  # Wait for spoofer to bind
-            
+
             import concurrent.futures
             ip_report = {}
             with concurrent.futures.ThreadPoolExecutor(max_workers=len(test_hosts)) as executor:
@@ -200,13 +198,13 @@ class SNIEngine(Engine):
                         self._log.debug("  • %s: %dms", host, latency)
                     else:
                         self._log.debug("  • %s: FAILED", host)
-                    
+
             scan_report[ip] = ip_report
-            
+
             # Stop SNI Spoofer
             dll.StopSNIC()
             time.sleep(0.2)
-            
+
             # Fast-path abort: if this IP succeeded all tests quickly, just use it
             success_count = sum(1 for lat in ip_report.values() if lat is not None)
             if success_count == len(test_hosts) and not always_test_all:
@@ -214,7 +212,7 @@ class SNIEngine(Engine):
                 if avg_lat < 1500: # Decent latency
                     self._log.info("Fast-path: IP %s passed all tests quickly! Skipping remaining.", ip)
                     break
-            
+
         # Print results table
         table = Table(title="[bold]SNI Auto-Scan Results (HTTP GET Speed Test)[/bold]", border_style="dim")
         table.add_column("Cloudflare IP", style="cyan")
@@ -228,16 +226,16 @@ class SNIEngine(Engine):
                 name = host
             table.add_column(name.capitalize(), justify="right")
         table.add_column("Score", justify="right", style="bold green")
-        
+
         winner_ip = None
         best_score = -1
         best_avg_latency = float("inf")
-        
+
         for ip, reports in scan_report.items():
             row = [ip]
             success_count = 0
             total_latency = 0.0
-            
+
             for host in test_hosts:
                 lat = reports[host]
                 if lat is not None:
@@ -246,22 +244,22 @@ class SNIEngine(Engine):
                     total_latency += lat
                 else:
                     row.append("[red]✗[/red]")
-            
+
             avg_lat = total_latency / success_count if success_count > 0 else float("inf")
             score = f"{success_count}/{len(test_hosts)}"
             row.append(score)
             table.add_row(*row)
-            
+
             if success_count > 0:
                 if (success_count > best_score) or (success_count == best_score and avg_lat < best_avg_latency):
                     best_score = success_count
                     best_avg_latency = avg_lat
                     winner_ip = ip
-                    
+
         console.print()
         console.print(table)
         console.print()
-        
+
         return winner_ip
 
     def _test_http_get(self, target_host: str) -> float | None:

@@ -896,8 +896,6 @@ def setup(
         raise typer.Exit(code=1)
 
 
-
-
 @app.command()
 def version(ctx: typer.Context):
     """Show the Blackout Kit version."""
@@ -994,8 +992,6 @@ def _recovery_platform_supported() -> bool:
 
 def _recovery_success(steps: list[dict]) -> bool:
     return all(bool(step.get("ok")) for step in steps)
-
-
 
 
 def _recovery_steps_payload(steps: list[dict]) -> list[dict[str, object]]:
@@ -1225,7 +1221,6 @@ def fix(
     )
 
 
-
 @app.command()
 def scan(
     ips: bool = typer.Option(False, "--ips", help="Scan Cloudflare IPs"),
@@ -1239,6 +1234,7 @@ def scan(
         sni=bool(_option_value(sni, False)),
         count=_option_value(count),
     ))
+
 
 def _ask_engine(prompt_text: str = "Choose an engine") -> str | None:
     from rich.align import Align
@@ -1729,8 +1725,6 @@ def start(
     return result
 
 
-
-
 @app.command()
 def mode(
     mode_name: str = typer.Argument(None, help="speed | private | legend (omit to interactively select)"),
@@ -1774,7 +1768,7 @@ def _add_to_user_path(directory: str) -> bool:
                 current_path, _ = winreg.QueryValueEx(key, "PATH")
             except OSError:
                 current_path = ""
-            
+
             if directory.lower() not in current_path.lower():
                 new_path = current_path
                 if new_path and not new_path.endswith(";"):
@@ -1787,22 +1781,24 @@ def _add_to_user_path(directory: str) -> bool:
         console.print("[error]Failed to update PATH: check permissions and registry access[/error]")
         return False
 
+
 @app.command("add-to-path")
 def add_to_path():
     """Add Blackout Kit to the system PATH so you can run it anywhere."""
     import sys
     from pathlib import Path
-    
+
     if getattr(sys, 'frozen', False):
         target_dir = str(Path(sys.executable).parent.resolve())
     else:
         target_dir = str(Path(__file__).parent.parent.resolve())
-        
+
     if _add_to_user_path(target_dir):
         console.print(f"[success]✓ Added {target_dir} to your system PATH![/success]")
         console.print("[info]You will need to restart your terminal for this to take effect.[/info]")
     else:
         console.print(f"[info]Blackout Kit ({target_dir}) is already in your PATH.[/info]")
+
 
 @app.command(hidden=True)
 def gui(ctx: typer.Context):
@@ -1845,7 +1841,6 @@ def _reject_unsupported_json(command: str | None, options: OutputOptions) -> Non
         )
 
 
-
 def _reject_group_json(command: str | None, options: OutputOptions, supported: set[str]) -> None:
     if options.json_output and command not in supported:
         _print_cli_error(
@@ -1854,7 +1849,6 @@ def _reject_group_json(command: str | None, options: OutputOptions, supported: s
             options=options,
             exit_code=2,
         )
-
 
 
 def _safe_command_name(command: str | None) -> str:
@@ -1892,9 +1886,11 @@ def mcp():
     from .mcp_server import run_mcp_server
     run_mcp_server()
 
+
 # ── SPLIT TUNNEL GROUP ──
 split_app = typer.Typer(help="Split Tunneling & Direct Proxy Bypass", no_args_is_help=True)
 app.add_typer(split_app, name="split-tunnel")
+
 
 @split_app.command("list")
 def split_list():
@@ -1906,12 +1902,14 @@ def split_list():
         console.print(f"  • {r}")
     console.print()
 
+
 @split_app.command("add")
 def split_add(target: str = typer.Argument(..., help="Domain, IP, or CIDR to bypass proxy")):
     """Add a domain or IP to bypass system proxy directly"""
     from .split_tunnel import add_direct_route
     if add_direct_route(target):
         console.print(f"[success]✓ Added '{target}' to split-tunnel direct bypass list![/success]")
+
 
 @split_app.command("remove")
 def split_remove(target: str = typer.Argument(..., help="Domain, IP, or CIDR to remove")):
@@ -1920,9 +1918,11 @@ def split_remove(target: str = typer.Argument(..., help="Domain, IP, or CIDR to 
     if remove_direct_route(target):
         console.print(f"[success]✓ Removed '{target}' from split-tunnel direct bypass list![/success]")
 
+
 # ── NETWORK GROUP ──
 network_app = typer.Typer(help="WiFi network switcher + ISP detection", no_args_is_help=True)
 app.add_typer(network_app, name="network")
+
 
 @network_app.command("scan")
 def net_scan():
@@ -1932,6 +1932,7 @@ def net_scan():
     args.network_command = "scan"
     cmd_network(args)
 
+
 @network_app.command("isp")
 def net_isp():
     """Show current ISP provider info"""
@@ -1940,6 +1941,7 @@ def net_isp():
     args.network_command = "isp"
     cmd_network(args)
 
+
 @network_app.command("auto")
 def net_auto():
     """Auto-switch to best available saved network"""
@@ -1947,6 +1949,7 @@ def net_auto():
     args = _args()
     args.network_command = "auto"
     cmd_network(args)
+
 
 @network_app.command("switch")
 def net_switch(
@@ -1962,6 +1965,7 @@ def net_switch(
     args.network_command = "switch"
     args.ssid = ssid
     cmd_network(args)
+
 
 # ── CONFIG GROUP ──
 config_app = typer.Typer(help="Manage V2Ray proxy configs", no_args_is_help=False)
@@ -2046,6 +2050,7 @@ def config_status(
     from .interactive import run_config_menu
     run_config_menu()
 
+
 @config_app.command("list")
 def cfg_list(ctx: typer.Context):
     """List saved configs without exposing credentials."""
@@ -2068,6 +2073,7 @@ def config_test(
     from .cli import cmd_test
     cmd_test(_args(timeout=timeout, concurrency=concurrency))
 
+
 @config_app.command("sources")
 def config_sources():
     """List the built-in trusted public config sources."""
@@ -2083,6 +2089,7 @@ def config_fetch(
     """Pull configs from the trusted public sources into your library."""
     from .cli import cmd_config
     cmd_config(_args(config_command="fetch", source=source, limit=limit))
+
 
 @config_app.command("validate")
 def cfg_validate(ctx: typer.Context):
@@ -2587,6 +2594,7 @@ def cfg_import_setup(
     elif not _is_quiet(options):
         console.print("[success]✓ Setup imported successfully.[/success]")
 
+
 def _split_endpoint(value: object) -> tuple[str, int]:
     text = str(value or "").strip()
     if text.startswith("[") and "]:" in text:
@@ -2914,6 +2922,7 @@ def tools_dns_bench():
     args.tools_command = "dns-bench"
     cmd_tools(args)
 
+
 @tools_app.command("dns-flush")
 def tools_dns_flush():
     """Flush DNS cache"""
@@ -2921,6 +2930,7 @@ def tools_dns_flush():
     args = _args()
     args.tools_command = "dns_flush".replace("_", "-")
     cmd_tools(args)
+
 
 @tools_app.command("dns-set")
 def tools_dns_set(
@@ -2939,6 +2949,7 @@ def tools_dns_set(
     args.adapter = adapter
     cmd_tools(args)
 
+
 @tools_app.command("speedtest")
 def tools_speedtest():
     """Run download speed test"""
@@ -2947,6 +2958,7 @@ def tools_speedtest():
     args.tools_command = "speedtest".replace("_", "-")
     cmd_tools(args)
 
+
 @tools_app.command("speedtest-history")
 def tools_speedtest_history():
     """Show a trend graph of your last 30 recorded speedtests."""
@@ -2954,6 +2966,7 @@ def tools_speedtest_history():
     args = _args()
     args.tools_command = "speedtest-history"
     cmd_tools(args)
+
 
 @tools_app.command("adapters")
 def tools_adapters():
@@ -3040,6 +3053,7 @@ def tools_arp_flush():
     args.tools_command = "arp-flush"
     cmd_tools(args)
 
+
 @tools_app.command("hotspot")
 def tools_hotspot(
     action: str = typer.Argument(None, help="on | off")
@@ -3054,6 +3068,7 @@ def tools_hotspot(
     args.tools_command = "hotspot"
     args.action = action
     cmd_tools(args)
+
 
 @tools_app.command("share-vpn")
 def tools_share_vpn(
@@ -3070,6 +3085,7 @@ def tools_share_vpn(
     args.action = action
     cmd_tools(args)
 
+
 @tools_app.command("ping")
 def tools_ping(host: str = typer.Argument(None, help="Host to ping")):
     """TCP ping test."""
@@ -3082,7 +3098,8 @@ def tools_ping(host: str = typer.Argument(None, help="Host to ping")):
     args.tools_command = "ping"
     args.host = host
     cmd_tools(args)
-    
+
+
 @tools_app.command("mtu")
 def tools_mtu(
     host: str = typer.Argument("8.8.8.8", help="Host to ping"),
@@ -3095,6 +3112,7 @@ def tools_mtu(
     args.host = host
     args.set = set_mtu
     cmd_tools(args)
+
 
 @tools_app.command("traceroute")
 def tools_traceroute(host: str = typer.Argument(None, help="Host to trace")):
@@ -3109,6 +3127,7 @@ def tools_traceroute(host: str = typer.Argument(None, help="Host to trace")):
     args.host = host
     cmd_tools(args)
 
+
 @tools_app.command("subnet")
 def tools_subnet(cidr: str = typer.Argument(..., help="IP with CIDR mask (e.g. 192.168.1.0/24)")):
     """Calculate subnet range, broadcast, and mask."""
@@ -3117,6 +3136,7 @@ def tools_subnet(cidr: str = typer.Argument(..., help="IP with CIDR mask (e.g. 1
     args.tools_command = "subnet"
     args.cidr = cidr
     cmd_tools(args)
+
 
 @tools_app.command("connections")
 def tools_connections(
@@ -3129,6 +3149,7 @@ def tools_connections(
     args.established = established
     cmd_tools(args)
 
+
 @tools_app.command("dns-inspect")
 def tools_dns_inspect():
     """Compare system DNS resolution against a trusted resolver to spot interference."""
@@ -3137,6 +3158,7 @@ def tools_dns_inspect():
     args.tools_command = "dns-inspect"
     cmd_tools(args)
 
+
 @tools_app.command("discover")
 def tools_discover():
     """Discover live devices on your local subnet (ARP-based LAN scan)."""
@@ -3144,6 +3166,7 @@ def tools_discover():
     args = _args()
     args.tools_command = "discover"
     cmd_tools(args)
+
 
 @tools_app.command("scan-ports")
 def tools_scan_ports(
@@ -3162,6 +3185,7 @@ def tools_scan_ports(
     args.ports = ports
     cmd_tools(args)
 
+
 @tools_app.command("latency-monitor")
 def tools_latency_monitor(
     host: str = typer.Argument("8.8.8.8", help="Host to ping continuously"),
@@ -3175,6 +3199,7 @@ def tools_latency_monitor(
     args.interval = interval
     cmd_tools(args)
 
+
 @tools_app.command("bandwidth")
 def tools_bandwidth(
     interval: float = typer.Option(1.0, "--interval", "-i", min=0.1, help="Seconds between samples"),
@@ -3185,6 +3210,7 @@ def tools_bandwidth(
     args.tools_command = "bandwidth"
     args.interval = interval
     cmd_tools(args)
+
 
 @tools_app.command("bandwidth-cap")
 def tools_bandwidth_cap(
@@ -3202,6 +3228,7 @@ def tools_bandwidth_cap(
     args.daily_mb = daily_mb
     args.monthly_mb = monthly_mb
     cmd_tools(args)
+
 
 @tools_app.command("traffic-log")
 def tools_traffic_log(
@@ -3892,6 +3919,7 @@ def tools_adblock(
     args.limit = limit
     cmd_tools(args)
 
+
 @tools_app.command("qos")
 def tools_qos(
     subcmd: str = typer.Argument("rules", help="rules|stats|mode|violations"),
@@ -3943,6 +3971,7 @@ def tools_qos(
     args.limit = limit
     cmd_tools(args)
 
+
 @tools_app.command("capture")
 def tools_capture(
     ctx: typer.Context,
@@ -3967,6 +3996,7 @@ def tools_capture(
         host=_option_value(host),
         pcap=_option_value(pcap),
     ))
+
 
 @tools_app.command("scan-file")
 def tools_scan_file(
@@ -4011,6 +4041,7 @@ def tools_cert_check(
         allow=allow,
     ))
 
+
 @app.command()
 def test(
     timeout: float = typer.Option(3.0, "--timeout", "-t", help="Per-config probe timeout (seconds)"),
@@ -4031,17 +4062,20 @@ def fast(
     from .cli import cmd_fast
     cmd_fast(_args(background=background, timeout=timeout, concurrency=concurrency))
 
+
 @app.command()
 def stop():
     """Stop background daemon"""
     from .cli import cmd_stop
     cmd_stop(_args())
 
+
 @app.command()
 def disconnect():
     """Stop background daemon (alias for stop)"""
     from .cli import cmd_stop
     cmd_stop(_args())
+
 
 @app.command()
 def emergency(
@@ -4060,11 +4094,13 @@ def logs(
     from .cli import cmd_logs
     cmd_logs(_args(lines=lines))
 
+
 @app.command()
 def panic():
     """🚨 Instantly kill all connections, flush DNS, clear proxies, and restore normal state"""
     from .cli import cmd_panic
     cmd_panic(_args())
+
 
 @app.command()
 def shield():
@@ -4091,9 +4127,12 @@ def manual_help(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran'
 def help_command(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran', 'engines', 'configs')")):
     """Show detailed manual/help for a specific topic"""
     _show_help(topic)
+
+
 country_app = typer.Typer(help="View or pin the active censorship country profile", no_args_is_help=False)
 app.add_typer(country_app, name="country")
 app.add_typer(country_app, name="countries")
+
 
 @country_app.callback(invoke_without_command=True)
 def country_status(ctx: typer.Context):
@@ -4183,9 +4222,11 @@ def country_list(ctx: typer.Context):
         for record in records:
             console.print(f"{record['code']}: {record['name']} ({record['censorship_level']})")
 
+
 # ── NEIGHBOR GROUP ──
 neighbor_app = typer.Typer(help="Connect via a nearby Blackout Kit device", no_args_is_help=True)
 app.add_typer(neighbor_app, name="neighbor")
+
 
 @neighbor_app.command("discover")
 def neighbor_discover():
@@ -4194,6 +4235,7 @@ def neighbor_discover():
     args = _args()
     args.neighbor_command = "discover"
     cmd_neighbor(args)
+
 
 @neighbor_app.command("connect")
 def neighbor_connect(
@@ -4210,6 +4252,7 @@ def neighbor_connect(
     args.host = ip
     cmd_neighbor(args)
 
+
 @neighbor_app.command("share")
 def neighbor_share():
     """Broadcast your proxy so neighbors can connect"""
@@ -4217,6 +4260,7 @@ def neighbor_share():
     args = _args()
     args.neighbor_command = "share"
     cmd_neighbor(args)
+
 
 @neighbor_app.command("cache-list")
 def neighbor_cache_list():
@@ -4226,6 +4270,7 @@ def neighbor_cache_list():
     args.neighbor_command = "cache-list"
     cmd_neighbor(args)
 
+
 @neighbor_app.command("cache-refresh")
 def neighbor_cache_refresh():
     """Force neighbor discovery and refresh cache"""
@@ -4233,6 +4278,7 @@ def neighbor_cache_refresh():
     args = _args()
     args.neighbor_command = "cache-refresh"
     cmd_neighbor(args)
+
 
 @neighbor_app.command("cache-clear")
 def neighbor_cache_clear(force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt")):
@@ -4243,9 +4289,11 @@ def neighbor_cache_clear(force: bool = typer.Option(False, "--force", "-f", help
     args.force = force
     cmd_neighbor(args)
 
+
 # ── DOWNLOAD GROUP ──
 download_app = typer.Typer(help="Download manager with queue, resume, and speed limiting", no_args_is_help=True)
 app.add_typer(download_app, name="download")
+
 
 @download_app.command("add")
 def download_add(url: str = typer.Argument(..., help="HTTP(S) URL to download"), output: str = typer.Option(None, "--output", "-o", help="Save to file"), speed_limit: int = typer.Option(0, "--speed-limit", "-s", help="Max speed in KBps (0=unlimited)")):
@@ -4258,6 +4306,7 @@ def download_add(url: str = typer.Argument(..., help="HTTP(S) URL to download"),
     args.speed_limit = speed_limit
     cmd_download(args)
 
+
 @download_app.command("list")
 def download_list(status: str = typer.Option(None, "--status", "-s", help="Filter by status (pending|downloading|completed|failed)")):
     """Show download queue and progress"""
@@ -4266,6 +4315,7 @@ def download_list(status: str = typer.Option(None, "--status", "-s", help="Filte
     args.download_command = "list"
     args.status = status
     cmd_download(args)
+
 
 @download_app.command("start")
 def download_start(ids: list[str] = typer.Argument(None, help="Download IDs to start"), all: bool = typer.Option(False, "--all", "-a", help="Start all pending downloads")):
@@ -4277,6 +4327,7 @@ def download_start(ids: list[str] = typer.Argument(None, help="Download IDs to s
     args.all = all
     cmd_download(args)
 
+
 @download_app.command("cancel")
 def download_cancel(ids: list[str] = typer.Argument(None, help="Download IDs to cancel"), all: bool = typer.Option(False, "--all", "-a", help="Cancel all active downloads")):
     """Pause downloads (keep partial files for resume)"""
@@ -4287,6 +4338,7 @@ def download_cancel(ids: list[str] = typer.Argument(None, help="Download IDs to 
     args.all = all
     cmd_download(args)
 
+
 @download_app.command("clear")
 def download_clear(scope: str = typer.Option("completed", "--scope", "-s", help="Clear completed|failed|all")):
     """Remove downloads from queue"""
@@ -4295,6 +4347,7 @@ def download_clear(scope: str = typer.Option("completed", "--scope", "-s", help=
     args.download_command = "clear"
     args.scope = scope
     cmd_download(args)
+
 
 @download_app.command("watch")
 def download_watch(id: str = typer.Option(None, "--id", "-i", help="Watch specific download (default: all active)")):
@@ -4305,9 +4358,11 @@ def download_watch(id: str = typer.Option(None, "--id", "-i", help="Watch specif
     args.id = id
     cmd_download(args)
 
+
 # ── MEDIA GROUP ──
 media_app = typer.Typer(help="Download videos from YouTube and similar platforms", no_args_is_help=True)
 app.add_typer(media_app, name="media")
+
 
 @media_app.command("add")
 def media_add(url: str = typer.Argument(..., help="YouTube or similar video URL"), format: str = typer.Option(None, "--format", "-f", help="yt-dlp format (e.g., best[ext=mp4])"), best_audio_video: bool = typer.Option(False, "--best-audio-video", "-b", help="Download best audio + video"), output: str = typer.Option(None, "--output", "-o", help="Save to directory")):
@@ -4361,6 +4416,7 @@ def media_clear():
 torrent_app = typer.Typer(help="Download torrents and magnets with libtorrent", no_args_is_help=True)
 app.add_typer(torrent_app, name="torrent")
 
+
 @torrent_app.command("add")
 def torrent_add(magnet_or_file: str = typer.Argument(..., help="Magnet link or .torrent file path"), output: str = typer.Option(None, "--output", "-o", help="Save to directory"), ratio: float = typer.Option(1.0, "--ratio", "-r", help="Seed ratio (1.0 = 1:1, default)")):
     """Queue a torrent download."""
@@ -4408,6 +4464,7 @@ def torrent_clear():
     """Remove completed torrents"""
     from .cli import cmd_torrent
     cmd_torrent(_args(torrent_command="clear"))
+
 
 # ── SETTINGS GROUP ──
 settings_app = typer.Typer(help="View and change all settings", no_args_is_help=False)
@@ -4571,6 +4628,7 @@ def settings_reset(ctx: typer.Context):
 bins_app = typer.Typer(help="Download and manage engine binaries", no_args_is_help=False)
 app.add_typer(bins_app, name="bins")
 
+
 @bins_app.callback(invoke_without_command=True)
 def bins_status(ctx: typer.Context):
     """Show installed and missing engine binaries."""
@@ -4603,6 +4661,7 @@ def bins_list(ctx: typer.Context):
         required = "required" if item["required"] else "optional"
         console.print(f"{item['key']}: {status} ({required})")
 
+
 @bins_app.command("download")
 def bins_download(
     engine: str = typer.Argument(None, help="Specific engine (or omit for all missing)")
@@ -4614,11 +4673,13 @@ def bins_download(
     args.binary = engine
     cmd_bins(args)
 
+
 @bins_app.command("update")
 def bins_update():
     """Re-download installed binaries to update them."""
     from .cli import cmd_bins
     cmd_bins(_args(bins_command="update"))
+
 
 @app.command(name="_daemon_run", hidden=True)
 def daemon_run(
@@ -4649,10 +4710,12 @@ def preflight():
     from .cli import cmd_preflight
     cmd_preflight(_args())
 
+
 @app.command(name="0xDEADBEEF", hidden=True)
 def deadbeef():
     from .cli import cmd_easteregg
     cmd_easteregg(_args())
+
 
 @app.callback(invoke_without_command=True)
 def app_callback(
@@ -4875,6 +4938,7 @@ def tools_explain():
 ssh_app = typer.Typer(help="SSH Vault & Manager (manage and connect to SSH servers)", no_args_is_help=False)
 app.add_typer(ssh_app, name="ssh")
 
+
 @ssh_app.command("add")
 def ssh_add(
     name: str = typer.Argument(..., help="Profile alias name (e.g. prod-server)"),
@@ -4889,6 +4953,7 @@ def ssh_add(
         console.print(f"[success]✓ SSH profile '{name}' saved to vault![/success]")
     else:
         console.print(f"[error]Failed to save SSH profile '{name}'[/error]")
+
 
 @ssh_app.command("list")
 def ssh_list():
@@ -4906,6 +4971,7 @@ def ssh_list():
     for p in profiles:
         table.add_row(p["name"], f"{p['user']}@{p['host']}", str(p["port"]), p.get("key_path") or "default")
     console.print(table)
+
 
 @ssh_app.command("connect")
 def ssh_connect(
@@ -4929,6 +4995,7 @@ def ssh_connect(
     except Exception:
         console.print("[error]Failed to launch SSH client[/error]")
 
+
 @ssh_app.command("remove")
 def ssh_remove(
     name: str = typer.Argument(..., help="SSH profile name to remove"),
@@ -4944,6 +5011,7 @@ def ssh_remove(
 # ── REST API / DASHBOARD GROUP ──
 api_app = typer.Typer(help="Local REST API & Web Dashboard", no_args_is_help=False)
 app.add_typer(api_app, name="api")
+
 
 @api_app.command("start")
 def api_start(
@@ -4962,6 +5030,7 @@ def api_start(
 automation_app = typer.Typer(help="Scriptable Event Automation (rules for network events)", no_args_is_help=False)
 app.add_typer(automation_app, name="automation")
 
+
 @automation_app.command("add")
 def auto_add(
     name: str = typer.Argument(..., help="Automation rule name"),
@@ -4974,6 +5043,7 @@ def auto_add(
         console.print(f"[success]✓ Automation rule '{name}' saved![/success]")
     else:
         console.print(f"[error]Failed to save automation rule '{name}'[/error]")
+
 
 @automation_app.command("list")
 def auto_list():
@@ -4993,6 +5063,7 @@ def auto_list():
         table.add_row(r["name"], r["event"], r["action"], status)
     console.print(table)
 
+
 @automation_app.command("trigger")
 def auto_trigger(
     event: str = typer.Argument(..., help="Event name to trigger (e.g. on_network_disconnect)"),
@@ -5006,6 +5077,7 @@ def auto_trigger(
     for res in results:
         status_str = "[success]✓ OK[/success]" if res["ok"] else "[error]✗ Failed[/error]"
         console.print(f"Rule [bold]{res['rule']}[/bold]: {status_str} -> {res['detail']}")
+
 
 @automation_app.command("remove")
 def auto_remove(
@@ -5111,6 +5183,7 @@ def tools_arp_guard():
 vault_app = typer.Typer(help="Encrypted Vault Backup & Key Utility", no_args_is_help=False)
 app.add_typer(vault_app, name="vault")
 
+
 @vault_app.command("backup")
 def vault_backup(
     output: str = typer.Option("blackout_vault_backup.json", "--output", "-o", help="Backup output path"),
@@ -5125,6 +5198,7 @@ def vault_backup(
         console.print(f"[success]✓ Vault backup written to: {out_path}[/success]")
     except Exception:
         console.print("[error]Failed to write vault backup: check disk space and permissions[/error]")
+
 
 @vault_app.command("restore")
 def vault_restore(

@@ -479,7 +479,6 @@ def _validate_setup_settings(settings_data: dict) -> dict:
     return cfg.validate_updates(settings_data)
 
 
-
 def _validate_imported_configs(configs: list) -> list:
     seen = set()
     for config in configs:

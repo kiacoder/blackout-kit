@@ -11,6 +11,7 @@ from . import BINS_DIR
 _dll = None
 _dll_lock = threading.Lock()
 
+
 def get_core_dll():
     global _dll
     if _dll is not None:
@@ -71,8 +72,10 @@ def get_core_dll():
             _log.error("Failed to load core engine DLL: %s", e)
             return None
 
+
 _warp_dll = None
 _warp_dll_lock = threading.Lock()
+
 
 def get_warp_dll():
     global _warp_dll
@@ -107,4 +110,3 @@ def get_warp_dll():
         except Exception as e:
             _log.error("Failed to load warp engine DLL: %s", e)
             return None
-

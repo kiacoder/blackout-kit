@@ -9,9 +9,11 @@ from blackoutkit.tools import (
 from blackoutkit.theme import get_i18n_string
 from blackoutkit.daemon import stream_daemon_ipc_metrics
 
+
 def test_sftp_client():
     res = run_sftp_client("nonexistent")
     assert res["ok"] is False
+
 
 def test_custom_yara_loader(tmp_path):
     f = tmp_path / "rules.txt"
@@ -20,6 +22,7 @@ def test_custom_yara_loader(tmp_path):
     res = load_custom_yara_rule_file(str(f))
     assert res["ok"] is True
     assert len(res["patterns"]) == 2
+
 
 def test_scan_file_yara_with_custom_rule(tmp_path):
     rf = tmp_path / "custom_rule.txt"
@@ -33,11 +36,13 @@ def test_scan_file_yara_with_custom_rule(tmp_path):
     assert res["clean"] is False
     assert any(m["rule"] == "Custom_User_Rule" for m in res["matches"])
 
+
 def test_daemon_ipc_metrics():
     metrics = stream_daemon_ipc_metrics()
     assert "pid" in metrics
     assert "active" in metrics
     assert "uptime" in metrics
+
 
 def test_gui_russia_mode():
     # blackoutkit.gui_app wraps tkinter through customtkinter. Some Linux CI
@@ -60,9 +65,11 @@ def test_gui_russia_mode():
     except Exception:
         pass
 
+
 def test_i18n():
     assert get_i18n_string("welcome", "en") == "Welcome to Blackout Kit"
     assert "بلک‌آوت" in get_i18n_string("welcome", "fa")
+
 
 def test_windivert_shaper_status():
     st = get_windivert_shaper_status()

@@ -21,8 +21,10 @@ DEFAULT_BYPASS_RULES = [
     "<local>"
 ]
 
+
 def _ensure_dir():
     APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 
 def load_split_rules() -> list[str]:
     """Load split tunnel direct bypass rules."""
@@ -35,6 +37,7 @@ def load_split_rules() -> list[str]:
         return data.get("direct_bypass", DEFAULT_BYPASS_RULES)
     except Exception:
         return list(DEFAULT_BYPASS_RULES)
+
 
 def save_split_rules(rules: list[str]) -> bool:
     """Save split tunnel direct bypass rules."""
@@ -52,6 +55,7 @@ def save_split_rules(rules: list[str]) -> bool:
     except Exception:
         return False
 
+
 def add_direct_route(target: str) -> bool:
     """Add an IP, CIDR, or domain to the direct bypass list (bypasses proxy)."""
     rules = load_split_rules()
@@ -60,6 +64,7 @@ def add_direct_route(target: str) -> bool:
         rules.append(target)
         return save_split_rules(rules)
     return True
+
 
 def remove_direct_route(target: str) -> bool:
     """Remove an IP, CIDR, or domain from the direct bypass list."""
@@ -70,10 +75,12 @@ def remove_direct_route(target: str) -> bool:
         return save_split_rules(rules)
     return False
 
+
 def get_proxy_override_string() -> str:
     """Format the direct bypass list as a Windows Registry ProxyOverride string."""
     rules = load_split_rules()
     return ";".join(rules)
+
 
 def apply_split_tunnel_to_system() -> bool:
     """Apply the split tunnel direct bypass rules to Windows Registry Internet Settings."""
@@ -85,7 +92,7 @@ def apply_split_tunnel_to_system() -> bool:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_WRITE)
         winreg.SetValueEx(key, "ProxyOverride", 0, winreg.REG_SZ, get_proxy_override_string())
         winreg.CloseKey(key)
-        
+
         # Notify WinInet
         try:
             import ctypes

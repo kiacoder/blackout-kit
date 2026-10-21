@@ -478,7 +478,7 @@ def check_system_path() -> CheckResult:
 
     exe_path = Path(sys.argv[0]).resolve()
     exe_dir = exe_path.parent
-    
+
     # If running directly via python.exe, skip this check
     if exe_path.name.lower() == "python.exe":
         return CheckResult("System PATH", True, "N/A (Running via Python)")
@@ -498,13 +498,13 @@ def check_system_path() -> CheckResult:
                 if str(exe_dir).lower() not in val.lower():
                     new_path = val.rstrip(";") + ";" + str(exe_dir) if val else str(exe_dir)
                     winreg.SetValueEx(key, "PATH", 0, winreg.REG_EXPAND_SZ, new_path)
-            
+
             # Broadcast the environment change to running windows
             import ctypes
             HWND_BROADCAST = 0xFFFF
             WM_SETTINGCHANGE = 0x001A
             ctypes.windll.user32.SendMessageTimeoutW(HWND_BROADCAST, WM_SETTINGCHANGE, 0, "Environment", 2, 1000, None)
-            
+
             # Also update current process env so later checks don't fail if they rely on it
             os.environ["PATH"] = os.environ.get("PATH", "") + ";" + str(exe_dir)
         except Exception as exc:
@@ -755,17 +755,17 @@ def check_config_security() -> CheckResult:
 
     if sec.configs_are_obfuscated():
         return CheckResult("Config Encryption", True, "OK (AES-256 encrypted at rest)")
-    
+
     # Check if configs.txt actually has user configurations
     from .config.manager import load_configs
     try:
         configs = load_configs()
     except Exception:
         configs = []
-        
+
     if not configs:
         return CheckResult("Config Encryption", True, "No configs to encrypt")
-        
+
     return CheckResult(
         "Config Encryption", False,
         f"Proxy configs are stored in plaintext. Run '{get_command_prefix()} config encrypt' to secure them.",
@@ -779,11 +779,11 @@ def check_process_conflicts() -> CheckResult:
     import psutil
     conflicts = []
     current_pid = os.getpid()
-    
+
     target_names = {"xray.exe", "sing-box.exe", "singbox.exe"}
     if _gdpi_backend() == "legacy":
         target_names.update({name.lower() for name in GDPI_BIN_NAMES})
-    
+
     for p in psutil.process_iter(attrs=["pid", "name"]):
         try:
             name_info = p.info.get("name")
@@ -881,7 +881,7 @@ def check_windows_compat() -> CheckResult:
         return CheckResult("OS Compatibility", True, f"Linux {platform.release()} ({arch}) — XRay/TUN runtime ready")
     if sys.platform != "win32":
         return CheckResult("OS Compatibility", True, f"Unsupported platform: {sys.platform}")
-    
+
     import platform
     arch = platform.machine()
     is_64bit = "64" in arch or "AMD64" in arch.upper() or "ARM64" in arch.upper()
@@ -904,7 +904,7 @@ def check_admin_privileges() -> CheckResult:
     from .proxy_manager import is_admin
     if is_admin():
         return CheckResult("Admin Rights", True, "OK (Elevated)")
-    
+
     return CheckResult(
         "Admin Rights", False,
         "Running without Administrator privileges. Fixes and engines will trigger UAC prompts.",
@@ -1010,11 +1010,11 @@ def get_execution_context() -> dict:
     from pathlib import Path
 
     from . import __version__
-    
+
     script_path = Path(sys.argv[0]).resolve()
     # Check if run from a global Python path (Scripts, site-packages, or python installation)
     is_global = "site-packages" in str(script_path).lower() or "scripts" in str(script_path).lower() or not script_path.exists()
-    
+
     return {
         "version": __version__,
         "path": script_path,
@@ -1032,7 +1032,7 @@ def check_ports_in_use() -> CheckResult:
         "XRay SOCKS": s.get("xray_socks_port", 10808),
         "XRay HTTP": s.get("xray_http_port", 10809),
     }
-    
+
     in_use = {}
     try:
         conns = psutil.net_connections(kind="inet")
@@ -1050,20 +1050,23 @@ def check_ports_in_use() -> CheckResult:
                             in_use[name] = (port, pname)
     except Exception as e:
         return CheckResult("Port Conflicts", True, f"Could not check: {e}")
-        
+
     if not in_use:
         return CheckResult("Port Conflicts", True, "OK (All ports free)")
-        
+
     msg = ", ".join(f"{n} ({p}) by {proc}" for n, (p, proc) in in_use.items())
-    
+
     def _fix_ports():
         import secrets
         for name in in_use:
             new_port = 15000 + secrets.randbelow(35001)
-            if name == "SNI": cfg.set_value("sni_listen_port", new_port)
-            elif name == "XRay SOCKS": cfg.set_value("xray_socks_port", new_port)
-            elif name == "XRay HTTP": cfg.set_value("xray_http_port", new_port)
-            
+            if name == "SNI":
+                cfg.set_value("sni_listen_port", new_port)
+            elif name == "XRay SOCKS":
+                cfg.set_value("xray_socks_port", new_port)
+            elif name == "XRay HTTP":
+                cfg.set_value("xray_http_port", new_port)
+
     return CheckResult("Port Conflicts", False, f"Ports in use: {msg}", fixable=True, fix=_fix_ports)
 
 

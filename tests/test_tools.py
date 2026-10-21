@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from blackoutkit import tools
 from blackoutkit.tools import ping_stats
 
+
 def test_ping_stats_empty():
     times = []
     result = ping_stats(times)
@@ -15,6 +16,7 @@ def test_ping_stats_empty():
         "jitter": None,
         "loss_pct": 100.0,
     }
+
 
 def test_ping_stats_all_none():
     times = [None, None, None]
@@ -27,6 +29,7 @@ def test_ping_stats_all_none():
         "loss_pct": 100.0,
     }
 
+
 def test_ping_stats_single_value():
     times = [10.0]
     result = ping_stats(times)
@@ -38,6 +41,7 @@ def test_ping_stats_single_value():
         "loss_pct": 0.0,
     }
 
+
 def test_ping_stats_mixed():
     times = [10.0, None, 20.0]
     result = ping_stats(times)
@@ -46,6 +50,7 @@ def test_ping_stats_mixed():
     assert result["max"] == 20.0
     assert result["jitter"] == 10.0
     assert result["loss_pct"] == pytest.approx(33.333333333333336)
+
 
 def test_ping_stats_all_valid():
     times = [10.0, 20.0, 30.0]
@@ -57,6 +62,7 @@ def test_ping_stats_all_valid():
         "jitter": 10.0,
         "loss_pct": 0.0,
     }
+
 
 def test_ping_stats_jitter_calculation():
     # 10.0 -> 5.0 (diff 5.0) -> 15.0 (diff 10.0) -> sum = 15.0, avg = 7.5

@@ -271,8 +271,6 @@ def release_lease(lease_path: Path, lock_path: Path, generation: str, pid: int |
         return False
 
 
-
-
 def perform_watchdog_cleanup(
     lease_path: Path,
     lock_path: Path,

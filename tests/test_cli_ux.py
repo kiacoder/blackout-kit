@@ -1,7 +1,7 @@
 """Tests for Phase 5A: CLI UX Polish (Error Formatting, Spinners, Tables)."""
-import pytest
 from rich.console import Console
 from blackoutkit.cli_error_handler import format_error, handle_cli_exception
+
 
 def test_format_error_standard(capsys):
     console = Console(stderr=True, no_color=True)
@@ -17,6 +17,7 @@ def test_format_error_standard(capsys):
     assert "Error: Configuration loading failed" in captured.err
     assert "Reason: Missing key 'dns_servers' in config.yaml" in captured.err
     assert "Hint: Run 'blackout config --help' for details" in captured.err
+
 
 def test_handle_cli_exception(capsys):
     console = Console(stderr=True, no_color=True)

@@ -3,12 +3,14 @@ import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
 from blackoutkit.scanner.ip_scanner import generate_cloudflare_ips, check_ip
 
+
 def test_generate_cloudflare_ips():
     ips = generate_cloudflare_ips(10)
     assert len(ips) == 10
-    
+
     ips2 = generate_cloudflare_ips(100)
     assert len(ips2) > 80
+
 
 @pytest.mark.asyncio
 async def test_check_ip_success():
@@ -35,6 +37,7 @@ async def test_check_ip_closes_writer_when_wait_closed_fails():
     assert result is not None
     mock_writer.close.assert_called_once()
     mock_writer.wait_closed.assert_awaited_once()
+
 
 @pytest.mark.asyncio
 async def test_check_ip_timeout():

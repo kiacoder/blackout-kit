@@ -3,7 +3,7 @@ Tests for the LiveDashboard module.
 Verifies status collection, health calculation, rendering, and formatting.
 """
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from blackoutkit.dashboard import LiveDashboard
 

@@ -988,7 +988,7 @@ def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = 
     versions = []
     for match in re.finditer(r'href="(\d+\.\d+(?:\.\d+)?)/"', html):
         versions.append(match.group(1))
-    
+
     if not versions:
         version = "15.0.19"
     else:
@@ -998,7 +998,7 @@ def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = 
         version = versions[-1]
 
     download_url = f"https://dist.torproject.org/torbrowser/{version}/tor-expert-bundle-windows-x86_64-{version}.tar.gz"
-    
+
     tmp_path = None
     try:
         # Download straight into the temp-file handle: the scratch file is
@@ -1032,11 +1032,11 @@ def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = 
             tor_exe_member = next((m for m in members if m.name.endswith("tor.exe")), None)
             if not tor_exe_member:
                 return False, "tor.exe not found in downloaded tar.gz"
-            
+
             prefix = ""
             if "/" in tor_exe_member.name:
                 prefix = tor_exe_member.name.rsplit("/", 1)[0] + "/"
-            
+
             BINS_DIR.mkdir(parents=True, exist_ok=True)
             for member in members:
                 if member.name.startswith(prefix) and not member.isdir():
@@ -1046,7 +1046,7 @@ def _download_tor_binary(progress_callback: Callable[[int, int], None] | None = 
                         f_in = tf.extractfile(member)
                         if f_in:
                             dest.write_bytes(f_in.read())
-        
+
         return True, f"Installed Tor (Expert Bundle) v{version}"
     except Exception as e:
         return False, f"Tor download/extraction failed: {e}"
@@ -1137,13 +1137,13 @@ def _download_openvpn_binary(progress_callback: Callable[[int, int], None] | Non
         for p in temp_dir.rglob("openvpn.exe"):
             openvpn_exe = p
             break
-        
+
         if not openvpn_exe:
             return False, "openvpn.exe not found in extracted MSI contents"
 
         bin_dir = openvpn_exe.parent
         BINS_DIR.mkdir(parents=True, exist_ok=True)
-        
+
         for item in bin_dir.iterdir():
             if item.is_file() and (item.suffix.lower() == ".exe" or item.suffix.lower() == ".dll"):
                 shutil.copy(item, BINS_DIR / item.name)

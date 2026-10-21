@@ -4,9 +4,7 @@ Verifies that when a primary engine fails, the daemon automatically tries fallba
 """
 import json
 import sys
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -117,7 +115,7 @@ def _create_fallback_engine_factory(engine_name: str):
 
 def _configure_fallback_daemon_loop(monkeypatch, tmp_path, outcomes, waits, fallback_enabled=True):
     """Set up daemon loop with fallback-enabled configuration."""
-    from blackoutkit import settings, tray, readiness
+    from blackoutkit import settings, tray
     from blackoutkit.scanner import proxy_tester
 
     _FakeFallbackEngine.outcomes = list(outcomes)
@@ -146,7 +144,6 @@ def _configure_fallback_daemon_loop(monkeypatch, tmp_path, outcomes, waits, fall
         import logging
         import threading
         from blackoutkit import readiness, settings as cfg
-        from blackoutkit.proxy_manager import set_system_proxy
 
         global cfg_lock, _shutdown_requested, _shutdown_lock
         with daemon._shutdown_lock:
@@ -157,7 +154,6 @@ def _configure_fallback_daemon_loop(monkeypatch, tmp_path, outcomes, waits, fall
         devnull = os.fdopen(os.open(os.devnull, os.O_WRONLY), "w") if sys.platform.startswith("linux") else None
 
         # Import engines
-        from blackoutkit.engines.xray import XRayEngine
 
         if sys.platform == "win32":
             from blackoutkit.engines.gdpi import GoodbyeDPIEngine
@@ -350,6 +346,7 @@ def test_active_daemon_entrypoint_honors_fallback_setting(monkeypatch, tmp_path,
 
     primary = "xray"
     fallback = "tuic" if sys.platform.startswith("linux") else "gdpi"
+
     class PrimaryEngine(FakeEngine):
         def __init__(self):
             super().__init__(primary, False)

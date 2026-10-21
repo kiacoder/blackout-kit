@@ -116,7 +116,8 @@ def is_mode_enforced() -> tuple[bool, list[str]]:
 # ─────────────────────────── Kill switch ─────────────────────────
 
 # Thread lock to prevent races on rapid enable/disable
-import threading as _ks_th ; _ks_lock = _ks_th.Lock()
+import threading as _ks_th
+_ks_lock = _ks_th.Lock()
 
 # All rule names managed by the kill switch (kept in sync across enable/disable)
 _KS_RULES = [

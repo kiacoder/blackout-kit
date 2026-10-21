@@ -1,6 +1,6 @@
 """Tests for Phase 5D Regional Presets."""
-import re
 from pathlib import Path
+
 
 def test_regional_presets_exist_and_valid():
     presets_dir = Path("configs/presets")

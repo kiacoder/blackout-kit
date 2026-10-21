@@ -5,6 +5,7 @@ import binascii
 from pathlib import Path
 from blackoutkit.config.manager import ProxyConfig, save_configs, _parse_vmess, parse_v2ray_uri, select_proxy_config
 
+
 def test_save_configs(tmp_path: Path):
     configs = [
         ProxyConfig(protocol="vmess", address="1.1.1.1", port=443, raw_uri="vmess://test1"),
@@ -18,6 +19,7 @@ def test_save_configs(tmp_path: Path):
     assert test_file.exists()
     content = test_file.read_text(encoding="utf-8")
     assert content == "vmess://test1\nvless://test2"
+
 
 def test_save_configs_creates_directories(tmp_path: Path):
     configs = [
@@ -55,6 +57,7 @@ def create_vmess_uri(data_dict, strip_padding=True):
         b64_str = b64_str.rstrip("=")
     return f"vmess://{b64_str}"
 
+
 def test_parse_vmess_full():
     data = {
         "v": "2",
@@ -82,6 +85,7 @@ def test_parse_vmess_full():
     assert config.sni == "my-sni.com"
     assert config.raw_uri == uri
 
+
 def test_parse_vmess_defaults():
     data = {
         "add": "example.com",
@@ -99,6 +103,7 @@ def test_parse_vmess_defaults():
     assert config.transport == "ws"
     assert config.name == ""
 
+
 def test_parse_vmess_sni_fallback_to_host():
     # If sni is not explicitly set, it should fallback to host
     data = {
@@ -110,6 +115,7 @@ def test_parse_vmess_sni_fallback_to_host():
 
     assert config.host == "fallback-host.com"
     assert config.sni == "fallback-host.com"
+
 
 def test_parse_vmess_padding():
     data = {"add": "a"}
@@ -131,6 +137,7 @@ def test_parse_vmess_invalid_base64():
     with pytest.raises(binascii.Error):
         _parse_vmess(invalid_uri)
 
+
 def test_parse_vmess_invalid_json():
     # Valid base64, but not JSON
     bad_json_b64 = base64.b64encode(b"not json").decode('utf-8')
@@ -138,6 +145,7 @@ def test_parse_vmess_invalid_json():
 
     with pytest.raises(json.JSONDecodeError):
         _parse_vmess(invalid_uri)
+
 
 def test_parse_v2ray_uri_vmess_wrapper():
     data = {"add": "1.2.3.4", "port": 1234}
@@ -148,6 +156,7 @@ def test_parse_v2ray_uri_vmess_wrapper():
     assert config.protocol == "vmess"
     assert config.address == "1.2.3.4"
     assert config.port == 1234
+
 
 def test_parse_v2ray_uri_invalid_returns_none():
     assert parse_v2ray_uri("vmess://invalid_base64!!!") is None

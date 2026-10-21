@@ -238,7 +238,6 @@ def _release_daemon_lease(pid: int, generation: str) -> bool:
     return _clear_owned_metadata(pid, generation)
 
 
-
 def start(engine_name: str, env_overrides: dict[str, str] | None = None) -> int:
     """
     Launch a background daemon process for the given engine.
@@ -1487,7 +1486,9 @@ def _run_daemon_loop(
                 traffic_monitor.stop()
             except Exception as exc:
                 log.warning("Traffic monitor could not stop cleanly: %s", exc)
+
         _stop_active_engines()
+
         def _proxy_cleanup_with_fallback():
             # Owned restore first; if the record is gone or the registry was
             # touched manually (state mismatch), still clear a proxy that

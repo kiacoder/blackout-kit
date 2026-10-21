@@ -42,6 +42,7 @@ def _open_isp_lookup(request: urllib.request.Request, *, timeout: float):
     opener = urllib.request.build_opener(_ISPRedirectHandler())
     return opener.open(request, timeout=timeout)
 
+
 from dataclasses import dataclass
 
 _log = logging.getLogger(__name__)

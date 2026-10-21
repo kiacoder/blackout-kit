@@ -83,7 +83,6 @@ def resource_path(relative_path: str) -> Path:
     return candidates[0] if candidates else relative
 
 
-
 def ensure_frozen_resources() -> None:
     """Copy bundled mutable data into the user data directory when frozen."""
     if not getattr(sys, "frozen", False):

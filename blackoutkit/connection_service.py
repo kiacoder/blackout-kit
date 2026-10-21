@@ -21,7 +21,6 @@ class ConnectionServiceError(RuntimeError):
     """Raised only for invalid service integration boundaries."""
 
 
-
 def _invoke_start_stack(factory: Callable[..., list], engine_name: str, emit: bool) -> list:
     try:
         return factory(engine_name, emit=emit)
@@ -29,7 +28,6 @@ def _invoke_start_stack(factory: Callable[..., list], engine_name: str, emit: bo
         if "emit" not in str(exc):
             raise
         return factory(engine_name)
-
 
 
 def _invoke_daemon_start(factory: Callable[..., int], engine_name: str, env_overrides: dict[str, str]) -> int:

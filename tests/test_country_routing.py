@@ -93,8 +93,7 @@ def test_xray_uses_country_aware_bypass_domains():
         is_sni_compatible=lambda: False,
     )
 
-    import json
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import patch
 
     with patch("blackoutkit.settings.load", return_value={
         "xray_fingerprint": "chrome",
@@ -106,8 +105,8 @@ def test_xray_uses_country_aware_bypass_domains():
         "country": "RU",
         "xray_fragment": "",
     }), patch("blackoutkit.security.get_current_mode", return_value="speed"), \
-         patch("blackoutkit.cert_bypass.should_allow_insecure", return_value=(True, "")), \
-         patch("blackoutkit.tools.resolve_doh", return_value=None):
+        patch("blackoutkit.cert_bypass.should_allow_insecure", return_value=(True, "")), \
+        patch("blackoutkit.tools.resolve_doh", return_value=None):
         engine = XRayEngine(proxy_config=config_obj, socks_port=10808, http_port=10809)
         config = engine.generate_config()
 
@@ -165,8 +164,8 @@ def test_xray_uses_iranian_domains_when_country_is_ir():
         "country": "IR",
         "xray_fragment": "",
     }), patch("blackoutkit.security.get_current_mode", return_value="speed"), \
-         patch("blackoutkit.cert_bypass.should_allow_insecure", return_value=(True, "")), \
-         patch("blackoutkit.tools.resolve_doh", return_value=None):
+        patch("blackoutkit.cert_bypass.should_allow_insecure", return_value=(True, "")), \
+        patch("blackoutkit.tools.resolve_doh", return_value=None):
         engine = XRayEngine(proxy_config=config_obj, socks_port=10808, http_port=10809)
         config = engine.generate_config()
 

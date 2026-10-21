@@ -3,9 +3,10 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 import blackoutkit.security as sec
-import blackoutkit.settings as cfg
 
 # === MODES ===
+
+
 def test_apply_mode():
     with patch("blackoutkit.settings.load", return_value={"xray_fingerprint": "chrome", "security_mode": "speed"}), \
          patch("blackoutkit.settings.save") as mock_save:
@@ -14,22 +15,27 @@ def test_apply_mode():
         assert saved["security_mode"] == "private"
         assert saved["xray_fingerprint"] == "random"
 
+
 def test_apply_mode_invalid():
     with pytest.raises(ValueError):
         sec.apply_mode("fake_mode")
+
 
 def test_get_current_mode():
     with patch("blackoutkit.settings.load", return_value={"security_mode": "legend"}):
         assert sec.get_current_mode() == "legend"
 
+
 def test_mode_description():
     assert "legendary" in sec.mode_description("legend").lower()
+
 
 def test_is_mode_enforced():
     with patch("blackoutkit.settings.load", return_value={"security_mode": "private", "xray_fingerprint": "random", "xray_log_level": "none", "xray_mux_enabled": True, "gdpi_flags": "-9"}):
         ok, mismatches = sec.is_mode_enforced()
         assert ok is True
         assert len(mismatches) == 0
+
 
 def test_is_mode_enforced_mismatch():
     with patch("blackoutkit.settings.load", return_value={"security_mode": "private", "xray_fingerprint": "chrome"}):
@@ -38,6 +44,8 @@ def test_is_mode_enforced_mismatch():
         assert len(mismatches) > 0
 
 # === KILL SWITCH ===
+
+
 @patch("sys.platform", "linux")
 @patch("blackoutkit.linux_network.kill_switch_is_active", return_value=True)
 @patch("blackoutkit.linux_network.remove_owned_firewall", return_value=(True, "removed"))
@@ -60,6 +68,7 @@ def test_kill_switch_linux(mock_endpoints, mock_enable, mock_remove, mock_active
 def test_linux_kill_switch_refuses_missing_endpoint_allowlist(mock_endpoints, mock_enable):
     assert sec.enable_kill_switch() is False
     mock_enable.assert_called_once_with([])
+
 
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
@@ -94,6 +103,7 @@ def test_proxy_process_list_excludes_shared_library(tmp_path):
     assert str((tmp_path / "xray.exe").resolve()) in processes
     assert str((tmp_path / "blackout_core.dll").resolve()) not in processes
 
+
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
 def test_enable_kill_switch_removes_legacy_rules_before_refusing(mock_run):
@@ -116,6 +126,7 @@ def test_disable_kill_switch_win32(mock_run):
     mock_run.return_value = MagicMock(stdout="OK")
     assert sec.disable_kill_switch() is True
 
+
 @patch("sys.platform", "win32")
 @patch("subprocess.run")
 def test_kill_switch_status_does_not_query_unsafe_legacy_rules(mock_run):
@@ -130,15 +141,18 @@ def test_get_machine_id_win32(mock_run):
     mock_run.return_value = MagicMock(stdout="UUID\n12345678-1234-1234-1234-123456789012\n")
     assert sec._get_machine_id() == b"12345678-1234-1234-1234-123456789012"
 
+
 @patch("sys.platform", "linux")
 @patch("platform.node", return_value="linux-host")
 def test_get_machine_id_linux(mock_node):
     assert sec._get_machine_id() == b"linux-host"
 
+
 def test_atomic_write_bytes(tmp_path):
     target = tmp_path / "test.bin"
     sec._atomic_write_bytes(target, b"hello")
     assert target.read_bytes() == b"hello"
+
 
 @patch("blackoutkit.security.CONFIGS_FILE", MagicMock(exists=MagicMock(return_value=False)))
 def test_obfuscate_configs_no_file(tmp_path):
@@ -149,25 +163,28 @@ def test_obfuscate_configs_no_file(tmp_path):
         sec.obfuscate_configs()
 
 # Let's use real file operations via tmp_path for crypto tests
+
+
 def test_obfuscate_deobfuscate_configs_full(tmp_path):
     conf = tmp_path / "configs.txt"
     enc = tmp_path / "configs.enc"
     conf.write_bytes(b"secret config")
-    
+
     with patch("blackoutkit.security.CONFIGS_FILE", conf), \
          patch("blackoutkit.security.ENC_CONFIGS", enc), \
          patch("blackoutkit.security.APP_DATA_DIR", tmp_path), \
          patch("blackoutkit.vault.ENC_SECRETS_FILE", tmp_path / "secrets.enc"):
-         
+
         sec.obfuscate_configs()
         assert not conf.exists()
         assert enc.exists()
         assert sec.configs_are_obfuscated()
-        
+
         ok = sec.deobfuscate_configs()
         assert ok
         assert conf.exists()
         assert conf.read_bytes() == b"secret config"
+
 
 def test_deobfuscate_configs_no_file(tmp_path):
     with patch("blackoutkit.security.ENC_CONFIGS", MagicMock(exists=MagicMock(return_value=False))), \
@@ -175,6 +192,8 @@ def test_deobfuscate_configs_no_file(tmp_path):
         assert sec.deobfuscate_configs() is False
 
 # === AV EXCLUSION: WinDivert driver folder only, never automatic ===
+
+
 @pytest.fixture
 def isolated_bins(tmp_path, monkeypatch):
     """A bins/ layout with the isolated WinDivert driver folder holding only the driver."""
@@ -390,31 +409,31 @@ def test_stability_tracker(tmp_path):
     stab_file = tmp_path / "stability.json"
     with patch("blackoutkit.security._STABILITY_FILE", stab_file), \
          patch("blackoutkit.security.APP_DATA_DIR", tmp_path):
-        
+
         # Test empty
         sec.reset_stability()
         assert sec.get_stability_score("xray")["loss_pct"] == 100
         assert sec.all_stability_scores() == {}
-        
+
         # Record some latency
         sec.record_latency("xray", 100.0)
         sec.record_latency("xray", 120.0)
         sec.record_latency("xray", None)  # loss
-        
+
         score = sec.get_stability_score("xray")
         assert score["avg_ms"] == 110.0
         assert score["loss_pct"] > 0
-        
+
         scores = sec.all_stability_scores()
         assert "xray" in scores
-        
+
         # Test alert
         sec.record_latency("xray", None)
         sec.record_latency("xray", None) # high loss
         alert, msg = sec.stability_alert("xray", threshold_loss_pct=20)
         assert alert is True
         assert "packet loss" in msg
-        
+
         # Reset
         sec.reset_stability("xray")
         assert sec.get_stability_score("xray")["loss_pct"] == 100

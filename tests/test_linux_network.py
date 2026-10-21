@@ -1,4 +1,3 @@
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from blackoutkit import linux_network
@@ -36,6 +35,7 @@ def test_remove_owned_firewall_only_uses_blackout_names(monkeypatch):
     monkeypatch.setattr(linux_network, "is_root", lambda: True)
     monkeypatch.setattr(linux_network, "_command_available", lambda _name: True)
     monkeypatch.setattr(linux_network, "_nft_table_exists", lambda: True)
+
     def record(command, **_kwargs):
         commands.append(command)
         return "-D" not in command

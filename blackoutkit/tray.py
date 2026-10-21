@@ -20,7 +20,7 @@ def _create_image():
 
         if icon_path.exists():
             return Image.open(str(icon_path))
-            
+
         # Fallback to generating one with transparency
         img = Image.new('RGBA', (64, 64), color=(0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -28,6 +28,7 @@ def _create_image():
         return img
     except ImportError:
         return None
+
 
 def start_tray(engine_name: str, stop_callback=None):
     """
@@ -50,7 +51,7 @@ def start_tray(engine_name: str, stop_callback=None):
     def on_quit(icon, item):
         icon.stop()
         if stop_callback:
-            # We must call stop_callback in a thread, because icon.stop() 
+            # We must call stop_callback in a thread, because icon.stop()
             # tears down the event loop, but we want to make sure the app shuts down cleanly.
             threading.Thread(target=stop_callback, daemon=False).start()
 

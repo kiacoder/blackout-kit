@@ -1,7 +1,6 @@
-import pytest
 from unittest.mock import patch, MagicMock
 from blackoutkit.engines.sni import SNIEngine
-import blackoutkit.settings as cfg
+
 
 @patch("blackoutkit.settings.load")
 def test_sni_engine_init(mock_load):
@@ -14,7 +13,8 @@ def test_sni_engine_init(mock_load):
     assert engine.connect_ip == "1.1.1.1"
     assert engine.fake_sni == "google.com"
     assert engine.listen_port == 1234
-    
+
+
 @patch("blackoutkit.settings.load")
 def test_sni_engine_write_config(mock_load, tmp_path):
     mock_load.return_value = {
@@ -30,6 +30,7 @@ def test_sni_engine_write_config(mock_load, tmp_path):
     assert data["CONNECT_IP"] == "1.1.1.1"
     assert data["FAKE_SNI"] == "google.com"
 
+
 @patch("blackoutkit.core.get_core_dll")
 @patch("blackoutkit.settings.load")
 @patch("blackoutkit.engines.sni.SNIEngine.wait_for_port")
@@ -41,15 +42,16 @@ def test_sni_engine_start_success(mock_wait, mock_load, mock_get_dll, tmp_path):
     }
     engine = SNIEngine()
     engine._config_dir = tmp_path
-    
+
     mock_dll = MagicMock()
     mock_dll.StartSNIC.return_value = 0
     mock_get_dll.return_value = mock_dll
     mock_wait.return_value = True
-    
+
     assert engine.start() is True
     mock_dll.StartSNIC.assert_called_once()
     mock_wait.assert_called_once()
+
 
 @patch("blackoutkit.core.get_core_dll", return_value=None)
 @patch("blackoutkit.settings.load")
@@ -63,6 +65,7 @@ def test_sni_engine_start_no_dll(mock_load, mock_get_dll, tmp_path):
     engine._config_dir = tmp_path
     assert engine.start() is False
 
+
 @patch("blackoutkit.core.get_core_dll")
 @patch("blackoutkit.settings.load")
 def test_sni_engine_start_dll_fails(mock_load, mock_get_dll, tmp_path):
@@ -73,12 +76,13 @@ def test_sni_engine_start_dll_fails(mock_load, mock_get_dll, tmp_path):
     }
     engine = SNIEngine()
     engine._config_dir = tmp_path
-    
+
     mock_dll = MagicMock()
     mock_dll.StartSNIC.return_value = -1
     mock_get_dll.return_value = mock_dll
-    
+
     assert engine.start() is False
+
 
 @patch("blackoutkit.engines.sni.SNIEngine._run_auto_scan")
 @patch("blackoutkit.core.get_core_dll")
@@ -94,15 +98,16 @@ def test_sni_engine_start_auto(mock_wait, mock_set, mock_load, mock_get_dll, moc
     mock_scan.return_value = "8.8.8.8"
     engine = SNIEngine()
     engine._config_dir = tmp_path
-    
+
     mock_dll = MagicMock()
     mock_dll.StartSNIC.return_value = 0
     mock_get_dll.return_value = mock_dll
     mock_wait.return_value = True
-    
+
     assert engine.start() is True
     mock_set.assert_called_with("sni_connect_ip", "8.8.8.8")
     assert engine.connect_ip == "8.8.8.8"
+
 
 @patch("blackoutkit.engines.sni.SNIEngine._run_auto_scan", return_value=None)
 @patch("blackoutkit.core.get_core_dll")
@@ -116,8 +121,9 @@ def test_sni_engine_start_auto_fail(mock_load, mock_get_dll, mock_scan, tmp_path
     engine = SNIEngine()
     engine._config_dir = tmp_path
     mock_get_dll.return_value = MagicMock()
-    
+
     assert engine.start() is False
+
 
 @patch("asyncio.new_event_loop")
 @patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
@@ -140,19 +146,20 @@ def test_run_auto_scan_success(mock_get, mock_gen, mock_scan, mock_loop, tmp_pat
         [],
         [("2.2.2.2", 120.0), ("3.3.3.3", 150.0)]
     ]
-    
+
     mock_dll = MagicMock()
     mock_dll.StartSNIC.return_value = 0
-    
+
     engine = SNIEngine()
     engine._config_dir = tmp_path
-    
+
     with patch.object(engine, "_test_http_get", return_value=50.0):
         winner = engine._run_auto_scan(mock_dll, tmp_path / "c.json")
-    
+
     assert winner == "2.2.2.2"
     assert mock_dll.StartSNIC.call_count > 0
     assert mock_dll.StopSNIC.call_count > 0
+
 
 @patch("asyncio.new_event_loop")
 @patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
@@ -160,12 +167,13 @@ def test_run_auto_scan_no_ips(mock_scan, mock_loop, tmp_path):
     mock_loop_instance = MagicMock()
     mock_loop.return_value = mock_loop_instance
     mock_loop_instance.run_until_complete.return_value = []
-    
+
     engine = SNIEngine()
     engine._config_dir = tmp_path
-    
+
     winner = engine._run_auto_scan(MagicMock(), tmp_path / "c.json")
     assert winner is None
+
 
 def test_test_http_get():
     engine = SNIEngine()
@@ -211,6 +219,7 @@ def test_test_http_get():
 
     assert lat is not None
 
+
 @patch("blackoutkit.core.get_core_dll")
 @patch("blackoutkit.settings.load")
 @patch("blackoutkit.engines.sni.SNIEngine.wait_for_port")
@@ -226,10 +235,11 @@ def test_sni_engine_start_wait_port_fails(mock_wait, mock_load, mock_get_dll, tm
     mock_dll.StartSNIC.return_value = 0
     mock_get_dll.return_value = mock_dll
     mock_wait.return_value = False
-    
+
     with patch.object(engine, "stop") as mock_stop:
         assert engine.start() is False
         mock_stop.assert_called_once()
+
 
 @patch("asyncio.new_event_loop")
 @patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
@@ -237,23 +247,24 @@ def test_sni_engine_start_wait_port_fails(mock_wait, mock_load, mock_get_dll, tm
 @patch("blackoutkit.settings.get")
 def test_run_auto_scan_phase1_fast(mock_get, mock_gen, mock_scan, mock_loop, tmp_path):
     mock_get.side_effect = lambda k, d=None: 5 if k in ("scan_ip_count", "scan_concurrency") else (True if k == "sni_always_test_all_ips" else d)
-    
+
     mock_loop_instance = MagicMock()
     mock_loop.return_value = mock_loop_instance
     mock_loop_instance.run_until_complete.return_value = [("4.4.4.4", 50.0), ("5.5.5.5", 60.0)]
-    
+
     mock_dll = MagicMock()
     mock_dll.StartSNIC.side_effect = [-1, 0] # fail first time, succeed second
-    
+
     engine = SNIEngine()
     engine._config_dir = tmp_path
-    
+
     with patch.object(engine, "_test_http_get", side_effect=[Exception("crash"), None, 50.0, 50.0, 50.0]):
         # The exception covers lines 194-195
         # None covers lines 200 and 240
         winner = engine._run_auto_scan(mock_dll, tmp_path / "c.json")
-    
+
     assert winner is not None
+
 
 @patch("asyncio.new_event_loop")
 @patch("blackoutkit.scanner.ip_scanner.scan_ips", new_callable=MagicMock)
@@ -266,24 +277,25 @@ def test_run_auto_scan_cached_ip(mock_get, mock_gen, mock_scan, mock_loop, tmp_p
         if k == "sni_custom_ips": return ["custom.ip"]
         return default
     mock_get.side_effect = mock_settings_get
-    
+
     mock_loop_instance = MagicMock()
     mock_loop.return_value = mock_loop_instance
     mock_loop_instance.run_until_complete.side_effect = [
         [],
         [("2.2.2.2", 120.0)]
     ]
-    
+
     mock_dll = MagicMock()
     mock_dll.StartSNIC.return_value = 0
-    
+
     engine = SNIEngine()
     engine._config_dir = tmp_path
-    
+
     with patch.object(engine, "_test_http_get", return_value=50.0):
         winner = engine._run_auto_scan(mock_dll, tmp_path / "c.json")
-    
+
     assert winner is not None
+
 
 def test_test_http_get_no_http():
     engine = SNIEngine()
@@ -328,6 +340,7 @@ def test_test_http_get_no_http():
         lat = engine._test_http_get("google.com")
 
     assert lat is None
+
 
 def test_test_http_get_fail():
     engine = SNIEngine()

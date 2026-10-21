@@ -1,7 +1,6 @@
 """Milestone battery: malformed sni-spoof inputs, profile conflicts and
 suggestions, env restoration on bootstrap failure, and the interactive
 carrier picker."""
-import json
 import sys
 
 from typer.testing import CliRunner

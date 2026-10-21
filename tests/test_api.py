@@ -11,6 +11,7 @@ from blackoutkit.api import (
 
 # ── collectors (no fastapi needed) ───────────────────────────────────────────
 
+
 def test_collect_metrics_shape():
     m = collect_metrics()
     assert m["available"] is True

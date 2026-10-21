@@ -119,6 +119,7 @@ def _clean_baseline() -> dict:
     """
     return {"enabled": False, "server": "", "override": ""}
 
+
 def _desired_proxy(host: str, port: int, protocol: str) -> dict:
     server = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
     return {"enabled": True, "server": server}

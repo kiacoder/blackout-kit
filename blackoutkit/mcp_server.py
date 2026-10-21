@@ -76,11 +76,13 @@ real_stdout = sys.stdout
 real_stdin = sys.stdin
 sys.stdout = sys.stderr
 
+
 def send_response(response: dict):
     """Write JSON-RPC 2.0 message to real stdout."""
     payload = json.dumps(response, ensure_ascii=False)
     real_stdout.write(payload + "\n")
     real_stdout.flush()
+
 
 TOOLS_MANIFEST = [
     {
@@ -474,7 +476,6 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                 return f"✓ Blackout Kit daemon started using engine '{engine}' (PID {pid})."
             return "✗ Failed to start daemon."
 
-
         elif tool_name == "blackout_disconnect":
             from . import daemon, proxy_manager, security
             stopped = daemon.stop()
@@ -567,7 +568,8 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                 return f"✓ Imported {added} configs. Total saved: {total}."
             elif action == "remove":
                 idx = args.get("index")
-                if not idx: return "Error: 'index' parameter required"
+                if not idx:
+                    return "Error: 'index' parameter required"
                 cfg_mgr.remove_config(idx - 1)
                 return f"✓ Removed config #{idx}."
             return f"Error: unknown config action '{action}'"
@@ -606,11 +608,13 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
                 rules = split_tunnel.load_split_rules()
                 return json.dumps({"direct_bypass_rules": rules}, indent=2)
             elif action == "add":
-                if not target: return "Error: target is required"
+                if not target:
+                    return "Error: target is required"
                 split_tunnel.add_direct_route(target)
                 return f"✓ Added '{target}' to split-tunnel direct bypass list."
             elif action == "remove":
-                if not target: return "Error: target is required"
+                if not target:
+                    return "Error: target is required"
                 split_tunnel.remove_direct_route(target)
                 return f"✓ Removed '{target}' from split-tunnel direct bypass list."
             return f"Error: unknown split-tunnel action '{action}'"
@@ -702,6 +706,7 @@ def handle_tool_call(tool_name: str, args: dict) -> str:
     except Exception as exc:
         return f"Error executing {tool_name}: {exc}"
 
+
 def run_mcp_server():
     """Main stdio loop reading JSON-RPC 2.0 messages from AI agents."""
     while True:
@@ -759,6 +764,7 @@ def run_mcp_server():
                     "id": msg_id,
                     "error": {"code": -32601, "message": "Method not found"}
                 })
+
 
 if __name__ == "__main__":
     run_mcp_server()

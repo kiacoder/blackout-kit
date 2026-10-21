@@ -33,6 +33,7 @@ def _validated_download_url(url: str) -> str:
         raise ValueError("Download URL must use http or https with a host")
     return url
 
+
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field

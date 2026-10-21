@@ -61,6 +61,7 @@ _httpx_clients = {}
 _httpx_lock = threading.Lock()
 _proxy_probe_slots = threading.BoundedSemaphore(4)
 
+
 def _get_httpx_client(proxy_url: str, timeout: float):
     import httpx
     key = (proxy_url, timeout)
@@ -68,6 +69,7 @@ def _get_httpx_client(proxy_url: str, timeout: float):
         if key not in _httpx_clients:
             _httpx_clients[key] = httpx.Client(proxy=proxy_url, timeout=timeout)
         return _httpx_clients[key]
+
 
 def _cleanup_httpx_clients():
     with _httpx_lock:
@@ -77,6 +79,7 @@ def _cleanup_httpx_clients():
             except Exception:
                 pass
         _httpx_clients.clear()
+
 
 atexit.register(_cleanup_httpx_clients)
 
@@ -142,6 +145,7 @@ def test_http_proxy(
     except Exception:
         return None
     return None
+
 
 def test_socks5_proxy(
     proxy_host: str = "127.0.0.1",

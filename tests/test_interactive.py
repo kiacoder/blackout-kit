@@ -1,9 +1,7 @@
 import base64
 import json
-from types import SimpleNamespace
 from unittest.mock import Mock
 
-import pytest
 
 from blackoutkit import interactive, settings
 from blackoutkit.config.manager import ProxyConfig

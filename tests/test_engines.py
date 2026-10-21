@@ -1,5 +1,4 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from blackoutkit.engines.sni import SNIEngine
 from blackoutkit import settings
 from blackoutkit.config.manager import ProxyConfig
@@ -51,10 +50,12 @@ def test_xray_config_selects_mixed_socks_inbound_without_changing_other_config()
         assert config["outbounds"] == baseline["outbounds"]
         assert config["routing"] == baseline["routing"]
 
+
 def test_sni_engine_init():
     engine = SNIEngine()
     assert engine.name == "sni"
     assert engine.listen_port > 0
+
 
 def test_xray_engine_init():
     engine = XRayEngine()

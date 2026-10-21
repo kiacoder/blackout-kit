@@ -89,6 +89,7 @@ def _validated_relay_url(url: str) -> str:
         raise ValueError("Apps Script relay URL must be https on script.google.com")
     return url
 
+
 def _relay_request(gas_id: str, target_url: str, method: str,
                    headers: dict, body: bytes | None) -> dict | None:
     """

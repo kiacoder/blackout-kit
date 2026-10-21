@@ -6,7 +6,6 @@ The interval must never create background egress — staleness is advisory only.
 """
 from datetime import datetime, timedelta, timezone
 
-import pytest
 
 from blackoutkit.tools import adblock
 

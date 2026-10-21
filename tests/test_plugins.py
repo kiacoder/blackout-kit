@@ -6,12 +6,9 @@ from pathlib import Path
 import pytest
 
 from blackoutkit.plugins import (
-    AnalyzerPlugin,
-    ExporterPlugin,
     PluginError,
     PluginManager,
     PluginMetadata,
-    RulePlugin,
 )
 
 RULE_SRC = '''

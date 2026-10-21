@@ -154,6 +154,7 @@ def test_setup_embedded_editors_receive_confirmation_mode(monkeypatch):
 
     monkeypatch.setattr(onboarding, "build_current_setup_plan", lambda: _plan(blockers=("missing",)))
     monkeypatch.setattr(onboarding, "render_setup_plan", lambda *_args: None)
+
     def fake_settings(**kwargs):
         calls.append(kwargs)
 

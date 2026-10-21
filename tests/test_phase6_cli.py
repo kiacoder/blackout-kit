@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-import pytest
 from typer.testing import CliRunner
 
 from blackoutkit import typer_cli

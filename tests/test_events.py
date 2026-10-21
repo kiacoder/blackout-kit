@@ -1,7 +1,6 @@
 """Tests for the structured local event bus (Blackout Operator foundation)."""
 import json
 
-import pytest
 
 from blackoutkit import events as ev
 

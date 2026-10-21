@@ -72,6 +72,7 @@ class HostCertRecord:
 
 _store_lock = threading.Lock()
 
+
 def _load_store() -> dict[str, dict]:
     """Load the cert record store from disk. Returns {} only if file genuinely missing."""
     if not STORE_FILE.exists():

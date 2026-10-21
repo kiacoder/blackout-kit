@@ -29,6 +29,7 @@ QOS_VIOLATIONS_FILE = APP_DATA_DIR / "qos_violations.jsonl"
 
 # ──────────────────────────── Enums & Constants ──────────────────────────
 
+
 class RuleType(str, Enum):
     """QoS rule types."""
     APP = "app"
