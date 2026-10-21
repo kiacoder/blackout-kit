@@ -1589,6 +1589,76 @@ def cmd_config(args):
         # Alias of `blackout test` - reachable from the config namespace.
         cmd_test(_args())
         return
+    if args.config_command == "sources":
+        from .config.sources import TRUSTED_SOURCES
+
+        table = make_table(
+            "Trusted Config Sources",
+            [("Name", "cyan"), ("Note", "dim")],
+            [],
+        )
+        for source in TRUSTED_SOURCES:
+            table.add_row(source["name"], source["note"])
+        console.print(table)
+        console.print(
+            "[muted]Pull from them: [bold]blackout config fetch[/bold] (adds up to 150 new configs, sampled across sources).[/muted]"
+        )
+        return
+
+    if args.config_command == "fetch":
+        from .config import manager
+        from .config.sources import DEFAULT_FETCH_LIMIT, TRUSTED_SOURCES, find_source
+
+        wanted = getattr(args, "source", None)
+        sources = TRUSTED_SOURCES
+        if wanted:
+            match = find_source(wanted)
+            if match is None:
+                console.print(f"[error]Unknown source: {wanted}[/error]")
+                console.print("[muted]Run 'blackout config sources' to see them.[/muted]")
+                return
+            sources = [match]
+
+        limit = int(getattr(args, "limit", 0) or DEFAULT_FETCH_LIMIT)
+        existing = manager.load_configs()
+        existing_uris = {c.raw_uri for c in existing}
+        console.print(
+            f"[info]Fetching {len(sources)} source(s) - you have {len(existing)} saved, adding up to {limit} new...[/info]"
+        )
+
+        # Sample evenly across sources so one huge pool cannot crowd the
+        # others out of the library.
+        per_source = max(1, limit // len(sources))
+        added_total = 0
+        for source in sources:
+            try:
+                fresh = manager.import_from_subscription(source["url"])
+            except Exception as exc:
+                console.print(f"[warning]{source['name']}: {exc}[/warning]")
+                continue
+            fresh = [c for c in fresh if c.raw_uri and c.raw_uri not in existing_uris]
+            take = fresh[:per_source]
+            if not take:
+                console.print(f"[muted]{source['name']}: nothing new[/muted]")
+                continue
+            with manager._config_mutation_lock():
+                current = manager.load_configs()
+                current_uris = {c.raw_uri for c in current}
+                additions = [c for c in take if c.raw_uri not in current_uris]
+                manager.save_configs(current + additions)
+                existing_uris.update(c.raw_uri for c in additions)
+                added_total += len(additions)
+            console.print(
+                f"[success]+[/success] {source['name']}: {len(additions)} new configs"
+            )
+
+        console.print(
+            f"[success]Done - {added_total} new configs added. Total: {len(manager.load_configs())}[/success]"
+        )
+        console.print(
+            "[muted]Rank them with [bold]blackout test[/bold], then connect to the best with [bold]blackout fast[/bold].[/muted]"
+        )
+        return
 
     if args.config_command == "list":
         configs = load_configs()

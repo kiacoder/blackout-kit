@@ -2069,6 +2069,22 @@ def config_test(
     from .cli import cmd_test
     cmd_test(_args(timeout=timeout, concurrency=concurrency))
 
+@config_app.command("sources")
+def config_sources():
+    """List the built-in trusted public config sources."""
+    from .cli import cmd_config
+    cmd_config(_args(config_command="sources"))
+
+
+@config_app.command("fetch")
+def config_fetch(
+    source: str = typer.Option(None, "--source", "-s", help="Only this source (name substring)"),
+    limit: int = typer.Option(150, "--limit", "-n", help="Max NEW configs to add"),
+):
+    """Pull configs from the trusted public sources into your library."""
+    from .cli import cmd_config
+    cmd_config(_args(config_command="fetch", source=source, limit=limit))
+
 @config_app.command("validate")
 def cfg_validate(ctx: typer.Context):
     """Validate saved proxy records using local parser checks only."""

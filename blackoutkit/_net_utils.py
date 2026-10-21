@@ -66,10 +66,19 @@ class SSRFGuardHTTPSHandler(urllib.request.HTTPSHandler):
 
     def https_open(self, req):
         """Override to re-validate the hostname before opening the connection."""
-        # Extract hostname from request URL
-        hostname = req.get_host()
-        # gethost() returns "host:port" if port is non-standard; split it
-        if ":" in hostname:
+        # Extract the ORIGINAL target hostname from the request.
+        # urllib.request.Request has no get_host() (that is an http.client
+        # method), and req.host cannot be trusted here: when a proxy is in
+        # play, set_proxy() rewrites req.host to the PROXY's address - on a
+        # machine behind a local proxy that is 127.0.0.1, which this guard
+        # would then reject as a loopback SSRF target. full_url keeps the
+        # original URL through proxying, so it is the authoritative source.
+        hostname = getattr(req, "full_url", "") or getattr(req, "host", "") or ""
+        if "://" in hostname:
+            hostname = hostname.split("://", 1)[1]
+        if "/" in hostname:
+            hostname = hostname.split("/", 1)[0]
+        if ":" in hostname and not hostname.startswith("["):
             hostname = hostname.split(":", 1)[0]
 
         # Re-validate the hostname against SSRF rules
