@@ -321,10 +321,15 @@ def test_redaction_keeps_ordinary_log_lines_intact():
 
 
 def test_daemon_writes_redacted_logs_at_write_time():
-    """Both daemon entrypoints install the redacting formatter, not a plain one."""
-    for relative in ("blackoutkit/daemon.py", "blackoutkit/daemon/__init__.py"):
-        source = (ROOT / relative).read_text(encoding="utf-8")
-        assert "RedactingFormatter" in source, f"{relative} lost its redacting formatter"
+    """The daemon module installs the redacting formatter, not a plain one."""
+    # Resolve through the import system: blackoutkit.daemon is a PACKAGE
+    # (daemon/__init__.py) - a stale blackoutkit/daemon.py module next to it
+    # would be dead code that never runs, and reading it here would test
+    # nothing while the live copy rots.
+    import blackoutkit.daemon as daemon_mod
+
+    source = Path(daemon_mod.__file__).read_text(encoding="utf-8")
+    assert "RedactingFormatter" in source, f"{daemon_mod.__file__} lost its redacting formatter"
 
 
 # ═══════════════════════ 3. Default binds never expose the LAN ═════════════

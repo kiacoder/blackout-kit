@@ -200,12 +200,26 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
     _validate_proxy_endpoint(host, port)
 
     p = urllib.parse.parse_qs(params_str, keep_blank_values=True)
+    # Lowercase ALIASES alongside the originals: the insecure opt-out is
+    # spelled three ways, but every other parameter (publicKey, serviceName,
+    # ...) must keep its exact case for its own q() lookup.
+    p = {**{k.lower(): v for k, v in p.items()}, **p}
 
     def q(key, default=""):
         vals = p.get(key, [default])
         return urllib.parse.unquote(vals[0]) if vals else default
 
-    insecure_val = q("insecure", "0")
+    # The TLS-verification opt-out is spelled three ways in the wild:
+    # "insecure" (sing-box/v2rayN), "allowInsecure" (Xray/V2RayN) and
+    # "allow_insecure" (the underscore variant these servers ship).
+    # Reading only "insecure" made every self-signed server - all the
+    # QUIC ones here - verify a cert that does not chain, and the tunnel
+    # came up unable to carry a single request.
+    insecure_val = ""
+    for key in ("insecure", "allowinsecure", "allow_insecure"):
+        if p.get(key):
+            insecure_val = q(key, "0")
+            break
     insecure = insecure_val.lower() in ("1", "true", "yes")
 
     password = ""
