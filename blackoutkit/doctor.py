@@ -121,7 +121,6 @@ def _fix_process_stuck():
 @_register_fix("port_conflict")
 def _fix_port_conflict():
     """Find free port and update configuration."""
-    import random
     import secrets
     # Dynamically fix port in settings
     s = cfg.load()

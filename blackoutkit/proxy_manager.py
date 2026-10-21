@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
 import sys
 
 from . import APP_DATA_DIR
@@ -374,7 +373,7 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
         _mark_proxy_owned(previous, actual or target)
         return True
     except PermissionError:
-        _last_error = f"Registry write denied — run Blackout Kit as Administrator."
+        _last_error = "Registry write denied — run Blackout Kit as Administrator."
     except Exception as exc:
         _last_error = f"Registry error: {exc}"
 

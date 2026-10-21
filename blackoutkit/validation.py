@@ -51,13 +51,13 @@ def validate_file_exists(path: str, param_name: str = "file") -> Path:
     if not p.exists():
         raise ValidationError(
             f"{param_name} not found: {path}",
-            hint=f"Check the path and try again. Make sure the file exists.",
+            hint="Check the path and try again. Make sure the file exists.",
             examples=[f"blackout config import /path/to/{param_name}"],
         )
     if not p.is_file():
         raise ValidationError(
             f"{param_name} is not a file: {path}",
-            hint=f"Expected a file, not a directory.",
+            hint="Expected a file, not a directory.",
         )
     return p
 
@@ -69,20 +69,20 @@ def validate_integer(value: Any, param_name: str, *, min_val: int = None, max_va
     except (ValueError, TypeError):
         raise ValidationError(
             f"{param_name} must be a number, got: {value!r}",
-            hint=f"Use only digits (0-9)",
-            examples=[f"blackout config remove 1"],
+            hint="Use only digits (0-9)",
+            examples=["blackout config remove 1"],
         )
 
     if min_val is not None and num < min_val:
         raise ValidationError(
             f"{param_name} must be at least {min_val}, got: {num}",
-            hint=f"Provide a larger number",
+            hint="Provide a larger number",
         )
 
     if max_val is not None and num > max_val:
         raise ValidationError(
             f"{param_name} must be at most {max_val}, got: {num}",
-            hint=f"Provide a smaller number",
+            hint="Provide a smaller number",
         )
 
     return num
@@ -136,7 +136,7 @@ def validate_not_empty(value: str, param_name: str = "value") -> str:
         raise ValidationError(
             f"{param_name} cannot be empty",
             hint=f"Provide a non-empty {param_name}",
-            examples=[f"blackout config add vless://..."],
+            examples=["blackout config add vless://..."],
         )
     return value.strip()
 

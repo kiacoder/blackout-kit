@@ -1,8 +1,7 @@
 """Central error formatting helper for Blackout Kit CLI."""
 from __future__ import annotations
 
-import sys
-from typing import Any, Optional
+from typing import Optional
 from rich.console import Console
 from rich.markup import escape
 

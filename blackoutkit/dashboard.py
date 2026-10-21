@@ -3,8 +3,6 @@ Real-time status dashboard for Blackout Kit daemon.
 Displays live metrics: engine status, connections, throughput, system health.
 """
 import time
-from datetime import datetime
-from pathlib import Path
 
 from rich.console import Console
 from rich.live import Live

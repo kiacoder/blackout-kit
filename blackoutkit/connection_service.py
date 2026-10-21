@@ -820,7 +820,7 @@ class ConnectionService:
             ]
             if preset is None:
                 preset = {
-                    "name": f"isp-profile",
+                    "name": "isp-profile",
                     "title": f"ISP Profile — {profile.display_name}",
                     "changes": profile_changes,
                     "footer": "[dim]Transient overrides only; saved settings are unchanged. Values are starting points, not field-verified per carrier.[/dim]",

@@ -23,10 +23,9 @@ if not sys.stdout.isatty():
 
 from . import __version__, APP_DATA_DIR
 from .cli_navigator import get_navigator
-from .cli_dispatch import ProfessionalCLIGroup, create_professional_app
+from .cli_dispatch import ProfessionalCLIGroup
 from .cli_enhancements import (
     integrate_navigator_into_typer_app,
-    add_group_callback,
     enhance_typer_error_handling,
 )
 from .cli_output import (
@@ -2278,7 +2277,7 @@ def cfg_import(ctx: typer.Context, url: str = typer.Argument(None, help="Subscri
         added, total = import_and_merge(url)
     except ValueError as exc:
         err = ValidationError(
-            f"Invalid subscription format",
+            "Invalid subscription format",
             hint="Check that the subscription URL is valid and accessible",
             examples=["blackout config import https://example.com/sub"],
         )
@@ -2289,7 +2288,7 @@ def cfg_import(ctx: typer.Context, url: str = typer.Argument(None, help="Subscri
         raise typer.Exit(1) from exc
     except OSError as exc:
         err = ValidationError(
-            f"Cannot reach subscription server",
+            "Cannot reach subscription server",
             hint="Check your internet connection and the URL",
             examples=["blackout config import https://example.com/sub"],
         )
@@ -2714,7 +2713,7 @@ def _predict_payload(
     hours: int, limit: int, current_transport: str, primary_dns: str
 ) -> dict:
     from dataclasses import asdict
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from .predictor import Predictor
 
@@ -4073,14 +4072,6 @@ def shield():
     from .cli import cmd_shield
     cmd_shield(_args())
 
-@app.command()
-def update(
-    apply: bool = typer.Option(False, "--apply", help="Download and apply the available update"),
-):
-    """Update Blackout Kit to latest version"""
-    from .cli import cmd_update
-    cmd_update(_args(force=apply))
-
 
 def _show_help(topic):
     from .cli import cmd_help
@@ -5189,7 +5180,6 @@ def ssh_sftp(
     local: str = typer.Option("", "--local", "-l", help="Local path for get/put"),
 ):
     """📂 SFTP Remote File Manager (browse, upload, or download remote files)."""
-    import subprocess
 
     from .tools import run_sftp_client
     res = run_sftp_client(name, action=action, remote_path=remote, local_path=local)

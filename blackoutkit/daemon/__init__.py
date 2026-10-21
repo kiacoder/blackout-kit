@@ -14,7 +14,6 @@ import tempfile
 import threading as _threading
 import time
 from collections.abc import Callable
-from contextlib import nullcontext
 from pathlib import Path
 
 from ..progress import Spinner
@@ -779,7 +778,7 @@ def _run_daemon_loop(
     for key, value in env_overrides.items():
         os.environ[key] = str(value)
 
-    global cfg_lock, _shutdown_requested, _shutdown_lock
+    global cfg_lock, _shutdown_requested
     with _shutdown_lock:
         _shutdown_requested = False
     cfg_lock = _threading.Lock()
@@ -798,7 +797,6 @@ def _run_daemon_loop(
 
     from ..engines.amneziawg import AmneziaWGEngine
     from ..engines.singbox_proxy import Hysteria2Engine, TuicEngine
-    from ..engines.tun import TUNEngine
     from ..engines.xray import XRayEngine
 
     if sys.platform == "win32":

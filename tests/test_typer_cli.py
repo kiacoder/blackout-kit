@@ -357,11 +357,43 @@ def test_emergency_forwards_background_mode():
     assert cmd_emergency.call_args.args[0].background is True
 
 
-def test_update_forwards_apply_flag():
-    with patch("blackoutkit.cli.cmd_update") as cmd_update:
-        typer_cli.update(apply=True)
+def _typer_ctx():
+    """A real typer.Context - the update command requires one (Typer injects
+    it at runtime; direct calls in tests must supply it)."""
+    import typer as _typer
+    import click as _click
 
-    assert cmd_update.call_args.args[0].force is True
+    parent = _click.Context(_click.Command("blackout"))
+    parent.obj = {}
+    return _typer.Context(parent)
+
+
+def test_update_forwards_apply_flag():
+    """--apply must reach the updater's download_and_apply, not just check."""
+    release = {"version": "9.9.9", "url": "https://example.invalid/rel"}
+    with patch("blackoutkit.updater.check_for_update", return_value=release), \
+         patch("blackoutkit.updater.download_and_apply", return_value=True) as apply_mock:
+        typer_cli.update(_typer_ctx(), apply=True)
+
+    apply_mock.assert_called_once_with(release)
+
+
+def test_update_without_apply_does_not_download():
+    """Bare `blackout update` only checks; it must not download anything.
+
+    Goes through Typer's CliRunner: a direct call would hand the function
+    typer.OptionInfo defaults (truthy) instead of resolved booleans, which
+    says nothing about what a real invocation does.
+    """
+    from typer.testing import CliRunner
+
+    release = {"version": "9.9.9", "url": "https://example.invalid/rel"}
+    with patch("blackoutkit.updater.check_for_update", return_value=release), \
+         patch("blackoutkit.updater.download_and_apply", return_value=True) as apply_mock:
+        result = CliRunner().invoke(typer_cli.app, ["update"])
+
+    assert result.exit_code == 0, result.output
+    apply_mock.assert_not_called()
 
 
 def test_certificate_check_forwards_allow_flag():

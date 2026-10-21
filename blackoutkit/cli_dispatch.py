@@ -4,8 +4,7 @@ CLI error handling and command dispatch with professional UX.
 from __future__ import annotations
 
 import sys
-import traceback
-from typing import Any, Callable, Optional
+from typing import Callable
 
 import typer
 from rich.panel import Panel

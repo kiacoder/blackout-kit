@@ -5,13 +5,10 @@ Features: typo suggestions, interactive group browsers, command discovery.
 from __future__ import annotations
 
 import difflib
-import sys
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
 
 from rich.panel import Panel
 from rich.table import Table
-from rich.tree import Tree
 
 from .terminal_menu import MenuItem, run_menu
 from .theme import console

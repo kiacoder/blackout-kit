@@ -6,7 +6,6 @@ import logging
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
 from typing import Any
 
 _log = logging.getLogger(__name__)

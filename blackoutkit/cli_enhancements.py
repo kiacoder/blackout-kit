@@ -3,12 +3,10 @@ Enhanced CLI features: typo suggestions, help integration, group menus.
 """
 from __future__ import annotations
 
-import sys
 from typing import Optional
 
 import typer
 
-from .cli_navigator import get_navigator
 from .cli_dispatch import ProfessionalCLIGroup, make_group_callback
 from .theme import console, is_interactive
 

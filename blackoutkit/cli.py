@@ -1118,8 +1118,8 @@ def cmd_emergency(args):
                 f"[success]Log:[/success] [dim]{daemon.LOG_FILE}[/dim]",
                 border_style="red",
             ))
-        except RuntimeError as e:
-            console.print(f"[error]Failed to start emergency mode[/error]")
+        except RuntimeError:
+            console.print("[error]Failed to start emergency mode[/error]")
         return
 
     # ── Foreground emergency ──
@@ -1587,7 +1587,8 @@ def cmd_config(args):
 
     if args.config_command == "test":
         # Alias of `blackout test` - reachable from the config namespace.
-        cmd_test(_args())
+        # NOTE: _args() lives in typer_cli, not here - build a bare namespace.
+        cmd_test(argparse.Namespace())
         return
     if args.config_command == "sources":
         from .config.sources import TRUSTED_SOURCES
@@ -1693,7 +1694,7 @@ def cmd_config(args):
             remove_config(args.index - 1)
             console.print(f"[success]✓ Removed config #{args.index}[/success]")
         except IndexError:
-            console.print(f"[error]Config index out of range[/error]")
+            console.print("[error]Config index out of range[/error]")
 
     elif args.config_command == "import":
         console.print("[info]Importing from subscription URL...[/info]")
@@ -2943,7 +2944,8 @@ def cmd_tools(args):
         def _run_capture():
             try:
                 if pcap_file:
-                    import scapy.all as scapy
+                    # scapy.all was already imported at the top of this handler;
+                    # the inner `as scapy` only shadowed it.
                     scapy.sniff(
                         iface=iface or None,
                         filter=bpf_filter or None,

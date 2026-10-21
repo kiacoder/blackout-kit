@@ -7,7 +7,6 @@ import json
 import logging
 import os
 import re
-import socket
 import tempfile
 import threading
 from dataclasses import asdict, dataclass, replace

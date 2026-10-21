@@ -175,11 +175,10 @@ def _parse_awg(uri: str) -> "ProxyConfig | None":
         name = _up.unquote(name)
 
     body = rest[len("awg://"):]
-    conf_text = ""
     if body.startswith("?"):
-        conf_text = None  # query form: endpoint is a query param, decode below
+        # Query form: the endpoint is a parameter, no base64 payload.
         q = _up.parse_qs(body[1:])
-        flat = {k.lower(): v[0] for v2 in [v] for k, v in q.items() if v}
+        flat = {k.lower(): v[0] for k, v in q.items() if v}
         endpoint = flat.get("endpoint", "")
     else:
         padded = body + "=" * (-len(body) % 4)
@@ -446,7 +445,7 @@ def save_configs(configs: list[ProxyConfig], path: Path | None = None):
                 f.write(text)
             os.replace(tmp_path, str(p))
             log.debug(f"Saved {len(configs)} configs to {p}")
-        except Exception as e:
+        except Exception:
             try:
                 os.unlink(tmp_path)
             except OSError:

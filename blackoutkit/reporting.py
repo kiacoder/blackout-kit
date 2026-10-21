@@ -438,7 +438,7 @@ class ReportGenerator:
         from reportlab.lib.pagesizes import letter
         from reportlab.lib.styles import getSampleStyleSheet
         from reportlab.lib.units import inch
-        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
         styles = getSampleStyleSheet()
         document = SimpleDocTemplate(

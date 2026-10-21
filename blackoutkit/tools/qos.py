@@ -304,7 +304,6 @@ _rule_throughput_lock = __import__('threading').Lock()
 
 def calculate_rule_throughput(rule_id: str, since_ts: float | None = None) -> tuple[float, float, bool]:
     """Return placeholder zero-throughput statistics for one stored rule."""
-    global _rule_throughput_state
 
     rule = get_rule(rule_id)
     if not rule:

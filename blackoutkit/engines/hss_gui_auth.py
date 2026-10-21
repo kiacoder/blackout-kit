@@ -4,10 +4,7 @@ Provides interactive credential input for IKEv2+EAP connections.
 """
 import logging
 import subprocess
-import sys
-import threading
 import time
-from pathlib import Path
 
 _log = logging.getLogger(__name__)
 
