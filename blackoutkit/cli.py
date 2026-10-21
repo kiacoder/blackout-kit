@@ -1061,14 +1061,36 @@ def cmd_connect(args):
 def cmd_stop(args):
     if daemon.stop():
         s = cfg.load()
-        if s.get("auto_set_proxy"):
-            cleanup_owned_system_proxy()
+        # Always attempt the proxy cleanup: a proxy left by an earlier
+        # session (or a crashed one) must not survive this stop just
+        # because the setting moved. The helpers are internally guarded -
+        # they only ever touch a proxy that points at our own ports.
+        cleanup_owned_system_proxy()
         if s.get("kill_switch", False):
             try:
                 sec.disable_kill_switch()
             except Exception:
                 pass
-        console.print("[success]✓ Daemon stopped. System proxy cleared.[/success]")
+        # Then VERIFY instead of claiming. "System proxy cleared" while
+        # the registry still holds ProxyEnable=1 on a dead local port is
+        # how a user ends up offline until a reboot.
+        from .proxy_manager import (
+            force_clear_dead_proxy,
+            get_proxy_status as _proxy_status,
+            _points_at_our_port,
+        )
+        live = _proxy_status()
+        if live.get("enabled") and _points_at_our_port(live.get("server")):
+            force_clear_dead_proxy()
+            live = _proxy_status()
+        if live.get("enabled") and _points_at_our_port(live.get("server")):
+            console.print(
+                "[warning]Daemon stopped, but the system proxy still points at "
+                f"{live.get('server')!r} and could not be cleared - run "
+                "'blackout fix proxy' or clear it in Windows proxy settings.[/warning]"
+            )
+        else:
+            console.print("[success]✓ Daemon stopped. System proxy cleared.[/success]")
     else:
         console.print("[warning]No daemon is running.[/warning]")
 

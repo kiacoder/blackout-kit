@@ -89,6 +89,37 @@ def _proxy_records_equal(left: dict | None, right: dict | None) -> bool:
     return _proxy_record(left) == _proxy_record(right)
 
 
+# Every local listener Blackout Kit can point the system proxy at. Used to
+# recognise our OWN stale proxy so it is never captured as the user's
+# clean baseline nor left behind on stop.
+_OUR_PROXY_PORTS = (10808, 10809, 40443, 18080, 11080, 11081, 8087, 8085, 1081, 1080, 9050)
+
+
+def _points_at_our_port(server: str | None) -> bool:
+    """True when server is 127.0.0.1:<our port> in either "host:port" or
+    "socks=host:port" form."""
+    if not server:
+        return False
+    value = server.split("=", 1)[1] if "=" in server else server
+    host, sep, port_str = value.rpartition(":")
+    if not sep or host not in ("127.0.0.1", "localhost", "::1"):
+        return False
+    try:
+        return int(port_str) in _OUR_PROXY_PORTS
+    except ValueError:
+        return False
+
+
+def _clean_baseline() -> dict:
+    """What the system proxy looked like before Blackout ever touched it.
+
+    A crash/kill can leave ProxyEnable=1 pointing at one of our now-dead
+    ports. Capturing THAT as the snapshot means every later stop
+    "restores" the broken proxy - the machine keeps a dead local proxy
+    until reboot. The baseline for our own leftovers is simply: off.
+    """
+    return {"enabled": False, "server": "", "override": ""}
+
 def _desired_proxy(host: str, port: int, protocol: str) -> dict:
     server = f"socks={host}:{port}" if protocol == "socks" else f"{host}:{port}"
     return {"enabled": True, "server": server}
@@ -170,9 +201,12 @@ def force_clear_dead_proxy(ports: tuple[int, ...] | None = None) -> bool:
             winreg.CloseKey(key)
     except (FileNotFoundError, OSError):
         return False
-    if not enabled or "=" in server or ":" not in server:
+    if not enabled or ":" not in server:
         return False
-    host, _, port_str = server.rpartition(":")
+    if "=" in server and not server.lower().startswith("socks="):
+        return False
+    server_value = server.split("=", 1)[1] if "=" in server else server
+    host, _, port_str = server_value.rpartition(":")
     if host not in ("127.0.0.1", "localhost", "::1"):
         return False
     try:
@@ -221,7 +255,15 @@ def cleanup_owned_system_proxy(owner_pid: int | None = None) -> bool:
     ):
         return False
     target = record.get("target")
-    if target is not None and not _proxy_records_equal(get_proxy_status(), target):
+    live = get_proxy_status()
+    if target is not None and not _proxy_records_equal(live, target):
+        # The live proxy is not what we set. If it still points at one of OUR
+        # ports the machine is blackholed no matter who changed it — clear it
+        # instead of giving up and leaving the user offline until a reboot.
+        if live.get("enabled") and _points_at_our_port(live.get("server")):
+            result = clear_system_proxy()
+            _forget_proxy_ownership()
+            return result
         _forget_proxy_ownership()
         return False
 
@@ -266,6 +308,9 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
         protocol = "socks"
         host = host.split("=", 1)[1]
     target = _desired_proxy(host, port, protocol)
+    # Never adopt our own leftover as the user's baseline - see _clean_baseline.
+    if previous.get("enabled") and _points_at_our_port(previous.get("server")):
+        previous = _clean_baseline()
 
     if sys.platform != "win32":
         value = f"socks5://{host}:{port}" if protocol == "socks" else f"http://{host}:{port}"
@@ -338,6 +383,12 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
 
 def restore_system_proxy(status: dict) -> bool:
     """Restore a proxy snapshot captured before Blackout Kit changed it."""
+    status = dict(status)
+    if status.get("enabled") and _points_at_our_port(status.get("server")):
+        # Snapshot poisoned by an earlier buggy cycle: it points at our own
+        # dead port. Restoring it literally re-breaks the machine, so treat it
+        # as the clean baseline it should have been.
+        status = _clean_baseline()
     if sys.platform != "win32":
         return _restore_environment_proxy_snapshot(status)
     return _restore_windows_proxy_snapshot(status)
