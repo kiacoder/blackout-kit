@@ -621,6 +621,35 @@ def check_russia_whitelist() -> list[CheckResult]:
 _MIN_FREE_MB = 200   # Minimum free disk space (MB) before warning
 
 
+def check_settings_secrets() -> CheckResult:
+    """Flag VPN credentials stored in plain text because the vault is off."""
+    from . import settings as _settings
+    from . import vault as _vault
+
+    try:
+        stored = _settings._load_plain_settings()
+    except Exception:
+        return CheckResult("Settings secrets", True, "Skipped (settings unreadable)")
+
+    populated = [k for k in _vault.SECRET_KEYS if stored.get(k)]
+    if not populated:
+        return CheckResult("Settings secrets", True, "No plain-text credentials")
+
+    if stored.get("secrets_vault_enabled", False):
+        # Vault is on; save() strips these keys, so a value here means a stale
+        # file from before activation - harmless, but worth naming.
+        return CheckResult(
+            "Settings secrets", True,
+            "Vault enabled (stale plain-text values will be dropped on next save)",
+        )
+
+    return CheckResult(
+        "Settings secrets", False,
+        f"{len(populated)} credential(s) stored in plain text in settings.json: "
+        f"{', '.join(populated)}. Enable the encrypted vault: blackout vault enable",
+    )
+
+
 def check_disk_space() -> CheckResult:
     """
     Verify that the drive hosting the project has at least _MIN_FREE_MB free.
@@ -1178,6 +1207,7 @@ def run_local_checks(include_optional: bool = False) -> list[CheckResult]:
         check_ports_in_use(),
         check_admin_privileges(),
         check_stale_proxy(),
+        check_settings_secrets(),
         check_adblock_staleness(),
     ]
     if include_optional:

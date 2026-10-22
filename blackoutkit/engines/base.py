@@ -2,6 +2,7 @@
 Blackout Kit - Base engine class.
 All bypass engines inherit from this.
 """
+import atexit
 import logging
 import os
 import shutil
@@ -19,6 +20,119 @@ from .. import BINS_DIR
 logger = logging.getLogger("blackoutkit.engine")
 
 
+CONFIG_DIR_PREFIX = "bk_engine_"
+
+
+def _harden_dir(path: Path) -> None:
+    """Restrict the config directory to the current user where the OS allows it."""
+    try:
+        path.chmod(0o700)
+    except (OSError, NotImplementedError):
+        pass
+
+
+def _stamp_owner(path: Path) -> None:
+    """Record which PID owns this directory so a later sweep can tell orphans."""
+    try:
+        (path / ".owner").write_text(str(os.getpid()), encoding="ascii")
+    except (OSError, NotImplementedError):
+        # NotImplementedError: pathlib refuses to build a path when a test (or
+        # a hostile environment) mocks os.name; the stamp is best-effort.
+        pass
+
+
+def _wipe_and_remove(path: Path) -> None:
+    """Overwrite every file with zeros, then remove the tree.
+
+    Deletion alone leaves credential bytes on disk for anyone with raw
+    device access; a single pass is not forensic-grade, but it removes the
+    trivially recoverable copy the OS would otherwise keep.
+    """
+    try:
+        for entry in path.rglob("*"):
+            if entry.is_file() and not entry.is_symlink():
+                try:
+                    size = entry.stat().st_size
+                    with entry.open("r+b") as handle:
+                        handle.write(b"\x00" * size)
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                except OSError:
+                    pass
+    except OSError:
+        pass
+    # No ignore_errors: the caller logs a warning when removal fails, and a
+    # silent failure here is exactly how a credential-bearing directory gets
+    # left behind without anyone noticing.
+    shutil.rmtree(path)
+
+
+_EXIT_CLEANUP: list[Path] = []
+
+
+def _register_exit_cleanup(path: Path) -> None:
+    """Best-effort cleanup when the interpreter exits (crash-safe path)."""
+    _EXIT_CLEANUP.append(path)
+
+    def _on_exit() -> None:
+        for candidate in list(_EXIT_CLEANUP):
+            if candidate.exists():
+                _wipe_and_remove(candidate)
+
+    atexit.register(_on_exit)
+
+
+def sweep_stale_config_dirs(max_age_seconds: float = 6 * 3600) -> int:
+    """Delete bk_engine_* directories left behind by dead processes.
+
+    Engines clean up on stop, but a crash, a kill, or a reboot mid-tunnel
+    leaves the directory - with credentials inside - in %TEMP% forever.
+    Every directory carries a .owner PID stamp: if that process is gone,
+    the directory is an orphan and is wiped. Directories with no stamp
+    (older builds) fall back to an age check.
+
+    Returns the number of directories removed.
+    """
+    import time
+
+    removed = 0
+    try:
+        candidates = list(Path(tempfile.gettempdir()).glob(CONFIG_DIR_PREFIX + "*"))
+    except OSError:
+        return 0
+    for directory in candidates:
+        if not directory.is_dir():
+            continue
+        stamp = directory / ".owner"
+        orphan = False
+        if stamp.exists():
+            try:
+                pid = int(stamp.read_text(encoding="ascii").strip())
+            except (OSError, ValueError):
+                pid = -1
+            if pid > 0:
+                try:
+                    import psutil
+
+                    orphan = not psutil.pid_exists(pid)
+                except Exception:
+                    orphan = False
+        if not orphan:
+            try:
+                age = time.time() - directory.stat().st_mtime
+            except OSError:
+                continue
+            if age > max_age_seconds and not stamp.exists():
+                orphan = True
+        if orphan:
+            try:
+                _wipe_and_remove(directory)
+                removed += 1
+            except OSError:
+                continue
+    return removed
+
+
 class Engine(ABC):
     name: str = ""
     description: str = ""
@@ -34,7 +148,17 @@ class Engine(ABC):
         self._health_check_addr: tuple[str, int] | None = None
         # Per-engine temp directory for config files — prevents races when two
         # Blackout instances share the same bins/ folder.
-        self._config_dir = Path(tempfile.mkdtemp(prefix="bk_engine_"))
+        #
+        # SECURITY: these directories hold engine configs with live credentials
+        # (VLESS UUIDs, TUIC/Hysteria2 passwords, AWG private keys) in plain
+        # text. mkdtemp gives 0700 on POSIX; on Windows the ACL inherits from
+        # %TEMP%, so the file mode is tightened below and the whole tree is
+        # wiped on stop. A crash used to leave them behind forever — see
+        # sweep_stale_config_dirs().
+        self._config_dir = Path(tempfile.mkdtemp(prefix=CONFIG_DIR_PREFIX))
+        _harden_dir(self._config_dir)
+        _stamp_owner(self._config_dir)
+        _register_exit_cleanup(self._config_dir)
         # Exit code of a subprocess engine once it has died, so a caller can
         # say WHY the tunnel went away instead of only that it did.
         self.last_exit_code: int | None = None
@@ -136,10 +260,10 @@ class Engine(ABC):
         return self._process.pid if self._process else None
 
     def _cleanup_config_dir(self):
-        """Remove the per-engine config directory. Called by stop()."""
+        """Wipe and remove the per-engine config directory. Called by stop()."""
         if self._config_dir and self._config_dir.exists():
             try:
-                shutil.rmtree(self._config_dir)
+                _wipe_and_remove(self._config_dir)
             except OSError as exc:
                 self._log.warning("Failed to clean up config directory %s: %s", self._config_dir, exc)
 

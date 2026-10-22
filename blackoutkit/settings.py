@@ -622,6 +622,14 @@ def set_value(key: str, value):
     if not ok:
         raise ValueError(f"Invalid value for '{key}': {msg}")
     settings = _load_plain_settings()
+    # A credential written while the secret vault is off lands in settings.json
+    # as plain text. Say so instead of quietly downgrading the user's security.
+    if key in vault.SECRET_KEYS and typed_value and not settings.get("secrets_vault_enabled", False):
+        _log.warning(
+            "%s is being stored in plain text in settings.json. Enable the encrypted "
+            "vault (blackout vault enable) to keep it out of the plain file.",
+            key,
+        )
     settings[key] = typed_value
     save(settings)
 

@@ -4793,6 +4793,16 @@ def main():
     proxy_manager.install_console_close_handler()
     proxy_manager.install_atexit_proxy_restore()
 
+    # Engines write configs containing live credentials (UUIDs, passwords,
+    # private keys) into %TEMP%/bk_engine_*. A crash leaves them behind; wipe
+    # any orphaned ones from previous runs before doing anything else.
+    try:
+        from .engines.base import sweep_stale_config_dirs
+
+        sweep_stale_config_dirs()
+    except Exception:
+        pass
+
     def _restore_owned_proxy() -> None:
         try:
             proxy_manager.cleanup_owned_system_proxy(owner_pid=os.getpid())

@@ -203,6 +203,46 @@ def _is_loopback_host(host: object) -> bool:
     )
 
 
+def _mutation_token() -> str:
+    """Shared secret required for state-changing API calls from non-loopback."""
+    import os as _os
+
+    return _os.environ.get("BLACKOUT_API_TOKEN", "").strip()
+
+
+def _require_mutation_auth(request) -> None:
+    """Refuse mutations from non-loopback clients unless they present the token.
+
+    The API has no user accounts. Loopback callers are the local user and keep
+    the zero-friction path; once ``BLACKOUT_API_ALLOW_REMOTE=1`` exposes the
+    API to the network, an unauthenticated POST could register a webhook that
+    exfiltrates every event. Fails closed: remote + no configured token means
+    mutations are denied outright.
+    """
+    from fastapi import HTTPException
+
+    client = getattr(request, "client", None)
+    if _is_loopback_host(getattr(client, "host", None)):
+        return
+    token = _mutation_token()
+    if not token:
+        raise HTTPException(
+            status_code=403,
+            detail="remote mutations are disabled; set BLACKOUT_API_TOKEN to allow them",
+        )
+    header = request.headers.get("authorization", "")
+    presented = header[7:].strip() if header.lower().startswith("bearer ") else ""
+    if not presented or not _secrets_equal(presented, token):
+        raise HTTPException(status_code=401, detail="invalid or missing bearer token")
+
+
+def _secrets_equal(left: str, right: str) -> bool:
+    """Constant-time comparison for the API token."""
+    import hmac as _hmac
+
+    return _hmac.compare_digest(left.encode("utf-8"), right.encode("utf-8"))
+
+
 def _install_loopback_guard(api: "FastAPI") -> None:
     """Deny non-loopback clients unless ``BLACKOUT_API_ALLOW_REMOTE=1``.
 
@@ -239,6 +279,8 @@ def create_app() -> "FastAPI":
         )
 
     _warn_if_public_host()
+
+    from fastapi import Request  # noqa: F401 - used in handler annotations below
 
     from . import __version__ as _version
 
@@ -303,14 +345,22 @@ def create_app() -> "FastAPI":
         return {"webhooks": [h.to_dict() for h in WebhookRegistry().list()]}
 
     @api.post("/api/v2/webhooks")
-    def webhooks_add(payload: dict[str, Any]) -> dict[str, Any]:
+    def webhooks_add(payload: dict[str, Any], request: Request) -> dict[str, Any]:
         from fastapi import HTTPException
 
-        from .webhooks import Webhook, WebhookRegistry
+        from .webhooks import Webhook, WebhookRegistry, validate_webhook_url
+
+        # State change: when the operator has opened the API to the network,
+        # require the shared token. Loopback callers keep working unchanged.
+        _require_mutation_auth(request)
 
         url = str(payload.get("url") or "").strip()
         if not url:
             raise HTTPException(status_code=400, detail="url is required")
+        try:
+            url = validate_webhook_url(url)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         prefixes = payload.get("event_prefixes") or []
         if not isinstance(prefixes, list):
             raise HTTPException(status_code=400, detail="event_prefixes must be a list")
@@ -324,9 +374,13 @@ def create_app() -> "FastAPI":
         return {"added": url}
 
     @api.delete("/api/v2/webhooks")
-    def webhooks_remove(url: str = Query(..., description="webhook URL to remove")) -> dict[str, Any]:
+    def webhooks_remove(
+        request: Request,
+        url: str = Query(..., description="webhook URL to remove"),
+    ) -> dict[str, Any]:
         from .webhooks import WebhookRegistry
 
+        _require_mutation_auth(request)
         return {"removed": WebhookRegistry().remove(url)}
 
     @api.get("/api/v2/plugins")

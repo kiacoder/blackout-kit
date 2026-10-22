@@ -59,11 +59,11 @@ def test_to_dict_masks_secret():
 
 def test_registry_matching(tmp_path):
     reg = WebhookRegistry(tmp_path / "wh.json")
-    reg.add(Webhook(url="all"))
-    reg.add(Webhook(url="engine-only", event_prefixes=("engine",)))
+    reg.add(Webhook(url="https://example.com/all"))
+    reg.add(Webhook(url="https://example.com/engine-only", event_prefixes=("engine",)))
     urls = {h.url for h in reg.matching("engine.started")}
-    assert urls == {"all", "engine-only"}
-    assert {h.url for h in reg.matching("config.saved")} == {"all"}
+    assert urls == {"https://example.com/all", "https://example.com/engine-only"}
+    assert {h.url for h in reg.matching("config.saved")} == {"https://example.com/all"}
 
 
 # ── delivery ─────────────────────────────────────────────────────────────────
@@ -177,3 +177,12 @@ def test_observer_accepts_a_dict_event(monkeypatch, tmp_path):
     observer({"type": "engine.stopped", "summary": "bye"})
     assert _wait(lambda: calls)
     assert calls[0]["type"] == "engine.stopped"
+
+
+def test_registry_refuses_non_http_schemes(tmp_path):
+    """file:// and friends must never reach the delivery thread."""
+    reg = WebhookRegistry(tmp_path / "wh.json")
+    assert reg.add(Webhook(url="file:///etc/passwd")) is False
+    assert reg.add(Webhook(url="javascript:alert(1)")) is False
+    assert reg.add(Webhook(url="https://example.com/ok")) is True
+    assert [h.url for h in reg.list()] == ["https://example.com/ok"]

@@ -35,6 +35,30 @@ __all__ = [
 ]
 
 
+_ALLOWED_WEBHOOK_SCHEMES = ("http", "https")
+
+
+def validate_webhook_url(url: str) -> str:
+    """Return the URL unchanged, or raise ValueError when it is not deliverable.
+
+    Only http/https are ever POSTed. A file://, ftp:// or data: target is
+    either meaningless or a way to make the process touch something it should
+    not; the registry refuses them at the door instead of failing later inside
+    the delivery thread.
+    """
+    from urllib.parse import urlsplit
+
+    candidate = (url or "").strip()
+    if not candidate:
+        raise ValueError("webhook url is empty")
+    parsed = urlsplit(candidate)
+    if parsed.scheme.lower() not in _ALLOWED_WEBHOOK_SCHEMES:
+        raise ValueError("webhook url must use http or https")
+    if not parsed.hostname:
+        raise ValueError("webhook url must include a host")
+    return candidate
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -108,6 +132,12 @@ class WebhookRegistry:
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, indent=2)
+            # The file carries HMAC signing secrets in plain text; keep it
+            # owner-only (mkstemp already does this on POSIX - make it explicit).
+            try:
+                os.chmod(temporary, 0o600)
+            except OSError:
+                pass
             os.replace(temporary, self.path)
         except OSError:
             try:
@@ -118,9 +148,20 @@ class WebhookRegistry:
     # ── mutation ────────────────────────────────────────────────────────────
 
     def add(self, webhook: Webhook) -> bool:
-        """Add or replace a webhook by URL. Returns ``False`` for a blank URL."""
+        """Add or replace a webhook by URL. Returns ``False`` for a blank or
+        undeliverable URL (non-http(s) schemes are refused)."""
         if not webhook.url:
             return False
+        try:
+            validated = validate_webhook_url(webhook.url)
+        except ValueError as exc:
+            _log.warning("Refusing webhook registration: %s", exc)
+            return False
+        if validated != webhook.url:
+            # The record is frozen; rebuild rather than mutate.
+            import dataclasses as _dc
+
+            webhook = _dc.replace(webhook, url=validated)
         if not webhook.created_at:
             webhook = Webhook(
                 url=webhook.url,
