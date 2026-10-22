@@ -453,14 +453,20 @@ def stop() -> bool:
     try:
         from ..proxy_manager import cleanup_owned_system_proxy
         cleanup_owned_system_proxy()
-    except Exception:
-        pass
+    except Exception as exc:
+        logging.getLogger(__name__).warning(
+            "Could not clear the system proxy during shutdown: %s", exc
+        )
     try:
         from .. import security as sec
         sec.disable_kill_switch()
         sec.clear_linux_kill_switch_endpoint()
-    except Exception:
-        pass
+    except Exception as exc:
+        # A kill switch left enabled is a machine with no internet at all -
+        # the one shutdown failure a user must be told about.
+        logging.getLogger(__name__).warning(
+            "Could not disable the kill switch during shutdown: %s", exc
+        )
     ret = _clear_owned_metadata(
         pid,
         generation,

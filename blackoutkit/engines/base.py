@@ -296,6 +296,20 @@ class Engine(ABC):
 
     def start_process(self, command: list[str]) -> bool:
         """Start a managed engine process without inheriting terminal output pipes."""
+        # Refuse a binary whose bytes changed since it was first pinned: a
+        # writable bins/ directory is otherwise a code-execution path into any
+        # later elevation.
+        if command:
+            from .. import bin_manifest
+
+            candidate = Path(command[0])
+            # Only files we can see are verifiable; a bare name resolved from
+            # PATH is left to the OS (Popen fails loudly if it is absent).
+            if candidate.is_file():
+                ok, detail = bin_manifest.verify(candidate)
+                if not ok:
+                    self._log.error("Refusing to launch %s - %s", command[0], detail)
+                    return False
         try:
             # The daemon runs console-free (pythonw.exe). A console-subsystem
             # engine binary spawned without CREATE_NO_WINDOW makes Windows

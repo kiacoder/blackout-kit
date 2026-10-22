@@ -47,6 +47,14 @@ _BINARY_NAMES = ["awg-go.exe", "awg-go"]
 # Both Blackout Kit servers, embedded as source so they ship inside the
 # PyInstaller binary without data-file packaging rules. _resolve_config
 # accepts these names (srv1 / srv2) anywhere a .conf path is expected.
+#
+# SECURITY NOTE: these are PUBLIC demo identities. The private keys below are
+# part of the open-source tree, so anyone can connect to these endpoints as
+# these peers - there is no secret to protect here, and no expectation of
+# privacy beyond the tunnel itself. Do not reuse these keys for a server you
+# care about; generate a fresh keypair per deployment. If the operators ever
+# intend srv1/srv2 to be private, they must stop shipping the keys and fetch
+# the config at first run instead.
 _BUNDLED_SERVERS = {
     "srv1": {"endpoint": "185.215.244.95:39006", "conf": '[Interface]\nPrivateKey = UNBwpTq0F6stv42+0TF5cKzupK5r70C8wDT+AMJ/9Vg=\nAddress = 10.10.10.2/32\nDNS = 1.1.1.1\nJc = 4\nJmin = 50\nJmax = 1000\nS1 = 30\nS2 = 60\nH1 = 12345678\nH2 = 87654321\nH3 = 11223344\nH4 = 44332211\n\n[Peer]\nPublicKey = c8SsKn2DulCR/BrPszJrwB7w+nMVpk9QG9ZQicEunRM=\nEndpoint = 185.215.244.95:39006\nAllowedIPs = 0.0.0.0/0\nPersistentKeepalive = 25'},
     "srv2": {"endpoint": "185.208.172.212:39006", "conf": '[Interface]\nPrivateKey = YF/RzsWYLrqAOO7eBSKmDjcHHm+MtrZNeA9eUKmS8nM=\nAddress = 10.10.10.3/32, fd42:42:42::3/128\nDNS = 1.1.1.1, 2606:4700:4700::1111\nMTU = 1280\nJc = 4\nJmin = 50\nJmax = 1000\nS1 = 30\nS2 = 60\nH1 = 12345678\nH2 = 87654321\nH3 = 11223344\nH4 = 44332211\n\n[Peer]\nPublicKey = gbQ0+EbwPQFkgTMJEyq25RwnSh87HJKpIPz5A6gUzwE=\nEndpoint = 185.208.172.212:39006\nAllowedIPs = 0.0.0.0/0, ::/0\nPersistentKeepalive = 25'},

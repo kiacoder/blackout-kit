@@ -58,7 +58,8 @@ def test_encrypt_uses_canonical_identity_decrypt_recovers_all_candidates():
     historical = b"blackout-kit-default-machine-id"
     plaintext = b'{"configs": []}'
     nonce = b"\x01" * 12
-    payload = vault._HEADER + base64.b64encode(
+    # A pre-migration file: v2 header, legacy constant-salt derivation.
+    payload = vault._HEADER_V2 + base64.b64encode(
         nonce + AESGCM(vault._aes_key(historical)).encrypt(nonce, plaintext, vault._aad("configs"))
     )
 
@@ -69,7 +70,7 @@ def test_encrypt_uses_canonical_identity_decrypt_recovers_all_candidates():
 def test_decrypt_still_fails_for_unknown_identity():
     plaintext = b"secret-content"
     nonce = b"\x02" * 12
-    payload = vault._HEADER + base64.b64encode(
+    payload = vault._HEADER_V2 + base64.b64encode(
         nonce + AESGCM(vault._aes_key(b"someone-elses-machine")).encrypt(nonce, plaintext, vault._aad("configs"))
     )
     with patch("blackoutkit.vault.machine_id_candidates", return_value=[b"this-machine"]):

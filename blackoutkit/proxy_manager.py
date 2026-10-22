@@ -520,8 +520,14 @@ def install_atexit_proxy_restore() -> None:
     def _restore_on_exit() -> None:
         try:
             cleanup_owned_system_proxy(owner_pid=os.getpid())
-        except Exception:
-            pass
+        except Exception as exc:
+            # Silence here is how a machine ends up pointing at a dead local
+            # proxy with nothing in any log explaining it.
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "Could not restore the system proxy on exit: %s", exc
+            )
 
     atexit.register(_restore_on_exit)
 

@@ -4662,6 +4662,42 @@ def bins_list(ctx: typer.Context):
         console.print(f"{item['key']}: {status} ({required})")
 
 
+@bins_app.command("verify")
+def bins_verify(
+    pin: bool = typer.Option(False, "--pin", help="Pin hashes for binaries not yet recorded"),
+):
+    """Verify managed binaries against the pinned SHA-256 manifest."""
+    from . import bin_manifest
+
+    if pin:
+        from . import BINS_DIR
+
+        pinned = 0
+        for path in sorted(BINS_DIR.glob("*")):
+            if path.is_file() and path.suffix.lower() in (".exe", ".dll", ".sys", ".bin"):
+                if bin_manifest.record(path):
+                    pinned += 1
+        console.print(f"[success]\u2713 Pinned {pinned} binaries[/success]")
+
+    results = bin_manifest.verify_all()
+    if not results:
+        console.print(
+            "[muted]No binaries pinned yet - the manifest fills in as engines start "
+            "(or run 'blackout bins verify --pin').[/muted]"
+        )
+        return
+    bad = [r for r in results if not r[1]]
+    table = make_table("Binary Integrity", [("Binary", "cyan"), ("Status", ""), ("Detail", "dim")], [])
+    for name, ok, detail in results:
+        table.add_row(name, "[success]\u2713 ok[/success]" if ok else "[error]\u2717 changed[/error]", detail or "-")
+    console.print(table)
+    if bad:
+        console.print(
+            "[error]Tampered or replaced binaries detected. Reinstall them with "
+            "'blackout bins download' before connecting.[/error]"
+        )
+
+
 @bins_app.command("download")
 def bins_download(
     engine: str = typer.Argument(None, help="Specific engine (or omit for all missing)")
@@ -5192,6 +5228,29 @@ def tools_arp_guard():
 # ── VAULT MANAGEMENT GROUP ──
 vault_app = typer.Typer(help="Encrypted Vault Backup & Key Utility", no_args_is_help=False)
 app.add_typer(vault_app, name="vault")
+
+
+@vault_app.command("migrate")
+def vault_migrate():
+    """Upgrade the encrypted vault to the current key format (per-file salt)."""
+    from . import vault
+
+    try:
+        results = vault.migrate_legacy_records()
+    except vault.VaultError as exc:
+        console.print(f"[error]Migration failed: {exc}[/error]")
+        return
+    changed = {k: v for k, v in results.items() if v == "migrated"}
+    if changed:
+        console.print(
+            f"[success]\u2713 Migrated: {', '.join(sorted(changed))}[/success] "
+            "[muted](per-file salt, 600k PBKDF2 rounds)[/muted]"
+        )
+    else:
+        console.print(
+            "[success]\u2713 Vault already uses the current format[/success] "
+            f"[muted]({', '.join(f'{k}={v}' for k, v in sorted(results.items()))})[/muted]"
+        )
 
 
 @vault_app.command("backup")

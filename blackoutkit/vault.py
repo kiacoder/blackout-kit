@@ -18,11 +18,20 @@ ENC_CONFIGS_FILE = APP_DATA_DIR / "configs.enc"
 ENC_SECRETS_FILE = APP_DATA_DIR / "secrets.enc"
 SECRET_KEYS = ("ikev2_password", "ikev2_psk", "softether_password")
 
-_HEADER = b"BKVLT02:"
+_HEADER = b"BKVLT03:"
+_HEADER_V2 = b"BKVLT02:"
 _PROFILE_HEADER = b"BKPF01:"
 _LEGACY_AES_HEADER = b"BKAE01:"
+# Legacy (v2) derivation: a constant salt shared by every installation. It is
+# kept ONLY to decrypt existing files - see _aes_key's docstring for why a
+# constant salt is a weakness and what replaced it.
 _PBKDF2_SALT = b"blackout-kit-aes256gcm-2026"
 _PBKDF2_ITERS = 100_000
+# v3: a fresh random salt per file, and the current OWASP work factor for
+# PBKDF2-HMAC-SHA256. A constant salt let two machines with the same identity
+# derive the same key and allowed precomputation; a per-file salt removes both.
+_V3_ITERS = 600_000
+_SALT_LEN = 16
 _PROFILE_PBKDF2_ITERS = 300_000
 PROFILE_MAX_BYTES = 4 * 1024 * 1024
 
@@ -149,17 +158,40 @@ def _machine_id() -> bytes:
     return primary
 
 
-def _aes_key(machine_id: bytes | None = None) -> bytes:
+_key_cache: dict[tuple[bytes, bytes, int], bytes] = {}
+_KEY_CACHE_LIMIT = 8
+
+
+def _aes_key(
+    machine_id: bytes | None = None,
+    salt: bytes = _PBKDF2_SALT,
+    iterations: int = _PBKDF2_ITERS,
+) -> bytes:
+    """Derive the AES-256 key for a machine identity, salt and work factor.
+
+    v3 files pass their own random salt and 600k iterations; v2 files fall back
+    to the historical constant salt and 100k so they stay readable. The derived
+    key is cached per (identity, salt, iterations): 600k PBKDF2 rounds cost
+    real time, and the vault is read on every daemon config rotation.
+    """
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
     identity = machine_id if machine_id is not None else _machine_id()
-    return PBKDF2HMAC(
+    cache_key = (identity, salt, iterations)
+    cached = _key_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    derived = PBKDF2HMAC(
         algorithm=hashes.SHA256(),
         length=32,
-        salt=_PBKDF2_SALT,
-        iterations=_PBKDF2_ITERS,
+        salt=salt,
+        iterations=iterations,
     ).derive(identity)
+    if len(_key_cache) >= _KEY_CACHE_LIMIT:
+        _key_cache.clear()
+    _key_cache[cache_key] = derived
+    return derived
 
 
 def _legacy_xor_key(machine_id: bytes | None = None) -> bytes:
@@ -203,28 +235,42 @@ def secure_remove_plaintext(path: Path) -> None:
 def encrypt_bytes(record: str, plaintext: bytes) -> bytes:
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+    salt = os.urandom(_SALT_LEN)
     nonce = os.urandom(12)
-    ciphertext = AESGCM(_aes_key()).encrypt(nonce, plaintext, _aad(record))
-    return _HEADER + base64.b64encode(nonce + ciphertext)
+    ciphertext = AESGCM(_aes_key(salt=salt, iterations=_V3_ITERS)).encrypt(
+        nonce, plaintext, _aad(record)
+    )
+    return _HEADER + base64.b64encode(salt + nonce + ciphertext)
 
 
 def decrypt_bytes(record: str, payload: bytes) -> bytes:
-    if not payload.startswith(_HEADER):
-        raise VaultError("Encrypted data is not in the current vault format")
     from cryptography.exceptions import InvalidTag
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+    if payload.startswith(_HEADER):
+        salt_len, salt, iterations = _SALT_LEN, None, _V3_ITERS
+    elif payload.startswith(_HEADER_V2):
+        salt_len, salt, iterations = 0, _PBKDF2_SALT, _PBKDF2_ITERS
+    else:
+        raise VaultError("Encrypted data is not in the current vault format")
+
+    header_len = len(_HEADER)
     try:
-        blob = base64.b64decode(payload[len(_HEADER):], validate=True)
-        if len(blob) <= 12:
+        blob = base64.b64decode(payload[header_len:], validate=True)
+        if len(blob) <= salt_len + 12:
             raise ValueError("encrypted payload is too short")
     except Exception as exc:
         raise VaultError("Encrypted data cannot be authenticated on this machine") from exc
 
+    file_salt = blob[:salt_len] if salt_len else salt
+    nonce = blob[salt_len:salt_len + 12]
+    ciphertext = blob[salt_len + 12:]
+
     last_error: Exception | None = None
     for machine_id in machine_id_candidates():
         try:
-            return AESGCM(_aes_key(machine_id)).decrypt(blob[:12], blob[12:], _aad(record))
+            key = _aes_key(machine_id, salt=file_salt, iterations=iterations)
+            return AESGCM(key).decrypt(nonce, ciphertext, _aad(record))
         except InvalidTag as exc:
             last_error = exc
         except Exception as exc:
@@ -397,16 +443,72 @@ def write_secrets(values: dict[str, object], encrypted_path: Path | None = None)
     )
 
 
+def record_format(payload: bytes) -> str:
+    """Return "v3", "v2", "legacy" (pre-AES-GCM) or "unknown" for a payload."""
+    if payload.startswith(_HEADER):
+        return "v3"
+    if payload.startswith(_HEADER_V2):
+        return "v2"
+    if payload.startswith(_LEGACY_AES_HEADER):
+        return "legacy"
+    return "unknown"
+
+
+def _migrate_one(path: Path, record: str) -> str:
+    """Re-encrypt one vault file to v3 when it is still v2. Returns the action."""
+    if not path.exists():
+        return "absent"
+    payload = path.read_bytes()
+    current = record_format(payload)
+    if current == "v3":
+        return "current"
+    # Decrypt with whatever format it is (v2, or the pre-GCM legacy path used by
+    # read_config_bytes) and write it back as v3.
+    if current == "v2":
+        plaintext = decrypt_bytes(record, payload)
+    elif record == "configs" and current == "legacy":
+        plaintext = _decrypt_legacy_config(payload)
+    else:
+        raise VaultError(f"{path.name} is not in a migratable format ({current})")
+    atomic_write(path, encrypt_bytes(record, plaintext))
+    return "migrated"
+
+
+def migrate_legacy_records() -> dict[str, str]:
+    """Upgrade v2 vault files to v3 (per-file salt, 600k PBKDF2 rounds).
+
+    Safe to run repeatedly: files already on v3 are left untouched. Returns a
+    map of record name -> action taken ("migrated", "current", "absent").
+    """
+    results: dict[str, str] = {}
+    results["configs"] = _migrate_one(ENC_CONFIGS_FILE, "configs")
+    results["secrets"] = _migrate_one(ENC_SECRETS_FILE, "settings-secrets")
+    return results
+
+
 def vault_status() -> dict[str, str | bool]:
     try:
         if secrets_vault_active():
             read_secrets()
         if config_vault_active():
             read_config_bytes()
+        formats = []
+        if ENC_CONFIGS_FILE.exists():
+            formats.append(record_format(ENC_CONFIGS_FILE.read_bytes()))
+        if ENC_SECRETS_FILE.exists():
+            formats.append(record_format(ENC_SECRETS_FILE.read_bytes()))
+        unique = sorted(set(formats)) or ["none"]
+        detail = "Encrypted storage is available"
+        if "v2" in unique or "legacy" in unique:
+            detail = (
+                "Encrypted storage is available but uses an older key format - "
+                "run 'blackout vault migrate'"
+            )
         return {
             "active": config_vault_active() or secrets_vault_active(),
             "healthy": True,
-            "detail": "Encrypted storage is available",
+            "detail": detail,
+            "format": ",".join(unique),
         }
     except VaultError as exc:
         return {"active": True, "healthy": False, "detail": str(exc)}

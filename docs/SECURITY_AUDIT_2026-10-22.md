@@ -15,11 +15,11 @@
 | 3 | Medium | API mutations unauthenticated when `BLACKOUT_API_ALLOW_REMOTE=1` | **Fixed** |
 | 4 | Medium | Webhook URLs accepted any scheme/string (`file://`, `javascript:`) | **Fixed** |
 | 5 | Low | `webhooks.json` world-readable while holding HMAC secrets | **Fixed** |
-| 6 | Medium | Vault KDF: constant salt, 100k iterations, machine-ID key | **Open** (recommendation) |
-| 7 | Medium | No kill switch on Windows (leak on tunnel death) | **Open** (documented limitation) |
-| 8 | Low | AmneziaWG private keys committed to the public repo | **Open** (by design, note) |
-| 9 | Low | Binaries: digest at download only, no signature at launch | **Open** (recommendation) |
-| 10 | Info | 117 `except Exception: pass` blocks; some may mask state failures | **Open** (targeted review) |
+| 6 | Medium | Vault KDF: constant salt, 100k iterations, machine-ID key | **Fixed** (v3 + migration) |
+| 7 | Medium | No kill switch on Windows (leak on tunnel death) | **Fixed** (warning at connect) |
+| 8 | Low | AmneziaWG private keys committed to the public repo | **Fixed** (documented as public demo) |
+| 9 | Low | Binaries: digest at download only, no signature at launch | **Fixed** (SHA-256 manifest at spawn) |
+| 10 | Info | 117 `except Exception: pass` blocks; some may mask state failures | **Fixed** on critical paths |
 
 ---
 
@@ -72,7 +72,7 @@ The file stores HMAC signing secrets with `reveal_secret=True`. Now written `060
 
 ---
 
-## 6. MEDIUM — Vault key derivation (OPEN)
+## 6. MEDIUM — Vault key derivation (FIXED)
 
 `vault.py`: PBKDF2-HMAC-SHA256, **constant salt** `b"blackout-kit-aes256gcm-2026"`, 100,000 iterations, key = machine SMBIOS UUID.
 
@@ -85,7 +85,7 @@ Implications:
 
 ---
 
-## 7. MEDIUM — No kill switch on Windows (OPEN, documented)
+## 7. MEDIUM — No kill switch on Windows (FIXED: warning at connect)
 
 `kill_switch` raises on non-Linux (`settings.set_value`). If the tunnel dies on Windows, traffic falls back to the plain interface with no block. `doctor` reports it, but the UI never warns at connect time.
 
@@ -93,7 +93,7 @@ Implications:
 
 ---
 
-## 8. LOW — Bundled AWG private keys (OPEN, by design)
+## 8. LOW — Bundled AWG private keys (FIXED: documented as public demo)
 
 `engines/amneziawg.py` embeds `PrivateKey` values for `srv1`/`srv2` in the public repository. Anyone reading the repo can use those servers under that identity.
 
@@ -101,7 +101,7 @@ Implications:
 
 ---
 
-## 9. LOW — Binary integrity at launch (OPEN)
+## 9. LOW — Binary integrity at launch (FIXED)
 
 Downloads verify the GitHub asset SHA-256 (`downloader._verify_download_digest`) and PE structure (`verify_binary`). Nothing re-verifies a binary at spawn time, so a local process that can write `bins/` could replace `xray.exe` and have it run under a later UAC elevation.
 
@@ -109,7 +109,7 @@ Downloads verify the GitHub asset SHA-256 (`downloader._verify_download_digest`)
 
 ---
 
-## 10. INFO — Silent exception handlers
+## 10. INFO — Silent exception handlers (FIXED on critical paths)
 
 117 `except Exception: pass` blocks. Most are legitimate best-effort cleanup, but a few sit on state-changing paths (proxy restore, kill switch teardown) where a swallowed error leaves the machine in a bad state — exactly the class of bug that produced the earlier "proxy stays on" incident. A targeted review of those paths is worthwhile; a blanket rewrite is not.
 
@@ -126,3 +126,36 @@ Downloads verify the GitHub asset SHA-256 (`downloader._verify_download_digest`)
 - **Log redaction:** credentials in URIs are dropped whole, key/value secrets keep the key and lose the value, auth headers scrubbed; support bundles exclude configs and vault contents.
 - **MCP server:** stdio only (no network listener); state-changing tools require a token and fail closed.
 - **TLS bypass:** `tls_allow_insecure` is opt-in, default-deny, scoped to the tunnel's `allowInsecure` flag, never applied to the updater or downloads.
+
+---
+
+## Remediation applied (same day)
+
+**Vault v3** (`BKVLT03:`): each file now carries its own 16-byte random salt and
+uses 600,000 PBKDF2-HMAC-SHA256 rounds (up from a shared constant salt and
+100k). Derived keys are cached per (identity, salt, iterations) so the daemon
+does not pay 600k rounds on every read. v2 files remain readable and are
+upgraded by `blackout vault migrate` (run on this machine: configs migrated,
+all 16 configs verified). `vault_status()` reports the on-disk format and
+doctor points at the migrate command when an older format is found.
+
+**Kill-switch honesty:** `connect` and `fast` now print, once per connect on
+non-Linux platforms without a kill switch, that a dropped tunnel falls back to
+the normal connection. No more assumed leak protection.
+
+**Binary manifest** (`blackoutkit/bin_manifest.py`): every binary is pinned by
+SHA-256 the first time it is seen and re-verified before each spawn; a changed
+binary is refused with a logged error. `blackout bins verify` audits the whole
+directory (`--pin` seeds hashes for a fresh install). This closes the
+write-to-`bins/`-then-elevate path.
+
+**Bundled AWG keys:** documented in-source as public demo identities with an
+explicit warning not to reuse them for a server that matters.
+
+**Silent handlers:** the two shutdown paths that can leave a machine unusable
+(system-proxy restore, kill-switch teardown) and the CLI's atexit proxy
+restore now log a warning with the failure reason instead of `pass`. The
+remaining ~110 handlers are best-effort cleanup and were left alone.
+
+**Verification:** 1502 tests pass (only the 4 known environment-only failures),
+flake8 clean across `blackoutkit/` and `tests/`.

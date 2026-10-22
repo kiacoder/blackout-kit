@@ -97,3 +97,50 @@ def test_vault_tampering_fails_closed(monkeypatch, tmp_path):
         pass
     else:
         raise AssertionError("tampered authenticated ciphertext was accepted")
+
+
+def test_v3_uses_a_distinct_salt_per_file():
+    """A constant salt let two files share a key stream; v3 must not."""
+    import base64
+
+    from blackoutkit import vault
+
+    first = base64.b64decode(vault.encrypt_bytes("configs", b"same-plaintext")[len(vault._HEADER):])
+    second = base64.b64decode(vault.encrypt_bytes("configs", b"same-plaintext")[len(vault._HEADER):])
+    assert first[: vault._SALT_LEN] != second[: vault._SALT_LEN]
+    assert first != second
+
+
+def test_v3_round_trip_and_tamper_rejection():
+    from blackoutkit import vault
+
+    payload = vault.encrypt_bytes("configs", b"round-trip")
+    assert vault.record_format(payload) == "v3"
+    assert vault.decrypt_bytes("configs", payload) == b"round-trip"
+
+    tampered = bytearray(payload)
+    tampered[-1] ^= 0xFF
+    try:
+        vault.decrypt_bytes("configs", bytes(tampered))
+    except vault.VaultError:
+        pass
+    else:  # pragma: no cover - a silent pass here would be a security bug
+        raise AssertionError("tampered vault payload was accepted")
+
+
+def test_v2_payload_still_decrypts():
+    """Files written before the v3 migration must stay readable."""
+    import base64
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from blackoutkit import vault
+
+    nonce = os.urandom(12)
+    key = vault._aes_key(salt=vault._PBKDF2_SALT, iterations=vault._PBKDF2_ITERS)
+    ciphertext = AESGCM(key).encrypt(nonce, b"legacy", vault._aad("configs"))
+    legacy = vault._HEADER_V2 + base64.b64encode(nonce + ciphertext)
+
+    assert vault.record_format(legacy) == "v2"
+    assert vault.decrypt_bytes("configs", legacy) == b"legacy"

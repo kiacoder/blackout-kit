@@ -594,7 +594,10 @@ def _legacy_connection_result(args, operation: str):
         russia=bool(getattr(args, "russia", False)),
     )
     service = _connection_service_for_legacy()
-    return service.connect(request) if operation == "connect" else service.start(request)
+    result = service.connect(request) if operation == "connect" else service.start(request)
+    if result:
+        _warn_without_kill_switch()
+    return result
 
 
 # ──────────────────────────── Country profile helper ─────────────
@@ -1052,11 +1055,33 @@ def cmd_fast(args):
         lines.append("[warning]YouTube check failed (the tunnel may still browse fine)[/warning]")
     title = "Connected" if (exit_ip or web_ok) else "Connected — with warnings"
     console.print(Panel("\n".join(lines), title=f"[bold green]{title}[/bold green]", border_style="green"))
+    _warn_without_kill_switch()
     if not (exit_ip or web_ok):
         console.print(
             "[muted]The tunnel is up but the verification fetches failed — check "
             "[bold]blackout logs[/bold] or try the next server with [bold]blackout fast[/bold].[/muted]"
         )
+
+
+def _warn_without_kill_switch() -> None:
+    """Say plainly when this platform has no kill switch to fall back on.
+
+    On Linux the kill switch blocks traffic if the tunnel dies. On Windows and
+    macOS there is none, so a dead tunnel silently falls back to the plain
+    interface. Users reasonably assume otherwise - name it once per connect
+    instead of letting them discover it from a leak.
+    """
+    try:
+        if sys.platform.startswith("linux"):
+            return
+        if cfg.load().get("kill_switch", False):
+            return
+    except Exception:
+        return
+    console.print(
+        "[muted]Note: no kill switch on this platform — if the tunnel drops, "
+        "traffic falls back to your normal connection.[/muted]"
+    )
 
 
 def _resolve_engine_name(args, default: str = "sni") -> str:
