@@ -296,5 +296,7 @@ def test_release_version_metadata_consistent():
     with pyproject.open("rb") as fh:
         data = tomllib.load(fh)
 
-    assert data["project"]["version"] == "1.11.0"
-    assert blackoutkit.__version__ == "1.11.0"
+    # Compare the two sources to each other, not to a literal: a hardcoded
+    # version here turns every release bump into a red CI run.
+    assert data["project"]["version"] == blackoutkit.__version__
+    assert data["project"]["version"].count(".") == 2
