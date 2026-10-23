@@ -74,18 +74,22 @@ class TUNEngine(Engine):
 
     def _generate_singbox_config(self) -> dict:
         """Generate sing-box configuration for TUN mode."""
+        # sing-box 1.12 replaced inet4_address/inet6_address with a single
+        # `address` list, and 1.13 removed the legacy inbound `sniff` field
+        # (sniffing is a route rule action now). This generator was never
+        # migrated, so the managed binary - the one this repo itself ships -
+        # rejected the whole config at decode time and TUN mode could not
+        # start. singbox_proxy.py was migrated; this file was not.
         tun_inbound = {
             "type": "tun",
             "tag": "tun-in",
             "interface_name": "BlackoutKit-TUN",
-            "inet4_address": "172.19.0.1/30",
-            "inet6_address": "fdfe:dcba:9876::1/126",
+            "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
             "mtu": 9000,
             "auto_route": True,
             "strict_route": True,
             "stack": "mixed",
             "endpoint_independent_nat": False,
-            "sniff": True,
         }
         if sys.platform.startswith("linux"):
             tun_inbound["iproute2_table_index"] = 20220
@@ -107,6 +111,9 @@ class TUNEngine(Engine):
             "route": {
                 "auto_detect_interface": sys.platform.startswith("linux"),
                 "rules": [
+                    # Sniff before anything else: the destination is an IP at
+                    # the TUN layer, and domain rules below need the hostname.
+                    {"inbound": ["tun-in"], "action": "sniff"},
                     {"protocol": "dns", "action": "hijack-dns"},
                     {"ip_cidr":  self.bypass_ips, "outbound": "direct"},
                     {
@@ -121,9 +128,22 @@ class TUNEngine(Engine):
                 "final": "proxy",
             },
             "dns": {
+                # Typed server schema (sing-box 1.12+): `type` + `server`, not
+                # a scheme-prefixed `address`. The old form fails to decode on
+                # any current core.
                 "servers": [
-                    {"tag": "remote", "address": "tls://1.1.1.1", "detour": "proxy"},
-                    {"tag": "direct", "address": self.direct_dns, "detour": "direct"},
+                    {
+                        "type": "tls",
+                        "tag": "remote",
+                        "server": "1.1.1.1",
+                        "detour": "proxy",
+                    },
+                    {
+                        "type": "udp",
+                        "tag": "direct",
+                        "server": self._direct_dns_server(),
+                        "detour": "direct",
+                    },
                 ],
                 "rules": [
                     {
@@ -138,6 +158,20 @@ class TUNEngine(Engine):
                 "final": "remote",
             },
         }
+
+    def _direct_dns_server(self) -> str:
+        """Bare host for the direct resolver.
+
+        `direct_dns` may be configured as `udp://1.1.1.1` or `tls://name`;
+        the typed schema wants the address in its own field with the transport
+        named by `type`.
+        """
+        value = str(self.direct_dns or "1.1.1.1").strip()
+        for prefix in ("udp://", "tcp://", "tls://", "https://", "quic://"):
+            if value.startswith(prefix):
+                value = value[len(prefix):]
+                break
+        return value.split("/", 1)[0] or "1.1.1.1"
 
     def _write_config(self) -> Path:
         config = self._generate_singbox_config()

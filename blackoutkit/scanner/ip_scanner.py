@@ -137,21 +137,98 @@ async def scan_ips(
     progress_callback=None,
 ) -> list[tuple[str, float]]:
     """
-    Scan a list of IPs concurrently using the high-performance Go DLL.
+    Scan a list of IPs concurrently.
     Returns sorted list of (ip, latency_ms) for reachable IPs.
+
+    The scan itself is blocking (a ctypes call into the Go core), so it runs in
+    a worker thread. It used to be awaited directly, which froze the caller's
+    event loop for the whole scan - concurrency x timeout seconds - and made
+    progress_callback fire exactly once, before any work happened.
     """
-    return scan_sync(ips, port=port, concurrency=concurrency, timeout=timeout, progress_callback=progress_callback)
+    return await asyncio.to_thread(
+        scan_sync,
+        ips,
+        port=port,
+        concurrency=concurrency,
+        timeout=timeout,
+        progress_callback=progress_callback,
+    )
+
+
+async def _scan_with_asyncio(
+    ips: list[str],
+    port: int,
+    concurrency: int,
+    timeout: float,
+    progress_callback=None,
+) -> list[tuple[str, float]]:
+    """Pure-Python concurrent scan, used when the Go core is unavailable."""
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+    done = 0
+    total = len(ips)
+
+    async def one(ip: str):
+        nonlocal done
+        async with semaphore:
+            result = await check_ip(ip, port, timeout)
+        done += 1
+        if progress_callback:
+            try:
+                progress_callback(done, total)
+            except TypeError:
+                # Callers that take no arguments (the documented contract).
+                progress_callback()
+        return result
+
+    gathered = await asyncio.gather(*(one(ip) for ip in ips))
+    return sorted((r for r in gathered if r), key=lambda item: item[1])
+
+
+def _run_asyncio_scan(ips, port, concurrency, timeout, progress_callback):
+    """Run the asyncio scanner from synchronous code, loop or no loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(
+            _scan_with_asyncio(ips, port, concurrency, timeout, progress_callback)
+        )
+
+    # Called from inside a running loop: asyncio.run() would raise, so give the
+    # scan its own thread and loop.
+    import threading
+
+    box: dict[str, object] = {}
+
+    def target():
+        try:
+            box["result"] = asyncio.run(
+                _scan_with_asyncio(ips, port, concurrency, timeout, progress_callback)
+            )
+        except Exception as exc:  # surfaced below
+            box["error"] = exc
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join()
+    if "error" in box:
+        raise box["error"]
+    return box.get("result", [])
 
 
 def scan_sync(ips: list[str], port: int = 443, concurrency: int = 100, timeout: float = 2.0, progress_callback=None) -> list[tuple[str, float]]:
-    """Synchronous wrapper using Go DLL."""
+    """Synchronous scan, using the Go core when it is available.
+
+    The Go core only exists on Windows, so this used to return [] on every
+    other platform - every scan feature reported "no reachable IPs" regardless
+    of the network. The asyncio implementation in this same module is used
+    instead now.
+    """
     import ctypes
 
     from ..core import get_core_dll
     dll = get_core_dll()
     if not dll:
-        # Fallback if DLL fails to load (very unlikely now)
-        return []
+        return _run_asyncio_scan(ips, port, concurrency, timeout, progress_callback)
 
     if progress_callback:
         progress_callback()
@@ -161,16 +238,27 @@ def scan_sync(ips: list[str], port: int = 443, concurrency: int = 100, timeout: 
     if not c_res_ptr:
         return []
 
-    c_res_str = ctypes.cast(c_res_ptr, ctypes.c_char_p).value
-    if not c_res_str:
-        return []
-
     try:
-        result_str = c_res_str.decode("utf-8")
-    except UnicodeDecodeError:
-        return []
-    if not result_str:
-        return []
+        c_res_str = ctypes.cast(c_res_ptr, ctypes.c_char_p).value
+        if not c_res_str:
+            return []
+
+        try:
+            result_str = c_res_str.decode("utf-8")
+        except UnicodeDecodeError:
+            return []
+        if not result_str:
+            return []
+    finally:
+        # cgo gives the caller ownership of a C.CString result. Nothing freed
+        # it before, so every scan leaked its buffer for the life of the
+        # daemon. Older DLLs have no FreeCString, hence the getattr.
+        free = getattr(dll, "FreeCString", None)
+        if free is not None:
+            try:
+                free(c_res_ptr)
+            except Exception:
+                pass
 
     results = []
     for chunk in result_str.split(","):

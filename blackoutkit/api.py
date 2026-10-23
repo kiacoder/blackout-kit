@@ -48,12 +48,20 @@ try:  # optional dependency — the collectors below work without it
     # parameter annotations (e.g. `websocket: WebSocket`) against module
     # globals, so a function-local import would make WebSocket resolve as a
     # query parameter instead.
-    from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+    #
+    # Request is here for the same reason, and this bit us already: the v2
+    # webhook endpoints imported it inside create_app(), so their
+    # `request: Request` annotation resolved as a required *query parameter*
+    # and every POST/DELETE returned 422. The CI failure
+    # (test_api_v2.py::test_v2_webhooks_crud, "assert 422 == 200") was exactly
+    # this, and the file's own warning above even predicted it.
+    from fastapi import FastAPI, Query, Request, WebSocket, WebSocketDisconnect
 
     _FASTAPI_AVAILABLE = True
 except Exception:  # pragma: no cover - exercised only when fastapi is absent
     FastAPI = None  # type: ignore
     Query = None  # type: ignore
+    Request = None  # type: ignore
     WebSocket = None  # type: ignore
     WebSocketDisconnect = None  # type: ignore
     _FASTAPI_AVAILABLE = False
@@ -254,7 +262,6 @@ def _install_loopback_guard(api: "FastAPI") -> None:
     if _remote_access_allowed():
         return
 
-    from fastapi import Request
     from fastapi.responses import JSONResponse
 
     @api.middleware("http")
@@ -279,8 +286,6 @@ def create_app() -> "FastAPI":
         )
 
     _warn_if_public_host()
-
-    from fastapi import Request  # noqa: F401 - used in handler annotations below
 
     from . import __version__ as _version
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 
 from . import APP_DATA_DIR
@@ -300,6 +301,62 @@ def is_admin() -> bool:
         return False
 
 
+def _run_quiet(command: list[str]) -> bool:
+    """Run a helper command, returning True only on a zero exit status."""
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _set_desktop_proxy(host: str, port: int, protocol: str) -> bool:
+    """Apply a system-wide proxy through the desktop's own settings backend.
+
+    Returns False when no backend is available, so the caller can report that
+    honestly instead of claiming the system proxy was set.
+    """
+    import shutil
+
+    if shutil.which("gsettings"):
+        schema = "org.gnome.system.proxy"
+        if protocol == "socks":
+            steps = [
+                ["gsettings", "set", f"{schema}.socks", "host", host],
+                ["gsettings", "set", f"{schema}.socks", "port", str(port)],
+            ]
+        else:
+            steps = [
+                ["gsettings", "set", f"{schema}.http", "host", host],
+                ["gsettings", "set", f"{schema}.http", "port", str(port)],
+                ["gsettings", "set", f"{schema}.https", "host", host],
+                ["gsettings", "set", f"{schema}.https", "port", str(port)],
+            ]
+        if all(_run_quiet(step) for step in steps):
+            # mode last: until the mode flips, the per-protocol values are inert.
+            if _run_quiet(["gsettings", "set", schema, "mode", "manual"]):
+                return True
+
+    kwrite = shutil.which("kwriteconfig6") or shutil.which("kwriteconfig5")
+    if kwrite:
+        proxy_value = (
+            f"socks://{host} {port}" if protocol == "socks" else f"http://{host} {port}"
+        )
+        steps = [
+            [kwrite, "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "ProxyType", "1"],
+            [kwrite, "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "httpProxy", proxy_value],
+            [kwrite, "--file", "kioslaverc", "--group", "Proxy Settings", "--key", "httpsProxy", proxy_value],
+        ]
+        return all(_run_quiet(step) for step in steps)
+
+    return False
+
+
 def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str = "http") -> bool:
     """Set a local HTTP or SOCKS system proxy and record ownership."""
     global _last_error
@@ -313,11 +370,29 @@ def set_system_proxy(host: str = "127.0.0.1", port: int = 10809, protocol: str =
         previous = _clean_baseline()
 
     if sys.platform != "win32":
+        # Environment variables are not a system proxy. They are visible only
+        # to this process and its children, so the old code reported success
+        # while every browser on the machine kept going direct - a false sense
+        # of protection in exactly the situation where that is dangerous.
+        # Try a real desktop backend first, and say so honestly when there is
+        # none.
+        if _set_desktop_proxy(host, port, protocol):
+            _mark_proxy_owned(previous, get_proxy_status() or target)
+            return True
+
+        # Keep the env vars: they still cover the processes we spawn, and some
+        # users launch apps from the same shell.
         value = f"socks5://{host}:{port}" if protocol == "socks" else f"http://{host}:{port}"
         os.environ["http_proxy"] = value
         os.environ["https_proxy"] = value
+        os.environ["all_proxy"] = value
         _mark_proxy_owned(previous, get_proxy_status() or target)
-        return True
+        _last_error = (
+            "No desktop proxy backend found (gsettings / kwriteconfig). Only "
+            f"http_proxy/https_proxy are set, for processes started by this "
+            f"app. Configure other applications to use {host}:{port} manually."
+        )
+        return False
 
     key_path = r"Software\Microsoft\Windows\CurrentVersion\Internet Settings"
     try:

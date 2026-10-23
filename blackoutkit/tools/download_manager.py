@@ -159,6 +159,46 @@ _queue_lock = threading.RLock()  # Reentrant lock to prevent deadlock on recursi
 _active_downloads: dict[str, 'Download'] = {}
 
 
+_WINDOWS_RESERVED = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def _safe_filename(url: str) -> str:
+    """Derive a single path component from a URL, safely.
+
+    Splitting on '/' is not enough on Windows: backslash is a separator there,
+    so a URL carrying `..` + a backslash path kept its traversal. Everything is
+    reduced to a basename with both separator conventions, then checked.
+    """
+    import ntpath
+    import posixpath
+
+    path = urllib.parse.urlsplit(url).path
+    name = urllib.parse.unquote(path)
+    # Strip both separator conventions, then take the last component.
+    name = name.replace("\\", "/")
+    name = posixpath.basename(name)
+    name = ntpath.basename(name).strip()
+
+    if name in ("", ".", ".."):
+        return "download"
+
+    # Windows refuses these characters and silently mangles some of them.
+    for char in '<>:"|?*':
+        name = name.replace(char, "_")
+    name = name.replace("\x00", "").strip(". ")
+
+    stem, dot, suffix = name.partition(".")
+    if stem.upper() in _WINDOWS_RESERVED:
+        name = f"_{name}"
+    if not name:
+        return "download"
+    return name[:200]
+
+
 def queue_download(
     url: str,
     destination: str | None = None,
@@ -175,12 +215,28 @@ def queue_download(
 
     download_id = str(uuid.uuid4())[:8]
 
+    downloads_dir = APP_DATA_DIR / "downloads"
+
     if destination is None:
-        # Auto-generate filename from URL
-        filename = url.split('/')[-1].split('?')[0] or 'download'
-        destination = APP_DATA_DIR / "downloads" / filename
+        destination = downloads_dir / _safe_filename(url)
     else:
         destination = Path(destination)
+
+    # Whatever the name, the file must land inside the downloads directory.
+    # The URL-derived name was used raw, so a link ending in
+    # `..\..\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\run.bat`
+    # wrote attacker content into the Startup folder, and a URL ending in
+    # `/..` made the destination the app-data directory itself.
+    try:
+        resolved = destination.expanduser().resolve()
+        downloads_resolved = downloads_dir.resolve()
+        if not resolved.is_relative_to(downloads_resolved):
+            raise ValueError(
+                f"Download destination must stay inside {downloads_resolved}"
+            )
+    except OSError as exc:
+        raise ValueError(f"Invalid download destination: {exc}") from exc
+    destination = resolved
 
     # Create parent directory if needed
     destination.parent.mkdir(parents=True, exist_ok=True)

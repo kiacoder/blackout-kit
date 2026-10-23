@@ -315,8 +315,15 @@ class Engine(ABC):
             # engine binary spawned without CREATE_NO_WINDOW makes Windows
             # allocate a brand-new console window for every engine start,
             # restart and config rotation — one flashing window per launch.
+            # sys.platform, not os.name: on Windows pathlib.Path() itself
+            # consults os.name, so a test that patches os.name to fake a
+            # platform makes every Path() call in this module raise
+            # "cannot instantiate 'PosixPath' on your system". sys.platform
+            # carries the same information and is safe to patch.
             creationflags = (
-                getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
+                getattr(subprocess, "CREATE_NO_WINDOW", 0)
+                if sys.platform == "win32"
+                else 0
             )
             self._process = subprocess.Popen(
                 command,

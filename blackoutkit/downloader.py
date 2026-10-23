@@ -524,6 +524,20 @@ def _promote_staged_outputs(
             os.replace(staged_dir / name, destination)
             promoted.append(destination)
 
+        # Re-pin the new bytes. The manifest recorded the hash of the binary
+        # that was just replaced, so without this the very next launch is
+        # refused with "hash mismatch" - which is what happened to every engine
+        # after a legitimate `blackout bins update`, and looked like tampering.
+        try:
+            from . import bin_manifest
+
+            for destination in promoted:
+                bin_manifest.record(destination)
+        except Exception as exc:  # never fail a good install over bookkeeping
+            logging.getLogger(__name__).warning(
+                "Installed verified binaries but could not update the manifest: %s", exc
+            )
+
         if provenance is not None:
             _merge_provenance(provenance)
         return True, ""

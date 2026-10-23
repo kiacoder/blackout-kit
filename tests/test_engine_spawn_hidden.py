@@ -42,7 +42,11 @@ def _capture_popen(monkeypatch):
 @pytest.mark.skipif(sys.platform != "win32", reason="CREATE_NO_WINDOW exists only on Windows")
 def test_start_process_hides_console_on_windows(monkeypatch):
     captured = _capture_popen(monkeypatch)
-    monkeypatch.setattr(os, "name", "nt")
+    # sys.platform, not os.name: patching os.name makes pathlib.Path() raise
+    # NotImplementedError on Windows ("cannot instantiate 'PosixPath'"), so the
+    # engine could not even be constructed and the test failed before it could
+    # assert anything.
+    monkeypatch.setattr(sys, "platform", "win32")
 
     engine = _DummyEngine()
     assert engine.start_process(["xray.exe", "run", "-c", "config.json"]) is True
@@ -53,7 +57,7 @@ def test_start_process_hides_console_on_windows(monkeypatch):
 
 def test_start_process_no_window_flag_off_platform(monkeypatch):
     captured = _capture_popen(monkeypatch)
-    monkeypatch.setattr(os, "name", "posix")
+    monkeypatch.setattr(sys, "platform", "linux")
 
     engine = _DummyEngine()
     assert engine.start_process(["xray", "run"]) is True

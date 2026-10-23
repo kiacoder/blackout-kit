@@ -61,12 +61,32 @@ def test_api_bandwidth_endpoint(api_server):
     assert "interfaces" in data
 
 
+def _read_stream_prefix(response, events: int = 1) -> bytes:
+    """Read `events` SSE data lines, then stop.
+
+    The stream is deliberately open-ended now (a live dashboard, not a
+    five-event burst), so reading to EOF would block forever. Read a bounded
+    prefix instead.
+    """
+    lines = []
+    seen = 0
+    while seen < events:
+        line = response.readline()
+        if not line:
+            break
+        lines.append(line)
+        if line.startswith(b"data:"):
+            seen += 1
+    return b"".join(lines)
+
+
 def test_api_live_stream_uses_bound_origin(api_server):
     req = urllib.request.urlopen(f"{api_server}/api/live-stream")
 
     assert req.status == 200
     assert req.headers["Access-Control-Allow-Origin"] == "http://127.0.0.1:8899"
-    assert b"data:" in req.read()
+    assert b"data:" in _read_stream_prefix(req)
+    req.close()
 
 
 def test_api_audit_and_live_stream_accept_query_strings(api_server):
@@ -74,7 +94,7 @@ def test_api_audit_and_live_stream_accept_query_strings(api_server):
         assert response.status == 200
     with urllib.request.urlopen(f"{api_server}/api/live-stream?source=test") as response:
         assert response.status == 200
-        assert b"data:" in response.read()
+        assert b"data:" in _read_stream_prefix(response)
 
 
 @pytest.mark.parametrize("interval", ["abc", "nan", "-1"])

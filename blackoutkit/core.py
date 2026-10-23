@@ -29,6 +29,15 @@ def get_core_dll():
             return _dll
 
         try:
+            # The DLLs run inside this process, which makes them the most
+            # valuable target of the swap the manifest exists to catch - and
+            # they were never checked, only the subprocess binaries were.
+            from . import bin_manifest
+
+            ok, detail = bin_manifest.verify(dll_path)
+            if not ok:
+                _log.error("Refusing to load blackout_core.dll - %s", detail)
+                return None
             if hasattr(os, "add_dll_directory"):
                 os.add_dll_directory(str(BINS_DIR))
             _dll = ctypes.CDLL(str(dll_path))
@@ -94,6 +103,13 @@ def get_warp_dll():
             return _warp_dll
 
         try:
+            # Same reasoning as blackout_core.dll above: in-process code.
+            from . import bin_manifest
+
+            ok, detail = bin_manifest.verify(dll_path)
+            if not ok:
+                _log.error("Refusing to load blackout_warp.dll - %s", detail)
+                return None
             if hasattr(os, "add_dll_directory"):
                 os.add_dll_directory(str(BINS_DIR))
             _warp_dll = ctypes.CDLL(str(dll_path))

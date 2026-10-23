@@ -2478,52 +2478,133 @@ def run_web_api_dashboard(host: str = "127.0.0.1", port: int = 8080) -> None:
                 self.send_header("Access-Control-Allow-Origin", cors_origin)
                 self.end_headers()
                 try:
-                    for _ in range(5):
-                        payload = json.dumps({"timestamp": time.time(), "connections": len(get_active_connections(True))})
+                    # Stream until the client goes away. This used to send
+                    # exactly five events and close, so the "LIVE SSE" chart
+                    # was a 2.5-second burst followed by a browser reconnect -
+                    # never a live view. retry: tells EventSource how quickly
+                    # to come back if the connection does drop.
+                    self.wfile.write(b"retry: 2000\n\n")
+                    self.wfile.flush()
+                    while True:
+                        payload = json.dumps({
+                            "timestamp": time.time(),
+                            "connections": len(get_active_connections(True)),
+                        })
                         self.wfile.write(f"data: {payload}\n\n".encode())
                         self.wfile.flush()
-                        time.sleep(0.5)
-                except Exception:
+                        time.sleep(1.0)
+                except (BrokenPipeError, ConnectionResetError, OSError):
+                    # The browser tab was closed or navigated away.
                     pass
             elif path == "/":
+                # No external script. Chart.js used to be loaded from
+                # cdn.jsdelivr.net, which is exactly the kind of host this
+                # tool exists to work around: on a filtered network the script
+                # never arrived, the canvas stayed blank and there was no error
+                # to explain why. The chart below is ~40 lines of canvas, so
+                # the dashboard works offline and on a censored link.
                 html_dashboard = """<!DOCTYPE html>
 <html>
 <head>
     <title>Blackout Kit Dashboard</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: -apple-system, sans-serif; background: #0f172a; color: #f8fafc; padding: 2rem; margin:0; }
         .card { background: #1e293b; padding: 1.5rem; border-radius: 12px; margin-bottom: 1rem; border: 1px solid #334155; }
         h1 { color: #38bdf8; font-size: 2rem; }
         .badge { background: #22c55e; color: #022c22; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.9rem; font-weight: bold; }
-        canvas { max-height: 250px; }
+        .badge.off { background: #ef4444; color: #450a0a; }
+        canvas { width: 100%; max-height: 250px; }
+        .stat { color: #94a3b8; font-size: 0.95rem; margin-top: 0.5rem; }
     </style>
 </head>
 <body>
-    <h1>Blackout Kit — Live Network Dashboard <span class="badge">LIVE SSE</span></h1>
+    <h1>Blackout Kit &mdash; Live Network Dashboard <span class="badge" id="badge">LIVE SSE</span></h1>
     <div class="card">
         <h2>Real-Time Active Connection Stream</h2>
-        <canvas id="liveChart"></canvas>
+        <canvas id="liveChart" width="900" height="250"></canvas>
+        <div class="stat" id="stat">Waiting for the first sample&hellip;</div>
     </div>
     <script>
-        const ctx = document.getElementById('liveChart').getContext('2d');
-        const chart = new Chart(ctx, {
-            type: 'line',
-            data: { labels: [], datasets: [{ label: 'Active Sockets', data: [], borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.2)', fill: true, tension: 0.4 }] },
-            options: { responsive: true, scales: { y: { beginAtZero: true } } }
-        });
+        const canvas = document.getElementById('liveChart');
+        const ctx = canvas.getContext('2d');
+        const badge = document.getElementById('badge');
+        const stat = document.getElementById('stat');
+        const points = [];
+        const MAX_POINTS = 30;
+
+        function draw() {
+            const w = canvas.width, h = canvas.height;
+            ctx.clearRect(0, 0, w, h);
+
+            const top = 14, bottom = h - 22, left = 42, right = w - 10;
+            const peak = Math.max(5, ...points.map(p => p.v));
+
+            // grid + value labels
+            ctx.strokeStyle = '#334155';
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '12px sans-serif';
+            ctx.lineWidth = 1;
+            for (let i = 0; i <= 4; i++) {
+                const y = top + (bottom - top) * i / 4;
+                ctx.beginPath();
+                ctx.moveTo(left, y);
+                ctx.lineTo(right, y);
+                ctx.stroke();
+                const value = Math.round(peak * (4 - i) / 4);
+                ctx.fillText(String(value), 12, y + 4);
+            }
+
+            if (points.length === 0) return;
+
+            const xAt = i => left + (right - left) * i / Math.max(1, MAX_POINTS - 1);
+            const yAt = v => bottom - (bottom - top) * (v / peak);
+
+            // filled area
+            ctx.beginPath();
+            points.forEach((p, i) => i ? ctx.lineTo(xAt(i), yAt(p.v)) : ctx.moveTo(xAt(i), yAt(p.v)));
+            ctx.lineTo(xAt(points.length - 1), bottom);
+            ctx.lineTo(xAt(0), bottom);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+            ctx.fill();
+
+            // line
+            ctx.beginPath();
+            points.forEach((p, i) => i ? ctx.lineTo(xAt(i), yAt(p.v)) : ctx.moveTo(xAt(i), yAt(p.v)));
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // latest point
+            const last = points[points.length - 1];
+            ctx.beginPath();
+            ctx.arc(xAt(points.length - 1), yAt(last.v), 3, 0, Math.PI * 2);
+            ctx.fillStyle = '#38bdf8';
+            ctx.fill();
+        }
+
         const evtSource = new EventSource('/api/live-stream');
-        evtSource.onmessage = function(e) {
-            const data = JSON.parse(e.data);
-            const timeStr = new Date(data.timestamp * 1000).toLocaleTimeString();
-            if (chart.data.labels.length > 15) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
-            chart.data.labels.push(timeStr);
-            chart.data.datasets[0].data.push(data.connections);
-            chart.update();
+        evtSource.onopen = () => {
+            badge.textContent = 'LIVE SSE';
+            badge.classList.remove('off');
         };
+        evtSource.onmessage = function (e) {
+            const data = JSON.parse(e.data);
+            points.push({ t: data.timestamp, v: data.connections });
+            if (points.length > MAX_POINTS) points.shift();
+            const timeStr = new Date(data.timestamp * 1000).toLocaleTimeString();
+            stat.textContent = 'Active sockets: ' + data.connections + '  \u00b7  last update ' + timeStr;
+            draw();
+        };
+        evtSource.onerror = () => {
+            badge.textContent = 'RECONNECTING';
+            badge.classList.add('off');
+        };
+        draw();
     </script>
 </body>
 </html>"""
+
                 self._send_html(html_dashboard)
             else:
                 self.send_error(404, "Endpoint Not Found")

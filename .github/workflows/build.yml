@@ -212,6 +212,29 @@ jobs:
         go vet ./...
         go test ./...
 
+    # The in-process cgo DLLs, built and attached to the release.
+    #
+    # BIN_REGISTRY marks blackout_core.dll as required and downloads it from
+    # this repository's releases - but the release workflow only ever built it
+    # into RUNNER_TEMP for a smoke test, so the published assets contained no
+    # DLL at all. Every pip/source install on Windows therefore had no way to
+    # obtain the core stack: `blackout bins download sni-spoofing` failed, and
+    # the SNI, XRay, WARP, Psiphon and IP-scanner paths were dead on arrival.
+    - name: Build in-process cgo DLLs
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+        $PSNativeCommandUseErrorActionPreference = $true
+        New-Item -ItemType Directory -Force -Path dist | Out-Null
+        go -C engine build -buildmode=c-shared -o ../dist/blackout_core.dll .
+        go -C engine/warp build -buildmode=c-shared -o ../dist/blackout_warp.dll .
+        foreach ($dll in @('dist/blackout_core.dll', 'dist/blackout_warp.dll')) {
+          if (-not (Test-Path $dll)) { throw "$dll was not produced" }
+          $size = (Get-Item $dll).Length
+          if ($size -lt 1MB) { throw "$dll is only $size bytes" }
+        }
+        Get-ChildItem dist\*.dll | Format-Table Name, Length
+
     # engine/v2 is the supervised daemon that replaces the in-process
     # blackout_core.dll. It is verified and built here on every push so the
     # control channel, framing codec and daemon entrypoint cannot rot
@@ -304,6 +327,8 @@ jobs:
         subject-path: |
           dist/blackout.exe
           dist/blackout-core-windows-amd64.exe
+          dist/blackout_core.dll
+          dist/blackout_warp.dll
 
     - name: Upload Build Artifact
       uses: actions/upload-artifact@v4
@@ -517,6 +542,8 @@ jobs:
         files: |
           dist/blackout.exe
           dist/blackout-core-windows-amd64.exe
+          dist/blackout_core.dll
+          dist/blackout_warp.dll
           dist/blackout-engine-linux-amd64
           dist/blackout-core-linux-amd64
           dist/blackout-source.zip

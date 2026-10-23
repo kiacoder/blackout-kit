@@ -14,11 +14,22 @@ import logging
 import os
 from pathlib import Path
 
-from . import BINS_DIR
+from . import APP_DATA_DIR, BINS_DIR
 
 _log = logging.getLogger(__name__)
 
-MANIFEST_FILE = BINS_DIR / ".manifest.json"
+# The manifest lives in the app-data directory, NOT in bins/.
+#
+# Its whole purpose is to detect "a process that can write bins/ swapped
+# xray.exe" - but it was stored inside bins/ itself, so that process could
+# simply rewrite the pinned hash, or delete the file and let the next launch
+# re-pin the payload as trusted. Keeping it outside the directory it guards
+# means an attacker needs write access to two separate locations.
+MANIFEST_FILE = APP_DATA_DIR / "bin-manifest.json"
+
+# Where earlier versions kept it. Read once, so an existing install does not
+# re-pin everything - which would silently bless whatever is on disk now.
+_LEGACY_MANIFEST_FILE = BINS_DIR / ".manifest.json"
 
 
 def _manifest_path() -> Path:
@@ -28,6 +39,27 @@ def _manifest_path() -> Path:
 def _load() -> dict[str, str]:
     try:
         data = json.loads(_manifest_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        data = None
+
+    if data is None:
+        # Migrate a manifest written by an older version, so moving the file
+        # does not turn every pinned binary into an unpinned one.
+        legacy = _read_legacy()
+        if legacy:
+            _save(legacy)
+            _log.info("Moved the binary manifest out of bins/ to %s", _manifest_path())
+            return legacy
+        return {}
+
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): str(v) for k, v in data.items() if isinstance(v, str)}
+
+
+def _read_legacy() -> dict[str, str]:
+    try:
+        data = json.loads(_LEGACY_MANIFEST_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
         return {}
     if not isinstance(data, dict):
@@ -91,9 +123,20 @@ def verify(path: Path) -> tuple[bool, str]:
     key = _key(path)
     expected = entries.get(key)
     if expected is None:
+        first_use = not _manifest_path().exists()
         entries[key] = digest
         _save(entries)
-        _log.debug("Pinned %s at %s (first use)", key, digest[:12])
+        if first_use:
+            # Trust on first use is still the policy, but a pin created for a
+            # binary that was already on disk is worth saying out loud: it is
+            # also what an attacker who deleted the manifest would see.
+            _log.warning(
+                "No binary manifest found; pinned %s now (first use). "
+                "If you did not expect this, run 'blackout bins verify'.",
+                key,
+            )
+        else:
+            _log.debug("Pinned %s at %s (first use)", key, digest[:12])
         return True, ""
     if expected != digest:
         return False, (

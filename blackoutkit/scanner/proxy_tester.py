@@ -60,6 +60,12 @@ def test_tcp_port(host: str, port: int, timeout: float = 3.0) -> float | None:
 _httpx_clients = {}
 _httpx_lock = threading.Lock()
 _proxy_probe_slots = threading.BoundedSemaphore(4)
+# Probes still running. A probe that outlived its wait used to keep running
+# against a shared client and release the module-global semaphore - which by
+# then could be a *different* instance, so it released one it never acquired
+# ("Semaphore released too many times").
+_proxy_probe_threads: set[threading.Thread] = set()
+_proxy_probe_threads_lock = threading.Lock()
 
 
 def _get_httpx_client(proxy_url: str, timeout: float):
@@ -85,10 +91,14 @@ atexit.register(_cleanup_httpx_clients)
 
 
 def _bounded_proxy_request(client, test_url: str, timeout: float) -> float | None:
-    if not _proxy_probe_slots.acquire(blocking=False):
+    # Capture the instance this probe actually acquires. Releasing the global
+    # by name later is what over-released a freshly replaced semaphore.
+    slots = _proxy_probe_slots
+    if not slots.acquire(blocking=False):
         return None
     completed = threading.Event()
     result: list[float | None] = [None]
+    holder: list[threading.Thread] = []
 
     def request() -> None:
         start = time.monotonic()
@@ -106,12 +116,39 @@ def _bounded_proxy_request(client, test_url: str, timeout: float) -> float | Non
             pass
         finally:
             completed.set()
-            _proxy_probe_slots.release()
+            # Release exactly once, on the instance acquired above.
+            slots.release()
+            with _proxy_probe_threads_lock:
+                if holder:
+                    _proxy_probe_threads.discard(holder[0])
 
-    threading.Thread(target=request, daemon=True).start()
+    thread = threading.Thread(target=request, daemon=True)
+    holder.append(thread)
+    with _proxy_probe_threads_lock:
+        _proxy_probe_threads.add(thread)
+    thread.start()
+
+    # Return on the caller's deadline. The worker keeps its own httpx timeout
+    # and releases the slot it captured when it finally ends, so a stuck probe
+    # costs one slot for a while - not a corrupted semaphore and not a slower
+    # caller.
     if not completed.wait(timeout):
         return None
     return result[0]
+
+
+def join_probe_threads(timeout: float = 2.0) -> None:
+    """Wait for in-flight probes, then clear the bookkeeping.
+
+    Call this before replacing `_proxy_probe_slots` (tests do) so no probe can
+    outlive the semaphore it belongs to.
+    """
+    with _proxy_probe_threads_lock:
+        pending = list(_proxy_probe_threads)
+    for thread in pending:
+        thread.join(timeout)
+    with _proxy_probe_threads_lock:
+        _proxy_probe_threads.clear()
 
 
 def test_http_proxy(

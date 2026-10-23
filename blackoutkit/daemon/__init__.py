@@ -676,6 +676,11 @@ def _write_daemon_state(
                 "engine": _engine_state_payload_name(engine_name, cfg_module),
                 "pid": daemon_pid,
                 "started": started or time.strftime("%Y-%m-%d %H:%M:%S"),
+                # Epoch seconds alongside the human-readable string. Uptime
+                # cannot be computed from "%Y-%m-%d %H:%M:%S" without parsing
+                # it, and the metrics reader looked for "started_at" - a key
+                # nothing ever wrote - so uptime was permanently 0.
+                "started_ts": time.time(),
                 "restarts": restarts,
                 "status": status,
                 "last_failure": last_failure,
@@ -892,31 +897,45 @@ def _run_daemon_loop(
 
     log.info(f"Daemon starting (PID {os.getpid()}). Engine: {engine_name}")
 
-    ENGINE_MAP = {
-        "sni":        lambda: (SNIEngine(), XRayEngine()),
-        "xray":       lambda: (XRayEngine(),),
-        "gdpi":       lambda: (GoodbyeDPIEngine(),),
-        "psiphon":    lambda: (PsiphonEngine(),),
-        "warp":       lambda: (WARPEngine(),),
-        "tun":        lambda: tuple(engine() for engine in get_engine_classes("tun", sys.platform)),
-        "tor":        lambda: (TorEngine(),),
-        "mhrv":       lambda: (MhrvEngine(),),
-        "ikev2":      lambda: (IKEv2Engine(),),
-        "wireguard":  lambda: (WireGuardEngine(),),
-        "openvpn":    lambda: (OpenVPNEngine(),),
-        "softether":  lambda: (SoftEtherEngine(),),
-        "hysteria2":  lambda: (Hysteria2Engine(),),
-        "tuic":       lambda: (TuicEngine(),),
-        "awg":        lambda: (AmneziaWGEngine(),),
-        "legend":     lambda: (TorEngine(), SNIEngine(), XRayEngine()),
-    }
+    # Built from ENGINE_REGISTRY rather than restated by hand. The hand-written
+    # copy was missing six registered engines - anytls, shadowtls, appsscript,
+    # socks-tunnel, hotspot-shield and neighbor - so `connect anytls` died with
+    # "Unknown engine" even though the registry advertised it. The registry
+    # docstring's promise ("add new engines here, nothing else needs updating")
+    # is true again.
+    from ..engines import ENGINE_REGISTRY, engines_for_platform
 
-    if sys.platform.startswith("linux"):
-        ENGINE_MAP = {
-            name: factory
-            for name, factory in ENGINE_MAP.items()
-            if name in {"xray", "tun", "hysteria2", "tuic", "awg"}
-        }
+    def _engine_class(name: str):
+        """Resolve an engine class at call time, through its own module.
+
+        ENGINE_REGISTRY stores the class object, so reading it directly would
+        ignore a later `monkeypatch.setattr(xray, "XRayEngine", ...)` - the
+        registry would keep handing out the original class. Looking it up on
+        the module by name keeps that patch point working.
+        """
+        cls = ENGINE_REGISTRY[name]
+        module = sys.modules.get(cls.__module__)
+        return getattr(module, cls.__name__, cls)
+
+    ENGINE_MAP = {
+        name: (lambda name=name: (_engine_class(name)(),))
+        for name in ENGINE_REGISTRY
+    }
+    # The few names that are not one-class-one-engine.
+    ENGINE_MAP["sni"] = lambda: (_engine_class("sni")(), _engine_class("xray")())
+    ENGINE_MAP["tun"] = lambda: tuple(
+        engine() for engine in get_engine_classes("tun", sys.platform)
+    )
+    ENGINE_MAP["legend"] = lambda: (
+        _engine_class("tor")(),
+        _engine_class("sni")(),
+        _engine_class("xray")(),
+    )
+
+    allowed = set(engines_for_platform(sys.platform)) | {"legend"}
+    ENGINE_MAP = {
+        name: factory for name, factory in ENGINE_MAP.items() if name in allowed
+    }
     s = cfg.load()
     traffic_monitor = None
     engine_started_at = None
@@ -1518,18 +1537,53 @@ def _run_daemon_loop(
 
 def stream_daemon_ipc_metrics() -> dict:
     """
-    ⚡ High-Performance Daemon IPC Metrics Stream:
-    Fast in-memory daemon health & throughput metrics without disk polling.
+    Daemon health and resource metrics.
+
+    Reads the daemon's state snapshot (a small JSON file - the daemon already
+    writes it every lifecycle change) plus the process RSS. The previous
+    implementation claimed to avoid disk polling while calling get_state(), and
+    then looked for a `started_at` key that was never written, so uptime was
+    always 0.0 and memory_mb was a hardcoded 0.0. It also would have raised
+    TypeError (float - str) had the key existed, because `started` is a
+    formatted timestamp string.
     """
     pid = get_pid()
     active = bool(pid and is_process_alive(pid))
-    state = get_state()
+    state = get_state() or {}
+
+    started_ts = state.get("started_ts")
+    if isinstance(started_ts, (int, float)) and started_ts > 0:
+        uptime = max(0.0, time.time() - float(started_ts))
+    else:
+        # Older state files carry only the formatted string; parse it rather
+        # than reporting a fake zero.
+        uptime = 0.0
+        started = state.get("started")
+        if isinstance(started, str) and started:
+            try:
+                uptime = max(
+                    0.0,
+                    time.time() - time.mktime(time.strptime(started, "%Y-%m-%d %H:%M:%S")),
+                )
+            except (ValueError, OverflowError):
+                uptime = 0.0
+
+    memory_mb = 0.0
+    if active and pid:
+        try:
+            import psutil
+
+            memory_mb = psutil.Process(pid).memory_info().rss / (1024 * 1024)
+        except Exception:
+            # psutil is a declared dependency, but a metrics read must never
+            # take the dashboard down.
+            memory_mb = 0.0
 
     return {
         "pid": pid,
         "active": active,
-        "engine": state.get("engine") if state else None,
-        "started_at": state.get("started_at") if state else None,
-        "uptime": time.time() - state["started_at"] if (state and "started_at" in state) else 0.0,
-        "memory_mb": 0.0,
+        "engine": state.get("engine"),
+        "started_at": started_ts,
+        "uptime": uptime,
+        "memory_mb": memory_mb,
     }

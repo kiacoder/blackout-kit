@@ -111,7 +111,10 @@ class CLINavigator:
             return None
 
         chosen = run_menu("Available Commands", items, guide="↑↓ Navigate    Enter Select    Esc Exit")
-        return chosen.key if chosen else None
+        # run_menu() returns the selected item's key (a str), not the
+        # MenuItem - so `.key` raised AttributeError on every successful
+        # selection and only the cancel path (None) worked.
+        return chosen if chosen else None
 
     def show_group_browser(self, group_name: str) -> str | None:
         """Launch interactive browser for a command group (e.g., 'blackout config')."""
@@ -137,7 +140,10 @@ class CLINavigator:
             items,
             guide="↑↓ Navigate    Enter Select    Esc Back",
         )
-        return chosen.key if chosen else None
+        # run_menu() returns the selected item's key (a str), not the
+        # MenuItem - so `.key` raised AttributeError on every successful
+        # selection and only the cancel path (None) worked.
+        return chosen if chosen else None
 
     def show_command_help(self, command_name: str) -> None:
         """Display comprehensive help for a command."""

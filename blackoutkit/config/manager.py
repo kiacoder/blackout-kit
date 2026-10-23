@@ -270,8 +270,12 @@ def _parse_vless_trojan(uri: str) -> ProxyConfig:
     p = {**{k.lower(): v for k, v in p.items()}, **p}
 
     def q(key, default=""):
+        # parse_qs has ALREADY percent-decoded every value. Unquoting again
+        # turned an encoded slash in a WebSocket path (/a%2Fb -> /a/b) and an
+        # encoded '@' in a password (%40 -> @) into the wrong bytes, so the
+        # server rejected a URI that works in v2rayN. Decode once.
         vals = p.get(key, [default])
-        return urllib.parse.unquote(vals[0]) if vals else default
+        return vals[0] if vals else default
 
     # The TLS-verification opt-out is spelled three ways in the wild:
     # "insecure" (sing-box/v2rayN), "allowInsecure" (Xray/V2RayN) and
@@ -416,16 +420,36 @@ def load_configs(path: Path | None = None) -> ConfigLoadResult:
         return ConfigLoadResult(error=message)
 
 
-def save_configs(configs: list[ProxyConfig], path: Path | None = None):
+def save_configs(
+    configs: list[ProxyConfig], path: Path | None = None, force: bool = False
+):
     """
     Save configs to disk atomically using temp file + rename.
     Raises SaveError on failure with detailed context.
+
+    Refuses to write over a library that failed to LOAD, unless `force` is
+    passed. This is the guard against silent data loss: a caller that loads
+    (gets an error), mutates the empty list it received, and saves would
+    otherwise replace the user's whole library with the empty list. The error
+    means the existing bytes are still there and still matter; deleting them
+    because they are unreadable turns a recoverable fault into permanent loss.
+    Pass force=True only from an explicit user-invoked reset.
     """
     import logging
     import os
     import tempfile
 
     log = logging.getLogger(__name__)
+
+    if not force:
+        existing = load_configs(path)
+        if existing.error:
+            raise SaveError(
+                f"Refusing to save: the existing config library could not be "
+                f"read ({existing.error}). Nothing was written, so your saved "
+                f"configs are still on disk. Resolve the read failure first."
+            )
+
     text = "\n".join(config.raw_uri for config in configs if config.raw_uri)
 
     if path is None and CONFIGS_FILE == vault.CONFIGS_FILE and vault.config_vault_active():
@@ -719,33 +743,30 @@ def serialize_setup() -> dict:
         if k in exportable_keys
     }
 
-    # Strip credentials from URIs to avoid exposing passwords/UUIDs in backup
-    sanitized_configs = []
+    # Export the full URIs, credentials included.
+    #
+    # The previous export stripped the userinfo from every URI "to avoid
+    # exposing passwords in the backup" - and deserialize_setup then rejected
+    # exactly those URIs, because vless/trojan/ss all REQUIRE their userinfo
+    # to parse. The roundtrip could never succeed: every backup was dead on
+    # arrival while telling the user they had one. That is worse than a
+    # credential-bearing backup.
+    #
+    # The payload is base64 (not casually readable) and the CLI prints an
+    # explicit credentials warning on export. The right long-term answer is
+    # encrypting the export with the vault; shipping a backup that cannot be
+    # restored is not.
+    configs_export = []
     for c in configs:
-        if not c.raw_uri:
-            continue
-        try:
-            parsed = urllib.parse.urlsplit(c.raw_uri)
-            # Reconstruct without credentials
-            netloc = parsed.hostname or parsed.netloc
-            if parsed.port:
-                netloc = f"{netloc}:{parsed.port}"
-            sanitized_uri = urllib.parse.urlunsplit((
-                parsed.scheme,
-                netloc,
-                parsed.path,
-                parsed.query,
-                parsed.fragment
-            ))
-            sanitized_configs.append(sanitized_uri)
-        except Exception:
-            # On any parse error, omit the config from backup (fail safe)
-            pass
+        if c.raw_uri:
+            configs_export.append(c.raw_uri)
 
     return {
         "schema_version": SETUP_SCHEMA_VERSION,
-        "configs": sanitized_configs,
+        "configs": configs_export,
         "settings": filtered_settings,
+        # Tells the importer (and the user) that these URIs are complete.
+        "contains_credentials": True,
     }
 
 

@@ -168,7 +168,7 @@ def _setting_input(
             return edit_text(key, secret=True)
         return text_editor(key, initial="", secret=True)
 
-    choices = cfg.SETTING_CHOICES.get(key)
+    choices = cfg.setting_choices(key)
     if choices is None and isinstance(value, bool):
         choices = ("true", "false")
     if choices:
@@ -427,7 +427,16 @@ def _import_subscription(
     ):
         return
     console.print("[info]Importing from subscription URL...[/info]")
-    added, total = manager.import_and_merge(url)
+    # Network input is the most likely thing in this menu to fail - a non-HTTPS
+    # URL, an SSRF-blocked host, DNS trouble, the size limit, a save error.
+    # Every sibling handler catches and shows a panel; this one did not, so a
+    # hiccup tore down the alternate screen and dumped a traceback.
+    try:
+        added, total = manager.import_and_merge(url)
+    except (ValueError, OSError) as exc:
+        console.print(f"[error]{escape(str(exc))}[/error]")
+        _acknowledge("Subscription was not imported", menu_runner)
+        return
     console.print(f"[success]✓ Imported {added} new configs. Total: {total}.[/success]")
 
 
@@ -470,8 +479,15 @@ def _export_setup(
     if not output:
         return
     output_path = Path(output).expanduser().resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(setup_string, encoding="utf-8")
+    # A read-only directory or a missing drive raised PermissionError straight
+    # out of the menu. Report it instead of crashing the TUI.
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(setup_string, encoding="utf-8")
+    except OSError as exc:
+        console.print(f"[error]Could not write {escape(str(output_path))}: {escape(str(exc))}[/error]")
+        _acknowledge("Setup was not exported", menu_runner)
+        return
     console.print(f"[success]✓ Setup exported to {escape(str(output_path))}.[/success]")
 
 

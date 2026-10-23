@@ -23,10 +23,20 @@ class PsiphonEngine(Engine):
         self._health_check_addr = ("127.0.0.1", self.socks_port)
 
     def start(self) -> bool:
+        # The DLL opens a SOCKS listener and nothing else. Logging http_port as
+        # if it were being served invited users to point a browser at a port
+        # with no listener behind it.
         self._log.info(
-            "Starting Psiphon  country=%s  http_port=%d  socks_port=%d",
-            self.country, self.http_port, self.socks_port,
+            "Starting Psiphon  country=%s  socks_port=%d  (no HTTP proxy: "
+            "the native engine serves SOCKS only)",
+            self.country, self.socks_port,
         )
+        if self.http_port:
+            self._log.warning(
+                "psiphon_http_port=%d is not used by this engine; "
+                "point applications at the SOCKS proxy instead.",
+                self.http_port,
+            )
 
         from ..core import get_warp_dll
         dll = get_warp_dll()
@@ -38,7 +48,9 @@ class PsiphonEngine(Engine):
 
         self._log.info("Launching Psiphon via native DLL")
         c_country = (self.country or "DE").encode("utf-8")
-        if dll.StartPsiphonC(self.socks_port, self.http_port, c_country) == 0:
+        # Pass 0: there is no HTTP inbound, so claiming a port here would only
+        # make the DLL print a warning about a listener it cannot create.
+        if dll.StartPsiphonC(self.socks_port, 0, c_country) == 0:
             self._dll_stop_func = dll.StopPsiphonC
             if not self.wait_for_port(self.socks_port, timeout=_STARTUP_TIMEOUT):
                 self._log.error("Psiphon started via DLL but SOCKS port %d never opened.", self.socks_port)

@@ -78,11 +78,40 @@ class WinDivertHandle:
         """
         Open a WinDivert handle with the given filter.
 
-        Args:
-            filter_expr: WinDivert filter expression (default: "true" = all packets)
+        ALWAYS FAILS today, and that is deliberate.
+
+        A divert handle does not observe packets - it CAPTURES them. They
+        re-enter the network only when the caller re-injects them with
+        WinDivertSend, and this shaper's loop does not do that: the Recv/Send
+        path in _shaper_loop() is still a comment. Opening a handle here would
+        silently swallow every matching packet; with the old default filter
+        ("true") that was all traffic on the machine, for as long as the
+        handle stayed open.
+
+        Until the loop actually recirculates packets, this refuses to run
+        rather than pretending to shape anything. To enable enforcement:
+        implement WinDivertRecv + token bucket + WinDivertSend in
+        _shaper_loop(), keep the filter narrow (per-rule, never "true"), and
+        add an integration test that proves a test packet survives the loop.
 
         Returns:
-            True if handle opened successfully
+            Never returns True in this state; raises instead of opening.
+
+        Raises:
+            RuntimeError: always, until packet recirculation is implemented.
+        """
+        raise RuntimeError(
+            "QoS enforcement is not implemented: opening a WinDivert handle "
+            "would capture packets that are never re-injected, blackholing "
+            "network traffic (finding BK-002). Use monitoring mode, which "
+            "reads interface counters and does not capture anything."
+        )
+
+    def _open_windivert_handle(self, filter_expr: str) -> bool:
+        """The real open path, kept for when recirculation is implemented.
+
+        Call this only after _shaper_loop() genuinely re-injects packets and
+        the filter is narrow.
         """
         try:
             # Layer 0 = WINDIVERT_LAYER_NETWORK

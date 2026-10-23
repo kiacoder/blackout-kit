@@ -148,7 +148,12 @@ def test_daemon_state_uses_daemon_pid_for_dll_backed_engine(tmp_path, monkeypatc
         started="2026-08-15 10:00:00",
     )
 
-    assert json.loads(state_file.read_text(encoding="utf-8")) == {
+    written = json.loads(state_file.read_text(encoding="utf-8"))
+    # started_ts is the epoch copy of `started`: uptime cannot be computed from
+    # the formatted string, and the metrics reader looked for a key nothing
+    # wrote, so uptime was permanently 0.
+    assert isinstance(written.pop("started_ts"), float)
+    assert written == {
         "engine": "gdpi[native]",
         "pid": 4242,
         "started": "2026-08-15 10:00:00",

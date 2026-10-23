@@ -108,6 +108,25 @@ def engine_names() -> list[str]:
     return sorted(ENGINE_REGISTRY.keys())
 
 
+# Engines that do not need a Windows-only binary or driver. Everything absent
+# from this set requires Windows, so the daemon refuses to try it elsewhere.
+PORTABLE_ENGINES = {"xray", "tun", "hysteria2", "tuic", "awg"}
+
+
+def engines_for_platform(platform: str | None = None) -> list[str]:
+    """Engine names that can actually start on this platform.
+
+    One predicate instead of the three hand-maintained lists that had drifted
+    apart (the daemon's map, the settings choices, and the failover order).
+    """
+    import sys as _sys
+
+    platform = platform or _sys.platform
+    if platform == "win32":
+        return engine_names()
+    return sorted(set(ENGINE_REGISTRY) & PORTABLE_ENGINES)
+
+
 def next_engine_candidate(current_engine: str, failed_engines: set[str] | None = None, platform_filter: bool = True) -> str | None:
     """
     Find the next candidate engine to try after a failure.
@@ -137,9 +156,8 @@ def next_engine_candidate(current_engine: str, failed_engines: set[str] | None =
         # On Windows, all engines available
         pass
     elif platform_filter and sys.platform.startswith("linux"):
-        # On Linux, only these engines available
-        linux_engines = {"xray", "tun", "hysteria2", "tuic", "awg"}
-        available = available.intersection(linux_engines)
+        # Only the engines that do not need a Windows-only binary.
+        available = available.intersection(engines_for_platform(sys.platform))
 
     # Filter out current and already-failed engines
     candidates = sorted(available - {current_engine} - failed_engines)
@@ -178,6 +196,7 @@ __all__ = [
     "WireGuardEngine",
     "XRayEngine",
     "engine_names",
+    "engines_for_platform",
     "get_engine",
     "list_engines",
     "next_engine_candidate",

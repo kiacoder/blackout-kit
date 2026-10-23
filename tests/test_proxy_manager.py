@@ -118,16 +118,48 @@ def test_set_system_proxy_netsh_fail(mock_run, mock_open):
 
 @patch("sys.platform", "linux")
 @patch("os.environ", {})
-def test_set_system_proxy_linux():
-    res = set_system_proxy("127.0.0.1", 10809, "http")
-    assert res is True
+def test_set_system_proxy_linux_reports_when_no_backend(monkeypatch):
+    """No desktop backend means the proxy is NOT system-wide.
+
+    Setting http_proxy inside this process changes nothing for any other
+    application, so returning True was a false promise in a censorship tool.
+    """
+    import blackoutkit.proxy_manager as pm
+
+    monkeypatch.setattr(pm, "_set_desktop_proxy", lambda *_a, **_k: False)
+    res = pm.set_system_proxy("127.0.0.1", 10809, "http")
+    assert res is False
+    assert "No desktop proxy backend" in pm.get_last_error()
+    # The env vars are still set, for the processes we spawn ourselves.
+    assert pm.os.environ.get("http_proxy") == "http://127.0.0.1:10809"
 
 
 @patch("sys.platform", "linux")
 @patch("os.environ", {})
-def test_set_system_proxy_linux_socks():
-    res = set_system_proxy("127.0.0.1", 10809, "socks")
-    assert res is True
+def test_set_system_proxy_linux_uses_a_desktop_backend(monkeypatch):
+    import blackoutkit.proxy_manager as pm
+
+    monkeypatch.setattr(pm, "_set_desktop_proxy", lambda *_a, **_k: True)
+    assert pm.set_system_proxy("127.0.0.1", 10809, "socks") is True
+
+
+def test_set_desktop_proxy_prefers_gsettings(monkeypatch):
+    import blackoutkit.proxy_manager as pm
+
+    calls = []
+
+    def fake_run(command):
+        calls.append(command)
+        return True
+
+    monkeypatch.setattr(pm.shutil if hasattr(pm, "shutil") else __import__("shutil"), "which",
+                        lambda name: "/usr/bin/gsettings" if name == "gsettings" else None)
+    monkeypatch.setattr(pm, "_run_quiet", fake_run)
+
+    assert pm._set_desktop_proxy("127.0.0.1", 10809, "http") is True
+    # mode is set last: the per-protocol values are inert until it flips.
+    assert calls[-1][-1] == "manual"
+    assert any("http" in part for call in calls for part in call)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows proxy manager test")

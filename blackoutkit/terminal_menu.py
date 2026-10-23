@@ -75,50 +75,115 @@ class KeyReader:
             return Key.CTRL_C
         return Key.OTHER
 
-    def _read_posix_input(self) -> tuple[Key, str | None]:
+    @staticmethod
+    def _arrow_key(final: bytes) -> Key:
+        return {
+            b"A": Key.UP,
+            b"B": Key.DOWN,
+            b"C": Key.RIGHT,
+            b"D": Key.LEFT,
+        }.get(final, Key.OTHER)
+
+    @staticmethod
+    def _read_byte(fd: int, timeout: float | None = None) -> bytes | None:
+        """Read one byte from the tty, or None when the timeout expires.
+
+        Reads the file descriptor, NOT sys.stdin. sys.stdin is a buffered
+        TextIOWrapper: the first read() may pull the whole `ESC [ A` out of
+        the OS in one go, leaving the rest in Python's buffer. select() on the
+        fd then reports nothing pending, so the arrow was mistaken for a lone
+        Escape - which is why the POSIX menus never navigated.
+        """
+        import os
         import select
+
+        if timeout is not None and not select.select([fd], [], [], timeout)[0]:
+            return None
+        try:
+            return os.read(fd, 1)
+        except OSError:
+            return None
+
+    def _decode_utf8(self, fd: int, first: bytes) -> str | None:
+        """Complete a possibly multi-byte UTF-8 character."""
+        lead = first[0]
+        if lead < 0x80:
+            return first.decode("utf-8", "ignore")
+        if lead >> 5 == 0b110:
+            need = 1
+        elif lead >> 4 == 0b1110:
+            need = 2
+        else:
+            need = 3
+        buf = first
+        for _ in range(need):
+            nxt = self._read_byte(fd, 0.05)
+            if nxt is None:
+                break
+            buf += nxt
+        return buf.decode("utf-8", "ignore") or None
+
+    def _read_posix_input(self) -> tuple[Key, str | None]:
+        import os
         import termios
         import tty
 
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
+        try:
+            fd = sys.stdin.fileno()
+        except (AttributeError, ValueError, OSError):
+            return Key.OTHER, None
+
+        try:
+            old_settings = termios.tcgetattr(fd)
+        except termios.error:
+            # Not a terminal (piped input, CI): fall back to a line read so the
+            # caller sees ENTER/EOF instead of an exception.
+            line = sys.stdin.readline()
+            return (Key.ENTER if line else Key.ESCAPE), None
+
         try:
             tty.setcbreak(fd)
-            ch = sys.stdin.read(1)
-            if ch == "\x1b":
-                if not select.select([sys.stdin], [], [], 0.05)[0]:
-                    return Key.ESCAPE, None
-
-                sequence = sys.stdin.read(1)
-                if sequence != "[":
-                    return Key.OTHER, None
-
-                final = sys.stdin.read(1)
-                if final in "ABCD":
-                    return {
-                        "A": Key.UP,
-                        "B": Key.DOWN,
-                        "C": Key.RIGHT,
-                        "D": Key.LEFT,
-                    }[final], None
-                while select.select([sys.stdin], [], [], 0.05)[0]:
-                    final = sys.stdin.read(1)
-                    if "@" <= final <= "~":
-                        break
-                return Key.OTHER, None
-            if ch in ("\r", "\n"):
+            first = self._read_byte(fd)
+            if first is None:
+                return Key.ESCAPE, None
+            if first == b"\x1b":
+                return self._decode_escape(fd)
+            if first in (b"\r", b"\n"):
                 return Key.ENTER, None
-            if ch == " ":
+            if first == b" ":
                 return Key.SPACE, " "
-            if ch in ("\x08", "\x7f"):
+            if first in (b"\x08", b"\x7f"):
                 return Key.BACKSPACE, None
-            if ch == "\x03":
+            if first == b"\x03":
                 return Key.CTRL_C, None
-            if ch.isprintable():
-                return Key.OTHER, ch
+            char = self._decode_utf8(fd, first)
+            if char is not None and char.isprintable():
+                return Key.OTHER, char
             return Key.OTHER, None
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    def _decode_escape(self, fd: int) -> tuple[Key, str | None]:
+        """Resolve ESC into an arrow key, or report a bare Escape."""
+        second = self._read_byte(fd, 0.05)
+        if second is None:
+            return Key.ESCAPE, None
+        if second == b"O":
+            # SS3 form, used by some terminals in application cursor mode.
+            final = self._read_byte(fd, 0.05) or b""
+            return self._arrow_key(final), None
+        if second != b"[":
+            return Key.OTHER, None
+        # CSI: zero or more parameter bytes, then a final byte in @..~
+        final = b""
+        for _ in range(16):
+            nxt = self._read_byte(fd, 0.05)
+            if nxt is None:
+                break
+            final = nxt
+            if b"@" <= nxt <= b"~":
+                break
+        return self._arrow_key(final), None
 
     def _read_posix(self) -> Key:
         return self._read_posix_input()[0]

@@ -264,11 +264,10 @@ SETTING_CHOICES = {
     "ikev2_tunnel_type": ("IKEv2", "L2tp", "Sstp", "Pptp"),
     "color_theme": ("red", "blue", "green", "purple"),
     "terminal_theme": ("dark", "light"),
-    "selected_engine": (
-        "auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
-        "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
-        "tuic", "awg", "legend",
-    ),
+    # Filled from the engine registry by setting_choices() - a static list
+    # here drifted every time an engine was added, which made the newest
+    # engines unreachable from `blackout settings set selected_engine`.
+    "selected_engine": ("auto", "legend"),
     "qos_enforcement_mode": ("off", "monitor"),
     "adblock_block_mode": ("null", "sinkhole"),
 }
@@ -290,11 +289,41 @@ def iter_setting_groups() -> list[tuple[str, list[str]]]:
 
 _PORT_RANGE   = (lambda v: 1 <= v <= 65535, "must be 1–65535")
 _POSITIVE     = (lambda v: v > 0,           "must be > 0")
-_ENGINE_CHOICES = [
+# Fallback only: the real list comes from the engine registry. Kept so that a
+# partially installed environment can still validate settings.
+_FALLBACK_ENGINE_CHOICES = [
     "auto", "sni", "xray", "gdpi", "psiphon", "warp", "tun", "tor", "mhrv",
     "ikev2", "wireguard", "openvpn", "softether", "appsscript", "hysteria2",
-    "tuic", "awg", "legend",
+    "tuic", "awg", "anytls", "shadowtls", "hotspot-shield", "socks-tunnel",
+    "legend",
 ]
+_ENGINE_CHOICES_CACHE: list[str] | None = None
+
+
+def _engine_choices() -> list[str]:
+    """Every engine name a setting may name, derived from the registry.
+
+    Imported lazily: engines import settings, so a module-level import here
+    would be circular.
+    """
+    global _ENGINE_CHOICES_CACHE
+    if _ENGINE_CHOICES_CACHE is not None:
+        return _ENGINE_CHOICES_CACHE
+    try:
+        from .engines import engine_names
+
+        names = engine_names()
+    except Exception:
+        names = [name for name in _FALLBACK_ENGINE_CHOICES if name not in ("auto", "legend")]
+    _ENGINE_CHOICES_CACHE = ["auto", *names, "legend"]
+    return _ENGINE_CHOICES_CACHE
+
+
+def setting_choices(key: str) -> tuple[str, ...] | None:
+    """Allowed values for a setting, or None when it is free-form."""
+    if key in ("selected_engine", "engine_order"):
+        return tuple(_engine_choices())
+    return SETTING_CHOICES.get(key)
 
 
 def _valid_mac_prefix(value: str) -> bool:
@@ -358,9 +387,10 @@ _VALIDATORS: dict[str, tuple] = {
                            "must be: red / blue / green / purple"),
     "terminal_theme":     (str,   lambda v: v in ("dark", "light"),
                            "must be: dark / light"),
-    "selected_engine":    (str,   lambda v: v in _ENGINE_CHOICES, "must be: auto or one of " + ", ".join(_ENGINE_CHOICES)),
-    "engine_order":       (list,  lambda v: len(v) > 0 and all(e in _ENGINE_CHOICES for e in v),
-                           "must be a non-empty list of valid engines: " + ", ".join(_ENGINE_CHOICES)),
+    "selected_engine":    (str,   lambda v: v in _engine_choices(),
+                           "must be: auto, legend, or one of the registered engines"),
+    "engine_order":       (list,  lambda v: len(v) > 0 and all(e in _engine_choices() for e in v),
+                           "must be a non-empty list of registered engines"),
     "fallback_enabled":   (bool,  lambda v: True,            "must be true or false"),
     "capture_max_packets": (int,  lambda v: 100 <= v <= 100000, "must be 100–100000"),
     "download_speed_limit_kbps": (int, lambda v: v >= 0, "must be 0 (unlimited) or > 0"),

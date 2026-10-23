@@ -33,6 +33,10 @@ class LiveDashboard:
         self.console = Console()
         self._last_update = 0.0
         self._metrics_history = []
+        # io_bytes is a cumulative counter; throughput is its derivative, so a
+        # previous sample is required. The daemon never wrote throughput_* at
+        # all, which is why the dashboard showed 0.00 Mbps forever.
+        self._last_io: tuple[int, int, float] | None = None
 
     def get_daemon_status(self) -> dict:
         """
@@ -52,26 +56,71 @@ class LiveDashboard:
             - health: str ('OK' | 'WARNING' | 'CRITICAL')
         """
         metrics = daemon.stream_daemon_ipc_metrics()
-        state = daemon.get_state()
+        state = daemon.get_state() or {}
 
-        # Build comprehensive status
+        # The daemon writes `status` and `io_bytes`; it has never written
+        # `connected`, `throughput_*`, `active_connections` or
+        # `last_activity_sec`. Reading the latter meant a healthy tunnel showed
+        # as "Disconnected, 0.00 Mbps, 0 connections" for ever. Derive what can
+        # be derived from what is actually there, and be explicit about what
+        # cannot be known.
+        status_value = str(state.get("status") or "").lower()
+        down_mbps, up_mbps = self._throughput_mbps(state.get("io_bytes"))
+
         status = {
             "active": metrics.get("active", False),
             "pid": metrics.get("pid"),
             "engine": metrics.get("engine") or "None",
             "uptime": metrics.get("uptime", 0.0),
             "started_at": metrics.get("started_at"),
-            "connected": state.get("connected", False) if state else False,
-            "throughput_down": state.get("throughput_down", 0.0) if state else 0.0,
-            "throughput_up": state.get("throughput_up", 0.0) if state else 0.0,
-            "active_connections": state.get("active_connections", 0) if state else 0,
-            "last_activity_sec": state.get("last_activity_sec", 0.0) if state else 0.0,
+            "status": status_value or "unknown",
+            "connected": status_value == "connected",
+            "throughput_down": down_mbps,
+            "throughput_up": up_mbps,
+            # Not tracked by the daemon; shown as n/a rather than as a
+            # confident zero.
+            "active_connections": None,
+            "last_activity_sec": None,
+            "memory_mb": metrics.get("memory_mb"),
+            "restarts": state.get("restarts"),
+            "last_failure": state.get("last_failure"),
         }
 
         # Calculate health status
         status["health"] = self._calculate_health(status)
 
         return status
+
+    def _throughput_mbps(self, io_bytes) -> tuple[float, float]:
+        """Convert the daemon's cumulative io_bytes counter into Mbps.
+
+        Returns (down, up) in megabits per second since the previous sample, or
+        (0.0, 0.0) on the first sample - there is no rate to report yet.
+        """
+        if not io_bytes or len(io_bytes) != 2:
+            return 0.0, 0.0
+        try:
+            down_now, up_now = int(io_bytes[0]), int(io_bytes[1])
+        except (TypeError, ValueError):
+            return 0.0, 0.0
+
+        now = time.monotonic()
+        previous = self._last_io
+        self._last_io = (down_now, up_now, now)
+        if previous is None:
+            return 0.0, 0.0
+
+        prev_down, prev_up, prev_time = previous
+        elapsed = now - prev_time
+        if elapsed <= 0:
+            return 0.0, 0.0
+
+        # A counter that went backwards means the daemon restarted; report zero
+        # for this sample rather than a nonsense spike.
+        down_delta = max(0, down_now - prev_down)
+        up_delta = max(0, up_now - prev_up)
+        scale = 8.0 / 1_000_000.0 / elapsed
+        return down_delta * scale, up_delta * scale
 
     def _calculate_health(self, status: dict) -> str:
         """
@@ -86,6 +135,10 @@ class LiveDashboard:
             return "CRITICAL"
 
         if not status["connected"]:
+            # A daemon that is up and reconnecting is a warning, not a fault;
+            # one that reported `failed` is closer to critical.
+            if status.get("status") == "failed":
+                return "CRITICAL"
             return "WARNING"
 
         # If connected and active, health is OK
@@ -118,9 +171,11 @@ class LiveDashboard:
             style=COLOR_NEUTRAL,
         )
 
-        # Active connections
+        # Active connections: the daemon does not track a count, so say so
+        # instead of printing a confident "0 connections".
+        connections = status.get("active_connections")
         conn_text = Text(
-            f"{status['active_connections']} connections",
+            "n/a (not tracked)" if connections is None else f"{connections} connections",
             style=COLOR_NEUTRAL,
         )
 
@@ -139,8 +194,10 @@ class LiveDashboard:
         uptime_text = Text(f"Uptime: {uptime_str}", style=COLOR_NEUTRAL)
 
         # Last activity
-        last_activity_sec = status["last_activity_sec"]
-        if last_activity_sec < 60:
+        last_activity_sec = status.get("last_activity_sec")
+        if last_activity_sec is None:
+            last_activity_str = "n/a"
+        elif last_activity_sec < 60:
             last_activity_str = f"{int(last_activity_sec)}s ago"
         elif last_activity_sec < 3600:
             last_activity_str = f"{int(last_activity_sec / 60)}m ago"
@@ -167,6 +224,16 @@ class LiveDashboard:
         table.add_row("Uptime", uptime_text)
         table.add_row("Last Activity", last_activity_text)
         table.add_row("Process ID", pid_text)
+        if status.get("memory_mb"):
+            table.add_row(
+                "Memory",
+                Text(f"{status['memory_mb']:.1f} MB", style=COLOR_NEUTRAL),
+            )
+        if status.get("restarts") is not None:
+            table.add_row(
+                "Restarts",
+                Text(str(status["restarts"]), style=COLOR_NEUTRAL),
+            )
 
         # Wrap in a panel
         panel = Panel(
@@ -204,33 +271,35 @@ class LiveDashboard:
             self.console.print(panel)
             return
 
-        # Live continuous update mode
-        def generate_dashboard():
-            while True:
-                try:
-                    status = self.get_daemon_status()
-                    yield self.render_dashboard(status)
-                except KeyboardInterrupt:
-                    break
-                except Exception as e:
-                    # On error, show error panel and continue
-                    error_panel = Panel(
-                        Text(f"Dashboard error: {e}", style="red"),
-                        title="[bold red]Error[/bold red]",
-                        border_style="red",
-                    )
-                    yield error_panel
+        # Live continuous update mode.
+        #
+        # Live() needs a renderable; it was given a generator, so rich raised
+        # NotRenderableError before the first frame and the "real-time"
+        # dashboard never rendered at all. Render once, then update in a loop.
+        def frame() -> Panel:
+            try:
+                return self.render_dashboard(self.get_daemon_status())
+            except Exception as e:  # keep the dashboard alive on a bad sample
+                return Panel(
+                    Text(f"Dashboard error: {e}", style="red"),
+                    title="[bold red]Error[/bold red]",
+                    border_style="red",
+                )
 
-                time.sleep(self.refresh_interval)
-
+        refresh_hz = max(0.5, 1.0 / self.refresh_interval)
         try:
-            with Live(generate_dashboard(), refresh_per_second=1 / self.refresh_interval, console=self.console):
-                # Keep the context manager open
-                try:
-                    while True:
-                        time.sleep(1)
-                except KeyboardInterrupt:
-                    pass
+            with Live(
+                frame(),
+                refresh_per_second=refresh_hz,
+                console=self.console,
+                screen=False,
+            ) as live:
+                while True:
+                    time.sleep(self.refresh_interval)
+                    live.update(frame())
+        except KeyboardInterrupt:
+            # Ctrl+C is how you leave a live dashboard - not an error.
+            pass
         except Exception as e:
             self.console.print(f"[red]Dashboard error: {e}[/red]")
 

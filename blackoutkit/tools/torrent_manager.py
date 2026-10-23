@@ -134,19 +134,73 @@ class TorrentDownloadManager:
         self.session = None  # libtorrent session (lazy-loaded)
 
     def _init_session(self):
-        """Initialize libtorrent session on first use."""
+        """Initialise the libtorrent session, through our SOCKS proxy.
+
+        Two things were wrong here:
+
+        * `lt.session_settings()` is libtorrent 1.x API and does not exist in
+          the pinned 2.0.11, so the session could never be created - and the
+          handler only caught ImportError, so a raw AttributeError escaped
+          instead of the "torrent support is unavailable" message.
+        * Nothing set a proxy. libtorrent does not read http_proxy/socks
+          variables and ignores the Windows WinINET registry setting, so every
+          tracker announce and peer connection went out over the raw uplink
+          with the user's real address - the exact leak this whole tool exists
+          to prevent.
+
+        The session now refuses to start unless the local SOCKS proxy is
+        actually listening, so a torrent can never quietly run unprotected.
+        """
         if self.session is not None:
             return
+
         try:
             import libtorrent as lt
-            settings = lt.session_settings()
-            settings.user_agent = f"Blackout-Kit/{__version__}"
-            self.session = lt.session(settings)
-            _log.info("Initialized libtorrent session")
         except ImportError as exc:
             raise RuntimeError(
                 "torrent support is unavailable; install blackout-kit[torrent] (libtorrent on Linux Python 3.10–3.13)"
             ) from exc
+
+        from .. import settings as cfg
+
+        config = cfg.load()
+        proxy_port = int(config.get("xray_socks_port") or 10809)
+
+        # Refuse rather than leak: with no listener on the proxy port there is
+        # no tunnel to route through, and libtorrent would use the raw uplink.
+        import socket
+
+        try:
+            with socket.create_connection(("127.0.0.1", proxy_port), timeout=1.5):
+                pass
+        except OSError as exc:
+            raise RuntimeError(
+                f"Torrents need the Blackout tunnel, and nothing is listening on "
+                f"127.0.0.1:{proxy_port}. Connect first - downloading outside the "
+                f"tunnel would expose your real IP to the swarm."
+            ) from exc
+
+        settings = {
+            "user_agent": f"Blackout-Kit/{__version__}",
+            "proxy_type": lt.proxy_type_t.socks5_pw,
+            "proxy_hostname": "127.0.0.1",
+            "proxy_port": proxy_port,
+            # Peer traffic AND tracker traffic, or the announces still leak.
+            "proxy_peer_connections": True,
+            "proxy_tracker_connections": True,
+            "proxy_hostnames": True,
+            "anonymous_mode": True,
+        }
+
+        try:
+            # libtorrent 2.x takes the settings pack at construction.
+            self.session = lt.session(settings)
+        except TypeError:
+            # 1.x wants a session, then apply_settings.
+            self.session = lt.session()
+            self.session.apply_settings(settings)
+
+        _log.info("Initialized libtorrent session via SOCKS 127.0.0.1:%d", proxy_port)
 
     def add_torrent(self, magnet_or_file: str, output_dir: Path | None = None, seed_ratio: float = 1.0) -> str:
         """Queue a new torrent download. Returns download ID."""

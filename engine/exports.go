@@ -4,6 +4,7 @@ import (
 	"C"
 	"fmt"
 	"strings"
+	"unsafe"
 )
 
 //export StartXrayC
@@ -147,6 +148,19 @@ func StopNeighborC() {
 		return nil
 	}); err != nil {
 		fmt.Println("StopNeighborC Error:", err)
+	}
+}
+
+// FreeCString releases a string that an exported *C.char function returned.
+//
+// cgo's contract is that a C.CString result belongs to the caller, so every
+// caller must free it. Without an export there was no way for Python to do
+// that at all, and each scan leaked its whole result buffer.
+//
+//export FreeCString
+func FreeCString(p *C.char) {
+	if p != nil {
+		C.free(unsafe.Pointer(p))
 	}
 }
 

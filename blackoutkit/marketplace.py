@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
+import urllib.parse
 import logging
 import os
 from dataclasses import asdict, dataclass
@@ -24,6 +26,9 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from .plugins import DEFAULT_PLUGIN_DIR, PLUGIN_KINDS
+
+# A plugin name becomes a filename, and a catalog is remote input.
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 _log = logging.getLogger(__name__)
 
@@ -61,6 +66,14 @@ class MarketplaceEntry:
         kind = str(data.get("kind") or "rule").strip().lower()
         if not name or not url:
             raise MarketplaceError("catalog entry needs 'name' and 'url'")
+        # `name` becomes a filename. A catalog is remote input, so it must not
+        # be able to say "../../startup/evil" - install() wrote to
+        # plugin_dir / f"{name}.py" with no check at all.
+        if not _SAFE_NAME.match(name):
+            raise MarketplaceError(
+                f"entry name {name!r} is not a safe plugin name "
+                "(letters, digits, '-' and '_' only, max 64)"
+            )
         if len(sha256) != 64 or any(c not in "0123456789abcdef" for c in sha256):
             raise MarketplaceError(f"entry {name!r} has an invalid sha256")
         if kind not in PLUGIN_KINDS:
@@ -165,18 +178,31 @@ class Marketplace:
                     f"checksum mismatch for {name!r}: expected {entry.sha256}, got {digest}"
                 )
         self.plugin_dir.mkdir(parents=True, exist_ok=True)
-        target = self.plugin_dir / f"{entry.name}.py"
+        target = self._plugin_path(entry.name)
         target.write_bytes(data)
         _log.info("Installed plugin %s -> %s", name, target)
         return target
 
     def remove(self, name: str) -> bool:
         """Remove an installed plugin file. Returns ``True`` if it existed."""
-        target = self.plugin_dir / f"{name}.py"
+        target = self._plugin_path(name)
         if target.exists():
             target.unlink()
             return True
         return False
+
+    def _plugin_path(self, name: str) -> Path:
+        """Resolve a plugin name to a path inside the plugin directory.
+
+        Belt and braces: from_dict() already rejects unsafe names, but remove()
+        and install() take a bare string, so containment is checked here too.
+        """
+        if not _SAFE_NAME.match(name or ""):
+            raise MarketplaceError(f"invalid plugin name: {name!r}")
+        target = (self.plugin_dir / f"{name}.py").resolve()
+        if not target.is_relative_to(self.plugin_dir.resolve()):
+            raise MarketplaceError(f"plugin path escapes the plugin directory: {name!r}")
+        return target
 
     def installed(self) -> list[str]:
         """Names of plugin files present in the plugin directory."""
@@ -195,9 +221,21 @@ class Marketplace:
             import httpx
         except Exception as exc:  # pragma: no cover - httpx is a hard dependency
             raise MarketplaceError(f"httpx unavailable: {exc}") from exc
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme != "https":
+            # The catalog supplies both the URL and the expected hash, so a
+            # plain-http catalog cannot protect itself from a MITM that edits
+            # both. Refuse rather than pretend the checksum means something.
+            raise MarketplaceError(f"refusing a non-https plugin URL: {url}")
         try:
             response = httpx.get(url, timeout=30.0, follow_redirects=True)
             response.raise_for_status()
         except Exception as exc:
             raise MarketplaceError(f"failed to fetch {url}: {exc}") from exc
+        final = urllib.parse.urlsplit(str(response.url))
+        if final.hostname != parsed.hostname:
+            raise MarketplaceError(
+                f"plugin URL redirected to another host ({parsed.hostname} -> "
+                f"{final.hostname}); refusing"
+            )
         return response.content

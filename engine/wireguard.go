@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/armon/go-socks5"
@@ -27,9 +28,11 @@ var (
 )
 
 type wireGuardConfig struct {
-	ipc       string
-	localIPs  []netip.Addr
-	dnsIPs    []netip.Addr
+	ipc      string
+	localIPs []netip.Addr
+	dnsIPs   []netip.Addr
+	// MTU from [Interface]; 1420 is the usual default when the file omits it.
+	mtu int
 }
 
 func parseWGConfig(configPath string) (*wireGuardConfig, error) {
@@ -39,9 +42,16 @@ func parseWGConfig(configPath string) (*wireGuardConfig, error) {
 	}
 	defer file.Close()
 
-	wgc := &wireGuardConfig{}
+	wgc := &wireGuardConfig{mtu: 1420}
 	var ipc strings.Builder
 	scanner := bufio.NewScanner(file)
+
+	// The file is sectioned: [Interface] describes this side, [Peer] each
+	// remote. The old parser was a flat key switch that ignored the sections
+	// entirely, so a key in the wrong section was accepted, MTU was silently
+	// dropped (always 1420) and every peer's fields were written into the same
+	// IPC stream.
+	section := ""
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -49,75 +59,108 @@ func parseWGConfig(configPath string) (*wireGuardConfig, error) {
 			continue
 		}
 
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			section = strings.ToLower(strings.Trim(line, "[]"))
+			continue
+		}
+
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		key := strings.TrimSpace(parts[0])
+		key := strings.ToLower(strings.TrimSpace(parts[0]))
 		val := strings.TrimSpace(parts[1])
 
-		switch strings.ToLower(key) {
-		case "privatekey":
-			b, err := base64.StdEncoding.DecodeString(val)
-			if err == nil {
+		// An unsectioned file is tolerated (some generators emit bare keys),
+		// but a sectioned one is enforced.
+		inInterface := section == "interface" || section == ""
+		inPeer := section == "peer" || section == ""
+
+		switch {
+		case inInterface && key == "privatekey":
+			if b, err := base64.StdEncoding.DecodeString(val); err == nil {
 				ipc.WriteString(fmt.Sprintf("private_key=%s\n", hex.EncodeToString(b)))
 			}
-		case "listenport":
+		case inInterface && key == "listenport":
 			ipc.WriteString(fmt.Sprintf("listen_port=%s\n", val))
-		case "publickey":
-			b, err := base64.StdEncoding.DecodeString(val)
-			if err == nil {
-				ipc.WriteString(fmt.Sprintf("public_key=%s\n", hex.EncodeToString(b)))
-			}
-		case "endpoint":
-			ipc.WriteString(fmt.Sprintf("endpoint=%s\n", val))
-		case "allowedips":
-			ips := strings.Split(val, ",")
-			for _, ip := range ips {
-				ipc.WriteString(fmt.Sprintf("allowed_ip=%s\n", strings.TrimSpace(ip)))
-			}
-		case "presharedkey":
-			b, err := base64.StdEncoding.DecodeString(val)
-			if err == nil {
-				ipc.WriteString(fmt.Sprintf("preshared_key=%s\n", hex.EncodeToString(b)))
-			}
-		case "persistentkeepalive":
-			ipc.WriteString(fmt.Sprintf("persistent_keepalive_interval=%s\n", val))
-		case "address":
-			ips := strings.Split(val, ",")
-			for _, ip := range ips {
+		case inInterface && key == "address":
+			for _, ip := range strings.Split(val, ",") {
 				ipStr := strings.TrimSpace(ip)
-				// Strip CIDR prefix if present (e.g. "10.0.0.2/32" -> "10.0.0.2")
-				addr, err := netip.ParsePrefix(ipStr)
-				if err != nil {
-					// Try as plain address
-					if a, err2 := netip.ParseAddr(ipStr); err2 == nil {
-						wgc.localIPs = append(wgc.localIPs, a)
-					}
-				} else {
+				if ipStr == "" {
+					continue
+				}
+				if addr, err := netip.ParsePrefix(ipStr); err == nil {
 					wgc.localIPs = append(wgc.localIPs, addr.Addr())
+				} else if a, err2 := netip.ParseAddr(ipStr); err2 == nil {
+					wgc.localIPs = append(wgc.localIPs, a)
 				}
 			}
-		case "dns":
-			ips := strings.Split(val, ",")
-			for _, ip := range ips {
+		case inInterface && key == "dns":
+			for _, ip := range strings.Split(val, ",") {
 				ipStr := strings.TrimSpace(ip)
 				if a, err := netip.ParseAddr(ipStr); err == nil {
 					wgc.dnsIPs = append(wgc.dnsIPs, a)
 				}
 			}
+		case inInterface && key == "mtu":
+			if mtu, err := strconv.Atoi(val); err == nil && mtu >= 576 && mtu <= 65535 {
+				wgc.mtu = mtu
+			}
+		case inPeer && key == "publickey":
+			if b, err := base64.StdEncoding.DecodeString(val); err == nil {
+				ipc.WriteString(fmt.Sprintf("public_key=%s\n", hex.EncodeToString(b)))
+			}
+		case inPeer && key == "presharedkey":
+			if b, err := base64.StdEncoding.DecodeString(val); err == nil {
+				ipc.WriteString(fmt.Sprintf("preshared_key=%s\n", hex.EncodeToString(b)))
+			}
+		case inPeer && key == "endpoint":
+			ipc.WriteString(fmt.Sprintf("endpoint=%s\n", val))
+		case inPeer && key == "allowedips":
+			for _, ip := range strings.Split(val, ",") {
+				if trimmed := strings.TrimSpace(ip); trimmed != "" {
+					ipc.WriteString(fmt.Sprintf("allowed_ip=%s\n", trimmed))
+				}
+			}
+		case inPeer && key == "persistentkeepalive":
+			ipc.WriteString(fmt.Sprintf("persistent_keepalive_interval=%s\n", val))
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
 	}
 	wgc.ipc = ipc.String()
 	return wgc, nil
 }
 
-func startWireGuardInternal(configPath string, socksPort int) error {
+func startWireGuardInternal(configPath string, socksPort int) (err error) {
 	engineMu.Lock()
 	defer engineMu.Unlock()
 	if wgDevice != nil {
 		return fmt.Errorf("wireguard is already running")
 	}
+
+	// Every failure below used to leave wgDevice (and possibly the listener)
+	// non-nil, so the next start hit "wireguard is already running" for the
+	// rest of the process lifetime - one bad config or an occupied SOCKS port
+	// bricked the engine until the daemon restarted. Roll back instead.
+	defer func() {
+		if err == nil {
+			return
+		}
+		if wgListener != nil {
+			wgListener.Close()
+			wgListener = nil
+		}
+		if wgCancel != nil {
+			wgCancel()
+			wgCancel = nil
+		}
+		if wgDevice != nil {
+			wgDevice.Close()
+			wgDevice = nil
+		}
+	}()
 	// Create userspace TUN device via netstack
 	// Fallback addresses if config has no Address or DNS
 	localIPs := []netip.Addr{netip.MustParseAddr("10.0.0.2")}
@@ -134,7 +177,13 @@ func startWireGuardInternal(configPath string, socksPort int) error {
 		dnsIPs = wgc.dnsIPs
 	}
 
-	tun, tnet, err := netstack.CreateNetTUN(localIPs, dnsIPs, 1420)
+	// Honour [Interface] MTU; 1420 was hardcoded and a file asking for 1280
+	// (the WARP value) got the wrong one.
+	mtu := wgc.mtu
+	if mtu <= 0 {
+		mtu = 1420
+	}
+	tun, tnet, err := netstack.CreateNetTUN(localIPs, dnsIPs, mtu)
 	if err != nil {
 		return err
 	}

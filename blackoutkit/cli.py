@@ -1792,6 +1792,13 @@ def cmd_config(args):
                 console.print("[success]Setup string (base64):[/success]")
                 console.print(b64_string)
                 console.print(f"[muted]({len(b64_string)} chars)[/muted]")
+            # Say what the backup actually is. It carries full credentials now
+            # (the old credential-less export could never be imported), so
+            # treating it like a shareable file was wrong twice over.
+            console.print(
+                "[warning]This backup contains your credentials in full. "
+                "Anyone who can read it can use your configs.[/warning]"
+            )
         except Exception:
             console.print("[error]Export failed: unable to create setup string[/error]")
 

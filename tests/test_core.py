@@ -28,9 +28,11 @@ def test_get_core_dll_win32_not_exists(mock_exists):
 
 @patch("sys.platform", "win32")
 @patch("pathlib.Path.exists")
+@patch("blackoutkit.bin_manifest.verify", return_value=(True, ""))
 @patch("ctypes.CDLL")
 @patch("os.add_dll_directory", create=True)
-def test_get_core_dll_win32_success(mock_add_dll, mock_cdll, mock_exists):
+def test_get_core_dll_win32_success(mock_add_dll, mock_cdll, mock_verify, mock_exists):
+    # Same as the warp DLL: verified before it is loaded into this process.
     mock_exists.return_value = True
     mock_dll_instance = MagicMock()
     mock_cdll.return_value = mock_dll_instance
@@ -63,9 +65,12 @@ def test_get_warp_dll_win32_not_exists(mock_exists):
 
 @patch("sys.platform", "win32")
 @patch("pathlib.Path.exists")
+@patch("blackoutkit.bin_manifest.verify", return_value=(True, ""))
 @patch("ctypes.CDLL")
 @patch("os.add_dll_directory", create=True)
-def test_get_warp_dll_win32_success(mock_add_dll, mock_cdll, mock_exists):
+def test_get_warp_dll_win32_success(mock_add_dll, mock_cdll, mock_verify, mock_exists):
+    # The DLL runs in-process, so it is hash-checked before CDLL now; without
+    # this patch verify() would try to read a file that does not exist.
     mock_exists.return_value = True
     mock_dll_instance = MagicMock()
     mock_cdll.return_value = mock_dll_instance

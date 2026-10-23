@@ -183,6 +183,69 @@ def get_blocklist_sources() -> list[dict]:
     return config.get('sources', [])
 
 
+def _parse_blocklist_rules(content: str) -> set[str]:
+    """Extract domain rules from the list formats users actually paste.
+
+    Three formats matter, and the old parser handled exactly one of them:
+
+    * hosts - `0.0.0.0 ads.example.com [more.example.com]`
+    * plain - one domain per line (the phishing.army list)
+    * AdBlock Plus - `||ads.example.com^`, optionally with `$options`
+
+    The validation hint recommends an EasyList file and a plain-domain list,
+    and both used to import zero rules while reporting success.
+    """
+    rules: set[str] = set()
+
+    def add(candidate: str) -> None:
+        domain = candidate.strip().strip('.').lower()
+        if not domain or '.' not in domain:
+            return
+        # A rule must be a bare hostname; anything with a path, wildcard or
+        # port is not something the hosts-file consumer can use.
+        if any(ch in domain for ch in ' \t/*:?^$|'):
+            return
+        if domain in ("localhost", "localhost.localdomain", "broadcasthost"):
+            return
+        rules.add(domain)
+
+    for raw in content.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+
+        # Comments: hosts/plain use '#', AdBlock uses '!'.
+        if line.startswith('#') or line.startswith('!'):
+            continue
+
+        # AdBlock exception rules (@@) mean "allow", so they are not blocked.
+        if line.startswith('@@'):
+            continue
+
+        # AdBlock element-hiding rules (#id, .class, ##selector) are cosmetic.
+        if '##' in line or '#@#' in line or '#?#' in line:
+            continue
+
+        if line.startswith('||'):
+            # ||domain^  or  ||domain^$third-party
+            body = line[2:].split('^', 1)[0]
+            add(body)
+            continue
+
+        # A single token is a plain domain list line.
+        parts = line.split()
+        if len(parts) == 1:
+            add(parts[0])
+            continue
+
+        # hosts format: first field is the address, the rest are domains.
+        if parts[0] in ("0.0.0.0", "127.0.0.1", "::1", "::", "255.255.255.255"):
+            for domain in parts[1:]:
+                add(domain)
+
+    return rules
+
+
 def download_blocklist(name: str, url: str) -> tuple[bool, int, str]:
     """
     Download and parse a blocklist (hosts file format).
@@ -239,20 +302,17 @@ def download_blocklist(name: str, url: str) -> tuple[bool, int, str]:
             spinner.stop()
             return False, 0, f"Network error: {e}"
 
-        # Parse hosts file format (skip comments and empty lines)
-        rules = set()
-        for line in content.splitlines():
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
+        rules = _parse_blocklist_rules(content)
 
-            # Standard hosts format: IP domain [domain2 ...]
-            parts = line.split()
-            if len(parts) >= 2:
-                # Skip the first part (usually 0.0.0.0 or 127.0.0.1)
-                for domain in parts[1:]:
-                    if domain and '.' in domain:
-                        rules.add(domain.lower())
+        if not rules:
+            # Claiming success with zero rules is worse than failing: the user
+            # believes they are protected by a list that contains nothing.
+            spinner.stop()
+            return False, 0, (
+                f"No rules found in {name}. The list is not in a format this "
+                "importer understands (hosts, one domain per line, or "
+                "AdBlock '||domain^')."
+            )
 
         # Cache the blocklist
         cache_file.write_text('\n'.join(sorted(rules)))

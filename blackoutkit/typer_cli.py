@@ -1325,6 +1325,26 @@ def status(
 
 
 @app.command()
+def dashboard(
+    follow: bool = typer.Option(
+        False, "--follow", "-f", help="Refresh continuously until Ctrl+C"
+    ),
+    interval: float = typer.Option(
+        0.5, "--interval", min=0.25, max=10.0, help="Refresh interval in seconds"
+    ),
+):
+    """Live daemon dashboard: engine, throughput, uptime and health.
+
+    dashboard.py was written, unit-tested and then never imported by any
+    command, so the documented "real-time status dashboard" did not exist as
+    a CLI verb. This is that entry point.
+    """
+    from .dashboard import LiveDashboard
+
+    LiveDashboard(refresh_interval=float(interval)).show(follow=bool(follow))
+
+
+@app.command()
 def ready(
     ctx: typer.Context,
     engine: str = typer.Argument("auto", help="Engine to validate locally (or auto)")
@@ -4753,6 +4773,35 @@ def deadbeef():
     cmd_easteregg(_args())
 
 
+def _enforce_enterprise_policy(command: str, options) -> None:
+    """Apply the enterprise policy to the command about to run.
+
+    This is the single choke point for every subcommand, which is what makes
+    the RBAC model a control instead of a decoration: until now nothing
+    outside rbac.py ever called require() or can().
+
+    A machine with no policy file, or a policy without principals, is left
+    alone - that is the default single-user install.
+    """
+    try:
+        from .enterprise import enforcement
+        from .enterprise.rbac import AccessDenied
+
+        enforcement.check_command(command)
+    except AccessDenied as exc:
+        _print_cli_error(
+            "access_denied",
+            str(exc),
+            options=options,
+            exit_code=3,
+        )
+        raise typer.Exit(code=3)
+    except Exception:
+        # A broken policy module must not take the CLI down; enforcement is
+        # best-effort only when it cannot even be loaded.
+        return
+
+
 @app.callback(invoke_without_command=True)
 def app_callback(
     ctx: typer.Context,
@@ -4794,6 +4843,7 @@ def app_callback(
     _register_verbose_close(ctx, options)
     if ctx.invoked_subcommand is not None:
         _reject_unsupported_json(ctx.invoked_subcommand, options)
+        _enforce_enterprise_policy(ctx.invoked_subcommand, options)
     if no_color:
         console.no_color = True
     if ctx.invoked_subcommand is None:

@@ -63,7 +63,7 @@ func startSNIInternal(configPath string) error {
 			// Capture per-connection: a panic here must not kill the listener.
 			conn := clientConn
 			safeGo("sni.handleClient", func() {
-				handleClient(conn, config.ConnectIP, config.ConnectPort)
+				handleClient(conn, config.ConnectIP, config.ConnectPort, config.FakeSNI)
 			})
 		}
 	})
@@ -87,7 +87,7 @@ func RunSNI(configPath string) error {
 	return nil
 }
 
-func handleClient(client net.Conn, targetIP string, targetPort int) {
+func handleClient(client net.Conn, targetIP string, targetPort int, fakeSNI string) {
 	defer client.Close()
 	// A panic in a connection handler must never take down the host process.
 	defer func() {
@@ -139,18 +139,50 @@ func handleClient(client net.Conn, targetIP string, targetPort int) {
 			if n > 0 {
 				data := buf[:n]
 				if !hasWritten && n > 20 {
-					// DPI Bypass: Fragment the ENTIRE ClientHello into 10-byte chunks.
-					// We rely on Go's default TCP_NODELAY (Nagle's disabled) to push them
-					// as separate TCP segments instantly, bypassing DPI without artificial lag!
-					chunkSize := 10
-					for i := 0; i < len(data); i += chunkSize {
-						end := i + chunkSize
-						if end > len(data) {
-							end = len(data)
+					// The first write is the TLS ClientHello. Two things
+					// happen to it before it leaves the machine:
+					//
+					//  1. SNI rewriting, when FAKE_SNI is configured. This is
+					//     the actual evasion: a DPI box keying on the SNI of
+					//     an outbound handshake sees the innocuous name. The
+					//     config value was parsed and then ignored, so the
+					//     feature was a no-op until now.
+					//  2. Fragmentation, into chunks small enough that a DPI
+					//     box reassembling only the first N bytes never sees
+					//     the hostname at all.
+					payload := data
+					if fakeSNI != "" {
+						rewritten, errR := rewriteClientHelloSNI(data, fakeSNI)
+						switch {
+						case errR == nil:
+							payload = rewritten
+						case errors.Is(errR, errSNINoExtension):
+							// Nothing to rewrite; forward untouched.
+						default:
+							// A truncated read is not fatal: send what we have
+							// rather than dropping a connection that may be
+							// perfectly fine.
+							fmt.Printf("SNI rewrite skipped: %v\n", errR)
 						}
-						_, errW := server.Write(data[i:end])
+					}
+
+					// DPI Bypass: fragment the ENTIRE ClientHello into
+					// 10-byte chunks. Without a pause the kernel coalesces
+					// the writes straight back into one segment and the
+					// fragmentation is invisible on the wire, so each chunk is
+					// flushed before the next is handed over.
+					chunkSize := 10
+					for i := 0; i < len(payload); i += chunkSize {
+						end := i + chunkSize
+						if end > len(payload) {
+							end = len(payload)
+						}
+						_, errW := server.Write(payload[i:end])
 						if errW != nil {
 							return
+						}
+						if end < len(payload) {
+							time.Sleep(200 * time.Microsecond)
 						}
 					}
 					hasWritten = true

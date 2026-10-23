@@ -116,15 +116,26 @@ class IKEv2Engine(Engine):
 
     def _connect(self) -> tuple[bool, str]:
         """
-        Dial the VPN via Connect-VpnConnection with credentials in env vars.
-        Avoids passing the password as a rasdial CLI argument (visible in process listing).
+        Dial the VPN with rasdial.
+
+        There is no dial cmdlet: PowerShell's VpnConnection family manages the
+        *profile* only, so the previous implementation - which called a
+        cmdlet that does not exist - failed on every Windows machine and the
+        whole engine was dead. rasdial is the documented way to dial an
+        existing phone-book entry.
+
+        Trade-off, stated rather than hidden: rasdial takes the password as a
+        command-line argument, which is briefly visible in a local process
+        listing. That is a smaller exposure than the engine never working at
+        all; RasDialW via ctypes is the next step if it matters.
         """
         env = {**os.environ, "BK_VPN_USER": self.username, "BK_VPN_PASS": self.password}
         ps = (
             "try {"
             "  $pass = $env:BK_VPN_PASS | ConvertTo-SecureString -AsPlainText -Force;"
-            f" Connect-VpnConnection -Name '{VPN_PROFILE_NAME}'"
-            "  -UserName $env:BK_VPN_USER -Password $pass -Force;"
+            "  $plain = [System.Net.NetworkCredential]::new('', $pass).Password;"
+            f"  & rasdial '{VPN_PROFILE_NAME}' $env:BK_VPN_USER $plain;"
+            "  if ($LASTEXITCODE -ne 0) { throw 'rasdial failed' }"
             "  Write-Output 'OK'"
             "} catch {"
             "  Write-Error $_.Exception.Message"

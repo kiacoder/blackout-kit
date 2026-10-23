@@ -29,13 +29,16 @@ class TestLiveDashboard:
 
     @pytest.fixture
     def mock_daemon_state(self):
-        """Provide a mock daemon state response."""
+        """The keys the daemon actually writes.
+
+        It writes `status` and a cumulative `io_bytes` counter - never
+        `connected`, `throughput_*` or `active_connections`. The dashboard used
+        to read those and therefore always showed Disconnected / 0.00 Mbps.
+        """
         return {
-            "connected": True,
-            "throughput_down": 5.23,
-            "throughput_up": 1.45,
-            "active_connections": 4,
-            "last_activity_sec": 2.5,
+            "status": "connected",
+            "io_bytes": [1_000_000, 250_000],
+            "restarts": 1,
         }
 
     def test_dashboard_initialization(self, dashboard):
@@ -56,10 +59,22 @@ class TestLiveDashboard:
                 assert status["active"] is True
                 assert status["pid"] == 12345
                 assert status["engine"] == "xray"
+                assert status["status"] == "connected"
                 assert status["connected"] is True
-                assert status["throughput_down"] == 5.23
-                assert status["throughput_up"] == 1.45
-                assert status["active_connections"] == 4
+                # First sample: there is no previous counter to subtract, so
+                # the rate is zero by definition, not because nothing moved.
+                assert status["throughput_down"] == 0.0
+                assert status["throughput_up"] == 0.0
+                # Not tracked by the daemon; reported as unknown, not as zero.
+                assert status["active_connections"] is None
+
+                # A second sample one second later gives a real rate:
+                # 1_000_000 bytes = 8 Mbit over ~1s.
+                dashboard._last_io = (0, 0, 0.0)
+                with patch("blackoutkit.dashboard.time.monotonic", return_value=1.0):
+                    second = dashboard.get_daemon_status()
+                assert second["throughput_down"] == pytest.approx(8.0, rel=0.2)
+                assert second["throughput_up"] == pytest.approx(2.0, rel=0.2)
 
     def test_get_daemon_status_inactive_daemon(self, dashboard, mock_daemon_status, mock_daemon_state):
         """Test getting status when daemon is inactive."""
@@ -218,7 +233,7 @@ class TestLiveDashboard:
                 assert status["connected"] is False
                 assert status["throughput_down"] == 0.0
                 assert status["throughput_up"] == 0.0
-                assert status["active_connections"] == 0
+                assert status["active_connections"] is None
 
     def test_dashboard_status_includes_all_fields(self, dashboard, mock_daemon_status, mock_daemon_state):
         """Test that all expected fields are present in status."""
@@ -316,11 +331,8 @@ class TestDashboardIntegration:
                     "started_at": 1234567890.0,
                 }
                 mock_state.return_value = {
-                    "connected": True,
-                    "throughput_down": 1.0,
-                    "throughput_up": 0.5,
-                    "active_connections": 1,
-                    "last_activity_sec": 5.0,
+                    "status": "connected",
+                    "io_bytes": [10, 5],
                 }
 
                 status = dashboard.get_daemon_status()
