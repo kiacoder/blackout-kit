@@ -226,8 +226,11 @@ jobs:
         $ErrorActionPreference = 'Stop'
         $PSNativeCommandUseErrorActionPreference = $true
         New-Item -ItemType Directory -Force -Path dist | Out-Null
+        # -o is resolved relative to the -C directory: engine/ needs one "..",
+        # engine/warp/ needs two. With one, the warp DLL landed in
+        # engine/dist/ and the check below failed.
         go -C engine build -buildmode=c-shared -o ../dist/blackout_core.dll .
-        go -C engine/warp build -buildmode=c-shared -o ../dist/blackout_warp.dll .
+        go -C engine/warp build -buildmode=c-shared -o ../../dist/blackout_warp.dll .
         foreach ($dll in @('dist/blackout_core.dll', 'dist/blackout_warp.dll')) {
           if (-not (Test-Path $dll)) { throw "$dll was not produced" }
           $size = (Get-Item $dll).Length
