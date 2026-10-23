@@ -101,3 +101,4 @@ Microsoft/
 
 # AmneziaWG client configs (contain private keys)
 awg-srv*.conf
+_msg.txt
