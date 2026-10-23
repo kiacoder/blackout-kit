@@ -39,9 +39,12 @@ class WinDivertHandle:
             program_files / "WinDivert" / "WinDivert.dll",
             program_files_x86 / "WinDivert" / "WinDivert.dll",
             Path("C:/WinDivert/WinDivert.dll"),
-            Path.cwd() / "WinDivert.dll",
         ]
 
+        # NOTE: the current working directory used to be searched too. That is
+        # classic DLL planting: anything that can write to wherever the user
+        # happened to run `blackout` from gets code execution in this process,
+        # and WinDivert is loaded into a daemon that may run elevated.
         for dll_path in dll_paths:
             if dll_path.exists():
                 try:

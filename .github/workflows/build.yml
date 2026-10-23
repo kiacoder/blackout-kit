@@ -337,9 +337,14 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: blackout-windows-exe
+        # The release job downloads exactly this artifact and uploads dist/,
+        # so anything missing here never reaches the release - which is how
+        # the DLLs were absent from every published build.
         path: |
           dist/blackout.exe
           dist/blackout-core-windows-amd64.exe
+          dist/blackout_core.dll
+          dist/blackout_warp.dll
 
   build-linux:
     name: Build Linux Runtime

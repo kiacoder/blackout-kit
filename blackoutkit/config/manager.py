@@ -109,6 +109,7 @@ class ProxyConfig:
     insecure:  bool = True      # allowInsecure
     name:      str  = ""        # Config label (#fragment)
     raw_uri:   str  = ""        # Original URI string
+    method:    str  = ""        # Shadowsocks cipher (aes-256-gcm, chacha20-ietf-poly1305, ...)
 
     def is_sni_compatible(self) -> bool:
         """True when the config routes through the local SNI spoofer."""
@@ -153,9 +154,102 @@ def parse_v2ray_uri(uri: str) -> "ProxyConfig | None":
             return _parse_vmess(uri)
         if uri.startswith("awg://"):
             return _parse_awg(uri)
+        if uri.startswith("ss://"):
+            return _parse_shadowsocks(uri)
     except Exception:
         return None
     return None
+
+
+def _parse_shadowsocks(uri: str) -> "ProxyConfig | None":
+    """Parse a Shadowsocks share link, in either of its two shapes.
+
+    SIP002:  ss://BASE64(method:password)@host:port#name
+             ss://method:password@host:port#name      (percent-encoded)
+    legacy:  ss://BASE64(method:password@host:port)#name
+
+    Every ss:// link used to be dropped silently - parse_v2ray_uri did not
+    list the scheme, so trusted sources could advertise a hundred of them and
+    none reached the library.
+    """
+    body = uri[len("ss://"):]
+    name = ""
+    if "#" in body:
+        body, fragment = body.split("#", 1)
+        name = urllib.parse.unquote(fragment)
+
+    # The query carries plugin options; sing-box cannot run a shadowsocks
+    # plugin, so the link is imported without it rather than rejected.
+    if "?" in body:
+        body = body.split("?", 1)[0]
+
+    def decode_userinfo(token: str) -> str:
+        """base64url (padding optional) or a plain percent-encoded pair."""
+        if ":" in token and "%" in token:
+            return urllib.parse.unquote(token)
+        if ":" in token and _looks_like_plain_credentials(token):
+            return token
+        padded = token + "=" * (-len(token) % 4)
+        try:
+            return base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        except Exception:
+            return urllib.parse.unquote(token)
+
+    if "@" in body:
+        userinfo, host_port = body.rsplit("@", 1)
+        userinfo = decode_userinfo(userinfo)
+    else:
+        # Legacy form: the whole authority is base64.
+        padded = body + "=" * (-len(body) % 4)
+        try:
+            decoded = base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+        except Exception:
+            return None
+        if "@" not in decoded:
+            return None
+        userinfo, host_port = decoded.rsplit("@", 1)
+
+    if ":" not in userinfo:
+        return None
+    method, password = userinfo.split(":", 1)
+    method = method.strip().lower()
+    if not method or not password:
+        return None
+
+    host, _, port_text = host_port.partition(":")
+    host = host.strip().strip("[]")
+    if not host:
+        return None
+    try:
+        port = int(port_text.split("/", 1)[0])
+    except ValueError:
+        return None
+    if not 1 <= port <= 65535:
+        return None
+
+    return ProxyConfig(
+        protocol="shadowsocks",
+        address=host,
+        port=port,
+        password=password,
+        method=method,
+        # Shadowsocks has no TLS layer of its own; marking it "tls" here is
+        # what made the Xray builder wrap it in a ClientHello it cannot answer.
+        security="none",
+        transport="tcp",
+        name=name,
+        raw_uri=uri,
+    )
+
+
+def _looks_like_plain_credentials(token: str) -> bool:
+    """True for `method:password` that was never base64-encoded.
+
+    A base64 blob never contains ':' (it is not in the alphabet), so the
+    presence of one already proves it is plain - but a password may itself
+    contain ':', so only the first separator is meaningful.
+    """
+    return ":" in token
 
 
 def _parse_awg(uri: str) -> "ProxyConfig | None":

@@ -15,6 +15,7 @@ import logging
 import os
 import shutil
 import subprocess
+import urllib.parse
 import tempfile
 
 MEDIA_INSTALL_HINT = "media support is unavailable; install blackout-kit[media] (yt-dlp)"
@@ -142,6 +143,13 @@ class MediaDownloadManager:
 
     def add_download(self, url: str, format_spec: str = "", output_dir: Path | None = None) -> str:
         """Queue a new media download. Returns download ID."""
+        # Reject anything that is not an http(s) URL before it reaches yt-dlp:
+        # a leading '-' would be parsed as an option, not a link.
+        candidate = (url or "").strip()
+        scheme = urllib.parse.urlsplit(candidate).scheme.lower()
+        if scheme not in ("http", "https"):
+            raise ValueError(f"Media URL must be http or https, got: {candidate[:40]!r}")
+        url = candidate
         if output_dir is None:
             output_dir = Path.home() / "Downloads" / "blackout-media"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -226,7 +234,11 @@ class MediaDownloadManager:
                 yt_dlp,
                 "-f", format_spec,
                 "-o", output_template,
-                download.url
+                # "--" ends option parsing. Without it a URL beginning with "-"
+                # is read as a yt-dlp flag, so a link like --exec=... runs an
+                # arbitrary command instead of downloading anything.
+                "--",
+                download.url,
             ]
 
             # Run yt-dlp with timeout

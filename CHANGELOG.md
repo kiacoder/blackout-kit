@@ -6,6 +6,68 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [1.11.1] - 2026-10-23
+
+### Fixed
+- **Torrents no longer leak your real IP.** The libtorrent session was created
+  with no proxy at all; libtorrent ignores `http_proxy` and the Windows WinINET
+  setting, so every tracker announce and peer connection went out over the raw
+  uplink. It now forces the SOCKS proxy and refuses to start when nothing is
+  listening on it.
+- **The dashboard exists and works.** `blackout dashboard` was never
+  registered (the module was imported by nothing), crashed on launch because
+  `rich.Live` was handed a generator, and read state keys the daemon never
+  writes. It is a real command now, and the daemon records a real start
+  timestamp and process RSS.
+- **The whole OpenAPI document and every webhook route.** `Request` was
+  imported inside `create_app()` while the module uses postponed annotations,
+  so FastAPI treated it as a query parameter: `POST/DELETE /api/v2/webhooks`
+  returned 422 and `GET /openapi.json` returned 500.
+- **`ss://` configs are imported.** Shadowsocks links were not in the parser's
+  scheme list, so they were dropped silently even when a trusted source
+  advertised them. Both share-link shapes are parsed and sing-box gets a
+  shadowsocks outbound with no TLS block.
+- **IKEv2 can dial.** It called `Connect-VpnConnection`, a cmdlet that does not
+  exist; it uses `rasdial` now.
+- **Arrow keys work in POSIX terminals.** Reading `sys.stdin` pulled the whole
+  escape sequence into Python's buffer, so `select()` saw nothing pending and
+  every arrow arrived as a bare Escape.
+- **Saving over a library that failed to load is refused**, so a transient read
+  error can no longer wipe the saved configs.
+- **A setup backup can be restored.** Export stripped the credentials that
+  import required.
+- **TUN mode starts on current sing-box.** It emitted `inet4_address` and
+  inbound `sniff`, removed in 1.12/1.13.
+- **FAKE_SNI actually rewrites the ClientHello.** The value was parsed and
+  never used; the native engine's headline feature did not exist.
+- **Every registered engine can be started and selected.** The daemon's engine
+  map and the settings validators were hand-written lists that had drifted;
+  both derive from the registry now.
+- **A verified binary update no longer bricks its engine.** The downloader
+  never re-pinned the manifest, so the next launch failed with "hash
+  mismatch". The manifest also moved out of `bins/`, the directory it
+  protects, and the in-process DLLs are hash-checked before loading.
+- **The release ships `blackout_core.dll` and `blackout_warp.dll`.** The
+  registry requires the former, and no release ever contained it.
+- **`blackout bins update` no longer leaks C memory** on every IP scan, and the
+  scanner works off Windows instead of returning an empty list.
+- **The web dashboard needs no CDN** and its live stream no longer stops after
+  five events.
+- **Path traversal in the plugin marketplace and the download manager**, and a
+  URL that could become a yt-dlp option, are closed.
+- **The enterprise policy is enforced.** Roles and permissions existed but
+  nothing ever checked them; every subcommand is now gated and exits 3 when
+  the active principal lacks the permission.
+- **The ad blocker imports the lists it recommends.** It only understood hosts
+  format, so an EasyList or a plain-domain list produced zero rules and still
+  reported success.
+
+### Known limitations
+- AmneziaWG, ShadowTLS and WARP still cannot connect: the bundled sing-box
+  core has no engine for them.
+- The QoS shaper refuses to open a divert handle until a re-inject loop exists.
+
+
 ## [1.11.0] - 2026-10-20
 
 ### Added

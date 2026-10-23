@@ -25,7 +25,7 @@ SINGBOX_BINARY_NAMES = (
 class SingBoxProxyEngine(Engine):
     name = "singbox_proxy"
     description = "SingBox Proxy Core — runs Hysteria2 / TUIC natively"
-    supported_protocols = ("hysteria2", "tuic", "anytls", "shadowtls")
+    supported_protocols = ("hysteria2", "tuic", "anytls", "shadowtls", "shadowsocks")
 
     def __init__(self, proxy_config=None, socks_port: int | None = None, protocol: str | None = None):
         super().__init__()
@@ -66,14 +66,22 @@ class SingBoxProxyEngine(Engine):
             "tag": "proxy",
             "server": server,
             "server_port": pc.port,
-            "tls": {
+        }
+
+        # Shadowsocks has no TLS layer of its own. Emitting a tls block for it
+        # (the default for every other protocol here) makes the server see a
+        # ClientHello on a raw shadowsocks port.
+        if pc.protocol != "shadowsocks":
+            outbound["tls"] = {
                 "enabled": True,
                 "server_name": pc.sni or pc.address,
                 "insecure": pc.insecure,
-            },
-        }
+            }
 
-        if pc.protocol == "hysteria2":
+        if pc.protocol == "shadowsocks":
+            outbound["method"] = getattr(pc, "method", "") or "aes-256-gcm"
+            outbound["password"] = pc.password
+        elif pc.protocol == "hysteria2":
             outbound["password"] = pc.password
         elif pc.protocol == "tuic":
             outbound["uuid"] = pc.uuid
