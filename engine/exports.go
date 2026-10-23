@@ -1,7 +1,15 @@
 package main
 
+/*
+#include <stdlib.h>
+*/
+import "C"
+
+// stdlib.h above is required for C.free: cgo only exposes C.malloc/C.free when
+// the preamble declares them, and "C" must be its own import declaration - a
+// grouped `import ("C")` cannot carry a preamble. Any comment placed before
+// the preamble block is swallowed into the C code, so this note lives here.
 import (
-	"C"
 	"fmt"
 	"strings"
 	"unsafe"
