@@ -57,9 +57,9 @@ class SettingsScreen(Screen):
             matching = [k for k in keys if needle in k.lower() or needle in group.lower()]
             if not matching:
                 continue
-            view.append(ListItem(Label(group.upper()), disabled=True))
+            view.append(ListItem(Label(group.upper(), markup=False), disabled=True))
             for key in matching:
-                view.append(ListItem(Label(key), name=key))
+                view.append(ListItem(Label(key, markup=False), name=key))
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id == "settings-search":

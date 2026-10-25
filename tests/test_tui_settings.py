@@ -20,7 +20,7 @@ def _state() -> ConsoleState:
         settings_groups_fn=lambda: [("Proxy", ["xray_socks_port"])],
         settings_choices_fn=lambda key: ("dark", "light") if key == "terminal_theme" else None,
         settings_display_fn=lambda key, value: str(value),
-        settings_validate_fn=lambda key, value: (key == "xray_socks_port" and str(value).isdigit(), "bad"),
+        settings_validate_fn=lambda key, value: (key == "xray_socks_port" and str(value).isdigit(), "[WinError 2] bad"),
         settings_set_fn=lambda key, value: None,
     )
 
@@ -52,7 +52,9 @@ async def test_search_filters_and_save_rejects_invalid():
         assert "xray_socks_port = 10808" in str(screen.query_one("#settings-detail", Static).visual)
         screen.do_save("not-a-port")
         await pilot.pause()
-        assert "bad" in str(screen.query_one("#settings-status", Static).visual)
+        status_text = str(screen.query_one("#settings-status", Static).visual)
+        assert "[WinError 2] bad" in status_text
+        assert "bad" in status_text
         screen.do_save("10810")
         await pilot.pause()
         assert "Saved" in str(screen.query_one("#settings-status", Static).visual)
