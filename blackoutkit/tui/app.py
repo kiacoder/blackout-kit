@@ -153,11 +153,11 @@ class BlackoutConsole(App):
         self.exit()
 
     def _run_tunnel(self, command: str, *args: str) -> None:
-        self.notify(f"{command} started in background…")
+        self.notify(f"{command} started in background…", markup=False)
         run_bg(
             self,
             lambda: self._tunnel_runner(command, *args),
-            lambda text: self.notify(text[:200] or "done"),
+            lambda text: self.notify(text[:200] or "done", markup=False),
             group="tunnel",
         )
 

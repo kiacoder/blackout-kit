@@ -95,3 +95,29 @@ async def test_actions_trigger_tunnel_runner():
         app.post_message(ConnectAction("start", "xray"))
         await pilot.pause(0.1)
         assert ("connect", ("xray",)) in called
+
+
+@pytest.mark.asyncio
+async def test_tunnel_toasts_render_markup_literally(monkeypatch):
+    app = BlackoutConsole(state_for_tests=True)
+
+    def boom(command, *args):
+        raise ValueError("[/b] mismatched close from config")
+
+    app._tunnel_runner = boom
+    calls = []
+    monkeypatch.setattr(app, "notify", lambda message, **kwargs: calls.append((message, kwargs)))
+
+    async with app.run_test() as pilot:
+        app.post_message(DashAction("connect"))
+        for _ in range(50):
+            await pilot.pause(0.05)
+            if len(calls) >= 2:
+                break
+        assert len(calls) >= 2
+        started_msg, started_kwargs = calls[0]
+        assert "connect started" in started_msg
+        assert started_kwargs.get("markup") is False
+        result_msg, result_kwargs = calls[1]
+        assert "[/b] mismatched close from config" in result_msg
+        assert result_kwargs.get("markup") is False
