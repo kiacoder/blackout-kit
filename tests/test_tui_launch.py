@@ -1,6 +1,5 @@
 # tests/test_tui_launch.py
 """Guards for launching the Blackout Console."""
-import pytest
 
 from blackoutkit import tui
 
