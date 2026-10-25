@@ -49,3 +49,4 @@ def test_launcher_menu_dispatch_tui(monkeypatch):
 
     cli._show_launcher_menu()
     assert launched == ["tui"]
+    assert next(choices, "exhausted") == "exhausted"  # looped back for exit, did not return

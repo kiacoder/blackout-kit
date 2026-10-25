@@ -928,12 +928,49 @@ only where you save it and is never uploaded by Blackout Kit.
 
 ## Zero-argument terminal launcher
 
-Running `blackout` with no arguments opens a keyboard-navigable terminal chooser: **Terminal CLI**, **Windows App**, or **Exit**.
+Running `blackout` with no arguments opens a keyboard-navigable terminal chooser: **TUI Console**, **Windows App**, or **Exit** (when the `tui` extra is missing, **Terminal CLI** replaces the TUI option).
 
 - **↑ / ↓** move the selection; **Space**, **Enter**, or **→** select it; **←** or **Esc** go back; **Ctrl+C** quits.
 - A control legend is always visible at the bottom of the menu.
+- **TUI Console** opens the Blackout Console described below; quitting it with `q` returns to this chooser.
 - **Terminal CLI** opens the arrow-key-navigable action menu (Connect, Engine, Status, Tools, Settings, …). Backing out of it (Left/Escape) returns to this chooser rather than exiting.
 - **Windows App** opens the desktop GUI described below; it is only offered on Windows.
+
+## Blackout Console
+
+Blackout Console is an optional full-screen terminal app built with [Textual](https://textual.textualize.io/). Install the extra and launch it:
+
+```cmd
+pip install blackout-kit[tui]
+blackout tui
+```
+
+It is also the **TUI Console** option in the zero-argument launcher. Without the extra, the launcher falls back to the classic Terminal CLI menus; no plain command or JSON output changes.
+
+### Screens
+
+- **Dashboard** (`s`) — live local status strip (daemon state, active engine, ports) plus quick actions: Connect, Stop tunnel, Emergency candidates. The strip shows local facts only; local readiness is not remote reachability.
+- **Connect** (`c`) — the engine picker with honest local readiness badges (ready / blocked / unsupported) and the first blocker for anything not ready. Selecting an engine starts it in the background. Checks are local-only; upstream reachability is not tested.
+- **Diagnostics** (`d`) — runs `doctor --local-only` and `fix --preview` through the same code paths as the CLI. Both are read-only: nothing is reset, flushed, or repaired from this screen.
+- **Config** (`g`) — saved-config manager. Rows are safe summaries only; raw URIs are never displayed, and pasted URIs or subscription URLs are cleared from the input whether the action succeeds or fails.
+- **Settings** (`o`) — searchable settings editor. Type to filter, select a key, edit the value, and Save; enum keys show their allowed choices. Values are validated through the same validate/set path as `blackout settings set`.
+- **Tools** (`t`) — TCP ping and the Cloudflare speedtest. The speedtest is the real `blackout tools speedtest` run (~20s) and records to history like the CLI command.
+
+### Hotkeys
+
+| Key | Action |
+|---|---|
+| `s` | Dashboard / status |
+| `c` | Connect screen |
+| `d` | Diagnostics |
+| `g` | Config |
+| `o` | Settings |
+| `t` | Tools |
+| `?` | Keybinding help |
+| `Esc` | Back / unfocus input |
+| `q` | Quit — asks for confirmation when an engine is running |
+
+**Honesty rule:** the status strip and readiness badges describe *local* state only. A green local check does not prove remote reachability or bypass success.
 
 ## Start the GUI
 

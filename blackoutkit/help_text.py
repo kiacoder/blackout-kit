@@ -325,6 +325,34 @@ Important notes:
   • test/list views should not be treated as remote reachability checks
 """,
 
+"tui": """
+[bold cyan]blackout tui[/bold cyan]
+Launch the Blackout Console — the full-screen terminal GUI.
+
+Launch:
+  blackout tui
+
+Requirements:
+  • the optional extra: pip install blackout-kit[tui]
+  • an interactive terminal (a real TTY)
+
+The zero-argument chooser offers TUI Console when the extra is installed and
+falls back to the classic Terminal CLI menus otherwise.
+
+Screens and hotkeys:
+  s  dashboard/status     live local status strip + quick actions
+  c  connect              engine picker with local readiness badges
+  d  diagnostics          read-only doctor and fix --preview
+  g  config               saved-config manager (summaries only)
+  o  settings             searchable validated settings editor
+  t  tools                ping and speedtest
+  ?  help                 keybinding help
+  Esc back/unfocus        q  quit (confirm when an engine is running)
+
+[dim]The status strip shows local facts only. A green local check is not
+remote reachability or bypass success.[/dim]
+""",
+
 "split_tunnel": """
 [bold cyan]blackout split-tunnel[/bold cyan]
 Manage Windows system-proxy bypass patterns.

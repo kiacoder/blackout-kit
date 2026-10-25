@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+### Added
+- Blackout Console — an optional full-screen Textual TUI (`pip install blackout-kit[tui]`, then `blackout tui`): live local status strip, engine picker with readiness badges, read-only diagnostics previews, config and settings editors, and ping/speedtest tools. The zero-argument chooser gains a **TUI Console** option with legacy-menu fallback when the extra is absent. Zero changes to CLI commands or JSON output.
+
 ## [1.11.1] - 2026-10-23
 
 ### Fixed

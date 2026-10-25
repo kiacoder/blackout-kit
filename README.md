@@ -66,7 +66,8 @@
 - [Security, privacy, and safety boundaries](#security-privacy-and-safety-boundaries)
 - [Data and local state](#data-and-local-state)
 - [MCP server](#mcp-server)
-- [Desktop GUI](#desktop-gui)
+- [Blackout Console (terminal GUI)](#blackout-console-terminal-gui)
+- [Windows desktop GUI](#windows-desktop-gui)
 - [Split tunnel](#split-tunnel)
 - [Troubleshooting](#troubleshooting)
 - [Roadmap and contributing](#roadmap-and-contributing)
@@ -473,16 +474,17 @@ Running `blackout` with no arguments opens a keyboard-navigable terminal chooser
 
 ```text
 Blackout Kit — Choose How to Launch
-> 💻 Terminal CLI   Navigate Blackout Kit entirely from this terminal
-  🪟 Windows App    Open the desktop launcher window
-  ❌ Exit           Quit Blackout Kit
+> 🖥️ TUI Console   Full-screen Blackout Console (arrow keys, live status)
+  🪟 Windows App   Open the desktop launcher window
+  ❌ Exit          Quit Blackout Kit
 
 ↑↓ Move    →/Space/Enter Select    ←/Esc Back    Ctrl+C Quit
 ```
 
 - **↑ / ↓** move the selection; **Space**, **Enter**, or **→** activate it; **←** or **Esc** go back to the previous screen; **Ctrl+C** quits immediately.
-- **Terminal CLI** opens the same arrow-key-navigable action menu (Connect, Engine, Status, Tools, Settings, …); backing out of it returns here instead of exiting.
-- **Windows App** opens the `CustomTkinter` desktop GUI described in [Desktop GUI](#desktop-gui); closing that window also returns here.
+- **TUI Console** opens the full-screen [Blackout Console](#blackout-console-terminal-gui); pressing `q` there returns to this chooser (with a confirmation when an engine is running). It is shown only when the `tui` extra is installed.
+- **Terminal CLI** — shown instead of TUI Console when the extra is missing — opens the same arrow-key-navigable action menu (Connect, Engine, Status, Tools, Settings, …); backing out of it returns here instead of exiting.
+- **Windows App** opens the `CustomTkinter` desktop GUI described in [Windows desktop GUI](#windows-desktop-gui); closing that window also returns here.
 - The control legend is always shown at the bottom of every menu screen.
 - **Windows App** is only offered on Windows, since the desktop GUI is Windows-only.
 
@@ -956,7 +958,20 @@ settings, and split tunnel, `blackout_security_mode` without a mode, and `blacko
 
 ---
 
-## Desktop GUI
+## Blackout Console (terminal GUI)
+
+Install the optional extra and run:
+
+```cmd
+pip install blackout-kit[tui]
+blackout tui
+```
+
+A full-screen terminal app with a live local status strip, engine picker with readiness badges, diagnostics, config management, a searchable settings editor, and network tools. The zero-argument chooser offers **TUI Console** when the extra is installed and falls back to the classic menus otherwise. All plain commands and JSON output are unchanged. The status strip shows local facts only — local readiness is not remote reachability.
+
+Global hotkeys: `s` status · `c` connect · `d` diagnostics · `g` config · `o` settings · `t` tools · `?` help · `Esc` back · `q` quit (with confirmation when an engine is running).
+
+## Windows desktop GUI
 
 The Windows GUI is started with:
 
