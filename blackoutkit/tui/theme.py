@@ -43,19 +43,6 @@ CollapsibleTitle {
 Footer {
     background: #0E1015;
 }
-QuitConfirmScreen {
-    align: center middle;
-}
-#confirm-dialog {
-    padding: 1 2;
-    width: 60;
-    height: auto;
-    border: thick #FF5555;
-    background: #171A23;
-}
-#confirm-msg {
-    margin-bottom: 1;
-}
 """
 
 LIGHT_CSS = """

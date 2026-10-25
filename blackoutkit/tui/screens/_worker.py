@@ -40,10 +40,12 @@ def run_bg(
 
 
 def capture_cli(command: str, *args: str) -> str:
-    """Capture one of the allowlisted, non-mutating CLI diagnostic/tool paths.
+    """Capture one of the allowlisted CLI diagnostic/tool/tunnel paths.
 
-    The cli_mod.console global swap is process-wide, so concurrent worker threads
-    serialize on _console_lock (reentrancy safe).
+    Most commands are read-only (doctor, fix_preview, tools_*); connect/stop/
+    emergency are user-invoked tunnel operations equivalent to the CLI's own
+    commands. The cli_mod.console global swap is process-wide, so concurrent
+    worker threads serialize on _console_lock (reentrancy safe).
     """
     buffer = io.StringIO()
     with _console_lock:
