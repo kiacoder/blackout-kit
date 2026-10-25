@@ -3,7 +3,7 @@ import pytest
 
 textual = pytest.importorskip("textual")
 from textual.app import App, ComposeResult  # noqa: E402
-from textual.widgets import ListView  # noqa: E402
+from textual.widgets import ListView, Static  # noqa: E402
 
 from blackoutkit.tui.screens.connect import ConnectAction, ConnectScreen  # noqa: E402
 
@@ -43,9 +43,23 @@ async def test_readiness_states_and_selected_engine_action():
         assert [(event.kind, event.engine) for event in app.seen] == [("start", "xray")]
 
 
-def test_set_rows_renders_supplied_normalized_rows():
-    screen = ConnectScreen(state=None, capability_matrix_fn=lambda **kwargs: MATRIX)
-    assert screen.build_rows()[1] == {
-        "name": "tun", "display_name": "TUN", "state": "blocked",
-        "detail": "Network tunnel · TUN runtime is missing · local check only",
-    }
+@pytest.mark.asyncio
+async def test_set_rows_renders_supplied_normalized_rows():
+    app = ConnectApp()
+    async with app.run_test() as pilot:
+        screen = app.query_one(ConnectScreen)
+        supplied = [{
+            "name": "manual", "display_name": "Manual engine", "state": "blocked",
+            "detail": "runtime missing · local check only",
+        }]
+        screen.set_rows(supplied)
+        await pilot.pause()
+        items = screen.query("#engine-list ListItem")
+        assert len(items) == 1
+        assert items[0].name == "manual"
+        rendered = str(items[0].query_one(Static).visual)
+        assert "Manual engine" in rendered
+        assert "blocked" in rendered
+        assert "runtime missing · local check only" in rendered
+        assert "xray" not in rendered
+        assert app.seen == []
