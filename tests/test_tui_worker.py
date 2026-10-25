@@ -67,6 +67,40 @@ def test_fix_preview_delegates(monkeypatch):
     assert seen == {"preview": True, "full_route_reset": False}
 
 
+def test_connect_delegates(monkeypatch):
+    seen = {}
+
+    def fake_cmd_connect(args):
+        seen["engine"] = args.engine
+        seen["background"] = args.background
+
+    monkeypatch.setattr(_worker.cli_mod, "cmd_connect", fake_cmd_connect)
+    _worker.capture_cli("connect", "xray")
+    assert seen == {"engine": "xray", "background": True}
+
+
+def test_stop_delegates(monkeypatch):
+    called = []
+
+    def fake_cmd_stop(args):
+        called.append(True)
+
+    monkeypatch.setattr(_worker.cli_mod, "cmd_stop", fake_cmd_stop)
+    _worker.capture_cli("stop")
+    assert called == [True]
+
+
+def test_emergency_delegates(monkeypatch):
+    seen = {}
+
+    def fake_cmd_emergency(args):
+        seen["background"] = args.background
+
+    monkeypatch.setattr(_worker.cli_mod, "cmd_emergency", fake_cmd_emergency)
+    _worker.capture_cli("emergency")
+    assert seen == {"background": True}
+
+
 def test_console_restored_after_capture(monkeypatch):
     original = _worker.cli_mod.console
     monkeypatch.setattr(_worker.cli_mod, "cmd_tools", lambda args: None)

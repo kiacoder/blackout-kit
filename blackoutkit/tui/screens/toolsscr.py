@@ -11,6 +11,7 @@ from ..widgets.output_panel import CollapsibleOutput
 
 class ToolsScreen(Screen):
     SCREEN_ID = "tools"
+    AUTO_FOCUS = ""
 
     DEFAULT_CSS = """
     ToolsScreen {

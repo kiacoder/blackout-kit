@@ -14,7 +14,7 @@ _console_lock = threading.Lock()
 
 
 def run_bg(
-    screen,
+    target,
     fn: Callable[[], str],
     on_done: Callable[[str], None],
     *,
@@ -23,10 +23,12 @@ def run_bg(
     """Run fn() in a worker thread; deliver str result to on_done on the UI thread.
 
     exclusive=True: re-triggering the same group cancels any previous run in that group.
+    target may be a Screen or an App.
     """
+    app = getattr(target, "app", target)
 
     def deliver(text: str) -> None:
-        screen.app.call_from_thread(on_done, text)
+        app.call_from_thread(on_done, text)
 
     def operation() -> None:
         try:
@@ -34,7 +36,7 @@ def run_bg(
         except Exception as exc:  # noqa: BLE001
             deliver(f"error: {exc}")
 
-    screen.run_worker(operation, thread=True, exclusive=True, group=group, exit_on_error=False)
+    target.run_worker(operation, thread=True, exclusive=True, group=group, exit_on_error=False)
 
 
 def capture_cli(command: str, *args: str) -> str:
@@ -68,6 +70,16 @@ def capture_cli(command: str, *args: str) -> str:
             elif command == "tools_speedtest":
                 cli_args = cli_mod._make_fake_args(tools_command="speedtest")
                 cli_mod.cmd_tools(cli_args)
+            elif command == "connect":
+                engine = args[0] if args else None
+                cli_args = cli_mod._make_fake_args(engine=engine, background=True)
+                cli_mod.cmd_connect(cli_args)
+            elif command == "stop":
+                cli_args = cli_mod._make_fake_args()
+                cli_mod.cmd_stop(cli_args)
+            elif command == "emergency":
+                cli_args = cli_mod._make_fake_args(background=True)
+                cli_mod.cmd_emergency(cli_args)
             else:
                 raise ValueError(f"Unsupported capture command: {command!r}")
         finally:

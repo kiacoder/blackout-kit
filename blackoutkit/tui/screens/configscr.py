@@ -9,6 +9,7 @@ from ..state import ConsoleState
 
 class ConfigScreen(Screen):
     SCREEN_ID = "config"
+    AUTO_FOCUS = ""
 
     DEFAULT_CSS = """
     ConfigScreen {

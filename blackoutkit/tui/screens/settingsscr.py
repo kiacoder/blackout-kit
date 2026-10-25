@@ -10,6 +10,7 @@ from ..state import ConsoleState
 
 class SettingsScreen(Screen):
     SCREEN_ID = "settings"
+    AUTO_FOCUS = ""
 
     DEFAULT_CSS = """
     SettingsScreen {
