@@ -236,6 +236,17 @@
    "comment": "Declared floor from the pyproject.toml optional extra (security minimum)."
   },
   {
+   "SPDXID": "SPDXRef-textual",
+   "name": "textual",
+   "versionInfo": "8.0.0",
+   "downloadLocation": "https://pypi.org/project/textual/",
+   "filesAnalyzed": false,
+   "licenseDeclared": "MIT",
+   "licenseConcluded": "MIT",
+   "description": "Full-screen terminal GUI framework for the optional Blackout Console (tui extra)",
+   "comment": "Declared install floor from pyproject.toml (security minimum), not a lockfile pin."
+  },
+  {
    "SPDXID": "SPDXRef-pytest",
    "name": "pytest",
    "versionInfo": "8.0.0",
@@ -392,6 +403,11 @@
    "spdxElementId": "SPDXRef-BlackoutKit",
    "relationshipType": "OPTIONAL_DEPENDENCY_OF",
    "relatedSpdxElement": "SPDXRef-libtorrent"
+  },
+  {
+   "spdxElementId": "SPDXRef-BlackoutKit",
+   "relationshipType": "OPTIONAL_DEPENDENCY_OF",
+   "relatedSpdxElement": "SPDXRef-textual"
   }
  ]
 }

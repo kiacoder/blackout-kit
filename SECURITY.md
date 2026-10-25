@@ -397,6 +397,7 @@ fails if the two ever drift apart.
 | **yt-dlp** (media extra) | `>=2026.7.4` | CVE-2026-55404 plus the 2026.6.9 aria2c/`--exec`/cookie-leak batch |
 | **setuptools / wheel** (build system) | `>=83.0.0` / `>=0.46.2` | CVE-2026-59890, CVE-2025-47273, CVE-2024-6345, CVE-2026-24049 — build-time code is supply chain too |
 | **scapy** (capture extra) | `>=2.5.0` | No fixed release exists for the untrusted-session pickle issue; Blackout never loads a `.session` file it did not create |
+| **textual** (tui extra) | `>=8.0.0` | Full-screen terminal GUI framework (Blackout Console). Optional extra; the CLI never requires it. |
 | **click**, **rich**, **typer**, **psutil**, **reportlab** | 8.1.7 / 13.7.1 / 0.12 / 6.0 / 4.0 | Above every published advisory for those projects; the CLI pair is kept low because help rendering is version-sensitive |
 
 `requests` and `urllib3` are **not** dependencies and are deliberately not added: Blackout Kit imports

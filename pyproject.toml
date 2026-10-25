@@ -70,6 +70,11 @@ api = [
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
 ]
+# Full-screen terminal GUI (Blackout Console). Optional: `blackout tui` and the
+# chooser's TUI option fall back to the legacy menu when it is not installed.
+tui = [
+    "textual>=8.0.0",
+]
 all = [
     "customtkinter>=5.2.2",
     "Pillow>=12.3.0",
@@ -79,6 +84,7 @@ all = [
     "libtorrent==2.0.11; sys_platform == 'linux' and python_version < '3.14'",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
+    "textual>=8.0.0",
 ]
 test = [
     "pytest>=8.0.0",
