@@ -1834,6 +1834,18 @@ def gui(ctx: typer.Context):
     run_gui()
 
 
+@app.command()
+def tui():
+    """Launch the Blackout Console full-screen terminal GUI.
+
+    Requires the [tui] extra (pip install blackout-kit[tui]) and an
+    interactive terminal. Exits with code 2 and a hint otherwise.
+    """
+    from . import tui as _tui
+
+    raise typer.Exit(_tui.launch_console())
+
+
 _JSON_NATIVE_COMMANDS = frozenset({
     "version", "update", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
     "country", "countries", "bins", "capabilities", "demo", "setup", "report", "bench",

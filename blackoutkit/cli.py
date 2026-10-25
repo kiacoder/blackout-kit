@@ -4968,20 +4968,31 @@ def _interactive_menu():
             console.print()
 
 
+def _launcher_items():
+    """Chooser items: TUI first when available, legacy CLI as fallback."""
+    from . import tui as _tui
+
+    items = []
+    if _tui.console_available():
+        items.append(MenuItem("tui", "🖥️ TUI Console", "Full-screen Blackout Console (arrow keys, live status)"))
+    else:
+        items.append(MenuItem("cli", "💻 Terminal CLI", "Classic menus (install blackout-kit[tui] for the Console)"))
+    items.append(MenuItem("gui", "🪟 Windows App", "Open the desktop launcher window", enabled=(sys.platform == "win32")))
+    items.append(MenuItem("exit", "❌ Exit", "Quit Blackout Kit"))
+    return items
+
+
 def _show_launcher_menu():
     """
-    The zero-argument entry point: choose Terminal CLI, Windows App, or Exit.
+    The zero-argument entry point: choose TUI Console, Terminal CLI, Windows App, or Exit.
 
     Loops back to this chooser whenever a sub-screen is backed out of, so
     the user can move forward into either interface and back again.
     """
     from . import launcher as _launcher
+    from . import tui as _tui
 
-    items = [
-        MenuItem("cli", "💻 Terminal CLI", "Navigate Blackout Kit entirely from this terminal"),
-        MenuItem("gui", "🪟 Windows App", "Open the desktop launcher window", enabled=(sys.platform == "win32")),
-        MenuItem("exit", "❌ Exit", "Quit Blackout Kit"),
-    ]
+    items = _launcher_items()
 
     while True:
         choice = run_menu("Blackout Kit — Choose How to Launch", items)
@@ -4989,6 +5000,9 @@ def _show_launcher_menu():
             console.print("[muted]Bye![/muted]")
             return
 
+        if choice == "tui":
+            _tui.launch_console()
+            continue
         if choice == "cli":
             if _interactive_menu():
                 return
