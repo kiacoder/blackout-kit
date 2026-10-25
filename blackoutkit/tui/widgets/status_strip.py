@@ -25,7 +25,10 @@ class StatusStrip(Static):
     _line: reactive[str] = reactive("…")
 
     def __init__(self, state, interval: float = 2.0) -> None:
-        super().__init__()
+        # markup=False: snapshot text (especially error = str(exc)) is plain
+        # data that may contain brackets; markup parsing would swallow tags
+        # like [b] or raise on hostile input inside the timer callback.
+        super().__init__(markup=False)
         self._state = state
         self._interval = interval
         self._timer = None

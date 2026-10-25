@@ -51,6 +51,30 @@ async def test_strip_renders_local_fact_line():
         assert "local" in text.lower()
 
 
+@pytest.mark.asyncio
+async def test_strip_renders_error_snapshot_without_markup_error():
+    """Production errors are str(exc) and routinely bracketed; the mounted
+    strip must render them literally ([b] is data here, not bold) and let
+    no markup exception escape."""
+    state = _fake_state()
+    state.snapshot_fn = lambda: {"error": "bad setting [b] must be int"}
+
+    class ErrorApp(App):
+        def compose(self) -> ComposeResult:
+            yield StatusStrip(state=state, interval=0.2)
+
+    app = ErrorApp()
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        strip = app.query_one(StatusStrip)
+        rendered = str(strip.visual)
+        assert "[b]" in rendered
+        assert "must be int" in rendered
+        assert "local readiness only" in rendered
+        assert "🔴" in rendered
+        assert str(strip._content) == rendered
+
+
 def test_compose_line_handles_error_snapshot():
     line = StatusStrip.compose_line({"error": "daemon dead"})
     assert "daemon dead" in line
