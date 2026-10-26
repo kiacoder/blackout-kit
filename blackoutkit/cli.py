@@ -4991,11 +4991,20 @@ def _show_launcher_menu():
     """
     from . import launcher as _launcher
     from . import tui as _tui
+    from .theme import is_interactive
 
     items = _launcher_items()
 
+    # PowerShell often lies about stdout.isatty() - disable alternate screen to avoid ghost artifacts
+    use_alternate_screen = is_interactive()
+
     while True:
-        choice = run_menu("Blackout Kit — Choose How to Launch", items)
+        choice = run_menu(
+            "Blackout Kit — Choose How to Launch",
+            items,
+            screen=use_alternate_screen,
+            transient=use_alternate_screen,
+        )
         if choice in (None, "exit"):
             console.print("[muted]Bye![/muted]")
             return
