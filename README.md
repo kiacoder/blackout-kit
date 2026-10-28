@@ -23,11 +23,11 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078d4?style=flat-square&logo=linux)
 ![GUI](https://img.shields.io/badge/GUI-CustomTkinter-00A8FF?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Version](https://img.shields.io/badge/Version-1.9.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/Version-1.12.0-orange?style=flat-square)
 ![Security Audited](https://img.shields.io/badge/Security-Audited-blueviolet?style=flat-square)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen?style=flat-square)
 
-*A network security and bypass toolkit for Windows and Linux. 17+ engines, MCP-integrated diagnostics, country-aware routing, smart config rotation, encrypted vault, and self-healing crash recovery.*
+*A network security and bypass toolkit for Windows and Linux. 17+ tunnel engines plus a DNS resolver engine (35 providers), MCP-integrated diagnostics, country-aware routing, smart config rotation, encrypted vault, and self-healing crash recovery.*
 
 > ## ⚡ New in 1.9.0 — AmneziaWG, native
 >
@@ -647,6 +647,12 @@ blackout tools speedtest
 blackout tools dns-bench
 blackout tools dns-set <server>
 blackout tools dns-flush
+blackout dns                            # current resolvers + which catalogue pair they match
+blackout dns list [--category sanctions|speed|extra]
+blackout dns set <provider|ip> [--adapter <name>] [--flush/--no-flush]
+blackout dns restore                    # undo the last change (DHCP / saved resolv.conf)
+blackout dns flush
+blackout dns bench [-d domain] [-n repeat]
 blackout tools traceroute [host]
 blackout tools scan-file <path>
 blackout tools file-hash <path>
@@ -663,6 +669,42 @@ blackout network isp
 blackout network auto
 blackout network switch <ssid>
 ```
+
+### DNS engine
+
+A tunnel can be perfectly healthy and still leak every domain you visit to the
+carrier's resolver. `blackout dns` is a separate engine for that decision — it
+switches the system resolver to a curated **pair** of addresses and can put the
+machine back the way it was found.
+
+The catalogue ships with three groups, 35 providers in all. The first two start
+with XDNS's own lists — the exact primary/secondary pairs that single-file
+Windows client switches between:
+
+| Group | Provider | Primary | Secondary |
+|---|---|---|---|
+| sanctions | Shecan | 178.22.122.100 | 185.51.200.2 |
+| sanctions | Electro | 78.157.42.100 | 78.157.42.101 |
+| sanctions | Begzar | 185.55.226.26 | 185.55.226.25 |
+| sanctions | Radar | 10.202.10.10 | 10.202.10.11 |
+| sanctions | 403.online | 10.202.10.202 | 10.202.10.102 |
+| sanctions | OpenDNS | 208.67.222.222 | 208.67.220.220 |
+| speed | Yandex | 77.88.8.8 | 77.88.8.1 |
+| speed | Cloudflare (+Security, +Family) | 1.1.1.1 / 1.1.1.2 / 1.1.1.3 | 1.0.0.1 / 1.0.0.2 / 1.0.0.3 |
+| speed | Google | 8.8.8.8 | 8.8.4.4 |
+| speed | DNS.SB, Control D, Level3, Vercara, Comodo, Gcore, Oracle Dyn, Wikimedia, DNS4EU | | |
+| extra | Quad9 (+Unfiltered), AdGuard (+Family, +Unfiltered), CleanBrowsing (+Family), NextDNS, Mullvad, OpenDNS FamilyShield, Yandex Safe / Family, Alibaba, Tencent, 114DNS | | |
+
+`blackout dns list -v` prints the one-line note for each provider. Both
+addresses are written, primary first, so a dead primary falls through to the
+secondary instead of to the DHCP server. `dns set` snapshots the resolvers it
+replaced into `~/.blackout-kit/dns_state.json` before touching anything;
+`dns restore` puts them back (DHCP on Windows, the saved `/etc/resolv.conf` on
+Linux, `networksetup … Empty` on macOS). Applying a resolver needs
+Administrator / root — the command says so instead of failing silently.
+
+The same catalogue is used by `blackout tools dns-set <name>`, and the Blackout
+Console has a dedicated DNS screen (`n`).
 
 ### Binary and runtime management
 

@@ -15,6 +15,7 @@ from .screens.configscr import ConfigScreen
 from .screens.connect import ConnectAction, ConnectScreen
 from .screens.dashboard import DashAction, DashboardScreen
 from .screens.diagnostics import DiagnosticsScreen
+from .screens.dnsscr import DNSScreen
 from .screens.settingsscr import SettingsScreen
 from .screens.toolsscr import ToolsScreen
 from .state import ConsoleState
@@ -87,6 +88,7 @@ class BlackoutConsole(App):
         Binding("g", "switch_screen('config')", "Config", priority=True),
         Binding("o", "switch_screen('settings')", "Settings", priority=True),
         Binding("t", "switch_screen('tools')", "Tools", priority=True),
+        Binding("n", "switch_screen('dns')", "DNS", priority=True),
         Binding("question_mark", "help_keys", "Keys", priority=True),
         Binding("escape", "escape_key", "Back", priority=True),
         Binding("q", "quit_app", "Quit", priority=True),
@@ -125,6 +127,7 @@ class BlackoutConsole(App):
         self.install_screen(ConfigScreen(state=self._state), name="config")
         self.install_screen(SettingsScreen(state=self._state), name="settings")
         self.install_screen(ToolsScreen(), name="tools")
+        self.install_screen(DNSScreen(), name="dns")
         self.install_screen(QuitConfirmScreen(), name="confirm-quit")
         self.push_screen("dashboard")
 
@@ -136,7 +139,7 @@ class BlackoutConsole(App):
         self.switch_screen(name)
 
     def action_help_keys(self) -> None:
-        self.notify("Keys: s status · c connect · d doctor · g config · o settings · t tools · Esc back · q quit")
+        self.notify("Keys: s status · c connect · d doctor · g config · o settings · t tools · n dns · Esc back · q quit")
 
     def action_escape_key(self) -> None:
         if self.focused is not None:

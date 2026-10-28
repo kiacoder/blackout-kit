@@ -3054,27 +3054,16 @@ def cmd_tools(args):
         console.print()
 
     elif args.tools_command == "dns-set":
-        presets = {
-            # Global public DNS
-            "cloudflare":  "1.1.1.1",
-            "cloudflare2": "1.0.0.1",
-            "google":      "8.8.8.8",
-            "google2":     "8.8.4.4",
-            "quad9":       "9.9.9.9",
-            "opendns":     "208.67.222.222",
-            "adguard":     "94.140.14.14",
-            # Iranian bypass/filtered DNS
-            "shecan":      "185.51.200.2",
-            "shecan2":     "178.22.122.100",
-            "electro":     "78.157.42.100",
-            "electro2":    "78.157.42.101",
-            "403":         "10.202.10.202",
-            "begzar":      "185.55.226.26",
-            # Chinese domestic DNS (trusted inside GFW)
-            "alibaba":     "223.5.5.5",
-            "tencent":     "119.29.29.29",
-            "114dns":      "114.114.114.114",
-        }
+        # Names come from the DNS engine catalogue so the two commands cannot
+        # drift apart; the aliases below are kept for muscle memory.
+        from . import dns_engine as _dns
+
+        presets = {}
+        for _prov in _dns.providers():
+            presets[_prov.key] = _prov.primary
+            if _prov.secondary:
+                presets[f"{_prov.key}2"] = _prov.secondary
+        presets["403"] = "10.202.10.202"
         dns_ip = presets.get(args.server.lower(), args.server)
         console.print(f"[info]Setting DNS to {dns_ip}...[/info]")
         ok = net_tools.set_dns(dns_ip)

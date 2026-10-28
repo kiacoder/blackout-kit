@@ -733,6 +733,18 @@ def _register_cli_commands() -> None:
 
     # Tools and utilities groups
     nav.register_group_commands(
+        "dns", "Switch the system resolver to a curated DNS pair",
+        {
+            "list": ("List every catalogue provider", ["blackout dns list"]),
+            "set": ("Apply a provider pair", ["blackout dns set shecan"]),
+            "current": ("Show the resolvers in use", ["blackout dns current"]),
+            "restore": ("Undo the last change", ["blackout dns restore"]),
+            "flush": ("Flush the DNS cache", ["blackout dns flush"]),
+            "bench": ("Time every catalogue resolver", ["blackout dns bench"]),
+        },
+    )
+
+    nav.register_group_commands(
         "tools", "Network diagnostics and utilities",
         {
             "dns-bench": ("Benchmark DNS servers", ["blackout tools dns-bench"]),
@@ -1848,7 +1860,7 @@ def tui():
 
 _JSON_NATIVE_COMMANDS = frozenset({
     "version", "update", "status", "route", "ready", "doctor", "fix", "tools", "settings", "config",
-    "country", "countries", "bins", "capabilities", "demo", "setup", "report", "bench",
+    "country", "countries", "bins", "capabilities", "demo", "setup", "report", "bench", "dns",
 })
 _CONFIG_JSON_COMMANDS = frozenset({
     "list", "validate", "check-duplicates", "compatibility", "diff",
@@ -4159,6 +4171,259 @@ def manual_help(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran'
 def help_command(topic: str = typer.Argument(None, help="Help topic (e.g., 'iran', 'engines', 'configs')")):
     """Show detailed manual/help for a specific topic"""
     _show_help(topic)
+
+
+# ─────────────────────────────── DNS engine ──────────────────────────────────
+#
+# A resolver switch, not a tunnel. `dns set <name>` writes BOTH addresses of a
+# catalogue pair (primary first, then secondary) so the OS falls back to the
+# intended resolver instead of to the DHCP one, and `dns restore` puts the
+# machine back the way it was found.
+
+dns_app = typer.Typer(
+    help="Switch the system resolver to a curated DNS pair (sanctions / speed)",
+    no_args_is_help=False,
+)
+app.add_typer(dns_app, name="dns")
+
+_DNS_JSON_COMMANDS = frozenset({"list", "set", "current", "restore", "flush", "bench"})
+
+
+def _dns_status_payload(engine) -> dict:
+    from . import dns_engine as dnsmod
+
+    servers = engine.current_servers()
+    active = dnsmod.active_provider(servers)
+    state = engine.state() or {}
+    return {
+        "current_servers": servers,
+        "active_provider": active.as_dict() if active else None,
+        "last_applied": state.get("applied"),
+        "last_provider": state.get("provider"),
+        "platform": sys.platform,
+    }
+
+
+def _render_dns_status(engine) -> None:
+    from . import dns_engine as dnsmod
+
+    servers = engine.current_servers()
+    active = dnsmod.active_provider(servers)
+    console.print()
+    if not servers:
+        console.print("[warning]No system resolver detected.[/warning] "
+                      "[muted]On Windows this usually means every adapter is down.[/muted]")
+    else:
+        rows = [[server, dnsmod.find(server).name if dnsmod.find(server) else "custom"]
+                for server in servers]
+        console.print(make_table("Current DNS", [("Resolver", "cyan"), ("Matches", "")], rows))
+    if active is not None:
+        console.print(f"\n[success]✓ Active:[/success] {active.describe()}  "
+                      f"[muted]({dnsmod.CATEGORY_SHORT.get(active.category, active.category)})[/muted]")
+    elif servers:
+        console.print("\n[muted]The active resolver is not in the catalogue — "
+                      "`blackout dns list` shows what can be applied.[/muted]")
+    state = engine.state() or {}
+    if state.get("provider"):
+        console.print(f"[muted]Last applied by Blackout: {state['provider']} — "
+                      f"`blackout dns restore` puts the old resolvers back.[/muted]")
+    console.print()
+
+
+@dns_app.callback(invoke_without_command=True)
+def dns_status(ctx: typer.Context):
+    """Show the resolvers in use and which catalogue entry they match."""
+    options = _output_options(ctx)
+    if ctx.invoked_subcommand is not None:
+        _reject_group_json(ctx.invoked_subcommand, options, _DNS_JSON_COMMANDS)
+        return
+
+    from .dns_engine import DNSEngine
+
+    engine = DNSEngine()
+    if options.json_output:
+        _print_json_enveloped(_dns_status_payload(engine))
+        return
+    if _is_quiet(options):
+        return
+    _render_dns_status(engine)
+
+
+@dns_app.command("current")
+def dns_current(ctx: typer.Context):
+    """Show the resolvers in use (same as `blackout dns`)."""
+    dns_status(ctx)
+
+
+@dns_app.command("list")
+def dns_list(
+    ctx: typer.Context,
+    category: str = typer.Option(None, "--category", "-c",
+                                 help="Only this category: sanctions, speed, extra"),
+):
+    """List every catalogue provider with both of its addresses."""
+    options = _output_options(ctx)
+    from .dns_engine import CATEGORY_ORDER, DNSEngine
+
+    engine = DNSEngine()
+    wanted = _option_value(category)
+    if wanted and wanted.lower() not in CATEGORY_ORDER:
+        _fail_parameter(
+            f"Unknown category '{wanted}'. Choose one of: {', '.join(CATEGORY_ORDER)}",
+            options=options,
+        )
+
+    if options.json_output:
+        rows = [p.as_dict() for p in engine.providers(wanted.lower() if wanted else None)]
+        _print_json_enveloped({"providers": rows, "count": len(rows)})
+        return
+    if _is_quiet(options):
+        return
+
+    for cat, label, provs in engine.categories():
+        if wanted and cat != wanted.lower():
+            continue
+        # No note column and wrap=False: an address is a fixed-width token, and
+        # folding it produced "182.254.116.1 / 16" in an 80-column terminal.
+        rows = [[p.key, p.name, p.primary, p.secondary or "—"] for p in provs]
+        console.print()
+        console.print(make_table(label, [
+            ("Key", "cyan"), ("Name", "white"), ("Primary", "white"),
+            ("Secondary", "white"),
+        ], rows, wrap=False))
+        if options.verbose:
+            for prov in provs:
+                console.print(f"  [muted]{prov.key}: {prov.note}[/muted]")
+    console.print("\n[muted]Apply one with[/muted] [cyan]blackout dns set shecan[/cyan]"
+                  "[muted]; undo with[/muted] [cyan]blackout dns restore[/cyan]"
+                  "[muted]; notes with -v[/muted]\n")
+
+
+@dns_app.command("set")
+def dns_set(
+    ctx: typer.Context,
+    provider: str = typer.Argument(None, help="Provider key (shecan, electro, cloudflare…) or an IP"),
+    adapter: str = typer.Option(None, "--adapter", "-a", help="Only this adapter / network service"),
+    flush: bool = typer.Option(True, "--flush/--no-flush", help="Flush the DNS cache afterwards"),
+):
+    """Point the system resolver at a catalogue pair (or a raw IP)."""
+    options = _output_options(ctx)
+
+    provider = _option_value(provider)
+    if not provider:
+        if not is_interactive():
+            _fail_parameter("A provider is required (see `blackout dns list`).", options=options)
+        from .dns_engine import providers as _providers
+
+        labels = {p.key: f"{p.name} — {', '.join(p.servers)}" for p in _providers()}
+        provider = ask_choice("DNS provider", list(labels), labels=labels)
+        if not provider:
+            return
+
+    from .dns_engine import DNSEngine
+
+    engine = DNSEngine()
+    result = engine.apply(provider, adapter=_option_value(adapter))
+
+    if options.json_output:
+        payload = {
+            "ok": result.ok,
+            "provider": result.provider,
+            "applied": list(result.applied),
+            "previous": list(result.previous),
+            "adapter": result.adapter,
+            "detail": result.detail,
+        }
+        if not result.ok:
+            _print_cli_error("dns_apply_failed", result.detail, options=options, exit_code=1)
+        _print_json_enveloped(payload)
+        if not result.ok:
+            raise typer.Exit(1)
+        return
+
+    if not result.ok:
+        console.print(f"[error]✗ {result.detail}[/error]")
+        raise typer.Exit(1)
+
+    console.print(f"[success]✓ DNS set to {result.provider}[/success]")
+    if result.previous:
+        console.print(f"[muted]  was: {', '.join(result.previous)}[/muted]")
+    console.print(f"[muted]  now: {', '.join(result.applied)}[/muted]")
+    if flush and engine.flush():
+        console.print("[muted]  cache flushed[/muted]")
+    console.print("[muted]  undo with `blackout dns restore`[/muted]")
+
+
+@dns_app.command("restore")
+def dns_restore(ctx: typer.Context):
+    """Undo the last `dns set`: DHCP on Windows, the saved file elsewhere."""
+    options = _output_options(ctx)
+    from .dns_engine import DNSEngine
+
+    engine = DNSEngine()
+    result = engine.restore()
+    if options.json_output:
+        _print_json_enveloped({"ok": result.ok, "detail": result.detail})
+        if not result.ok:
+            raise typer.Exit(1)
+        return
+    if not result.ok:
+        console.print(f"[error]✗ {result.detail}[/error]")
+        raise typer.Exit(1)
+    engine.flush()
+    console.print(f"[success]✓ {result.detail}[/success]")
+
+
+@dns_app.command("flush")
+def dns_flush(ctx: typer.Context):
+    """Flush the operating system DNS cache."""
+    options = _output_options(ctx)
+    from .dns_engine import DNSEngine
+
+    ok = DNSEngine().flush()
+    if options.json_output:
+        _print_json_enveloped({"ok": ok})
+        return
+    if ok:
+        console.print("[success]✓ DNS cache flushed.[/success]")
+    else:
+        console.print("[error]✗ Could not flush the DNS cache[/error] "
+                      "[muted](root/admin rights may be required)[/muted]")
+        raise typer.Exit(1)
+
+
+@dns_app.command("bench")
+def dns_bench(
+    ctx: typer.Context,
+    domain: str = typer.Option("www.google.com", "--domain", "-d", help="Domain to query"),
+    repeat: int = typer.Option(2, "--repeat", "-n", min=1, max=10, help="Queries per resolver"),
+):
+    """Time every catalogue resolver and show the fastest first."""
+    options = _output_options(ctx)
+    from .dns_engine import DNSEngine
+
+    engine = DNSEngine()
+    rows = engine.benchmark(domain=_option_value(domain, "www.google.com"),
+                            repeat=int(_option_value(repeat, 2)))
+    if options.json_output:
+        _print_json_enveloped({
+            "domain": domain,
+            "results": [{"name": n, "ip": ip, "ms": ms} for n, ip, ms in rows],
+        })
+        return
+    if not rows:
+        console.print("[warning]No resolver answered — every query timed out.[/warning]")
+        raise typer.Exit(1)
+    console.print()
+    console.print(make_table(
+        f"DNS benchmark — {domain}",
+        [("Resolver", "cyan"), ("Server", "white"), ("Latency", "")],
+        [[name, ip, f"{ms:.0f} ms"] for name, ip, ms in rows],
+        wrap=False,
+    ))
+    best_name, best_ip, best_ms = rows[0]
+    console.print(f"\n[success]Fastest:[/success] {best_name} — {best_ip} ({best_ms:.0f} ms)")
+    console.print(f"[muted]Apply it:[/muted] [cyan]blackout dns set {best_ip}[/cyan]\n")
 
 
 country_app = typer.Typer(help="View or pin the active censorship country profile", no_args_is_help=False)

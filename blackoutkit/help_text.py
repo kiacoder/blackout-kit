@@ -346,6 +346,7 @@ Screens and hotkeys:
   g  config               saved-config manager (summaries only)
   o  settings             searchable validated settings editor
   t  tools                ping and speedtest
+  n  dns                  resolver switch (sanctions / speed pairs)
   ?  help                 keybinding help
   Esc back/unfocus        q  quit (confirm when an engine is running)
 

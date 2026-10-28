@@ -698,6 +698,32 @@ python blackout.py tools cert-check example.com
 
 These help you debug local conditions, but they are not a substitute for understanding your upstream tunnel path.
 
+### Switching resolvers with the DNS engine
+
+`blackout dns` is a separate engine from the tunnel engines: it decides who
+answers name lookups. A healthy tunnel can still leak every domain you visit to
+your provider's resolver, so this is worth setting deliberately.
+
+```cmd
+python blackout.py dns                        # what is in use right now
+python blackout.py dns list                   # every provider, both addresses
+python blackout.py dns list -c sanctions      # only the bypass group
+python blackout.py dns set shecan             # write both Shecan addresses
+python blackout.py dns set cloudflare --adapter "Wi-Fi"
+python blackout.py dns restore                # put the old resolvers back
+python blackout.py dns bench -n 3             # time every provider
+```
+
+Each entry is a **pair**. `dns set` writes the primary first and the secondary
+second, so if the primary stops answering the system falls through to the
+secondary rather than to the DHCP-provided resolver. The `sanctions` group is
+XDNS's own list — Shecan (`178.22.122.100` / `185.51.200.2`), Electro, Begzar,
+Radar and OpenDNS — and the `speed` group is Yandex, Cloudflare and Google.
+
+Applying a resolver needs Administrator (root on Linux/macOS). The command says
+so instead of failing quietly. Before it changes anything it records the current
+resolvers in `~/.blackout-kit/dns_state.json`, which is what `dns restore` uses.
+
 ### Scan one local file on Windows
 
 ```cmd

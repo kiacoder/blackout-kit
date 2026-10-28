@@ -6,8 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) 
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-10-28
+
 ### Added
+- **DNS engine** (`blackoutkit/dns_engine.py`, `blackout dns …`) — a resolver
+  switch that is not a tunnel. It ships a catalogue of **35 providers** whose
+  first two groups start with XDNS's own lists (the exact primary/secondary
+  pairs that client switches between): sanctions (Shecan, Electro, Begzar,
+  Radar, 403.online, OpenDNS) and speed (Yandex, Cloudflare, Google), then
+  continue with DNS.SB, Control D, Level3, Vercara, Comodo, Gcore, Oracle Dyn,
+  Wikimedia, DNS4EU and the Cloudflare Security/Family variants. The `extra`
+  group carries the filtering and privacy profiles (Quad9 + unfiltered,
+  AdGuard + family + unfiltered, CleanBrowsing + family, NextDNS, Mullvad,
+  OpenDNS FamilyShield, Yandex Safe/Family) and the domestic resolvers
+  (Alibaba, Tencent, 114DNS). `dns set <name>` writes **both** addresses,
+  primary first, so a dead primary falls through to the secondary instead of
+  to the DHCP server. The resolvers it replaced are snapshotted to
+  `~/.blackout-kit/dns_state.json` first, and `dns restore` puts them back
+  (DHCP on Windows, the saved `/etc/resolv.conf` on Linux, `networksetup …
+  Empty` on macOS). `dns list [-v]`, `dns current`, `dns flush` and `dns bench`
+  round it out, all with `--json`. `blackout tools dns-set <name>` now reads
+  the same catalogue, so the two commands cannot drift apart.
+- **DNS screen in the Blackout Console** (`n`) — category buttons, the provider
+  list with both addresses, apply / restore / flush / benchmark, each running
+  in a background worker so a slow `netsh` never freezes the UI.
 - Blackout Console — an optional full-screen Textual TUI (`pip install blackout-kit[tui]`, then `blackout tui`): live local status strip, engine picker with readiness badges, read-only diagnostics previews, config and settings editors, and ping/speedtest tools. The zero-argument chooser gains a **TUI Console** option with legacy-menu fallback when the extra is absent. Zero changes to CLI commands or JSON output.
+
+### Changed
+- `blackout tools dns-set shecan` now applies XDNS's primary
+  (`178.22.122.100`); the previous value (`185.51.200.2`) is `shecan2`. The
+  `<name>2` suffix means "the secondary address of that provider" for every
+  entry, which it did not before.
 
 ## [1.11.1] - 2026-10-23
 

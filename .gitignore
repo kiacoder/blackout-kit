@@ -102,3 +102,6 @@ Microsoft/
 # AmneziaWG client configs (contain private keys)
 awg-srv*.conf
 _msg.txt
+
+# Agent worktrees and scratch state (60 MB of checkouts, never part of a build)
+.claude/
